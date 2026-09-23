@@ -93,6 +93,19 @@ _BIG_BODY_X = 2.0
 # How near price must come to a level to count as touching it, as a share of that bar's range.
 _TOUCH_BAND = 0.25
 
+# THE COMBINATIONS, declared before any result. Each is (signals, mode); "first" leaves on
+# whichever fires first, "half" banks half on the first and the rest on the second.
+GIVE = "give50@1.5R"
+COMBOS: Dict[str, Tuple[Tuple[str, ...], str]] = {
+    "give|choch": ((GIVE, "choch"), "first"),
+    "give|level2": ((GIVE, "level2"), "first"),
+    "give|choch|level2": ((GIVE, "choch", "level2"), "first"),
+    "give|engulf": ((GIVE, "engulf"), "first"),
+    "half:choch->give": (("choch", GIVE), "half"),
+    "half:level2->give": (("level2", GIVE), "half"),
+    "half:any2": ((GIVE, "choch", "level2", "engulf"), "half"),
+}
+
 
 @dataclasses.dataclass
 class Walk:
@@ -101,6 +114,9 @@ class Walk:
     actual_r: float
     peak_r: float
     by_rule: Dict[str, float]
+    # rule -> (timestamp in ms the rule fired, R it would have banked). Two frames feed this,
+    # so the TIME is the only axis both share — a bar index means different things on each.
+    fired_at: Dict[str, Tuple[int, float]] = dataclasses.field(default_factory=dict)
 
 
 def _load_bars(start: str, end: str):
@@ -154,6 +170,7 @@ def _engine_track(df):
     track: List[dict] = []
     ts = df.index.view("int64") // 1_000_000
     o = df["open"].to_numpy()
+    stamps = df.index.view("int64") // 1_000_000
     h = df["high"].to_numpy()
     lo = df["low"].to_numpy()
     c = df["close"].to_numpy()
@@ -225,6 +242,7 @@ def _rules(peak_bands: Tuple[float, ...], giveback: Tuple[float, ...]) -> List[s
         for p in giveback:
             names.append(f"give{int(p * 100)}@{t:g}R")
     names += ["liq", "poc", "choch", "sos+bos", "engulf", "div", "level2", "level3", "level+turn"]
+    names += list(COMBOS)
     return names
 
 
@@ -235,6 +253,7 @@ def walk_reversals(fdf, ftrack, tr, dist, cost_r) -> Dict[str, float]:
     d = 1 if tr.dir > 0 else -1
     entry = float(tr.entry_price)
     stamps = fdf.index.view("int64") // 1_000_000
+    when = lambda i: int(stamps[i])  # noqa: E731 — the bar the rule fired on
     i0 = int(np.searchsorted(stamps, int(tr.entry_ms), side="left"))
     i1 = int(np.searchsorted(stamps, int(tr.exit_ms), side="right")) - 1
     o = fdf["open"].to_numpy()
@@ -260,13 +279,13 @@ def walk_reversals(fdf, ftrack, tr, dist, cost_r) -> Dict[str, float]:
         if against_sos and shift_bar is None:
             shift_bar = i
         if "choch" not in fired and against_sos:
-            fired["choch"] = r
+            fired["choch"] = (when(i), r)
         if "sos+bos" not in fired and shift_bar is not None and i > shift_bar and against_bos:
-            fired["sos+bos"] = r
+            fired["sos+bos"] = (when(i), r)
         if "engulf" not in fired and against_engulf:
-            fired["engulf"] = r
+            fired["engulf"] = (when(i), r)
         if "div" not in fired and any(b == (d < 0) for b in t["div"]):
-            fired["div"] = r
+            fired["div"] = (when(i), r)
 
         # Touch counting: price reaches into a band around the level and closes back off it.
         band = (t["high"] - t["low"]) * _TOUCH_BAND
@@ -282,12 +301,12 @@ def walk_reversals(fdf, ftrack, tr, dist, cost_r) -> Dict[str, float]:
                 touches[lv] = touches.get(lv, 0) + 1
                 rejected = True
                 if "level2" not in fired and touches[lv] >= 2:
-                    fired["level2"] = r
+                    fired["level2"] = (when(i), r)
                 if "level3" not in fired and touches[lv] >= 3:
-                    fired["level3"] = r
+                    fired["level3"] = (when(i), r)
         # The confluence he described: a level being hit again AND the structure turning there.
         if "level+turn" not in fired and rejected and (against_sos or against_engulf):
-            fired["level+turn"] = r
+            fired["level+turn"] = (when(i), r)
     return fired
 
 
@@ -300,8 +319,9 @@ def walk_trade(df, track, tr, peak_bands, giveback) -> Walk:
     i0 = _bar_of(df, getattr(tr, "entry_ms", None), int(tr.entry_index))
     i1 = _bar_of(df, getattr(tr, "exit_ms", None), int(tr.exit_index))
     if i1 <= i0:
-        return Walk(float(tr.r), float(tr.r), {})
+        return Walk(float(tr.r), float(tr.r), {}, {})
 
+    stamps = df.index.view("int64") // 1_000_000
     h = df["high"].to_numpy()
     lo = df["low"].to_numpy()
     c = df["close"].to_numpy()
@@ -328,7 +348,7 @@ def walk_trade(df, track, tr, peak_bands, giveback) -> Walk:
                     continue
                 kept = (here - entry) * d / dist
                 if kept <= peak_r * (1.0 - pct):
-                    fired[key] = r_at(nxt)
+                    fired[key] = (int(stamps[i]), r_at(nxt))
 
         if "liq" not in fired:
             ahead = [
@@ -337,19 +357,47 @@ def walk_trade(df, track, tr, peak_bands, giveback) -> Walk:
                 if lv == lv and (lv - entry) * d > 0 and (lv - here) * d <= 0
             ]
             if ahead:
-                fired["liq"] = r_at(nxt)
+                fired["liq"] = (int(stamps[i]), r_at(nxt))
         if "poc" not in fired and t["poc"] is not None:
             p = float(t["poc"])
             if (p - entry) * d > 0 and (p - here) * d <= 0:
-                fired["poc"] = r_at(nxt)
-    return Walk(float(tr.r), peak_r, fired)
+                fired["poc"] = (int(stamps[i]), r_at(nxt))
+    return Walk(float(tr.r), peak_r, {k: v[1] for k, v in fired.items()}, fired)
+
+
+def combine(w: Walk, signals: Tuple[str, ...], mode: str) -> Optional[float]:
+    """What a COMBINATION of signals would have banked on this trade.
+
+    The market does not repeat one behaviour, so a single trigger is one answer to every
+    question. Two modes, both asked for 2026-09-22:
+      "first"  — leave the whole trade on whichever of these signals fires first.
+      "half"   — bank HALF on the first signal and the rest on the second DIFFERENT one;
+                 if no second signal arrives, the other half rides to the real exit.
+    Returns None when nothing fired, which means the trade is unchanged.
+    """
+    hits = sorted((w.fired_at[s] for s in signals if s in w.fired_at), key=lambda x: x[0])
+    if not hits:
+        return None
+    if mode == "first":
+        return hits[0][1]
+    first = hits[0]
+    later = [h for h in hits if h[0] > first[0]]
+    second = later[0][1] if later else w.actual_r
+    return 0.5 * first[1] + 0.5 * second
 
 
 def _book(walks: List[Walk], rule: str) -> Tuple[float, float, float]:
     """Total R, worst drawdown of the closed-trade curve, and return per drawdown."""
     cum = peak = dd = total = 0.0
     for w in walks:
-        r = w.actual_r if rule == "hold" else w.by_rule.get(rule, w.actual_r)
+        if rule == "hold":
+            r = w.actual_r
+        elif rule in COMBOS:
+            sigs, mode = COMBOS[rule]
+            got = combine(w, sigs, mode)
+            r = w.actual_r if got is None else got
+        else:
+            r = w.by_rule.get(rule, w.actual_r)
         total += r
         cum += r
         peak = max(peak, cum)
@@ -413,7 +461,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     for tr, w in zip(trades, walks):
         dist = float(tr.stop_distance) or 1.0
         cost_r = (float(tr.costs_usd or 0.0) / float(tr.risk_usd)) if tr.risk_usd else 0.0
-        w.by_rule.update(walk_reversals(fdf, ftrack, tr, dist, cost_r))
+        rev = walk_reversals(fdf, ftrack, tr, dist, cost_r)
+        w.fired_at.update(rev)
+        w.by_rule.update({k: v[1] for k, v in rev.items()})
 
     reached = sum(1 for w in walks if w.peak_r >= 1)
     best_case = sum(w.peak_r for w in walks)
@@ -426,7 +476,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     rows = []
     for rule in _rules(peak_bands, giveback):
         total, dd, ratio = _book(walks, rule)
-        n = sum(1 for w in walks if rule in w.by_rule)
+        if rule in COMBOS:
+            n = sum(1 for w in walks if combine(w, *COMBOS[rule]) is not None)
+        else:
+            n = sum(1 for w in walks if rule in w.by_rule)
         rows.append((ratio, rule, total, dd, n))
     hold = [r for r in rows if r[1] == "hold"][0]
     for ratio, rule, total, dd, n in [hold] + sorted(

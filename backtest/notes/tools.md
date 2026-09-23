@@ -1680,3 +1680,20 @@ The first pass used the candlestick engine's Pine-mirroring defaults and called 
 - ⚠ **A rule that fires on 117 of 129 trades is not a signal, it is an early exit with a story.** Both level rules and the 1m candle rule are in that class: high ret/DD bought by halving the return.
 - ⚠ **A shift of structure IS a break of structure in the engine** (a shift is a break that also flips the trend), so "shift then break" collapses into "shift" unless the break is required on a LATER bar. It did collapse — identical columns, 9 fires each — until that was fixed. With it fixed the rule fires on 15 of 129 and scores below holding.
 - **The confluence version scores worse than either half**, because waiting for both arrives after the give-back has happened.
+
+### Combinations of signals, measured (2026-09-22)
+
+Asked for because "the market doesn't always behave the same way": exit on whichever of several signals fires FIRST, or bank HALF on the first and the rest on the second. Same 129 trades, reversal rules on 5m.
+
+| Rule | Total R | Worst DD | Ret/DD |
+|---|---|---|---|
+| bank half on a level rejected twice, rest on the give-back cap | 76.1 | 3.01 | 25.3 |
+| the give-back cap alone (keep half of a peak >= 1.5R) | 109.7 | 4.37 | 25.1 |
+| bank half on a 5m structure shift, rest on the cap | 95.1 | 4.50 | 21.1 |
+| leave on the first of cap / level | 38.6 | 2.13 | 18.2 |
+| leave on the first of cap / structure shift | 60.1 | 4.37 | 13.8 |
+| leave on the first of cap / big engulfing | 41.4 | 5.45 | 7.6 |
+
+- 🔴 **Combining does not add. The top two are a DEAD HEAT** — scale the half-bank rule up to the cap's 4.37R drawdown and it makes 110.5R against 109.7R, a gap far inside this book's run-to-run noise. Quoting 25.3 over 25.1 as a win would be reading a rounding difference.
+- 🔴 **"Leave on whichever fires first" is strictly worse than the cap alone, every time.** Adding a signal to an OR can only make the exit earlier, and earlier is what costs the runners: the cap's 109.7R falls to 60.1R with a structure shift ORed in and 38.6R with a level rejection.
+- **Banking HALF on a signal and keeping the cap for the rest is the only combining shape that holds its ground** — it neither helps nor hurts, and it is the shape to carry into the real replay, where freeing the position slot earlier can pay for itself.
