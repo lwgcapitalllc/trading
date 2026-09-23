@@ -117,6 +117,7 @@ class Walk:
     # rule -> (timestamp in ms the rule fired, R it would have banked). Two frames feed this,
     # so the TIME is the only axis both share — a bar index means different things on each.
     fired_at: Dict[str, Tuple[int, float]] = dataclasses.field(default_factory=dict)
+    peak_ms: int = 0  # when the trade topped out — the clock question
 
 
 def _load_bars(start: str, end: str):
@@ -332,9 +333,12 @@ def walk_trade(df, track, tr, peak_bands, giveback) -> Walk:
 
     fired: Dict[str, float] = {}
     peak_r = 0.0
+    peak_ms = 0
     for i in range(i0, i1 + 1):
         best = h[i] if d > 0 else lo[i]
-        peak_r = max(peak_r, (float(best) - entry) * d / dist)
+        here_peak = (float(best) - entry) * d / dist
+        if here_peak > peak_r:
+            peak_r, peak_ms = here_peak, int(stamps[i])
         t = track[i]
         # The exit price is the NEXT bar's open — the one-bar order delay. A rule that fires
         # on the last bar of the hold has nowhere to go and keeps what the trade made.
@@ -362,7 +366,9 @@ def walk_trade(df, track, tr, peak_bands, giveback) -> Walk:
             p = float(t["poc"])
             if (p - entry) * d > 0 and (p - here) * d <= 0:
                 fired["poc"] = (int(stamps[i]), r_at(nxt))
-    return Walk(float(tr.r), peak_r, {k: v[1] for k, v in fired.items()}, fired)
+    w = Walk(float(tr.r), peak_r, {k: v[1] for k, v in fired.items()}, fired)
+    w.peak_ms = peak_ms
+    return w
 
 
 def combine(w: Walk, signals: Tuple[str, ...], mode: str) -> Optional[float]:
@@ -403,6 +409,37 @@ def _book(walks: List[Walk], rule: str) -> Tuple[float, float, float]:
         peak = max(peak, cum)
         dd = max(dd, peak - cum)
     return total, dd, (total / dd if dd else float("inf"))
+
+
+def _hours(walks: List[Walk]) -> None:
+    """WHEN does a trade top out, and when does the give-back start?
+
+    Hours are NEW YORK, the clock this market is quoted against — never the machine's local
+    time, which would move the answer with whoever ran the tool.
+    """
+    import pandas as pd
+
+    rows = [w for w in walks if w.peak_r >= 1.5 and w.peak_ms]
+    if not rows:
+        return
+    peak_h: Dict[int, List[float]] = {}
+    fire_h: Dict[int, int] = {}
+    for w in rows:
+        # HALF-hour slots, not hours: Aaron names 8:15, 9:30 and 10:00 as separate moments,
+        # and an hourly bucket cannot tell those apart.
+        t = pd.Timestamp(w.peak_ms, unit="ms", tz="UTC").tz_convert("America/New_York")
+        peak_h.setdefault(t.hour * 2 + (t.minute >= 30), []).append(w.peak_r - w.actual_r)
+        hit = w.fired_at.get("give50@1.5R")
+        if hit:
+            ft = pd.Timestamp(hit[0], unit="ms", tz="UTC").tz_convert("America/New_York")
+            fk = ft.hour * 2 + (ft.minute >= 30)
+            fire_h[fk] = fire_h.get(fk, 0) + 1
+    print(f"\nWHEN {len(rows)} trades that reached 1.5R topped out (New York time)")
+    print("slot    topped out   gave back (R)   give-back rule fired")
+    for k in sorted(peak_h):
+        gb = peak_h[k]
+        h, m = divmod(k, 2)
+        print(f"{h:02d}:{m * 30:02d} {len(gb):11d} {sum(gb):14.1f} {fire_h.get(k, 0):20d}")
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -486,6 +523,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         [r for r in rows if r[1] != "hold"], key=lambda r: -r[0]
     ):
         print(f"{rule:<14} {total:8.1f}   {dd:8.2f}   {ratio:6.1f}   {n:4d}")
+    _hours(walks)
     print(
         "\n⚠ CHEAP MODE: one book, re-walked. An exit that frees the slot earlier gets no "
         "credit for the trade that would have queued behind it. Rank with this; decide with a "

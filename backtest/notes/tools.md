@@ -1697,3 +1697,72 @@ Asked for because "the market doesn't always behave the same way": exit on which
 - 🔴 **Combining does not add. The top two are a DEAD HEAT** — scale the half-bank rule up to the cap's 4.37R drawdown and it makes 110.5R against 109.7R, a gap far inside this book's run-to-run noise. Quoting 25.3 over 25.1 as a win would be reading a rounding difference.
 - 🔴 **"Leave on whichever fires first" is strictly worse than the cap alone, every time.** Adding a signal to an OR can only make the exit earlier, and earlier is what costs the runners: the cap's 109.7R falls to 60.1R with a structure shift ORed in and 38.6R with a level rejection.
 - **Banking HALF on a signal and keeping the cap for the rest is the only combining shape that holds its ground** — it neither helps nor hurts, and it is the shape to carry into the real replay, where freeing the position slot earlier can pay for itself.
+
+### 🔴 THE REPLAY REVERSED THE CHEAP-MODE RANKING (2026-09-22)
+
+Everything above is a RE-WALK of one stored book: one position at a time, each trade's own bars
+re-priced under a different exit rule. It cannot see the one thing that decides whether an earlier
+exit is worth anything — the trade that queues behind it in the single position slot. The same
+rules were then replayed for real (full strategy, `puprime_ecn` charged, 2020-01-01 → 2026-09-20,
+244 trades) and the ranking did not survive.
+
+| Give-back cap, replayed | Total R | Worst DD | Ret/DD |
+|---|---|---|---|
+| off (shipped settings) | 218.5 | 7.39 | **29.5** |
+| arm 1.5R, keep half, close | 161.0 | 5.89 | 27.3 |
+| arm 2R, keep half, close | 174.6 | 5.89 | 29.6 |
+| arm 2.5R, keep half, close | 208.4 | 5.89 | 35.4 |
+| arm 3R, keep half, close | 206.0 | 5.89 | 35.0 |
+| arm 3.5R, keep half, close | 204.5 | 5.89 | 34.7 |
+| arm 4R, keep half, close | 207.8 | **7.39** | 28.1 |
+| arm 2R, keep half, bank half and trail the rest | 178.1 | 6.97 | 25.5 |
+| arm 3R, keep half, bank half and trail the rest | 209.9 | 5.89 | 35.6 |
+| arm 2.5R, keep half, tighten to the runner trail | 216.7 | 5.89 | 36.8 |
+| arm 3R, keep half, tighten to the runner trail | 217.2 | 5.89 | **36.9** |
+| arm 3.5R, keep half, tighten to the runner trail | 217.2 | 5.89 | **36.9** |
+
+- 🔴 **The cheap mode's own top rule LOSES when replayed.** Arming at 1.5R scored 25.1 against
+  16.5 for holding in the table above, and replays at 27.3 against 29.5. The re-walk rewarded it
+  for a drawdown it cut by cutting the book, and never charged it for the trades it changed.
+- 🔴 **Use the re-walk to pick what to replay. Never to decide.** That was already written above as
+  a caution; this is the measurement that makes it a rule.
+- **What survives: TIGHTEN, never CUT.** At the same arming level all three actions cut the
+  drawdown identically and differ only in what they hand back — closing gives up 11.2R that
+  tightening keeps.
+- 🔴 **THE FLAT TOP IS ONE TRADE'S HIGH-WATER MARK, NOT ROBUSTNESS.** This bullet said "3R is
+  a narrow peak" before the neighbours were replayed, and both readings were wrong. Ret/DD is flat
+  across 2.5R–3.5R and falls off a cliff at both ends — 29.6 at 2R and **28.1 at 4R, with the
+  drawdown restored to the shipped 7.39R exactly**. The reason: the 2022-06-09 trade peaks at
+  **3.84R** and closes −0.23R shipped. Any arming level under 3.84R catches it (→ +1.52R) and ends
+  the 2022 drawdown stretch early; 4R never touches it. The flat region is the gap between that one
+  trade's peak and the level below which the guard starts eating runners, so it would move the
+  moment that trade does.
+- ⚠ **The whole drawdown gain is ONE stretch**: the shipped worst drawdown runs 2022-01-24 →
+  2022-07-14 and the guard ends it on 2022-03-07 at a level the shipped run also reaches. Eight
+  trades out of 244 move at all at the tighten setting.
+- ⚠ **Capture barely moves: 41.0% → 41.1%.** The guard is close to free at 3R. It is not an answer
+  to the give-back.
+
+### Entry times of day, measured (2026-09-22)
+
+Same replay, 244 trades, half-hour slots in New York time. Asked for because "high volume comes in
+in Asian session at eight, eight fifteen, sometimes nine, nine thirty, ten".
+
+| New York slot | Trades | Total R | Avg R | Win % |
+|---|---|---|---|---|
+| 09:00 | 13 | 49.7 | 3.83 | 54 |
+| 10:00 | 19 | 37.7 | 1.98 | 58 |
+| 08:30 | 16 | 24.4 | 1.53 | 69 |
+| 21:30 | 9 | 23.6 | 2.62 | 56 |
+| 13:00 | 3 | 15.4 | 5.15 | 67 |
+| 11:30 | 10 | −4.9 | −0.49 | 20 |
+| 12:00 | 7 | −3.7 | −0.53 | 14 |
+
+- **The Asian volume window is real but thin: 8pm–11pm New York is 23 trades, 33.5R, 1.46R average
+  against 0.84R for everything else.** The win rate is the same (57% against 54%) — the difference
+  is the SIZE of the winners, which is what a volume arrival would do.
+- **The morning block is where the book is made**: 08:30–10:30 is 63 trades and 119.1R, over half
+  the total from a quarter of the trades.
+- ⚠ **11:30–15:30 New York is 48 trades for +7.0R, and 15.4R of that is ONE trade** — without it,
+  45 trades for −8.4R. It looks like a dead zone and it is NOT yet a finding: refusing those entries
+  frees the position slot, and only a replay can price what queues behind them.
