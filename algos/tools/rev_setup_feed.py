@@ -52,6 +52,16 @@ for _p in (_ALGOS / "shared", _ALGOS / "live"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
+# ⚠ The messages carry icons and arrows, and this PRINTS each one it posts. The box's console is
+# cp1252, where one unencodable character raises mid-print — so a successful run would read as a
+# crash. Same trap `tools/verify_channel.py` documents; the message itself is UTF-8 to Telegram
+# either way, and only the console needs the belt.
+try:  # pragma: no cover - depends on the stream, not on the logic
+    sys.stdout.reconfigure(errors="replace")
+    sys.stderr.reconfigure(errors="replace")
+except Exception:  # noqa: BLE001
+    pass
+
 CONFIG = _ALGOS / "markets" / "fx" / "rev_feed.json"
 STATE_NAME = "rev_feed_state.json"
 
@@ -62,9 +72,9 @@ DAYS = 2
 #: The stages this publishes, and what each one is IN WORDS. Keys are `sos_fade/sequence.py`'s
 #: stage values; 1 (a liquidity sweep) is absent on purpose — see the module docstring.
 STAGES = {
-    2: "shift of structure confirmed - waiting for the retrace",
-    3: "retraced to the 50%",
-    4: "retraced to the 61.8% - in the entry zone",
+    2: "Shift of structure confirmed — waiting for the retrace",
+    3: "Retraced to the 50%",
+    4: "Retraced to the 61.8% — in the entry zone",
 }
 
 #: 🔴 THE WHITELIST. Per record kind, the ONLY fields that may be read into a published line.
@@ -241,6 +251,41 @@ def _px(value) -> str:
         return ""
 
 
+def _add_multiple(state: Dict[str, Any], side: str, price) -> str:
+    """ "0.32 x your first lot" for an add at `price`, or "" when it cannot be worked out.
+
+    🔴 **COMPUTED FROM THE PRICE THIS MESSAGE SHOWS, never from the bot's own lots**, and the
+    difference is a safety one. The bot's rule is
+
+        add = (profit the stop already locks in) / (what one more lot risks to that same stop)
+
+    and it sizes that on the arming bar's CLOSE, then fills at market on the next bar. On
+    2026-09-22 that gap was $11.42 the wrong way: it sized 0.47x against an estimate of 4332.00
+    and sold at 4320.58, where the same arithmetic allows only 0.32x. A student copying the bot's
+    multiple at the worse price would carry risk the locked profit does not cover — so this
+    publishes the multiple for the price in front of them.
+
+    ⚠ Capped at 0.5x, which is the bot's own per-add ceiling.
+
+    ⚠ `""` whenever the entry or the stop is unknown (the feed can start mid-trade) or the numbers
+    do not permit an add — a blank line beats a made-up multiple.
+    """
+    entry, stop = state.get("entry"), state.get("stop")
+    if entry is None or stop is None or not side:
+        return ""
+    try:
+        entry, stop, price = float(entry), float(stop), float(price)
+    except (TypeError, ValueError):
+        return ""
+    if side == "SHORT":
+        locked, risk = entry - stop, stop - price
+    else:
+        locked, risk = stop - entry, price - stop
+    if locked <= 0 or risk <= 0:
+        return ""  # the stop is not past the entry yet, so the bot's rule permits nothing
+    return f"{min(locked / risk, 0.5):.2f}× your first lot"
+
+
 def _lines_for(
     row: Dict[str, Any],
     state: Dict[str, Any],
@@ -250,15 +295,20 @@ def _lines_for(
 ) -> List[str]:
     """The message(s) this record produces, or `[]`. Reads ONLY `_pick`'s output.
 
-    `state` is updated in place for the stage cursors — a stage is published when it RISES, so the
-    last stage seen per side is part of the answer rather than something derived from the row.
+    The shape is `shared/alert_format.py`'s — `<icon> <LABEL> · <subject>`, then the facts grouped
+    under it, so this reads like every other message the suite sends rather than a fifth voice.
+    The user chose it over one- and two-line forms on 2026-09-23.
+
+    ⚠ `state` is updated in place: the stage cursors (a stage is published when it RISES), the
+    last stop line, and the entry and stop the add multiple is worked out from.
 
     `min_stop_move` is in the instrument's own price units; see the stop-move branch.
     """
     kind = _kind_of(row)
     f = _pick(row, kind)
     out: List[str] = []
-    head = f"{label} | {symbol}"
+    head = f"{label} · {symbol}"
+    arrow = {"LONG": "📈", "SHORT": "📉"}
 
     if kind == "bar":
         for side, stage_key, edge_key in (
@@ -272,29 +322,54 @@ def _lines_for(
             cursor_key = f"stage_{side.lower()}"
             was = int(state.get(cursor_key) or 0)
             state[cursor_key] = stage
-            if stage > was and stage in STAGES:
-                edge = _px(f.get(edge_key))
-                where = f" Potential entry {edge}." if edge else ""
-                out.append(f"{head} {side} | stage {stage} of 4: {STAGES[stage]}.{where}")
+            if stage <= was or stage not in STAGES:
+                continue
+            edge = f.get(edge_key)
+            if edge is not None:
+                # The setup's edge IS its entry price, so this doubles as the entry the add
+                # multiple is measured from when the feed never saw the fill itself — which is
+                # the ordinary case for a trade that opened before the feed's window.
+                state["entry"], state["side"] = edge, side
+            icon = "🎯" if stage == 4 else "👀"
+            lines = [
+                f"{icon} {head}",
+                f"{arrow.get(side, '')} {side} — {stage} of 4",
+                STAGES[stage],
+            ]
+            if edge is not None:
+                lines.append(f"Potential entry  {_px(edge)}")
+            out.append("\n".join(lines))
         return out
 
     if kind == "order_placed":
-        side, stop = _side(f.get("dir")), _px(f.get("stop"))
+        side, stop = _side(f.get("dir")), f.get("stop")
         # ⚠ For a MARKET order `price` is the ESTIMATE the size was computed from, not where it
         # filled — the bridge says so where it writes the record. Publishing the estimate as the
         # entry would be off by $11 on the real add of 2026-09-22 (4332.00 against 4320.58).
         at_market = bool(f.get("at_market"))
-        price = _px(f.get("fill_price")) if at_market else ""
-        price = price or _px(f.get("price"))
-        if not side or not price:
+        price = f.get("fill_price") if at_market else None
+        price = f.get("price") if price is None else price
+        if not side or price is None:
             return []
         intent = str(f.get("intent") or "primary")
         if intent == "add":
-            return [f"{head} {side} | ADDED at {price}." + (f" Stop {stop}." if stop else "")]
-        how = "Market order" if at_market else "Limit resting"
-        tail = f" Stop {stop}." if stop else ""
-        which = "" if intent in ("", "primary") else f" ({intent})"
-        return [f"{head} {side}{which} | {how} at {price}.{tail}"]
+            size = _add_multiple(state, side, price)
+            facts = f"Stop for everything  {_px(stop)}" if stop is not None else ""
+            if size:
+                facts = f"{facts} ·  {size}" if facts else f"Size:  {size}"
+            lines = [
+                f"➕ {head}",
+                f"{arrow.get(side, '')} Added to the SAME position at  {_px(price)}",
+            ]
+            return ["\n".join(lines + ([facts] if facts else []))]
+        if stop is not None:
+            state["stop"] = stop
+        state["entry"], state["side"] = price, side
+        how = "market order at" if at_market else "limit resting at"
+        lines = [f"🎯 {head}", f"{arrow.get(side, '')} {side} — {how}  {_px(price)}"]
+        if stop is not None:
+            lines.append(f"Stop  {_px(stop)}")
+        return ["\n".join(lines)]
 
     if kind == "stop_moved":
         was, now = f.get("was"), f.get("now")
@@ -304,12 +379,28 @@ def _lines_for(
         # 2026-09-22): seven stop moves, of 21.95, 11.77, 1.17, 0.09, 0.01, 0.07 and 0.13 — so a
         # $1 floor publishes the three that changed the trade and drops four that would have
         # pinged a class of students to tell them the stop moved by a cent.
+        state["stop"] = now
         try:
             if was is not None and abs(float(now) - float(was)) < float(min_stop_move):
                 return []
         except (TypeError, ValueError):
             pass
-        text = f"{head} | Stop moved {_px(was)} -> {_px(now)}."
+        lines = [f"🔒 {head}", f"Stop moved  {_px(was)} → {_px(now)}"]
+        # "Risk off" is stated only when it is TRUE — the stop is at or past the entry. And it
+        # says what it is rather than "cannot lose": price that GAPS through a stop fills past it,
+        # which is the one thing the bot's own scaling rule warns it does not protect against.
+        entry, side = state.get("entry"), state.get("side")
+        try:
+            if entry is not None and side:
+                past = float(now) <= float(entry) if side == "SHORT" else float(now) >= float(entry)
+                # Said ONCE, the first time it becomes true. Repeating it on every trail step
+                # turns the one line a student should act on into wallpaper.
+                if past and not state.get("risk_off_said"):
+                    state["risk_off_said"] = True
+                    lines.append("Risk off — the stop is now past the entry")
+        except (TypeError, ValueError):
+            pass
+        text = "\n".join(lines)
         # 🔴 One trail move writes ONE RECORD PER LEG. Seen on the real day of 2026-09-22: two
         # records at 07:45:02, the primary's and the scale-in's, both 4357.86 -> 4356.69 — and
         # the same sentence twice reads as the stop having moved twice. The legs are the bot's
@@ -320,41 +411,61 @@ def _lines_for(
         return [text]
 
     if kind == "trade_opened":
-        side, price, stop = _side(f.get("dir")), _px(f.get("price")), _px(f.get("stop"))
+        side, price, stop = _side(f.get("dir")), f.get("price"), f.get("stop")
+        state["entry"], state["side"] = price, side
+        if stop is not None:
+            state["stop"] = stop
         targets = [_px(f.get("tp1")), _px(f.get("tp2"))]
         targets = [t for t in targets if t and t != "0"]
-        tail = f" Targets {' / '.join(targets)}." if targets else ""
-        return [f"{head} {side} | IN at {price}. Stop {stop}.{tail}"]
+        lines = [f"{arrow.get(side, '✅')} {head}", f"{side} — IN at  {_px(price)}"]
+        if stop is not None:
+            lines.append(f"Stop  {_px(stop)}")
+        if targets:
+            lines.append(f"Targets  {'  /  '.join(targets)}")
+        return ["\n".join(lines)]
 
     if kind == "trade_closed":
-        price, reason = _px(f.get("price")), str(f.get("reason") or "").strip()
+        price, reason = f.get("price"), str(f.get("reason") or "").strip()
         r = f.get("r")
         try:
-            r_txt = f" {float(r):+.2f}R." if r is not None else ""
+            r_val = float(r) if r is not None else None
         except (TypeError, ValueError):
-            r_txt = ""
+            r_val = None
+        icon = "➖" if r_val is None or abs(r_val) < 0.05 else ("✅" if r_val > 0 else "❌")
         # "closed" is the generic reason the bridge writes when nothing more specific applies —
-        # real rows carry it (2026-09-22), and "OUT at 4356.86. closed." reads as a stutter.
-        why = f" {reason}." if reason and reason.lower() != "closed" else ""
-        return [f"{head} | OUT at {price}.{why}{r_txt}"]
+        # real rows carry it (2026-09-22), and "Out at 4356.86. closed." reads as a stutter.
+        tail = f"Out at  {_px(price)}"
+        if r_val is not None:
+            tail = f"{tail}   ·   {r_val:+.2f}R"
+        lines = [f"{icon} {head}", tail]
+        if reason and reason.lower() != "closed":
+            lines.append(reason[:1].upper() + reason[1:])
+        for key in ("entry", "stop", "side", "last_stop_line", "risk_off_said"):
+            state.pop(key, None)  # the trade is over; nothing after it may be measured from it
+        return ["\n".join(lines)]
 
     if kind == "blocked":
         reasons = f.get("reasons") or f.get("labels") or []
         if isinstance(reasons, str):
             reasons = [reasons]
         why = " ".join(str(r) for r in reasons) or "one of the bot's own rules"
-        edge = _px(f.get("edge"))
-        where = f" It would have entered at {edge}." if edge else ""
-        return [f"{head} {_side(f.get('dir'))} | Setup REFUSED: {why}{where}"]
+        side, edge = _side(f.get("dir")), f.get("edge")
+        lines = [f"🚫 {head}", f"{arrow.get(side, '')} {side} — setup refused by its own rule", why]
+        if edge is not None:
+            lines.append(f"It would have entered at  {_px(edge)}")
+        return ["\n".join(lines)]
 
     if kind == "missed":
         met, of = f.get("met"), f.get("of")
         reasons = f.get("reasons") or []
         if isinstance(reasons, str):
             reasons = [reasons]
-        why = f" {' '.join(str(r) for r in reasons)}" if reasons else ""
+        side = _side(f.get("dir"))
         count = f" at {met} of {of}" if met is not None and of is not None else ""
-        return [f"{head} {_side(f.get('dir'))} | Setup died{count}.{why}".rstrip()]
+        lines = [f"👋 {head}", f"{arrow.get(side, '')} {side} — setup died{count}, no trade"]
+        if reasons:
+            lines.append(" ".join(str(r) for r in reasons))
+        return ["\n".join(lines)]
 
     return []
 

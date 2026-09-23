@@ -775,14 +775,37 @@ false`. It reads the bot's `decisions-YYYY-MM-DD.jsonl` and renders its own line
   duplicate — caught by its own test, not in production.
 - ⚠ A run that cannot run says so in the HEALTH room, never in the student channel.
 
-What a real day renders (2026-09-22, eight messages):
+**The shape is `shared/alert_format.py`'s** — `<icon> <LABEL> · <subject>`, then the facts grouped
+under it — chosen by the user on 2026-09-23 over one- and two-line forms, and previewed in the
+channel before anything was switched on. A real day (2026-09-22) renders as eight messages:
 
-    REV SETUP | XAUUSD SHORT | stage 3 of 4: retraced to the 50%. Potential entry 4369.93.
-    REV SETUP | XAUUSD SHORT | stage 4 of 4: retraced to the 61.8% - in the entry zone. ...
-    REV SETUP | XAUUSD | Stop moved 4391.88 -> 4369.63.
-    REV SETUP | XAUUSD SHORT | ADDED at 4320.58. Stop 4357.86.
-    REV SETUP | XAUUSD | OUT at 4356.86. +0.59R.
+    👀 REV SETUP · XAUUSD          🔒 REV SETUP · XAUUSD
+    📉 SHORT — 3 of 4              Stop moved  4391.88 → 4369.63
+    Retraced to the 50%            Risk off — the stop is now past the entry
+    Potential entry  4369.93
+                                   ➕ REV SETUP · XAUUSD
+    🎯 REV SETUP · XAUUSD          📉 Added to the SAME position at  4320.58
+    📉 SHORT — 4 of 4              Stop for everything  4357.86 ·  0.32× your first lot
+    Retraced to the 61.8% —
+    in the entry zone              ✅ REV SETUP · XAUUSD
+    Potential entry  4369.93       Out at  4356.86   ·   +0.59R
 
-Still open: the scheduled task on the box (it runs on demand until then), and the `enabled` flag.
+- 🔴 **THE ADD MULTIPLE IS WORKED OUT FROM THE PRICE THE MESSAGE SHOWS, and that is a safety
+  decision.** The bot's rule is (profit the stop already locks in) / (what one more lot risks to
+  that same stop), sized on the arming bar's CLOSE and then filled at market. On 2026-09-22 the
+  gap was $11.42 the wrong way: it sized 0.47x against 4332.00 and sold at 4320.58, where the same
+  arithmetic allows 0.32x — so its add risked 6.34 price-units × lots against 4.47 of locked
+  profit, and the "worst case flat" guarantee did not hold on that fill. A student copying the
+  bot's multiple at the worse price would be carrying the same uncovered risk, so the feed
+  publishes the multiple for the price in front of them, capped at the bot's own 0.5x.
+  ⚠ **Worth passing to Aaron: the trigger-to-fill gap can break the affordability guarantee on a
+  Trail add.** His own config note already warns the market rule carries that gap; this is a
+  measured instance of it. Not touched.
+- The user chose "just the multiple" in the message, with the method in a pinned channel post.
+- "Risk off" is said ONCE per trade, and says what is true ("the stop is now past the entry")
+  rather than "cannot lose" — price that gaps through a stop fills past it.
+
+Still open: the scheduled task on the box (it runs on demand until then), the `enabled` flag, and
+the pinned post explaining the add sizing.
 
 Tests: `algos/tests/test_rev_setup_feed.py` (18; five mutations watched RED, listed in its docstring).

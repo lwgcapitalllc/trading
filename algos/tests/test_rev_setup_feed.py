@@ -11,14 +11,17 @@ position sizing, and his balance by arithmetic, to a class. The feed therefore r
 fields per record, and `test_no_account_number_can_ever_reach_the_channel` feeds records stuffed
 with money and asserts not one of those digits appears in any rendered line.
 
-**Watched RED (2026-09-23), five mutations, each reddening only its own test:**
+**Watched RED (2026-09-23), seven mutations, each reddening only its own test:**
 - adding `"lots"` to the `trade_opened` whitelist and rendering it -> the money test, and the
   whitelist test beside it;
 - publishing a stage whenever it is in `STAGES` rather than when it RISES -> the stage test
   (it would announce the same stage on every bar for hours);
 - advancing the cursor past a send that failed -> the retry test;
 - dropping the minimum stop move -> the cosmetic-nudge test;
-- dropping the repeat guard -> the one-message-per-trail-move test.
+- dropping the repeat guard -> the one-message-per-trail-move test;
+- sizing a student's add off the bot's own estimate rather than the fill the message shows ->
+  the add-multiple test (it would publish 0.47x where the price in front of them allows 0.32x);
+- repeating "risk off" on every trail step -> the said-once test.
 
 ⚠ **The retry test earned its keep.** The first version rolled back only the line cursor after a
 failed send, leaving the stage and last-stop cursors ahead — so the retried run suppressed the very
@@ -198,11 +201,13 @@ def test_a_stage_is_published_when_it_RISES_and_not_on_every_bar(tmp_path, monke
     feed.run(config_path=_cfg(tmp_path))
     texts = [t for _, t, _ in sent]
     assert len(texts) == 3
-    assert "stage 2 of 4" in texts[0] and "shift of structure" in texts[0]
-    assert "stage 3 of 4" in texts[1] and "50%" in texts[1]
-    assert "stage 4 of 4" in texts[2] and "61.8%" in texts[2]
-    assert all("Potential entry 4369.93" in t for t in texts)
-    assert all("REV SETUP | XAUUSD SHORT" in t for t in texts)
+    assert texts[0].startswith("\U0001f440 REV SETUP \u00b7 XAUUSD")
+    assert "SHORT \u2014 2 of 4" in texts[0] and "Shift of structure" in texts[0]
+    assert "SHORT \u2014 3 of 4" in texts[1] and "50%" in texts[1]
+    assert "SHORT \u2014 4 of 4" in texts[2] and "61.8%" in texts[2]
+    # Stage 4 is the one a student acts on, so it gets the entry-zone icon rather than the eyes.
+    assert texts[2].startswith("\U0001f3af REV SETUP")
+    assert all("Potential entry  4369.93" in t for t in texts)
 
 
 def test_a_liquidity_sweep_alone_is_never_published(tmp_path, monkeypatch):
@@ -234,10 +239,11 @@ def test_each_kind_of_record_says_what_the_bot_DID(tmp_path, monkeypatch):
     sent = _posted(monkeypatch)
     feed.run(config_path=_cfg(tmp_path))
     texts = [t for _, t, _ in sent]
-    assert "LONG | Limit resting at 4300.5. Stop 4290." in texts[0]
-    assert "Stop moved 4290 -> 4300.5." in texts[1]
-    assert "Setup REFUSED: Final-hour rule" in texts[2] and "4369.93" in texts[2]
-    assert "Setup died at 2 of 3." in texts[3]
+    assert "LONG \u2014 limit resting at  4300.5" in texts[0] and "Stop  4290" in texts[0]
+    assert "Stop moved  4290 \u2192 4300.5" in texts[1]
+    assert "refused by its own rule" in texts[2] and "Final-hour rule" in texts[2]
+    assert "It would have entered at  4369.93" in texts[2]
+    assert "setup died at 2 of 3, no trade" in texts[3]
 
 
 def test_a_cosmetic_stop_nudge_is_not_published(tmp_path, monkeypatch):
@@ -258,7 +264,7 @@ def test_a_cosmetic_stop_nudge_is_not_published(tmp_path, monkeypatch):
     feed.run(config_path=_cfg(tmp_path, min_stop_move=1.0))
     texts = [t for _, t, _ in sent]
     assert len(texts) == 2
-    assert "4391.88 -> 4369.63" in texts[0] and "4356.86 -> 4357.9" in texts[1]
+    assert "4391.88 \u2192 4369.63" in texts[0] and "4356.86 \u2192 4357.9" in texts[1]
 
 
 def test_one_trail_move_is_one_message_even_though_each_leg_records_it(tmp_path, monkeypatch):
@@ -276,7 +282,7 @@ def test_one_trail_move_is_one_message_even_though_each_leg_records_it(tmp_path,
     monkeypatch.setattr(feed, "_ledger_dir", lambda bot: d)
     sent = _posted(monkeypatch)
     feed.run(config_path=_cfg(tmp_path))
-    assert len(sent) == 1 and "4357.86 -> 4356.69" in sent[0][1]
+    assert len(sent) == 1 and "4357.86 \u2192 4356.69" in sent[0][1]
 
 
 def test_a_market_add_publishes_where_it_FILLED_not_the_estimate(tmp_path, monkeypatch):
@@ -302,7 +308,83 @@ def test_a_market_add_publishes_where_it_FILLED_not_the_estimate(tmp_path, monke
     sent = _posted(monkeypatch)
     feed.run(config_path=_cfg(tmp_path))
     text = sent[0][1]
-    assert "ADDED at 4320.58" in text and "4332" not in text and "0.17" not in text
+    assert "Added to the SAME position at  4320.58" in text
+    assert "4332" not in text and "0.17" not in text
+
+
+def test_the_add_multiple_is_worked_out_from_the_price_the_message_SHOWS(tmp_path, monkeypatch):
+    """🔴 A SAFETY PROPERTY, not a cosmetic one, and the real rows are what exposed it.
+
+    The bot sizes an add on the arming bar's close and then fills at market. On 2026-09-22 it
+    sized 0.47x against an estimate of 4332.00 and sold at 4320.58 — where the same arithmetic
+    allows only 0.32x. A student adding at the price in front of them and copying the bot's
+    multiple would carry risk the locked profit does not cover.
+
+    MUTATION: pass `f.get("price")` to `_add_multiple` instead of the fill -> red (0.47x).
+    """
+    rows = [
+        {"kind": "bar", "s_stage": 4, "short_edge": 4369.93},
+        {"kind": "event", "event": "stop_moved", "was": 4391.88, "now": 4357.8588199999995},
+        {
+            "kind": "event",
+            "event": "order_placed",
+            "dir": -1,
+            "intent": "add",
+            "price": 4332.0,
+            "fill_price": 4320.58,
+            "at_market": True,
+            "stop": 4357.8588199999995,
+            "lots": 0.17,
+        },
+    ]
+    d = _ledger(tmp_path, *rows)
+    monkeypatch.setattr(feed, "_ledger_dir", lambda bot: d)
+    sent = _posted(monkeypatch)
+    feed.run(config_path=_cfg(tmp_path))
+    add = sent[-1][1]
+    assert "0.32× your first lot" in add and "0.47" not in add
+
+
+def test_no_multiple_is_offered_when_the_stop_is_not_past_the_entry(tmp_path, monkeypatch):
+    """The bot's rule permits nothing until the stop locks in profit, so there is no number to
+    publish — and a blank beats a made-up one."""
+    rows = [
+        {"kind": "bar", "s_stage": 4, "short_edge": 4369.93},
+        {
+            "kind": "event",
+            "event": "order_placed",
+            "dir": -1,
+            "intent": "add",
+            "price": 4340.0,
+            "fill_price": 4340.0,
+            "at_market": True,
+            "stop": 4380.0,
+        },
+    ]
+    d = _ledger(tmp_path, *rows)
+    monkeypatch.setattr(feed, "_ledger_dir", lambda bot: d)
+    sent = _posted(monkeypatch)
+    feed.run(config_path=_cfg(tmp_path))
+    assert "your first lot" not in sent[-1][1]
+
+
+def test_risk_off_is_said_ONCE_per_trade(tmp_path, monkeypatch):
+    """Three trail steps, one "risk off". Repeating it on every step turns the one line a student
+    should act on into wallpaper.
+
+    MUTATION: drop the `risk_off_said` guard -> red (three times).
+    """
+    rows = [
+        {"kind": "bar", "s_stage": 4, "short_edge": 4369.93},
+        {"kind": "event", "event": "stop_moved", "was": 4391.88, "now": 4369.63},
+        {"kind": "event", "event": "stop_moved", "was": 4369.63, "now": 4357.86},
+        {"kind": "event", "event": "stop_moved", "was": 4357.86, "now": 4350.0},
+    ]
+    d = _ledger(tmp_path, *rows)
+    monkeypatch.setattr(feed, "_ledger_dir", lambda bot: d)
+    sent = _posted(monkeypatch)
+    feed.run(config_path=_cfg(tmp_path))
+    assert sum("Risk off" in t for _, t, _ in sent) == 1
 
 
 def test_a_generic_close_reason_is_not_repeated_back(tmp_path, monkeypatch):
@@ -334,8 +416,9 @@ def test_a_generic_close_reason_is_not_repeated_back(tmp_path, monkeypatch):
     monkeypatch.setattr(feed, "_ledger_dir", lambda bot: d)
     sent = _posted(monkeypatch)
     feed.run(config_path=_cfg(tmp_path))
-    assert sent[0][1].endswith("OUT at 4356.86. +0.59R.")
-    assert sent[1][1].endswith("OUT at 4400. stop. -1.00R.")
+    assert "Out at  4356.86   \u00b7   +0.59R" in sent[0][1] and "closed" not in sent[0][1]
+    assert "Out at  4400   \u00b7   -1.00R" in sent[1][1] and sent[1][1].endswith("Stop")
+    assert sent[0][1].startswith("\u2705") and sent[1][1].startswith("\u274c")
 
 
 def test_an_unknown_record_renders_nothing(tmp_path, monkeypatch):
@@ -393,7 +476,7 @@ def test_a_second_run_publishes_only_what_is_new(tmp_path, monkeypatch):
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps({"kind": "bar", "s_stage": 3, "short_edge": 4369.93}) + "\n")
     feed.run(config_path=cfg)
-    assert len(sent) == 2 and "stage 3 of 4" in sent[1][1]
+    assert len(sent) == 2 and "3 of 4" in sent[1][1]
 
 
 def test_a_send_that_fails_is_RETRIED_rather_than_lost(tmp_path, monkeypatch):
