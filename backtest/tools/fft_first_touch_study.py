@@ -1629,6 +1629,202 @@ def v1_costed(t, rH, rL, profile, tgt_key):
     )
 
 
+def sniper_costed(t, rH, rL, profile, tgt_key, x=0.10):
+    """A SNIPER limit through PU Prime ECN — the cost the ledger recorded as owed.
+
+    The sniper's stop is the zone's own width (~$1), not the 61.8-to-1.0 distance (~$6-16), so the
+    same $0.14 of spread and commission that is under 0.01R on version 1 is a tenth of R here. That
+    is the whole reason this function exists: the cost-free sniper rows are the best per-trade
+    numbers in the ledger and nobody had ever priced them.
+
+    Bid charts, the same convention as `v1_costed`:
+      * a BUY limit needs the ASK at the level, so the BID must trade (x + spread) through it;
+      * a SELL limit fills when the BID reaches the level, so it needs x through — and its stop and
+        target trigger one spread EARLY, because they are hit on the ask.
+    R is the planned risk: the zone's near edge to its far edge. A gap-through open is dropped, as
+    version 1 drops it, so the two rows stay comparable.
+    """
+    from backtest.reprice import rollovers_between
+
+    lv, d = t["lv"], t["d"]
+    sp = profile.spread
+    entry, stop, tgt = t["near"], t["far"], lv[tgt_key]
+    if t["open_fill"]:
+        return None
+    risk = abs(entry - stop)
+    if risk <= 0:
+        return None
+    if d == 1:
+        j = through_fill(rH, rL, t["m"], d, entry, x + sp, lv["TP1"], False)
+        if j is None:
+            return "nofill"
+        r = walk(rH, rL, j, d, stop, tgt, False)
+    else:
+        j = through_fill(rH, rL, t["m"], d, entry, x, lv["TP1"], False)
+        if j is None:
+            return "nofill"
+        r = walk(rH, rL, j, d, stop - sp, tgt - sp, False)
+    if r is None:
+        return None
+    gross = abs(tgt - entry) / risk if r[0] else -1.0
+    comm = 2 * profile.commission_per_side_per_lot / profile.contract_size
+
+    def ms(i):
+        return int(pd.Timestamp(_T1[i]).tz_localize("UTC").value // 10**6)
+
+    swap = sum(
+        profile.swap.charge(d, 1.0, day) / profile.contract_size
+        for day in rollovers_between(ms(j), ms(r[2]), 17)
+    )
+    return dict(
+        gross=gross,
+        net=gross + (swap - comm) / risk,
+        cost=(comm - swap) / risk,
+        win=r[0],
+        risk=risk,
+        payout=abs(tgt - entry) / risk,
+    )
+
+
+SNIPER_MODELS = (
+    # label, gate — every one of these is an EXISTING row in notes/fft_ledger.md's
+    # "Profitable in BOTH windows" table. Nothing here is a new search: costs can only
+    # subtract, so pricing a row that was already chosen adds no multiple-comparison problem.
+    (
+        "overlap 61.8-88.6, <=1 BOS",
+        lambda t: gated(t, max_bos=1) and t["pos_near"] <= 0.886 and t["pos_far"] >= 0.618,
+    ),
+    (
+        "overlap 61.8-88.6, 0 BOS",
+        lambda t: gated(t, max_bos=0) and t["pos_near"] <= 0.886 and t["pos_far"] >= 0.618,
+    ),
+    ("zone at 0.702-0.786, any BOS", lambda t: gated(t) and 0.702 <= t["pos_near"] < 0.786),
+)
+
+SCHDR = (
+    f"  {'model / target':<36} {'n':>4} {'win%':>6} {'payR':>6} {'freeR':>7} {'costR':>7} "
+    f"{'totR':>8} {'stop$':>6} {'cost/R':>7} {'b/e':>6}"
+)
+
+
+def _sniper_cost_cell(snipes, rH, rL, profile, keep, tgt_key, x):
+    free, net, risks, costs, wins, nofill = [], [], [], [], 0, 0
+    payouts = []
+    for t in snipes:
+        if not keep(t):
+            continue
+        r = sniper_costed(t, rH, rL, profile, tgt_key, x)
+        if r == "nofill":
+            nofill += 1
+            continue
+        if r is None:
+            continue
+        free.append(r["gross"])
+        net.append(r["net"])
+        risks.append(r["risk"])
+        costs.append(r["cost"])
+        payouts.append(r["payout"])
+        wins += bool(r["win"])
+    if not net:
+        return None
+    n = len(net)
+    pay = float(np.median(payouts))
+    return dict(
+        n=n,
+        win=wins / n,
+        pay=pay,
+        free=float(np.mean(free)),
+        net=float(np.mean(net)),
+        tot=float(np.sum(net)),
+        stop=float(np.median(risks)),
+        costR=float(np.median(costs)),
+        be=1.0 / (1.0 + pay),
+        nofill=nofill,
+    )
+
+
+def _scfmt(label, c):
+    if c is None:
+        return f"  {label:<36} {'-':>4}"
+    return (
+        f"  {label:<36} {c['n']:>4} {100 * c['win']:>5.1f}% {c['pay']:>6.2f} {c['free']:>+7.3f} "
+        f"{c['net']:>+7.3f} {c['tot']:>+8.1f} {c['stop']:>6.2f} {c['costR']:>7.3f} "
+        f"{100 * c['be']:>5.1f}%"
+    )
+
+
+def sniper_costs_report(recent, x=0.10):
+    """The sniper entry through real PU Prime ECN costs — the measurement the ledger called owed.
+
+    ⚠ **Version 1 is printed on the SAME basis in every window as the control**, because the only
+    question worth asking is whether the sniper beats the model that is already shipped. Its own
+    cost-free number is printed beside its costed one so the size of the haircut is visible rather
+    than inferred.
+    """
+    global _T1
+    from backtest.fills import PROFILES
+
+    profile = PROFILES["puprime_ecn"]
+    print(
+        f"\nSNIPER ENTRY THROUGH REAL COSTS — PU Prime ECN, gold, ${x:.2f} through the level\n"
+        f"spread {profile.spread}/oz, commission ${profile.commission_per_side_per_lot}/side/lot, "
+        f"swap per 17:00 NY rollover\n"
+        f"payR = the median payout in R if it wins · b/e = the win rate that pays nothing · "
+        f"cost/R = the median cost as a share of one R"
+    )
+    windows = [("2020-01 -> 2025-08", "2020-01-01", "2025-09-01"), ("recent year", *recent)]
+    for name, a, b in windows:
+        touches, snipes, raw, _ = run(a, b)
+        _T1 = raw.index.to_numpy()
+        rH, rL = raw["high"].to_numpy(), raw["low"].to_numpy()
+        print(f"\n=== {name} ===")
+        print(SCHDR)
+
+        # the control: version 1 exactly as shipped, on this same window and cost model
+        for tgt in ("TP1", "TP2"):
+            free, net, risks, costs, wins = [], [], [], [], 0
+            for t in touches:
+                if not (t["kind"] == "first" and gated(t, max_bos=0)):
+                    continue
+                r = v1_costed(t, rH, rL, profile, tgt)
+                if r in (None, "nofill"):
+                    continue
+                free.append(r["gross"])
+                net.append(r["net"])
+                risks.append(r["risk"])
+                costs.append(r["cost"])
+                wins += bool(r["win"])
+            if net:
+                n = len(net)
+                pay = (
+                    float(np.median([f for f in free if f > 0]))
+                    if any(f > 0 for f in free)
+                    else 0.0
+                )
+                print(
+                    _scfmt(
+                        f"VERSION 1 (shipped) / {tgt}",
+                        dict(
+                            n=n,
+                            win=wins / n,
+                            pay=pay,
+                            free=float(np.mean(free)),
+                            net=float(np.mean(net)),
+                            tot=float(np.sum(net)),
+                            stop=float(np.median(risks)),
+                            costR=float(np.median(costs)),
+                            be=1.0 / (1.0 + pay) if pay else 0.0,
+                            nofill=0,
+                        ),
+                    )
+                )
+        print(f"  {'-' * 100}")
+        for label, keep in SNIPER_MODELS:
+            for tgt in ("TP1", "TP2"):
+                c = _sniper_cost_cell(snipes, rH, rL, profile, keep, tgt, x)
+                print(_scfmt(f"{label} / {tgt}", c))
+
+
 _T1 = None  # the 1m clock of the last run, for v1_costed's swap dates
 
 
@@ -1858,6 +2054,11 @@ def main():
         help="dollars price must trade through a limit to fill it (0 = the touch)",
     )
     ap.add_argument(
+        "--sniper-costs",
+        action="store_true",
+        help="the sniper entry through real PU Prime ECN costs (2026-09-23)",
+    )
+    ap.add_argument(
         "--holdout", action="store_true", help="the ONE run of the frozen claim on 2018-19"
     )
     a = ap.parse_args()
@@ -1875,6 +2076,9 @@ def main():
         return
     if a.second_sweep:
         second_sweep_report(("2025-09-01", "2026-09-17"))
+        return
+    if a.sniper_costs:
+        sniper_costs_report(("2025-09-01", "2026-09-22"), a.through or 0.10)
         return
     if a.v1:
         global SYMBOL

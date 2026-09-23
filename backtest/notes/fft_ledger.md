@@ -476,6 +476,59 @@ swept setups at 2x (+44.92R, return/DD 7.0, barely below the shipped 1.5x's 7.2)
 touch when flat (~+21%) — which reaches roughly 54R, the ~53R the $100,390 solo figure needs, and
 lands drawdown near 33% against the extreme leg's 27.72%. **There is no free route to it.**
 
+## The sniper entry through REAL costs — the owed measurement, and it is a NO (2026-09-23)
+
+⚠ **RE-WRITTEN 2026-09-23 after being lost.** This section was written once and disappeared from the
+file — a merge landed between it and the next edit, and the later sections went on top of a reverted
+copy. It was never committed, so there was nothing to recover; the numbers below are the same run's.
+**The lesson is the ordinary one: an uncommitted note in a shared clone is not a record.**
+
+`backtest/tools/fft_first_touch_study.py --sniper-costs`. This file had carried "Costs are still
+owed: on a ~$1 sniper stop the spread alone is ~0.1R per trade" since 2026-09-21. Now measured, and
+**the estimate was low by half.**
+
+**The gate is trustworthy because the control reproduces.** Version 1 runs in every window on the
+same cost model and lands on this file's own published figures to three decimals — 2020-25: 152
+trades, 71.1%, +0.149R cost-free → **+0.140R costed, +21.3R**; recent year: 29 trades, +0.172R →
+**+0.165R, +4.8R**.
+
+**And the cost-free baseline reconciles.** On the identical 237 trades `walk()` and `managed()` agree
+exactly — both +0.364R, 26.6% win, +86.2R, **0 sign disagreements** — matching this file's +0.36R
+row. The sniper's cost-free edge was never overstated; what follows is a cost, not a correction.
+
+PU Prime ECN, gold, $0.10 through the level, TP2, one position at a time:
+
+| | 2020-01 → 2025-08 | recent year |
+|---|---|---|
+| **version 1 (shipped), costed** | 152 / +0.140R / **+21.3R** | 29 / +0.165R / **+4.8R** |
+| sniper overlap 61.8-88.6, ≤1 BOS | 228 / +0.133R / +30.3R | 55 / **+0.048R** / +2.6R |
+| sniper overlap 61.8-88.6, 0 BOS | 110 / +0.227R / +25.0R | 30 / **−0.236R** / −7.1R |
+| sniper zone at 0.702-0.786, any BOS | 106 / −0.016R / −1.7R | 18 / +0.491R / +8.8R |
+
+🔴 **THE SPREAD COSTS THE SNIPER 0.21R A TRADE, NOT 0.1R.** Cost-free +0.364R → costed +0.133R on the
+≤1 BOS model. **Almost none of it is commission** (median 0.018R — $0.02/oz round turn over a $1.12
+median zone). It is the FILL: a buy limit needs the ASK at the level, so the bid must trade one spread
+further through it, and a sell's stop and target both trigger one spread early on the bid. On a $1.12
+stop a $0.12 spread is 10.7% of R, and it turns winners into losers — the win rate falls 26.6% →
+24.1%, which on a ~4R payout is most of the damage. **A cost that moves the WIN RATE cannot be
+subtracted from avgR afterwards**, which is exactly why the earlier estimate missed.
+
+**Verdict — the sniper does not replace version 1 and does not reach the dollar target.**
+
+- ≤1 BOS earns **+0.133R against version 1's +0.140R** in dev — the same edge per trade, from 50% more
+  trades. It reaches +30.3R vs +21.3R on VOLUME, not on quality.
+- In the recent year its edge collapses to **+0.048R while version 1 holds +0.165R**: double the
+  trades for half the total R. That is the window that matters, and it fails there.
+- 0 BOS looked best in dev (+0.227R) and is **negative in the recent year** (−0.236R). A model that
+  flips sign is not a model.
+- The 0.702-0.786 zone is negative in dev and positive on 18 recent trades — the wrong way round to
+  believe, and the smaller sample is the positive one.
+
+⚠ **This prices rows ALREADY chosen in the table above; it is not a new search.** Costs can only
+subtract, so no luck bar is owed — and equally, none of these rows gets a second chance on a cheaper
+basis. The $0.10-through rule and the bid-chart spread are independent effects (queue position vs
+bid/ask), so stacking them is right rather than double-counting.
+
 ## What drawdown each dollar target costs — the exact ladder (2026-09-23)
 
 The user asked what drawdown reaches the extreme leg's solo **$100,390**. Answered exactly, not
