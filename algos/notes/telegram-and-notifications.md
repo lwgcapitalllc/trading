@@ -793,14 +793,32 @@ LIVE."* So the feed renders his four lines with his label and no live/demo tag:
 - **"n of 3" counts the same three confluences the bot counts** — the arm, the shift of structure,
   and the retrace zone being tagged — so a student reading both rooms sees one scale. The four
   internal STAGES are not exposed.
-- 🔴 **TWO FIELDS OF HIS MESSAGE CANNOT BE RENDERED FROM THE RECORDS, and the gap is the whole
-  answer to "can I have exactly that".** His `Sweep · Day Low` names the swept LEVEL and his
-  `Zone 4,251.87 – 4,308.23` is the fib's 0.5–0.886 band; both live only in the setup snapshot
-  (`sos_fade/execution.py::_setup_context` → `Confluence`/`zone`), which nothing writes down. A
-  bar record carries the arm SOURCE, the stage, the entry edge and the projected stop, so the feed
-  says `Sweep` without the level and `Entry … · stop …` instead of the band. Closing that gap
-  needs ONE line in the bot recording each snapshot (`ledger.event("setup", …)`) — his file, and
-  frozen, so it also needs a promote. Not touched.
+- ✅ **THE SETUPS ARE NOW WRITTEN DOWN, and that closed the gap** (the user's call, same day:
+  *"You can take the snapshot lines it's fine"*). `runner._record_setups` writes one `setup` row
+  per live setup per bar — the confluence details in the strategy's own words (the swept level's
+  NAME lives nowhere else), the tradeable band, the projected stop, and what is refusing or pausing
+  it. Before this the signals room's message was the only copy in existence: nothing on disk held
+  that a setup had happened at all. It reads through `live_setups()`, never `drain_setups()`, so
+  the alert layer is still the one that clears the terminal snapshots and a thread keeps its
+  closing message. Tests: `algos/tests/test_setup_records.py` (6, three mutations watched RED).
+  ⚠ **`algos/live` is frozen into each bot's snapshot, so a bot writes these only after its next
+  promote** — until then the feed falls back to the per-bar stages, and it stands down again
+  automatically once snapshot rows appear (a day's grace, so the fallback self-heals if a promote
+  ever goes back).
+- **With the rows, the feed renders his message exactly**, which is the shape he asked for:
+
+        👀 SETUP FORMING · LONG          👀 SETUP FORMING · LONG
+        SOS Fade · LIVE · XAUUSD.p ·     REV · XAUUSD · 2 of 3
+        2 of 3                           Sweep · Day Low · SOS confirmed ·
+        Sweep · Day Low · SOS            not tagged yet
+        confirmed · not tagged yet       Zone 4,251.87 – 4,308.23 ·
+        Zone 4,251.87 – 4,308.23 ·       stop 4,251.87
+        stop 4,251.87
+        (the trading room)               (MPC Signals)
+
+  One message per CHANGE rather than per bar, and a FILLED snapshot is not announced at all — the
+  trade record already carries the fill at the price the broker gave, and two "ENTERED" messages
+  for one trade is the "two claims about one setup" failure.
 - ⚠ **The whitelist is the only route a value has, and that bit twice in one hour**: the first
   render of this shape said "SOS confirmed" with no "Sweep" beside it, and showed no stop, because
   `l_arm_src`/`s_arm_src`/`stop` were not on the `bar` list. Add the field to `_RENDER` when the

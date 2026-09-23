@@ -271,6 +271,41 @@ def position_summary(positions, *, risk_ticket=None, risk_usd=None) -> dict | No
     }
 
 
+def _setup_row(snap) -> dict:
+    """One `SetupSnapshot` as flat, JSON-safe fields for the decision stream.
+
+    🔴 **The confluence DETAIL is the whole point.** "Sweep · Day Low" is the only place the swept
+    level's NAME exists anywhere outside the message itself, and `zone` the only place the
+    tradeable band does — so each confluence is recorded as `[name, met, detail]` rather than
+    reduced to a count. `met` / `of` are kept beside them because they are what a reader quotes.
+
+    ⚠ **Nothing here is derived from an ACCOUNT** — prices, levels, rule names and flags only.
+    The snapshot has no lot size and no risk in money to begin with (the alert layer adds the lots
+    to its resting message from the bridge), which is what lets a student feed publish these rows
+    as they are. See `tools/rev_setup_feed.py`.
+
+    ⚠ Lists, not tuples: this is written with `json.dumps`, where a tuple becomes a list anyway,
+    so the row reads the same on the way back in.
+    """
+    return {
+        "setup_key": snap.key,
+        "strategy": snap.strategy,
+        "side": snap.side,
+        "state": snap.state,
+        "met": snap.met,
+        "of": snap.of,
+        "confluences": [[c.name, bool(c.met), c.detail] for c in snap.confluences],
+        "zone": list(snap.zone) if snap.zone else None,
+        "entry": snap.entry,
+        "stop": snap.stop,
+        "targets": list(snap.targets),
+        "blocked_by": list(snap.blocked_by),
+        "paused_by": list(snap.paused_by),
+        "reason": snap.reason,
+        "tradeable": snap.tradeable,
+    }
+
+
 def _handle_signal(signum, frame):
     global _stop_requested
     _stop_requested = True
@@ -2935,11 +2970,51 @@ class LiveRunner:
             # AFTER the strategy has stepped — the resting order is rebuilt inside
             # `execution.step`, so reading it any earlier reports last bar's price beside this
             # bar's confluences.
+            #
+            # ⚠ The RECORD goes first and reads without clearing, so the alert layer below is
+            # still the one that drains. Both are reporting and neither may break the bar.
+            self._record_setups()
             if self.setup_alerts is not None:
                 self.setup_alerts.on_bar(self.strategy)
 
         if self.bridge.state is BridgeState.HALTED:
             self.log.error("Bridge halted — the loop will keep observing but place nothing.")
+
+    def _record_setups(self) -> None:
+        """Write this bar's setup snapshots to the DECISION stream, one row each. Never raises.
+
+        🔴 **Why (the user's call, 2026-09-23): the setups were the one thing this box announced
+        and never wrote down.** The signals room got `Sweep · Day Low · SOS confirmed · not tagged
+        yet` and the zone band, and thirty seconds later that message was the only copy in
+        existence — nothing on disk held which level was swept, what the band was, or that the
+        setup had happened at all. The student feed that renders the same content
+        (`tools/rev_setup_feed.py`), any audit of how many setups became trades, and any later
+        study of refusals all need a record that did not exist.
+
+        ⚠ **`live_setups()`, never `drain_setups()`.** Draining clears the terminal snapshots and
+        the alert layer one line below must be the one that does it — clearing here would take a
+        thread's closing message away from the room it belongs to.
+
+        ⚠ **One row per live setup per bar, deliberately.** A "has it changed" filter here would
+        be this file's opinion about what a CHANGE is, which is the consumer's question: the feed
+        dedupes for a human reader, and an audit wants every bar. The cost is one JSON line per
+        live setup per bar, beside the `bar` row already written.
+
+        ⚠ **Reporting only.** It runs in the bar loop's `finally` next to the alert call, so it
+        follows the same rule: a recorder that can break the bar stream is worse than a missing
+        line. A strategy that does not implement the contract records nothing and says nothing —
+        the startup banner already names that state.
+        """
+        try:
+            from backtest.setups import implements_contract
+
+            ex = getattr(self.strategy, "execution", self.strategy)
+            if not implements_contract(ex):
+                return
+            for snap in ex.live_setups():
+                self.ledger.event("setup", **_setup_row(snap))
+        except Exception as e:  # noqa: BLE001 — see the docstring
+            self.log.warning(f"could not record this bar's setups: {e}")
 
     def _drain_records(self) -> None:
         """Write any blocked/missed setups the strategy recorded on this bar, then forget them —

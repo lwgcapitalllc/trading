@@ -222,6 +222,140 @@ def test_a_liquidity_sweep_alone_is_never_published(tmp_path, monkeypatch):
     assert sent == []
 
 
+# ── the snapshot rows: the bot's own message, word for word ──────────────────
+
+
+def _setup_row(**over):
+    """A snapshot row exactly as `runner._record_setups` writes one."""
+    row = {
+        "ts": "2026-09-23T14:05:00+00:00",
+        "kind": "event",
+        "event": "setup",
+        "setup_key": "sos_fade:long:5065",
+        "strategy": "SOS Fade",
+        "side": 1,
+        "state": "watching",
+        "met": 2,
+        "of": 3,
+        "confluences": [
+            ["Arm", True, "Sweep · Day Low"],
+            ["Shift of structure", True, "SOS confirmed"],
+            ["Retrace zone", False, "not tagged yet"],
+        ],
+        "zone": [4308.23, 4251.87],
+        "entry": None,
+        "stop": 4251.87,
+        "targets": [],
+        "blocked_by": [],
+        "paused_by": [],
+        "reason": "",
+        "tradeable": True,
+    }
+    row.update(over)
+    return row
+
+
+def test_a_snapshot_renders_the_message_the_user_ASKED_FOR(tmp_path, monkeypatch):
+    """🔴 The whole point of recording snapshots. He pasted the trading room's message and asked
+    for the same information with his own label and no live/demo tag; this is that message.
+
+    MUTATION: drop `confluences` or `zone` from the `setup` whitelist -> red.
+    """
+    d = _ledger(tmp_path, _setup_row())
+    monkeypatch.setattr(feed, "_ledger_dir", lambda bot: d)
+    sent = _posted(monkeypatch)
+    feed.run(config_path=_cfg(tmp_path, label="REV"))
+    assert sent[0][1] == (
+        "\U0001f440 SETUP FORMING · LONG\n"
+        "REV · XAUUSD · 2 of 3\n"
+        "Sweep · Day Low · SOS confirmed · not tagged yet\n"
+        "Zone 4,251.87 – 4,308.23 · stop 4,251.87"
+    )
+
+
+def test_a_snapshot_is_published_ONCE_per_change_not_once_per_bar(tmp_path, monkeypatch):
+    """The bot writes a row every bar a setup is alive — 40 rows for one setup is ordinary.
+
+    MUTATION: drop the signature check -> red.
+    """
+    rows = [
+        _setup_row(),
+        _setup_row(),
+        _setup_row(met=3, state="resting", entry=4308.23),
+        _setup_row(met=3, state="resting", entry=4308.23),
+    ]
+    d = _ledger(tmp_path, *rows)
+    monkeypatch.setattr(feed, "_ledger_dir", lambda bot: d)
+    sent = _posted(monkeypatch)
+    feed.run(config_path=_cfg(tmp_path))
+    texts = [t for _, t, _ in sent]
+    assert len(texts) == 2
+    assert texts[1].startswith("\U0001f3af BUY LIMIT RESTING · LONG")
+    assert "Entry 4,308.23 · stop 4,251.87" in texts[1]
+
+
+def test_a_refused_setup_names_the_rule(tmp_path, monkeypatch):
+    d = _ledger(tmp_path, _setup_row(blocked_by=["Final hour (16:00-18:00 New York)"]))
+    monkeypatch.setattr(feed, "_ledger_dir", lambda bot: d)
+    sent = _posted(monkeypatch)
+    feed.run(config_path=_cfg(tmp_path))
+    assert sent[0][1].startswith("\U0001f6ab BLOCKED · LONG")
+    assert "Refused by: Final hour" in sent[0][1]
+
+
+def test_a_FILLED_snapshot_is_not_announced_because_the_trade_record_already_does(
+    tmp_path, monkeypatch
+):
+    """🔴 Two "ENTERED" messages for one trade is the "two claims about one setup" failure. The
+    trade record carries the price the BROKER gave; the snapshot only knows the order's."""
+    d = _ledger(
+        tmp_path,
+        _setup_row(state="filled", met=3, entry=4308.23),
+        {"kind": "trade", "event": "opened", "dir": "LONG", "price": 4308.5, "stop": 4251.87},
+    )
+    monkeypatch.setattr(feed, "_ledger_dir", lambda bot: d)
+    sent = _posted(monkeypatch)
+    feed.run(config_path=_cfg(tmp_path))
+    texts = [t for _, t, _ in sent]
+    assert len(texts) == 1 and texts[0].startswith("\U0001f4c8 ENTERED")
+    assert "4,308.50" in texts[0]
+
+
+def test_the_stage_fallback_STANDS_DOWN_while_snapshots_are_arriving(tmp_path, monkeypatch):
+    """Both paths describe the same forming setup, so running both announces everything twice.
+    The snapshot wins — it has the level name and the band.
+
+    MUTATION: drop the `setup_day` check in the `bar` branch -> red.
+    """
+    from datetime import datetime, timezone
+
+    today = datetime.now(timezone.utc).isoformat()
+    d = _ledger(
+        tmp_path,
+        _setup_row(ts=today),
+        {"kind": "bar", "s_stage": 3, "short_edge": 4369.93, "s_arm_src": "SWP"},
+        {"kind": "bar", "l_stage": 4, "long_edge": 4300.0, "l_arm_src": "SWP"},
+    )
+    monkeypatch.setattr(feed, "_ledger_dir", lambda bot: d)
+    sent = _posted(monkeypatch)
+    feed.run(config_path=_cfg(tmp_path))
+    assert len(sent) == 1 and "SETUP FORMING" in sent[0][1]
+
+
+def test_the_stage_fallback_COMES_BACK_if_the_snapshots_stop(tmp_path, monkeypatch):
+    """Self-healing, deliberately: a bot promoted back to code that records no snapshots must
+    start announcing stages again within a day rather than going quiet for good."""
+    d = _ledger(
+        tmp_path,
+        _setup_row(ts="2026-01-01T00:00:00+00:00"),  # long out of the feed's two-day window
+        {"kind": "bar", "s_stage": 3, "short_edge": 4369.93, "s_arm_src": "SWP"},
+    )
+    monkeypatch.setattr(feed, "_ledger_dir", lambda bot: d)
+    sent = _posted(monkeypatch)
+    feed.run(config_path=_cfg(tmp_path))
+    assert any("tagged the 50%" in t for _, t, _ in sent)
+
+
 # ── the rest of the bot's own behaviour ──────────────────────────────────────
 
 

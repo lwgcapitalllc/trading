@@ -13,16 +13,20 @@ messages at all: it reads the bot's RECORDS and renders its own lines from a WHI
 per event (`_RENDER`). A field nobody listed cannot reach the channel, which is the safe direction:
 a new field added to a record tomorrow is silently left out rather than silently published.
 
-⚠ **It reads records, not the alert layer, and that is why it needs no promote.** The bot writes
-`decisions-YYYY-MM-DD.jsonl` as it runs; `algos/shared` is frozen into each bot's deployed
-snapshot, so anything added to the bot's own messaging would not reach a running bot until it was
-promoted again. This is a separate process reading files that are already there.
+⚠ **It reads records, not the alert layer.** The bot writes `decisions-YYYY-MM-DD.jsonl` as it
+runs, so this is a separate process reading files that are already there and nothing here has to
+be promoted. ⚠ **The bot's SETUP rows are the exception**: `runner._record_setups` writes them and
+`algos/live` is frozen into each bot's snapshot, so a bot promoted before 2026-09-23 writes none
+and this falls back to the stages below until it is promoted again.
 
-⚠ **The forming half comes from the per-bar records, which is the part that looks surprising.**
-A bar record carries each side's stage (`l_stage` / `s_stage`, 0-4 — `sos_fade/sequence.py`), so a
-stage RISING is the "a setup is forming" event, with no cooperation needed from anything else.
-Stage 1 is a liquidity sweep and is deliberately NOT published: it happens constantly and a
-channel that pings all day is one students mute before the day it matters.
+⚠ **The forming half has two sources and the better one wins.** A SETUP row is the bot's own
+snapshot — the confluence details in the strategy's own words ("Sweep · Day Low"), the tradeable
+band, what is refusing it — which is the message the user asked for. When those rows stop arriving
+the feed falls back to the per-bar stages: a bar record carries each side's stage (`l_stage` /
+`s_stage`, 0-4 — `sos_fade/sequence.py`), so a stage RISING is a "setup forming" event with no
+cooperation needed from anything. Stage 1 is a liquidity sweep and is deliberately NOT published:
+it happens constantly and a channel that pings all day is one students mute before the day it
+matters.
 
 ⚠ **Every run records that it ran** (`last_run_utc` in the state file) and a run that CRASHES says
 so in the health room, once per cause. Most runs have nothing to publish, so silence is the normal
@@ -93,6 +97,21 @@ _RENDER = {
     "bar": ("l_stage", "s_stage", "long_edge", "short_edge", "l_arm_src", "s_arm_src", "stop"),
     "order_placed": ("dir", "intent", "price", "stop", "at_market", "fill_price"),
     "stop_moved": ("was", "now"),
+    # The SNAPSHOT row (`runner._record_setups`, 2026-09-23) — the only record that holds the
+    # swept level's name (inside a confluence's detail) and the tradeable band.
+    "setup": (
+        "setup_key",
+        "side",
+        "state",
+        "met",
+        "of",
+        "confluences",
+        "zone",
+        "entry",
+        "stop",
+        "blocked_by",
+        "reason",
+    ),
     "trade_opened": ("dir", "symbol", "price", "stop", "tp1", "tp2", "intent"),
     "trade_closed": ("dir", "price", "r", "reason", "intent"),
     "blocked": ("dir", "edge", "reasons", "labels"),
@@ -319,6 +338,13 @@ def _confluences(arm_src: str, stage: int) -> Tuple[str, int]:
     return " · ".join(p for p in parts if p), met
 
 
+def _recent_days() -> set:
+    """The UTC dates the feed reads files for — used to decide whether the snapshot rows are
+    still arriving, see the `bar` branch."""
+    today = datetime.now(timezone.utc).date()
+    return {str(today - timedelta(days=n)) for n in range(DAYS)}
+
+
 def _lines_for(
     row: Dict[str, Any],
     state: Dict[str, Any],
@@ -349,11 +375,19 @@ def _lines_for(
     out: List[str] = []
     arrow = {"LONG": "📈", "SHORT": "📉"}
 
-    def head(side: str, met: Optional[int] = None) -> str:
-        n = f" · {met} of 3" if met else ""
+    def head(side: str, met: Optional[int] = None, of: int = 3) -> str:
+        n = f" · {met} of {of}" if met else ""
         return f"{label} · {symbol}{n}"
 
     if kind == "bar":
+        # 🔴 **The snapshot rows win outright when the bot is writing them.** They carry the swept
+        # level's NAME and the tradeable band; the stage read below is the fallback that was built
+        # before the bot recorded anything, and running both would announce every setup twice.
+        # ⚠ It self-heals: the flag holds the DAY a snapshot row was last seen, so a bot promoted
+        # back to code that does not record them starts announcing stages again within a day
+        # rather than going quiet for good.
+        if str(state.get("setup_day") or "") in _recent_days():
+            return []
         for side, stage_key, edge_key, src_key in (
             ("LONG", "l_stage", "long_edge", "l_arm_src"),
             ("SHORT", "s_stage", "short_edge", "s_arm_src"),
@@ -388,6 +422,79 @@ def _lines_for(
                 lines.append(" · ".join(prices))
             out.append("\n".join(lines))
         return out
+
+    if kind == "setup":
+        # 🔴 **The bot's own message, from the bot's own snapshot** — the confluence DETAILS in the
+        # strategy's wording ("Sweep · Day Low"), the tradeable band, and what is refusing it. The
+        # alert layer prints the details and drops the names, so this does the same; a name like
+        # "Arm" means nothing to a student.
+        side = "LONG" if int(f.get("side") or 0) > 0 else "SHORT"
+        st = str(f.get("state") or "")
+        blocked = [str(b) for b in (f.get("blocked_by") or [])]
+        details = [str(c[2] or c[0]) for c in (f.get("confluences") or []) if isinstance(c, list)]
+        met, of = f.get("met"), f.get("of")
+        entry, stop, zone = f.get("entry"), f.get("stop"), f.get("zone")
+        # ⚠ FILLED is deliberately NOT announced here: the trade record announces the fill with
+        # the price the broker actually gave, and two "ENTERED" messages for one trade is the
+        # "two claims about one setup" failure the alert layer already warns about.
+        if st == "filled":
+            state["setup_day"] = str(row.get("ts") or "")[:10]
+            return []
+        if blocked:
+            title, icon = "BLOCKED", "🚫"
+        elif st == "dead":
+            title, icon = "NO TRADE", "👋"
+        elif st == "resting":
+            title = f"{'BUY' if side == 'LONG' else 'SELL'} LIMIT RESTING"
+            icon = "🎯"
+        else:
+            title, icon = "SETUP FORMING", "👀"
+        # One message per CHANGE, not per bar: the bot records a row every bar a setup is alive.
+        sig = (
+            str(f.get("setup_key")),
+            title,
+            met,
+            tuple(details),
+            tuple(blocked),
+            _money(entry),
+            _money(stop),
+        )
+        seen = state.get("setup_sig") or {}
+        if seen.get(str(f.get("setup_key"))) == list(sig):
+            state["setup_day"] = str(row.get("ts") or "")[:10]
+            return []
+        # Keyed by setup, and pruned: a key per setup for the life of the file would grow without
+        # bound in a file that is read and written every minute.
+        seen = {k: v for k, v in list(seen.items())[-20:]}
+        seen[str(f.get("setup_key"))] = list(sig)
+        state["setup_sig"] = seen
+        # The DAY a snapshot row was last seen — what tells the `bar` branch to stand down.
+        state["setup_day"] = str(row.get("ts") or "")[:10]
+        state["side"] = side
+        if entry is not None:
+            state["entry"] = entry
+        if stop is not None:
+            state["stop"] = stop
+
+        lines = [f"{icon} {title} · {side}", head(side, met, int(of or 3))]
+        if details:
+            lines.append(" · ".join(details))
+        if blocked:
+            lines.append("Refused by: " + " · ".join(blocked))
+        prices = []
+        if entry is not None:
+            prices.append(f"Entry {_money(entry)}")
+        elif isinstance(zone, list) and len(zone) == 2 and all(z is not None for z in zone):
+            lo, hi = sorted(float(z) for z in zone)
+            prices.append(f"Zone {_money(lo)} – {_money(hi)}")
+        if stop is not None:
+            prices.append(f"stop {_money(stop)}")
+        if prices:
+            lines.append(" · ".join(prices))
+        reason = str(f.get("reason") or "").strip()
+        if st == "dead" and reason:
+            lines.append(reason[:1].upper() + reason[1:])
+        return ["\n".join(lines)]
 
     if kind == "order_placed":
         side, stop = _side(f.get("dir")), f.get("stop")
