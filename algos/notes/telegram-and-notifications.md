@@ -775,21 +775,36 @@ false`. It reads the bot's `decisions-YYYY-MM-DD.jsonl` and renders its own line
   duplicate — caught by its own test, not in production.
 - ⚠ A run that cannot run says so in the HEALTH room, never in the student channel.
 
-**The shape is `shared/alert_format.py`'s** — `<icon> <LABEL> · <subject>`, then the facts grouped
-under it — chosen by the user on 2026-09-23 over one- and two-line forms, and previewed in the
-channel before anything was switched on. A real day (2026-09-22) renders as eight messages:
+**The shape is the bot's OWN signals-room shape**, which the user asked for by pasting a real
+message (2026-09-23) — *"basically i want these info and format… Just keep mines as REV and remove
+LIVE."* So the feed renders his four lines with his label and no live/demo tag:
 
-    👀 REV SETUP · XAUUSD          🔒 REV SETUP · XAUUSD
-    📉 SHORT — 3 of 4              Stop moved  4391.88 → 4369.63
-    Retraced to the 50%            Risk off — the stop is now past the entry
-    Potential entry  4369.93
-                                   ➕ REV SETUP · XAUUSD
-    🎯 REV SETUP · XAUUSD          📉 Added to the SAME position at  4320.58
-    📉 SHORT — 4 of 4              Stop for everything  4357.86 ·  0.32× your first lot
-    Retraced to the 61.8% —
-    in the entry zone              ✅ REV SETUP · XAUUSD
-    Potential entry  4369.93       Out at  4356.86   ·   +0.59R
+    👀 SETUP FORMING · SHORT          ➕ ADDED TO THE SAME POSITION · SHORT
+    REV · XAUUSD · 3 of 3             REV · XAUUSD
+    Sweep · SOS confirmed ·           Added at 4,320.58 · one stop for it all 4,357.86
+    tagged the 50%                    Your add: 0.32× your first lot
+    Entry 4,369.93 · stop 4,391.88
+                                      ✅ CLOSED · SHORT
+    🔒 STOP MOVED · SHORT             REV · XAUUSD
+    REV · XAUUSD                      Out at 4,356.86 · +0.59R
+    4,391.88 → 4,369.63
+    Risk off — the stop is now past the entry
 
+- **"n of 3" counts the same three confluences the bot counts** — the arm, the shift of structure,
+  and the retrace zone being tagged — so a student reading both rooms sees one scale. The four
+  internal STAGES are not exposed.
+- 🔴 **TWO FIELDS OF HIS MESSAGE CANNOT BE RENDERED FROM THE RECORDS, and the gap is the whole
+  answer to "can I have exactly that".** His `Sweep · Day Low` names the swept LEVEL and his
+  `Zone 4,251.87 – 4,308.23` is the fib's 0.5–0.886 band; both live only in the setup snapshot
+  (`sos_fade/execution.py::_setup_context` → `Confluence`/`zone`), which nothing writes down. A
+  bar record carries the arm SOURCE, the stage, the entry edge and the projected stop, so the feed
+  says `Sweep` without the level and `Entry … · stop …` instead of the band. Closing that gap
+  needs ONE line in the bot recording each snapshot (`ledger.event("setup", …)`) — his file, and
+  frozen, so it also needs a promote. Not touched.
+- ⚠ **The whitelist is the only route a value has, and that bit twice in one hour**: the first
+  render of this shape said "SOS confirmed" with no "Sweep" beside it, and showed no stop, because
+  `l_arm_src`/`s_arm_src`/`stop` were not on the `bar` list. Add the field to `_RENDER` when the
+  message starts showing it.
 - 🔴 **THE ADD MULTIPLE IS WORKED OUT FROM THE PRICE THE MESSAGE SHOWS, and that is a safety
   decision.** The bot's rule is (profit the stop already locks in) / (what one more lot risks to
   that same stop), sized on the arming bar's CLOSE and then filled at market. On 2026-09-22 the

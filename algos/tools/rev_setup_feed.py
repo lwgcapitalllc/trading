@@ -87,7 +87,10 @@ STAGES = {
 #: (`trade_opened` records `dir` and `trade_closed` records `r`, not `direction`/`r_multiple` —
 #: guessing those names is what the first run of this tool got wrong).
 _RENDER = {
-    "bar": ("l_stage", "s_stage", "long_edge", "short_edge"),
+    # ⚠ The arm source and the projected stop are on this list because the message SHOWS them —
+    # the whitelist is the only route a value has, and leaving them off is exactly why the first
+    # render of the bot's own shape said "SOS confirmed" with no "Sweep" beside it.
+    "bar": ("l_stage", "s_stage", "long_edge", "short_edge", "l_arm_src", "s_arm_src", "stop"),
     "order_placed": ("dir", "intent", "price", "stop", "at_market", "fill_price"),
     "stop_moved": ("was", "now"),
     "trade_opened": ("dir", "symbol", "price", "stop", "tp1", "tp2", "intent"),
@@ -286,6 +289,36 @@ def _add_multiple(state: Dict[str, Any], side: str, price) -> str:
     return f"{min(locked / risk, 0.5):.2f}× your first lot"
 
 
+def _money(value) -> str:
+    """`4,369.93` — two places and thousands separated, the way every other message in the suite
+    prints a price. `""` when there is no number to print."""
+    try:
+        return f"{float(value):,.2f}"
+    except (TypeError, ValueError):
+        return ""
+
+
+def _confluences(arm_src: str, stage: int) -> Tuple[str, int]:
+    """The confluence line, from what the RECORDS hold.
+
+    🔴 **It is deliberately SHORTER than the bot's own message and the gap is worth naming.** The
+    bot says `Sweep · Day Low · SOS confirmed · not tagged yet` because it is reading a setup
+    snapshot that carries the swept level's NAME, whether a fair-value gap is live in the zone, and
+    the whole 0.5-0.886 band. None of that reaches the decision records — a bar record carries the
+    arm SOURCE, the stage, the entry edge and the stop, and nothing else. So this says what it can
+    prove and never invents the rest; the level name and the band need one line in the bot itself
+    (`notes/telegram-and-notifications.md` → the REV SETUP feed).
+    """
+    arm = {"SWP": "Sweep", "DIV": "RSI divergence"}.get(str(arm_src or "").upper(), "")
+    tagged = {2: "not tagged yet", 3: "tagged the 50%", 4: "tagged the 61.8%"}.get(stage, "")
+    parts = [arm, "SOS confirmed" if stage >= 2 else "", tagged]
+    # ⚠ "n of 3" counts the SAME three things the bot's own message counts — the arm, the shift
+    # of structure, and the retrace zone being tagged — so a student reading both sees one scale
+    # rather than two. The bot's four internal STAGES are not exposed as "of 4".
+    met = (1 if arm else 0) + (1 if stage >= 2 else 0) + (1 if stage >= 3 else 0)
+    return " · ".join(p for p in parts if p), met
+
+
 def _lines_for(
     row: Dict[str, Any],
     state: Dict[str, Any],
@@ -295,25 +328,35 @@ def _lines_for(
 ) -> List[str]:
     """The message(s) this record produces, or `[]`. Reads ONLY `_pick`'s output.
 
-    The shape is `shared/alert_format.py`'s — `<icon> <LABEL> · <subject>`, then the facts grouped
-    under it, so this reads like every other message the suite sends rather than a fifth voice.
-    The user chose it over one- and two-line forms on 2026-09-23.
+    **The shape is the one the bot's own signals room uses** (`live/alerts.py`), which the user
+    asked for by pasting a real message on 2026-09-23:
 
-    ⚠ `state` is updated in place: the stage cursors (a stage is published when it RISES), the
-    last stop line, and the entry and stop the add multiple is worked out from.
+        <icon> <STATE> · <SIDE>
+        <label> · <symbol> · <n> of 4
+        <the confluences, joined>
+        <the prices>
+
+    with his own label in place of the strategy name and no live/demo tag — *"Just keep mines as
+    REV and remove LIVE."*
+
+    ⚠ `state` is updated in place: each side's last stage (a stage is published when it RISES),
+    the last stop line, and the entry, stop and side the add multiple is worked out from.
 
     `min_stop_move` is in the instrument's own price units; see the stop-move branch.
     """
     kind = _kind_of(row)
     f = _pick(row, kind)
     out: List[str] = []
-    head = f"{label} · {symbol}"
     arrow = {"LONG": "📈", "SHORT": "📉"}
 
+    def head(side: str, met: Optional[int] = None) -> str:
+        n = f" · {met} of 3" if met else ""
+        return f"{label} · {symbol}{n}"
+
     if kind == "bar":
-        for side, stage_key, edge_key in (
-            ("LONG", "l_stage", "long_edge"),
-            ("SHORT", "s_stage", "short_edge"),
+        for side, stage_key, edge_key, src_key in (
+            ("LONG", "l_stage", "long_edge", "l_arm_src"),
+            ("SHORT", "s_stage", "short_edge", "s_arm_src"),
         ):
             try:
                 stage = int(f.get(stage_key) or 0)
@@ -324,20 +367,25 @@ def _lines_for(
             state[cursor_key] = stage
             if stage <= was or stage not in STAGES:
                 continue
-            edge = f.get(edge_key)
+            edge, stop = f.get(edge_key), f.get("stop")
             if edge is not None:
                 # The setup's edge IS its entry price, so this doubles as the entry the add
                 # multiple is measured from when the feed never saw the fill itself — which is
                 # the ordinary case for a trade that opened before the feed's window.
                 state["entry"], state["side"] = edge, side
+            title = "ENTRY ZONE" if stage == 4 else "SETUP FORMING"
             icon = "🎯" if stage == 4 else "👀"
-            lines = [
-                f"{icon} {head}",
-                f"{arrow.get(side, '')} {side} — {stage} of 4",
-                STAGES[stage],
-            ]
+            conf, met = _confluences(f.get(src_key), stage)
+            lines = [f"{icon} {title} · {side}", head(side, met)]
+            if conf:
+                lines.append(conf)
+            prices = []
             if edge is not None:
-                lines.append(f"Potential entry  {_px(edge)}")
+                prices.append(f"Entry {_money(edge)}")
+            if stop is not None:
+                prices.append(f"stop {_money(stop)}")
+            if prices:
+                lines.append(" · ".join(prices))
             out.append("\n".join(lines))
         return out
 
@@ -354,21 +402,24 @@ def _lines_for(
         intent = str(f.get("intent") or "primary")
         if intent == "add":
             size = _add_multiple(state, side, price)
-            facts = f"Stop for everything  {_px(stop)}" if stop is not None else ""
+            lines = [f"➕ ADDED TO THE SAME POSITION · {side}", head(side)]
+            facts = [f"Added at {_money(price)}"]
+            if stop is not None:
+                facts.append(f"one stop for it all {_money(stop)}")
+            lines.append(" · ".join(facts))
             if size:
-                facts = f"{facts} ·  {size}" if facts else f"Size:  {size}"
-            lines = [
-                f"➕ {head}",
-                f"{arrow.get(side, '')} Added to the SAME position at  {_px(price)}",
-            ]
-            return ["\n".join(lines + ([facts] if facts else []))]
+                lines.append(f"Your add: {size}")
+            return ["\n".join(lines)]
         if stop is not None:
             state["stop"] = stop
         state["entry"], state["side"] = price, side
-        how = "market order at" if at_market else "limit resting at"
-        lines = [f"🎯 {head}", f"{arrow.get(side, '')} {side} — {how}  {_px(price)}"]
+        word = "BUY" if side == "LONG" else "SELL"
+        title = f"{word} MARKET ORDER" if at_market else f"{word} LIMIT RESTING"
+        lines = [f"🎯 {title} · {side}", head(side)]
+        facts = [f"Entry {_money(price)}"]
         if stop is not None:
-            lines.append(f"Stop  {_px(stop)}")
+            facts.append(f"stop {_money(stop)}")
+        lines.append(" · ".join(facts))
         return ["\n".join(lines)]
 
     if kind == "stop_moved":
@@ -385,11 +436,16 @@ def _lines_for(
                 return []
         except (TypeError, ValueError):
             pass
-        lines = [f"🔒 {head}", f"Stop moved  {_px(was)} → {_px(now)}"]
+        side = str(state.get("side") or "")
+        lines = [
+            f"🔒 STOP MOVED{f' · {side}' if side else ''}",
+            head(side),
+            f"{_money(was)} → {_money(now)}",
+        ]
         # "Risk off" is stated only when it is TRUE — the stop is at or past the entry. And it
         # says what it is rather than "cannot lose": price that GAPS through a stop fills past it,
         # which is the one thing the bot's own scaling rule warns it does not protect against.
-        entry, side = state.get("entry"), state.get("side")
+        entry = state.get("entry")
         try:
             if entry is not None and side:
                 past = float(now) <= float(entry) if side == "SHORT" else float(now) >= float(entry)
@@ -415,29 +471,33 @@ def _lines_for(
         state["entry"], state["side"] = price, side
         if stop is not None:
             state["stop"] = stop
-        targets = [_px(f.get("tp1")), _px(f.get("tp2"))]
-        targets = [t for t in targets if t and t != "0"]
-        lines = [f"{arrow.get(side, '✅')} {head}", f"{side} — IN at  {_px(price)}"]
+        lines = [f"{arrow.get(side, '🎯')} ENTERED · {side}", head(side)]
+        facts = [f"In at {_money(price)}"]
         if stop is not None:
-            lines.append(f"Stop  {_px(stop)}")
+            facts.append(f"stop {_money(stop)}")
+        lines.append(" · ".join(facts))
+        targets = [_money(f.get("tp1")), _money(f.get("tp2"))]
+        targets = [t for t in targets if t and t != "0.00"]
         if targets:
-            lines.append(f"Targets  {'  /  '.join(targets)}")
+            lines.append("Targets " + " · ".join(targets))
         return ["\n".join(lines)]
 
     if kind == "trade_closed":
         price, reason = f.get("price"), str(f.get("reason") or "").strip()
+        side = _side(f.get("dir")) or str(state.get("side") or "")
         r = f.get("r")
         try:
             r_val = float(r) if r is not None else None
         except (TypeError, ValueError):
             r_val = None
         icon = "➖" if r_val is None or abs(r_val) < 0.05 else ("✅" if r_val > 0 else "❌")
-        # "closed" is the generic reason the bridge writes when nothing more specific applies —
-        # real rows carry it (2026-09-22), and "Out at 4356.86. closed." reads as a stutter.
-        tail = f"Out at  {_px(price)}"
+        lines = [f"{icon} CLOSED{f' · {side}' if side else ''}", head(side)]
+        facts = [f"Out at {_money(price)}"]
         if r_val is not None:
-            tail = f"{tail}   ·   {r_val:+.2f}R"
-        lines = [f"{icon} {head}", tail]
+            facts.append(f"{r_val:+.2f}R")
+        lines.append(" · ".join(facts))
+        # "closed" is the generic reason the bridge writes when nothing more specific applies —
+        # real rows carry it (2026-09-22), and repeating it reads as a stutter.
         if reason and reason.lower() != "closed":
             lines.append(reason[:1].upper() + reason[1:])
         for key in ("entry", "stop", "side", "last_stop_line", "risk_off_said"):
@@ -450,9 +510,9 @@ def _lines_for(
             reasons = [reasons]
         why = " ".join(str(r) for r in reasons) or "one of the bot's own rules"
         side, edge = _side(f.get("dir")), f.get("edge")
-        lines = [f"🚫 {head}", f"{arrow.get(side, '')} {side} — setup refused by its own rule", why]
+        lines = [f"🚫 BLOCKED · {side}", head(side), why]
         if edge is not None:
-            lines.append(f"It would have entered at  {_px(edge)}")
+            lines.append(f"It would have entered at {_money(edge)}")
         return ["\n".join(lines)]
 
     if kind == "missed":
@@ -460,9 +520,14 @@ def _lines_for(
         reasons = f.get("reasons") or []
         if isinstance(reasons, str):
             reasons = [reasons]
-        side = _side(f.get("dir"))
-        count = f" at {met} of {of}" if met is not None and of is not None else ""
-        lines = [f"👋 {head}", f"{arrow.get(side, '')} {side} — setup died{count}, no trade"]
+        side, edge = _side(f.get("dir")), f.get("edge")
+        lines = [f"👋 NO TRADE · {side}", head(side)]
+        died = "Setup died"
+        if met is not None and of is not None:
+            died += f" at {met} of {of}"
+        if edge is not None:
+            died += f" · entry was {_money(edge)}"
+        lines.append(died)
         if reasons:
             lines.append(" ".join(str(r) for r in reasons))
         return ["\n".join(lines)]

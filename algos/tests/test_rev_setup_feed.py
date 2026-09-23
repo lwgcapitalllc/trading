@@ -153,7 +153,7 @@ def test_no_account_number_can_ever_reach_the_channel(tmp_path, monkeypatch):
     assert blob, "nothing was rendered, so this test proved nothing"
     for forbidden in ("0.24", "545", "123", "365501068", "5.0%", "$"):
         assert forbidden not in blob, f"{forbidden!r} reached the channel: {blob}"
-    assert "4369.93" in blob and "4391.88" in blob and "+0.62R" in blob
+    assert "4,369.93" in blob and "4,391.88" in blob and "+0.62R" in blob
 
 
 def test_the_whitelist_itself_names_no_money_field():
@@ -188,11 +188,11 @@ def test_a_stage_is_published_when_it_RISES_and_not_on_every_bar(tmp_path, monke
     MUTATION: publish whenever `stage in STAGES` -> red.
     """
     rows = [
-        {"kind": "bar", "s_stage": 2, "short_edge": 4369.93},
-        {"kind": "bar", "s_stage": 2, "short_edge": 4369.93},
-        {"kind": "bar", "s_stage": 3, "short_edge": 4369.93},
-        {"kind": "bar", "s_stage": 3, "short_edge": 4369.93},
-        {"kind": "bar", "s_stage": 4, "short_edge": 4369.93},
+        {"kind": "bar", "s_stage": 2, "short_edge": 4369.93, "s_arm_src": "SWP"},
+        {"kind": "bar", "s_stage": 2, "short_edge": 4369.93, "s_arm_src": "SWP"},
+        {"kind": "bar", "s_stage": 3, "short_edge": 4369.93, "s_arm_src": "SWP"},
+        {"kind": "bar", "s_stage": 3, "short_edge": 4369.93, "s_arm_src": "SWP"},
+        {"kind": "bar", "s_stage": 4, "short_edge": 4369.93, "s_arm_src": "SWP"},
         {"kind": "bar", "s_stage": 0},
     ]
     d = _ledger(tmp_path, *rows)
@@ -201,13 +201,16 @@ def test_a_stage_is_published_when_it_RISES_and_not_on_every_bar(tmp_path, monke
     feed.run(config_path=_cfg(tmp_path))
     texts = [t for _, t, _ in sent]
     assert len(texts) == 3
-    assert texts[0].startswith("\U0001f440 REV SETUP \u00b7 XAUUSD")
-    assert "SHORT \u2014 2 of 4" in texts[0] and "Shift of structure" in texts[0]
-    assert "SHORT \u2014 3 of 4" in texts[1] and "50%" in texts[1]
-    assert "SHORT \u2014 4 of 4" in texts[2] and "61.8%" in texts[2]
+    # The bot's own shape, with his label and no live/demo tag: the count is the same three
+    # confluences the bot counts, not the four internal stages.
+    assert texts[0].startswith("\U0001f440 SETUP FORMING \u00b7 SHORT")
+    assert "REV SETUP \u00b7 XAUUSD \u00b7 2 of 3" in texts[0]
+    assert "Sweep \u00b7 SOS confirmed \u00b7 not tagged yet" in texts[0]
+    assert "3 of 3" in texts[1] and "tagged the 50%" in texts[1]
+    assert "3 of 3" in texts[2] and "tagged the 61.8%" in texts[2]
     # Stage 4 is the one a student acts on, so it gets the entry-zone icon rather than the eyes.
-    assert texts[2].startswith("\U0001f3af REV SETUP")
-    assert all("Potential entry  4369.93" in t for t in texts)
+    assert texts[2].startswith("\U0001f3af ENTRY ZONE \u00b7 SHORT")
+    assert all("Entry 4,369.93" in t for t in texts)
 
 
 def test_a_liquidity_sweep_alone_is_never_published(tmp_path, monkeypatch):
@@ -239,11 +242,13 @@ def test_each_kind_of_record_says_what_the_bot_DID(tmp_path, monkeypatch):
     sent = _posted(monkeypatch)
     feed.run(config_path=_cfg(tmp_path))
     texts = [t for _, t, _ in sent]
-    assert "LONG \u2014 limit resting at  4300.5" in texts[0] and "Stop  4290" in texts[0]
-    assert "Stop moved  4290 \u2192 4300.5" in texts[1]
-    assert "refused by its own rule" in texts[2] and "Final-hour rule" in texts[2]
-    assert "It would have entered at  4369.93" in texts[2]
-    assert "setup died at 2 of 3, no trade" in texts[3]
+    assert texts[0].startswith("\U0001f3af BUY LIMIT RESTING \u00b7 LONG")
+    assert "Entry 4,300.50 \u00b7 stop 4,290.00" in texts[0]
+    assert "4,290.00 \u2192 4,300.50" in texts[1] and texts[1].startswith("\U0001f512 STOP MOVED")
+    assert texts[2].startswith("\U0001f6ab BLOCKED \u00b7 SHORT") and "Final-hour rule" in texts[2]
+    assert "It would have entered at 4,369.93" in texts[2]
+    assert texts[3].startswith("\U0001f44b NO TRADE \u00b7 LONG")
+    assert "Setup died at 2 of 3" in texts[3]
 
 
 def test_a_cosmetic_stop_nudge_is_not_published(tmp_path, monkeypatch):
@@ -264,7 +269,7 @@ def test_a_cosmetic_stop_nudge_is_not_published(tmp_path, monkeypatch):
     feed.run(config_path=_cfg(tmp_path, min_stop_move=1.0))
     texts = [t for _, t, _ in sent]
     assert len(texts) == 2
-    assert "4391.88 \u2192 4369.63" in texts[0] and "4356.86 \u2192 4357.9" in texts[1]
+    assert "4,391.88 \u2192 4,369.63" in texts[0] and "4,356.86 \u2192 4,357.90" in texts[1]
 
 
 def test_one_trail_move_is_one_message_even_though_each_leg_records_it(tmp_path, monkeypatch):
@@ -282,7 +287,7 @@ def test_one_trail_move_is_one_message_even_though_each_leg_records_it(tmp_path,
     monkeypatch.setattr(feed, "_ledger_dir", lambda bot: d)
     sent = _posted(monkeypatch)
     feed.run(config_path=_cfg(tmp_path))
-    assert len(sent) == 1 and "4357.86 \u2192 4356.69" in sent[0][1]
+    assert len(sent) == 1 and "4,357.86 \u2192 4,356.69" in sent[0][1]
 
 
 def test_a_market_add_publishes_where_it_FILLED_not_the_estimate(tmp_path, monkeypatch):
@@ -308,8 +313,9 @@ def test_a_market_add_publishes_where_it_FILLED_not_the_estimate(tmp_path, monke
     sent = _posted(monkeypatch)
     feed.run(config_path=_cfg(tmp_path))
     text = sent[0][1]
-    assert "Added to the SAME position at  4320.58" in text
-    assert "4332" not in text and "0.17" not in text
+    assert text.startswith("\u2795 ADDED TO THE SAME POSITION \u00b7 SHORT")
+    assert "Added at 4,320.58" in text
+    assert "4,332" not in text and "4332" not in text and "0.17" not in text
 
 
 def test_the_add_multiple_is_worked_out_from_the_price_the_message_SHOWS(tmp_path, monkeypatch):
@@ -416,9 +422,9 @@ def test_a_generic_close_reason_is_not_repeated_back(tmp_path, monkeypatch):
     monkeypatch.setattr(feed, "_ledger_dir", lambda bot: d)
     sent = _posted(monkeypatch)
     feed.run(config_path=_cfg(tmp_path))
-    assert "Out at  4356.86   \u00b7   +0.59R" in sent[0][1] and "closed" not in sent[0][1]
-    assert "Out at  4400   \u00b7   -1.00R" in sent[1][1] and sent[1][1].endswith("Stop")
-    assert sent[0][1].startswith("\u2705") and sent[1][1].startswith("\u274c")
+    assert "Out at 4,356.86 \u00b7 +0.59R" in sent[0][1] and "closed" not in sent[0][1]
+    assert "Out at 4,400.00 \u00b7 -1.00R" in sent[1][1] and sent[1][1].endswith("Stop")
+    assert sent[0][1].startswith("\u2705 CLOSED") and sent[1][1].startswith("\u274c CLOSED")
 
 
 def test_an_unknown_record_renders_nothing(tmp_path, monkeypatch):
@@ -476,7 +482,7 @@ def test_a_second_run_publishes_only_what_is_new(tmp_path, monkeypatch):
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps({"kind": "bar", "s_stage": 3, "short_edge": 4369.93}) + "\n")
     feed.run(config_path=cfg)
-    assert len(sent) == 2 and "3 of 4" in sent[1][1]
+    assert len(sent) == 2 and "2 of 3" in sent[1][1] and "tagged the 50%" in sent[1][1]
 
 
 def test_a_send_that_fails_is_RETRIED_rather_than_lost(tmp_path, monkeypatch):
@@ -497,7 +503,7 @@ def test_a_send_that_fails_is_RETRIED_rather_than_lost(tmp_path, monkeypatch):
     assert len(sent) == 1  # the stage went out, the stop move did not
     sent2 = _posted(monkeypatch)
     feed.run(config_path=cfg)
-    assert any("Stop moved" in t for _, t, _ in sent2)
+    assert any("STOP MOVED" in t for _, t, _ in sent2)
 
 
 def test_a_corrupt_line_does_not_stop_the_rest(tmp_path, monkeypatch):
@@ -511,7 +517,7 @@ def test_a_corrupt_line_does_not_stop_the_rest(tmp_path, monkeypatch):
     monkeypatch.setattr(feed, "_ledger_dir", lambda bot: d)
     sent = _posted(monkeypatch)
     feed.run(config_path=_cfg(tmp_path))
-    assert any("Stop moved" in t for _, t, _ in sent)
+    assert any("STOP MOVED" in t for _, t, _ in sent)
 
 
 # ── switched off, and unable to run ──────────────────────────────────────────
