@@ -284,6 +284,25 @@ test.describe('the stack form carries a broker, a cost switch and per-leg risk',
   })
 
   /**
+   * 🔴 Profiles are per tier AND per instrument since 2026-09: ECN carries gold, GBPJPY and GBPUSD
+   * on ONE login, and all of them are the connected terminal. The form compared profile NAMES, so
+   * picking the GBPUSD one warned it was "a different broker" from the terminal it is on.
+   * MUTATION: restore `broker.id === attachedProfile.id` and the first assertion goes red.
+   */
+  test('a second profile on the CONNECTED login is not called another broker', async ({ page }) => {
+    const gbpusd = { ...PROFILES[1], id: 'puprime_ecn_gbpusd', contract_size: 100_000 }
+    await mock(page, { profiles: [...PROFILES, gbpusd] })
+    await openModal(page)
+    const select = page.getByTestId('stack-broker').locator('select')
+    const warning = page.getByText(/which is the terminal actually connected/)
+    await select.selectOption('puprime_ecn_gbpusd')
+    await expect(warning).toHaveCount(0)
+    // The control: a profile on ANOTHER login still warns.
+    await select.selectOption('vantage_demo')
+    await expect(warning).toBeVisible()
+  })
+
+  /**
    * The load-bearing check. MUTATION: drop `charge_costs` from `previewBody` and this goes red on
    * the launch assertion, which is the one that decides whether a stack is priced.
    *

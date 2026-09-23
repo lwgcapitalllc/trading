@@ -141,8 +141,14 @@ def test_the_page_names_the_attached_tier_on_a_SHARED_server(
     client, monkeypatch, account, expected
 ):
     """🔴 All three logins live on `PUPrime-Demo`, so the SERVER cannot separate them — only the
-    account can. Exactly one profile may come back attached, and it must be the right one."""
+    account can. Every profile on the attached LOGIN comes back attached and no other; the tier's
+    own profile comes FIRST, because the run forms default to the first attached one.
+
+    ⚠ It said "exactly one" until 2026-09-22 and went red when ECN gained per-instrument profiles
+    (GBPJPY, GBPUSD) on the same login — those ARE the attached terminal. The rule is the LOGIN."""
     from services import mt5_agent_client
+
+    from backtest.fills import PROFILES
 
     monkeypatch.setattr(
         mt5_agent_client,
@@ -150,7 +156,10 @@ def test_the_page_names_the_attached_tier_on_a_SHARED_server(
         lambda: {"mt5_connected": True, "server": "PUPrime-Demo", "account": account},
     )
     rows = client.get("/backtests/broker-profiles").json()
-    assert [r["id"] for r in rows if r["attached"]] == [expected]
+    attached = [r["id"] for r in rows if r["attached"]]
+    on_login = sorted(k for k, p in PROFILES.items() if p.account == account)
+    assert attached == on_login
+    assert attached[0] == expected
 
 
 def test_a_login_nobody_recorded_leaves_the_page_saying_it_CANNOT_TELL(client, monkeypatch):

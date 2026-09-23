@@ -157,3 +157,35 @@ up to an hour late), and nothing said a bot held a trade at all.
 
 Tests: `test_heartbeat_position.py` (15), 2 in `test_mt5_ops_pending.py`, 6 in
 `test_position_restore.py`. **19 mutations RUN, 19 killed.**
+
+## The FLAT-state record — what the bot is still WATCHING after a trade ends (2026-09-22)
+
+`<instance>/setup_watch.json`, written by `OrderBridge.save_setup_watch` and handed back by
+`restore_setup_watch` after the warm-up. Today it carries one thing: a setup whose trade the OWNER
+closed by hand before it reached its first target, which the strategy keeps watching so a later
+touch of that target can still open its re-entry door (`strategies/python/sos_fade/CLAUDE.md` →
+*A close a PERSON asked for is not a stop-out*).
+
+- 🔴 **ITS OWN FILE, NOT A BLOCK IN `position.json`, BECAUSE THE TWO LIVE IN OPPOSITE STATES.**
+  `position.json` is DELETED the moment the bot goes flat — and everything here only begins to
+  matter once it is. Folding one into the other would mean either keeping a position record for a
+  position that does not exist, or losing this every time a trade closes.
+- ⚠ **NOTHING ON THIS PATH HALTS, and that is deliberate** — the opposite default from `read`.
+  A missing, torn or unrestorable watch costs ONE possible re-entry; it can never open a position,
+  move a stop or adopt a trade, which is the whole reason the position record is so strict. A
+  convenience must not be able to stop a bot from starting.
+- ⚠ **`write_watch(None)` CLEARS rather than writing an empty record**, so *nothing is being
+  watched* and *nothing was ever written* are one state on disk — which is the truth, and leaves no
+  stale artefact reading as a live watch.
+- ⚠ **Restored AFTER the warm-up**, for `apply_restore`'s reason: the replay drives the same
+  emulator through thousands of bars and clears the watch on the first new break it sees.
+- ⚠ **The record is OPAQUE here**, exactly as `strategy` is in `write`: it comes from
+  `Execution.snapshot_setup_watch()` and goes straight back. This module keeps no opinion about
+  what a watch is, and the seam is OPTIONAL — a bot whose emulator predates it records nothing.
+- 🔴 **A side without the leg's TIME is dropped by the strategy rather than restored on its bar
+  number** — numbering is local to one run. Same rule, same helper (`_same_leg`), as the
+  one-trade-per-leg latch.
+
+**Tests:** `algos/tests/test_position_restore.py` (5, including the bridge round trip, watched RED
+by making `save_setup_watch` a no-op) and `strategies/python/sos_fade/tests/test_commanded_close.py`
+(4 more, the restart one watched RED by dropping the leg time from the record).

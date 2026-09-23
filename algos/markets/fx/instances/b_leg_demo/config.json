@@ -128,7 +128,13 @@
     "exec_sh_tp1_pct": 100.0,
     "exec_sh_block_from": -1,
     "exec_sh_block_to": -1,
-    "bleg_max_days": 4.0
+    "bleg_max_days": 4.0,
+    "exec_sec_poi_fallback": "Off",
+    "exec_tp1_level": "Auto",
+    "exec_tp1_r": -1.0,
+    "exec_tp2_level": "Auto",
+    "flat_holidays": true,
+    "flat_mode": "Off"
   },
   "strategy_source_hash": "",
   "promoted_commit": "",

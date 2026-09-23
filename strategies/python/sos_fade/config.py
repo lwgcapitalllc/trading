@@ -1383,6 +1383,27 @@ class SosFadeConfig:
     #   ⚠ Must stay below 1.0, for the reason given there.
     #   ⚠ Read ONLY when `exec_shift_be_r` is positive.
 
+    exec_sec_poi_fallback: str = "Off"   # "Re-entry when the gap is gone" ∈ {Off, Primary entry}
+    #   WHAT THE GAP RE-ENTRY RESTS ON ONCE THE GAP ITSELF IS NO LONGER THERE. Two values:
+    #     "Off" (default, and the shipped book exactly) — no gap, no re-entry. `_poi_edge_*` is
+    #                   None the moment the gap stops qualifying, and the arm reads that as "no
+    #                   price to rest at", which is the honest reading of a gap that is gone.
+    #     "Primary entry" — rest at the price THIS SETUP ALREADY PUBLISHED as its entry edge
+    #                   (`Execution._poi_last_*`), i.e. the level the primary itself entered at.
+    #   🔴 THE POPULATION IS NOT THE NO-GAP ZONE OF RUNS 27-36 AND MUST NOT BE READ AS IT. Those
+    #   runs measured setups the PRIMARY NEVER TRADED — price arrived in the zone with no gap on
+    #   arrival — and every entry rule tried on them lost. This reaches only setups the primary
+    #   DID trade and that then passed `exec_sec_require`, so the gap was real, it was taken, and
+    #   price mitigated it on the way. Aaron's case, 2026-09-22: a trade closed by hand, price
+    #   back at the entry, the setup still alive and nothing deeper to rest on.
+    #   ⚠ It re-uses the published number and never re-derives the gap rules — same reason the gap
+    #   trigger reads the primary's own edge rather than computing a second one.
+    #   ⚠ The memory is per SETUP (`_sync_gap_latch` clears it on a new break), so it can never
+    #   rest a limit at a price belonging to a setup that is already dead.
+    #   ⚠ Read ONLY when exec_secondary is on and the trigger names the gap.
+    #   ⚠ NO PINE COUNTERPART — the Pine has no re-entry at all, so the parity gate is
+    #   structurally blind to this and always will be. Every figure it produces is a lab finding.
+
     exec_sec_stop: str = "0.886"       # "Re-entry stop sits at" ∈ {Shift leg, swing low, 0.886, 1.0}
     #   WHERE THE RE-ENTRY'S STOP GOES. Four values:
     #     "0.886"      (default since 2026-08-20) — the same level the primary stops at (`fibo_p6`).
@@ -1872,6 +1893,14 @@ class SosFadeConfig:
             raise ValueError(
                 f"exec_sec_stop must be one of ['0.886', '1.0', 'Shift leg', 'swing low'], got "
                 f"{self.exec_sec_stop!r}.")
+        # Validated ALWAYS rather than only under the gap trigger: an unknown value is a typo
+        # whichever trigger is live, and a typo that quietly left the fallback off would be
+        # indistinguishable from the feature having found nothing.
+        if self.exec_sec_poi_fallback not in ("Off", "Primary entry"):
+            raise ValueError(
+                f"exec_sec_poi_fallback must be 'Off' or 'Primary entry', got "
+                f"{self.exec_sec_poi_fallback!r}. It is read only when exec_secondary is on and "
+                "exec_sec_trigger names the gap.")
         # ── the RECLAIM half's own fields, checked whenever the trigger names it ──────────────
         rec_on = self.exec_secondary and self.exec_sec_trigger in (
             "Reclaim Entry", "FVG in zone + Reclaim Entry")

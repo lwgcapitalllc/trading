@@ -1,13 +1,25 @@
-"""Send one example of EVERY setup-alert thread shape to the signals chat.
+"""Send one example of EVERY alert thread shape — setups to the signals chat, trades to the
+trades chat (`--trades`).
 
 ⚠ Nothing here writes a message. Every string comes out of the real `alerts.format_*` functions
 driven by real `SetupSnapshot` objects, so what lands in Telegram is byte-identical to what the
 live bot would send for the same setup. Hand-typing the samples would show wording that does not
 exist, which is the whole thing this is meant to check.
 
+🔴 **The TRADES mode exists so the thread can be READ before it ships (2026-09-22).** A live bot
+runs a frozen `deployed/` snapshot, so new wording does not reach a phone until a promote — and
+promoting two live bots to look at a message is the wrong order to do things in. `--dry-run
+--trades` prints the whole story to a terminal; `--trades` puts it in the trades room, threaded, so
+what is approved is what will actually arrive.
+
+⚠ **`--trades` posts into the room that carries real fills.** The header says so and the footer
+closes it, exactly as the signals samples do, and both are meant to be deleted afterwards.
+
 Run on the VPS (it has credentials.json):
     python C:\\trading\\algos\\tools\\signal_samples.py --dry-run
     python C:\\trading\\algos\\tools\\signal_samples.py
+    python C:\\trading\\algos\\tools\\signal_samples.py --trades --dry-run
+    python C:\\trading\\algos\\tools\\signal_samples.py --trades
 """
 
 from __future__ import annotations
@@ -22,7 +34,7 @@ for p in (ROOT, ROOT / "algos" / "live", ROOT / "algos" / "shared"):
     sys.path.insert(0, str(p))
 
 import alerts  # noqa: E402
-from notify import SIGNAL, send_telegram_id  # noqa: E402
+from notify import SIGNAL, TRADE, send_telegram_id  # noqa: E402
 
 from backtest.setups import (
     DEAD,
@@ -256,6 +268,117 @@ def render(s: SetupSnapshot, is_root: bool) -> str:
     return alerts.format_resolved(s)
 
 
+# ── the TRADES room — one trade's whole life, as the thread will read it ─────────────────────
+#
+# 🔴 **Every string below comes out of the real `alerts.format_*` functions**, exactly as the
+# setup samples do, so what lands here is byte-identical to what the bridge sends for the same
+# trade. Hand-typing them would show wording that does not exist, which is what this tool is for.
+#
+# Between them these cover: a winner managed the whole way (breakeven, an add, a trail, a rung
+# banked), a loser that only ever had its stop tightened, and the scratch — a stop moved to entry
+# and then hit, which the verdict calls BREAKEVEN rather than filing beside the real losers.
+
+_ENTRY = dict(strategy=DISPLAY, symbol=SYM, digits=2)
+
+
+def _trade_threads():
+    """(title, root, [replies]) for each trade shape. A function, not a constant, so the module
+    still imports on a box whose `alerts` predates these formatters — the signals mode is the one
+    that runs unattended and must not be taken down by the samples beside it."""
+    return [
+        (
+            "1. The one you want — managed the whole way",
+            alerts.format_entry(
+                **_ENTRY,
+                direction="LONG",
+                entry=3290.00,
+                stop=3280.00,
+                lots=0.25,
+                risk_usd=250.00,
+                risk_pct=5.0,
+            ),
+            [
+                alerts.format_stop_moved(
+                    direction=1, entry=3290.00, was=3280.00, now=3290.00, opening_stop=3280.00
+                ),
+                alerts.format_scaled_in(
+                    lots_added=0.12, lots_now=0.37, price=3305.00, stop=3296.00
+                ),
+                alerts.format_stop_moved(
+                    direction=1, entry=3290.00, was=3290.00, now=3301.50, opening_stop=3280.00
+                ),
+                alerts.format_partial_banked(lots_banked=0.12, lots_before=0.37, lots_after=0.25),
+                alerts.format_exit(
+                    strategy=DISPLAY,
+                    symbol=SYM,
+                    exit_price=3320.00,
+                    pnl_usd=712.50,
+                    r_multiple=2.85,
+                    exit_reason="target",
+                ),
+            ],
+        ),
+        (
+            "2. The loser — the stop only ever came closer",
+            alerts.format_entry(
+                **_ENTRY,
+                direction="SHORT",
+                entry=3290.00,
+                stop=3302.00,
+                lots=0.20,
+                risk_usd=240.00,
+                risk_pct=5.0,
+            ),
+            [
+                alerts.format_stop_moved(
+                    direction=-1, entry=3290.00, was=3302.00, now=3296.00, opening_stop=3302.00
+                ),
+                alerts.format_exit(
+                    strategy=DISPLAY,
+                    symbol=SYM,
+                    exit_price=3296.00,
+                    pnl_usd=-126.40,
+                    r_multiple=-0.53,
+                    exit_reason="stop",
+                ),
+            ],
+        ),
+        (
+            "3. The scratch — out of risk, then stopped at entry",
+            alerts.format_entry(
+                **_ENTRY,
+                direction="LONG",
+                entry=3290.00,
+                stop=3280.00,
+                lots=0.25,
+                risk_usd=250.00,
+                risk_pct=5.0,
+            ),
+            [
+                alerts.format_stop_moved(
+                    direction=1, entry=3290.00, was=3280.00, now=3290.00, opening_stop=3280.00
+                ),
+                alerts.format_exit(
+                    strategy=DISPLAY,
+                    symbol=SYM,
+                    exit_price=3289.85,
+                    pnl_usd=-12.50,
+                    r_multiple=-0.02,
+                    exit_reason="stop moved to entry",
+                ),
+            ],
+        ),
+    ]
+
+
+TRADE_HEADER = (
+    "🧪 EXAMPLES — none of these are live trades, and no order exists.\n"
+    "Three sample threads follow: a winner managed the whole way, a loser, and a scratch. Every "
+    "message is rendered by the same code the bot sends with. Delete this block when you are done."
+)
+TRADE_FOOTER = "🧪 End of examples. Everything after this line is real."
+
+
 HEADER = (
     "🧪 EXAMPLES — none of these are live setups.\n"
     "Eight sample threads follow, one per shape a real setup can take. Every message is "
@@ -276,37 +399,59 @@ _GAP_SECONDS = 3.5
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true", help="print, send nothing")
+    ap.add_argument(
+        "--trades",
+        action="store_true",
+        help="one example of every TRADE thread shape, into the trades room, instead of the setups",
+    )
     args = ap.parse_args()
     tally = {"ok": 0, "failed": 0}
+
+    def send(text, reply_to):
+        """One send, with its room named LITERALLY on each branch.
+
+        🔴 **A `room` variable would route correctly and be invisible to
+        `test_notification_routing`**, whose whole job is to grep every send in this repo for a
+        stated kind — so the guard would go on passing over a call site that had stopped naming
+        one. Routing quietly is the failure the kinds exist to end, and a guard that cannot see a
+        call site is the same failure wearing a green tick.
+        """
+        if args.trades:
+            return send_telegram_id(text, TRADE, reply_to=reply_to)
+        return send_telegram_id(text, SIGNAL, reply_to=reply_to)
 
     def post(text, reply_to=None):
         if args.dry_run:
             print(("  └ " if reply_to else "") + text.replace("\n", "\n     ") + "\n")
             tally["ok"] += 1
             return 1
-        mid = send_telegram_id(text, SIGNAL, reply_to=reply_to)
+        mid = send(text, reply_to)
         if mid is None:
             # One retry, after long enough for any rate-limit window to clear. A root that fails
             # orphans every reply under it, so this is worth the wait.
             time.sleep(30)
-            mid = send_telegram_id(text, SIGNAL, reply_to=reply_to)
+            mid = send(text, reply_to)
         tally["ok" if mid is not None else "failed"] += 1
         time.sleep(_GAP_SECONDS)
         return mid
 
-    post(HEADER)
-    for title, root, replies in THREADS:
+    threads = _trade_threads() if args.trades else THREADS
+    post(TRADE_HEADER if args.trades else HEADER)
+    for title, root, replies in threads:
         if args.dry_run:
             print(f"\n=== {title} ===")
-        rid = post(render(root, True))
+        # A trade sample is already a rendered string; a setup sample is a snapshot the bot's own
+        # routing turns into one. Both go through the same posting path below, so the rate limit,
+        # the retry and the honest tally are stated once.
+        rid = post(root if args.trades else render(root, True))
         for r in replies:
-            post(render(r, False), reply_to=rid)
-    post(FOOTER)
+            post(r if args.trades else render(r, False), reply_to=rid)
+    post(TRADE_FOOTER if args.trades else FOOTER)
 
     # ⚠ Reports what LANDED, never what was attempted. The first run of this printed
     # "sent: 24 messages" while four had been refused — the repo's own rule about never recording
     # a request as a receipt, in the tool written to check the messages.
-    total = sum(1 + len(r) for _, _, r in THREADS) + 2
+    total = sum(1 + len(r) for _, _, r in threads) + 2
     verb = "would send" if args.dry_run else "sent"
     print(
         f"{verb}: {tally['ok']} of {total} messages"

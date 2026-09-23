@@ -2151,6 +2151,9 @@ class LiveRunner:
                 instance_dir=self.cfg.instance_dir,
                 # The fills and halts say "SOS Fade · LIVE", not the bot key — see `_label`.
                 name_for_messages=lambda: self._label,
+                # How much the locked R must improve before another stop-move message goes into
+                # the trade's thread. Every bot takes the default; see `live_config`.
+                trail_alert_step_r=self.cfg.trail_alert_step_r,
             )
             # SAY which state the account-level cap is in, every start. An absent guard is
             # silent by construction, and "no cap" and "a cap that is not working" look
@@ -2169,6 +2172,10 @@ class LiveRunner:
             self.bridge.apply_restore()
             if self.bridge.state is BridgeState.HALTED:
                 return 4, "bridge halted while restoring its open position"
+            # AFTER the warm-up for the same reason, and after `apply_restore` so a halt there
+            # is reported against the position rather than against this. It never halts and
+            # never opens anything — see `OrderBridge.restore_setup_watch`.
+            self.bridge.restore_setup_watch()
             self.bridge.begin_live()
         except Exception as e:
             self.log.error(f"Startup failed: {e}\n{traceback.format_exc()}")

@@ -69,6 +69,14 @@ from version import current_commit, deployment_hash  # noqa: E402
 # it. Kept out of the prose lines so rewording one cannot break the other.
 _VERSION_MARK = "##VERSIONS"
 
+#: Printed INSTEAD of deploying when nothing the bot loads has changed — see `nothing_new`.
+#:
+#: 🔴 **Why a marker rather than prose (2026-09-23).** The caller has to make a DECISION on this
+#: (the Command Center must not stop and restart a bot for a snapshot identical to the one it is
+#: already running), and a decision read out of a sentence breaks the first time somebody rewords
+#: it. Same reasoning as `##VERSIONS` above, which was added for the same reason.
+_NOOP_MARK = "##NOTHING-NEW"
+
 
 def repo_trees(cfg) -> list[tuple[Path, Path]]:
     """(source in the repo, destination inside `deployed/`) for each tree, layout preserved.
@@ -573,6 +581,58 @@ def verify(cfg, root: Path) -> tuple[bool, str]:
     return True, marker[0][2:] if marker else "{}"
 
 
+def nothing_new(cfg, was: dict, staging, trees, params: dict) -> bool:
+    """Is there genuinely nothing for the bot to LOAD? Then a restart costs and buys nothing.
+
+    🔴 **Built 2026-09-23, after a bot was deployed twice inside three minutes.** The second
+    deploy staged byte-identical code, printed `v373 -> v373`, and stopped and restarted the bot
+    anyway — which cancelled the limit order it had just placed and put an identical one back a
+    minute later. Aaron: *"how else was I allowed to redeploy"*.
+
+    🔴 **IT COMPARES THE STAGED SNAPSHOT AGAINST THE ONE ON DISK, AND THE FIRST VERSION OF THIS
+    COMPARED THE STAGED HASH AGAINST THE RECORDED ONE — WHICH CAN NEVER MATCH.** The two are
+    hashed over DIFFERENT ROOT SETS: `deployment_hash` folds each root's NAME into the digest, the
+    staged hash is taken over every tree this tool copies (11 roots for `fft_1` — the strategy's
+    whole dependency closure, `engines`, `backtest`, `execution` and the order path), and the
+    PINNED hash is taken over `cfg.source_roots` (3). **So the `old_hash == new_hash` line this
+    file has printed since it was written — *code is UNCHANGED from the running deployment* — has
+    never once been true**, and a check built on it was a refusal that could not fire. Rule 9, and
+    rule 13 one layer out: the first tests passed because they stubbed `deployment_hash`, which
+    made the double more capable than production and described a system we do not have. **The
+    tests below use real files on disk for exactly that reason.**
+
+    Comparing the staged tree with the DEPLOYED tree is like for like — same relative
+    destinations, same root names, same hash function — and it subsumes the check that was going
+    to be written separately for a snapshot edited in place, because it hashes what is actually
+    there rather than what a record claims.
+
+    ⚠ **The PARAMETERS are the second half and they are not optional.** `deployed.json` pins the
+    settings a version was deployed WITH, and `config.json` is edited between promotes (the Bots
+    page writes the per-trade risk to it live). Identical code with different settings is a bot
+    that needs the new settings pinned, and refusing there would silently keep the old ones.
+
+    ⚠ **The COMMIT is deliberately NOT part of it.** A commit that changes no file this bot loads
+    — a test, a doc, another bot's strategy — is not something to restart a live bot for. The
+    caller still refreshes the record so the page stops asking; see the no-op branch in `main`.
+
+    ⚠ **CANNOT READ is never "the same"** (rule 1). An unreadable snapshot is exactly the case a
+    deploy would repair, so the safe direction here is to deploy rather than to refuse.
+    """
+    if not was or not was.get("strategy_source_hash"):
+        return False  # never deployed: there is no "same" to be the same as
+    deployed = Path(cfg.deployed_dir)
+    if not deployed.is_dir():
+        return False
+    try:
+        staged_hash = deployment_hash([Path(staging) / rel for _, rel in trees])
+        live_hash = deployment_hash([deployed / rel for _, rel in trees])
+    except Exception:
+        return False
+    if staged_hash != live_hash:
+        return False
+    return (was.get("strategy_params") or {}) == (params or {})
+
+
 def write_pin(
     cfg, hash_: str, commit: str, when: str, files: int, version: Optional[int] = None
 ) -> None:
@@ -660,6 +720,11 @@ def main(argv=None) -> int:
         "--allow-open-position",
         action="store_true",
         help="promote even though the open position's record cannot be restored by this version",
+    )
+    ap.add_argument(
+        "--redeploy",
+        action="store_true",
+        help="rewrite the snapshot even though nothing the bot loads has changed",
     )
     args = ap.parse_args(argv)
 
@@ -820,8 +885,32 @@ def main(argv=None) -> int:
         f"{to_version if to_version is not None else '?'}"
     )
 
+    # 🔴 **NOTHING NEW TO LOAD: refresh the record, leave the RUNNING BOT ALONE (2026-09-23).**
+    # A restart here cancels whatever the bot has resting and buys nothing, because the snapshot it
+    # would come back on is the one it is already running. See `nothing_new` for the three things
+    # that have to agree before this branch is taken.
+    #
+    # ⚠ **The pin is still REWRITTEN, and that half is not optional.** The commit and the version
+    # move even when no deployed file does, and the Bots page measures *how far behind* against the
+    # recorded commit — so skipping the write would leave the page asking for a deploy that can
+    # never satisfy it. Nothing is deployed; the record is brought up to date and says so.
+    idle = nothing_new(cfg, was, staging, trees, cfg.strategy_params)
+    if idle and not args.dry_run and not args.redeploy:
+        shutil.rmtree(staging, ignore_errors=True)
+        write_pin(cfg, new_hash, commit, date.today().isoformat(), n, version=to_version)
+        print(f"{_NOOP_MARK}")
+        print("  nothing new for the bot to load — the snapshot is already what it is running.")
+        print("  the bot was NOT restarted, and its record now names this commit.")
+        print("  pass --redeploy to rewrite the snapshot anyway.")
+        return 0
+
     if args.dry_run:
         shutil.rmtree(staging, ignore_errors=True)
+        if idle:
+            # Said on the PREVIEW too, or the one place a person looks before deciding is the one
+            # place that does not mention it.
+            print(f"{_NOOP_MARK}")
+            print("  nothing new for the bot to load — a deploy would restart it for nothing.")
         print("  dry run — nothing was deployed, the running bot is untouched.")
         return 0
 

@@ -86,6 +86,151 @@ def test_it_outranks_the_time_stop_so_the_record_names_the_person_not_the_clock(
     assert ex.trades[0].exit_reason == "L-CMD"
 
 
+# ── what the setup remembers afterwards (2026-09-22) ──────────────────────────
+def _drift_alive(ex, first, count, high=104.6, low=103.95):
+    """Drift with the 15m setup STILL ALIVE, so the watch below is not cleared by a new break.
+    `_drift` above hands in a flat sequence, which retires the setup on the first bar."""
+    last = None
+    for i in range(first, first + count):
+        last = ex.step(_sig(i, 104.2, high, low, 104.3), _seq_long_ready())
+    return last
+
+
+def test_a_hand_close_before_the_first_target_is_not_recorded_as_a_stop_out():
+    """🔴 The RECLAIM re-entry is built for a primary the market stopped at the deep edge, and it
+    reads one latch to find them. Booking a close the owner asked for into that latch arms it on a
+    trade nothing stopped, at a price nothing was stopped at.
+
+    MUTATION: drop the `-CMD` test in `_finalise_trade` and the stopped latch fills in, which is
+    what this asserts is empty."""
+    ex = Execution(_cfg())
+    _open_long(ex)
+    _drift_alive(ex, 2, 3)
+    ex.request_close()
+    _drift_alive(ex, 5, 2)
+
+    assert ex.trades[0].exit_reason == "L-CMD"
+    assert ex.prim_lost_sos_l is None, "a close somebody asked for was booked as a stop-out"
+    assert ex.prim_closed_sos_l == 1, "it is still a CLOSE — the looser door reads this"
+    assert ex.be_sos_l is None, "it never reached its first target, so no door yet"
+
+
+def test_price_reaching_the_target_after_a_hand_close_opens_the_reentry_door():
+    """Aaron's case. The trade is closed by hand at a scratch; price then goes on to the level
+    that trade would have banked at. Holding it would have opened the re-entry's door, so being
+    out of it by choice must not close that door.
+
+    MUTATION: delete the `_check_cmd_watch` call in `step` and the door never opens."""
+    ex = Execution(_cfg())
+    _open_long(ex)
+    _drift_alive(ex, 2, 3)
+    ex.request_close()
+    _drift_alive(ex, 5, 2)
+    assert ex.be_sos_l is None, "fixture drifted — the door was already open"
+
+    ex.step(_sig(7, 104.3, 105.2, 104.1, 105.0), _seq_long_ready())   # high tags TP1 = 105.0
+
+    assert ex.be_sos_l == 1
+
+
+def test_the_door_stays_SHUT_when_price_never_reaches_that_target():
+    """The watch opens a door price actually reached. It never invents one — otherwise a hand
+    close would buy a re-entry the trade itself had not earned."""
+    ex = Execution(_cfg())
+    _open_long(ex)
+    _drift_alive(ex, 2, 3)
+    ex.request_close()
+    _drift_alive(ex, 5, 6, high=104.99)      # everything stops one cent short of TP1
+
+    assert ex.be_sos_l is None
+
+
+def test_the_watch_dies_with_the_setup_that_set_it():
+    """A new break of structure is a new setup. A watch left pointing at the old one would open a
+    door on a leg nobody was watching — the defect the per-setup latches next to it exist for.
+
+    MUTATION: key the watch on the side instead of the SOS bar and this goes red."""
+    ex = Execution(_cfg())
+    _open_long(ex)
+    _drift_alive(ex, 2, 3)
+    ex.request_close()
+    _drift_alive(ex, 5, 2)
+
+    ex.step(_sig(7, 104.2, 104.6, 103.95, 104.3), _seq_long_ready(sos_bar=7))   # a NEW break
+    ex.step(_sig(8, 104.3, 105.2, 104.1, 105.0), _seq_long_ready(sos_bar=7))    # tags 105.0
+
+    assert ex.be_sos_l is None
+
+
+def test_the_watch_survives_a_restart_through_its_own_record():
+    """The bot restarts often — four times on 2026-09-22 alone — and a watch that lived only in
+    memory closed the door every time. The record carries the leg's TIME, so the rebuilt bot can
+    recognise the same setup under a fresh bar numbering.
+
+    MUTATION: drop `sos_ms` from the snapshot and the restore refuses the side, because a bar
+    number alone names a different bar after a re-warm."""
+    ex = Execution(_cfg())
+    _open_long(ex)
+    _drift_alive(ex, 2, 3)
+    ex.request_close()
+    _drift_alive(ex, 5, 2)
+
+    record = ex.snapshot_setup_watch()
+    assert record is not None and record["long"]["sos_ms"] is not None
+
+    fresh = Execution(_cfg())                      # a restarted bot, warmed and flat
+    _open_long(fresh)                              # the warm-up's own imaginary trade
+    _drift_alive(fresh, 2, 3)
+    assert fresh.restore_setup_watch(record) is True
+
+    fresh.step(_sig(7, 104.3, 105.2, 104.1, 105.0), _seq_long_ready())
+
+    assert fresh.be_sos_l == 1
+
+
+def test_a_watch_with_no_leg_TIME_is_dropped_rather_than_restored_on_its_bar_number():
+    """🔴 A bar number is local to one run. After a re-warm the old number names a different bar,
+    so restoring on it would open a re-entry door on a setup nobody was watching. Dropping it
+    costs a possible re-entry, which is the safe direction."""
+    ex = Execution(_cfg())
+
+    assert ex.restore_setup_watch({"long": {"sos_bar": 1, "sos_ms": None, "tp1": 105.0}}) is False
+    assert ex.restore_setup_watch({"long": {"sos_bar": 1, "tp1": 105.0}}) is False
+    assert ex._cmd_watch_l is None
+
+
+def test_an_unreadable_watch_record_is_ignored_and_never_raises():
+    """It is a convenience. A torn file must not be able to stop a bot from starting — the
+    opposite default from the POSITION record, which halts, because that one can put the bot in a
+    trade it does not know about and this one cannot."""
+    ex = Execution(_cfg())
+
+    for junk in (None, "", [], {"long": "nonsense"}, {"long": {"sos_ms": "x", "tp1": "y"}}):
+        assert ex.restore_setup_watch(junk) is False
+
+
+def test_nothing_being_watched_records_NOTHING():
+    """`None`, so "nothing is being watched" and "nothing was ever written" are the same state on
+    disk. An empty record would leave a stale artefact that reads as a live watch."""
+    ex = Execution(_cfg())
+    _open_long(ex)
+    _drift_alive(ex, 2, 3)
+
+    assert ex.snapshot_setup_watch() is None
+
+
+def test_a_REAL_stop_out_is_still_recorded_as_one():
+    """The control. The change must separate a hand close from a stop-out, not stop recording
+    stop-outs — the reclaim re-entry depends on this latch filling in."""
+    ex = Execution(_cfg())
+    _open_long(ex)
+    ex.step(_sig(2, 104.2, 104.3, 99.5, 100.2), _seq_long_ready())    # through the 100.0 stop
+
+    assert ex._pos_dir == 0, "fixture drifted — the stop did not fill"
+    assert ex.prim_lost_sos_l == 1
+    assert ex.prim_closed_sos_l == 1
+
+
 # ── what it must NOT do ───────────────────────────────────────────────────────
 def test_asking_while_FLAT_refuses_rather_than_latching():
     """A request that quietly waited would fire on whatever the strategy opened next — a trade

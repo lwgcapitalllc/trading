@@ -826,3 +826,66 @@ checks the two lists agree.
 
 ⚠ `strategies/python/live_contract.py` joined that list the same day — it describes the bridge and
 ships with it, so a change to it is order-path work waiting to go out.
+
+---
+
+## 🔴 A deploy with NOTHING to deploy still stopped and restarted the bot (2026-09-23)
+
+**What happened.** `fft_1` was deployed at 03:52, came back correctly on the new code, and was
+deployed again at 03:55. The second run staged byte-identical code, reported `v373 → v373 ·
+deployed · Restarting it now`, and stopped and restarted the bot anyway — which cancelled the sell
+limit it had placed at 03:53 and put an identical one back at 03:56. Fifty-one seconds with no
+order resting, for nothing. Aaron: *"why did I need to deploy and restart twice"*.
+
+**Two independent gaps, and they compound.** Neither alone explains it.
+
+### 1. The badge was drawing a reading taken BEFORE the deploy
+
+The version query has no poll of its own unless the reading says a restart is pending, so the only
+thing that re-reads it after a deploy is the page's promote-job watcher. That watcher reconciled a
+finish **only when it personally saw the job go `running` → finished** — an EDGE. A tab that was
+not mounted, not focused, or opened a second after the deploy landed never saw the transition, so
+the version was never re-read and the row kept saying behind indefinitely.
+
+**Now keyed by JOB ID** (`_settledDeploys` in `hooks/useBots.ts`): any finished job this tab has
+not yet accounted for triggers the re-read, however it got there. The **toast** still needs the
+transition, and that asymmetry is deliberate — re-reading a stale version is always right;
+announcing a deploy the tab was not open for tells somebody something just happened when it did not.
+
+### 2. Nothing refused the pointless deploy
+
+`promote.py` already computed and printed *code is UNCHANGED from the running deployment* — and
+carried on. A fact computed, reported, then ignored.
+
+It now **refuses to rewrite the snapshot and does not ask for a restart**, printing
+`##NOTHING-NEW` for the caller. `_finish_promote` honours it: no stop, no start, and its own
+Telegram message (`ℹ️ NOTHING TO DEPLOY … it was left alone`) rather than the PROMOTED one with
+different words — `v373 → v373 · deployed · Restarting it now` was true of nothing that happened.
+
+⚠ **THREE things must agree before it refuses, not one** (`promote.py::nothing_new`), and each has
+its own test:
+
+- the staged code against the **record** — the ordinary case;
+- the staged code against **what is on disk** — a snapshot edited in place has a record that still
+  matches while the files do not (the page draws it as *Snapshot modified*), and repairing that is
+  a real deploy;
+- the **parameters** — `deployed.json` pins the settings a version was deployed with, and
+  `config.json` is edited between promotes (this page writes the per-trade risk to it live).
+
+⚠ **The COMMIT is deliberately not one of them**, and the pin is **still rewritten** on the no-op.
+A commit touching no file the bot loads is not worth restarting a live bot for — but *how far
+behind* is measured against the recorded commit, so skipping the write would leave the page asking
+for a deploy that can never satisfy it. That is the stale-badge failure made permanent.
+
+⚠ **Cannot-read is never "the same"** (rule 1): an unreadable snapshot is exactly what a deploy
+repairs, so it deploys. A bot that has never been deployed is never a no-op either.
+
+⚠ **`nothing_new` is its own field on the result, not an inference from `restarted`.** A deploy
+that shipped real code with `restart=false` is also `restarted: false`, and reading that as
+"nothing to do" would tell somebody a waiting restart was unnecessary.
+
+**The panel checks `nothing_new` BEFORE `restarted`** — both are false here and only one is the
+reason. Falling through printed *Deployed — restart it to pick it up* over a bot already running
+that exact code, which is how one pointless deploy becomes two.
+
+**Escape hatch:** `promote.py --redeploy` rewrites the snapshot anyway.

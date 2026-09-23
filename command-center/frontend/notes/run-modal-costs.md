@@ -270,3 +270,11 @@ logic** (the settings grid, last because it is the longest). Section headings ar
 - **Explanations moved behind the ⓘ** (*Say it once*). Warnings stay on screen: an unclamped lot
   size, gross costs, an unpriced broker, a missing ruleset.
 - ⚠ Costs sit ABOVE the strategy settings now; below 128 settings nobody saw the switch.
+
+## "Is this the connected broker?" reads the profile's own flag (2026-09-22)
+
+Cost profiles are per tier AND per instrument since 2026-09 — ECN has gold, GBPJPY and GBPUSD on one
+login, and all three are the connected terminal. Both run forms compared profile NAMES against the
+first attached one, so picking the GBPUSD profile warned it was a different broker from the terminal
+it is on. They read each profile's own `attached` now. Pinned in `tests/stack-config.spec.ts`,
+watched red with the name comparison restored.

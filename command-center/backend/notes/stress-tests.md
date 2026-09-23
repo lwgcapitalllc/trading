@@ -356,3 +356,11 @@ with no ruleset, it completed with no letter.
 **Market lock** — `lab_db.running_stress_test_markets()` queries `stress_tests WHERE status LIKE 'running%'` (covers `running`, `running_wf`, `running_sens`), joins to derive `runner`, returns `{futures, forex, run_ids}`. `POST /stress-tests/run` checks this before inserting; 409 if same market is already running. `GET /stress-tests/running-lock` exposes it for the frontend poll.
 
 **Crash recovery** — `lab_db.reset_stale_stress_tests()` marks any `running%` stress tests as `failed_crashed` and their child runs as `failed_timeout`. Called in `main.py` `startup()` — backend restarts automatically clear stuck tests and release the market lock.
+
+## A busy-platform refusal names the platform that is busy (2026-09-22)
+
+A Python run's stress test, refused because a Python stack was running, said "An NT8 job is
+already running" — the gate kept its own MT5-or-NT8 label, and NT8 had been off for weeks. The
+refusal was right (Python jobs share one slot); the name was wrong. Both refusals now read the
+one helper in `routers/_locks.py`, which also stopped the lock saying "An Python job". Pinned in
+`tests/test_job_locks.py`, watched red with the screenshot's exact message.

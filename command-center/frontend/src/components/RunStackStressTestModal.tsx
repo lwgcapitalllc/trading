@@ -21,7 +21,8 @@
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { useRunStressTest, useStressTests } from '@/hooks/useStressTests'
-import { useRulesets } from '@/hooks/useLab'
+import { useRulesets, useRunningVpsJob } from '@/hooks/useLab'
+import { platformBusyReason } from '@/lib/runner'
 import { DEFAULT_FOREX_RULESET_ID } from '@/lib/stressRuleset'
 
 /** Mirrors the backend's own floor (`routers/stress_tests.MIN_TRADES_FOR_STRESS`). Below it the
@@ -47,6 +48,9 @@ interface Props {
 export function RunStackStressTestModal({ stackId, trades, onClose, navigate }: Props) {
   const runTest = useRunStressTest()
   const { data: rulesets } = useRulesets()
+  // A job can take the Python slot while this is open; the button follows it rather than a 409.
+  const { data: runningJob } = useRunningVpsJob()
+  const busy = platformBusyReason(runningJob, 'python')
 
   // A stack has no stored evaluations to pick from — a single run carries the rulesets it was
   // scored against and this does not — so the choice is over the FOREX rulesets, which is what a
@@ -235,7 +239,8 @@ export function RunStackStressTestModal({ stackId, trades, onClose, navigate }: 
                 }
               )
             }}
-            disabled={runTest.isPending || belowFloor || historyPending}
+            disabled={runTest.isPending || belowFloor || historyPending || !!busy}
+            title={busy ?? undefined}
             className="flex-1 py-1.5 text-sm bg-accent text-bg-base rounded font-medium hover:opacity-90 disabled:opacity-50"
           >
             {runTest.isPending ? 'Starting…' : 'Run Stress Test'}

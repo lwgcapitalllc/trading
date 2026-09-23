@@ -351,6 +351,57 @@ defaults now describe the bot that trades.
 - ⚠ **The golden export ran at 10** and the gate reads risk off it, so parity is untouched.
 
 
+## A re-entry when the GAP IS GONE — measured, and it ships OFF (2026-09-22)
+
+`exec_sec_poi_fallback` ∈ {Off, **Primary entry**}, **default Off and inert**. On, a gap re-entry
+whose gap no longer qualifies rests at the price the setup already published as its entry edge —
+the level the primary itself entered at, remembered per SETUP and cleared on a new break.
+
+- ⚠ **MEASURED AND IT IS NOT AN EDGE. Run 41** (`sos_fade_optimization.md`), 2020-01-01 →
+  2026-08-06, puprime_ecn charged: shipped **242 trades / +267.86R / 8.37R max drawdown**, on
+  **250 / +281.56R / 8.14R**. 🔴 **One trade is +10.64R of the +13.69R** — drop it and the other 11
+  are worth +0.04R, which is +3.05R over six and a half years. Negative in 2021 and 2026.
+- ✅ **No displacement, checked trade by trade: all 155 primaries are IDENTICAL in both runs.** A
+  re-entry arms only while flat and only after its primary has closed, so it cannot queue in front
+  of one the way Run 12's loosenings did.
+- 🔴 **It is NOT the no-gap pool of Runs 27–36 and must not be read as it.** Those are setups the
+  primary never traded; this is setups it did trade, where the primary's own fill mitigated the gap.
+- ⚠ **No Pine counterpart, so the parity gate is structurally blind to it** — lab finding only.
+
+## A close a PERSON asked for is not a stop-out, and the setup is still watched (2026-09-22)
+
+Aaron, 2026-09-22: *"if I manually close a trade and price comes back to entry I am disqualified
+for a secondary trade."* Two defects behind that, both fixed here, both keyed on the `-CMD` tag
+every commanded exit carries — including the hand close `algos/live/bridge.py` adopts as
+`closed_by_you`.
+
+- 🔴 **A hand close before TP1 was stamped into the STOPPED latch**, so the RECLAIM re-entry —
+  built and measured for primaries the market stopped at the deep edge — could arm on a trade
+  nothing stopped, at a price nothing was stopped at. It is now recorded as CLOSED only, which is
+  what the looser "Any close" door reads and is true.
+- 🔴 **The bot stopped following the trade the moment the person closed it**, so a first target
+  reached an hour later was never seen and the re-entry's breakeven door never opened.
+  `_check_cmd_watch` keeps watching the setup and opens that door when price reaches **that
+  trade's own first target** — the question the trade would have asked if left alone.
+- ⚠ **It opens a door price actually REACHED; it never invents one.** If price never gets there
+  the watch expires with the setup, and it only ever arms from stage 0 (a trade already past TP1
+  stamped the door open before the person touched it).
+- ✅ **IT SURVIVES A RESTART as of 2026-09-22** — `snapshot_setup_watch()` /
+  `restore_setup_watch()`, written by the live bridge to `<instance>/setup_watch.json` and handed
+  back AFTER the warm-up. It had to be its own file: `position.json` is deleted the moment the bot
+  goes flat, which is exactly when this begins to matter. The bot restarted four times on the day
+  this was written, so a memory-only watch was shut most of the time it was needed.
+- 🔴 **A restored side must carry the leg's TIME, and one without it is DROPPED.** Bar numbering is
+  local to one run, so the old number names a different bar after a re-warm — restoring on it would
+  open a door on a setup nobody was watching. `_same_leg` is the one reader, the same helper the
+  one-trade-per-leg latch uses.
+- ⚠ **Nothing on this path halts.** An unreadable or missing record costs one possible re-entry and
+  can never open a position or move a stop — deliberately the opposite default from the POSITION
+  record, which halts, because that one can put the bot in a trade it does not know about.
+- ⚠ **No parity gate covers any of this** — the Pine has no commanded close and no re-entry.
+  `tests/test_commanded_close.py` is the whole of the evidence; 5 tests, 2 mutations.
+- ⚠ **It needs a PROMOTE to reach the live bot**, like everything else in this package.
+
 ## Flat before the close — `flat_mode`, and it is NOT `flat_by_close` any more
 
 **`flat_mode` is the setting: `"Off"` / `"Friday only"` / `"Every day"`, shipped Off.** The clock
@@ -393,6 +444,8 @@ Most-cited code: `compare_strategy.py`, `tests/test_secondary.py`, `algos/live/b
 - Secondary (1m sniper) re-entry — `exec_secondary` (built 2026-07-19, committed `c962601`)
 
 ### `notes/exit_ladder_history.md` — Exit ladder — dated build and measurement history
+
+🔵 **MEASURED 2026-09-21, not adopted:** banking half the trade at the first fib target beats the shipped ladder on return per drawdown in R (33.6 against 31.8) by cutting the worst drawdown from 7.39R to 5.69R. Pinning either target to another fib level loses, across all 108 combinations. Run 40 in `sos_fade_optimization.md`; the default is unchanged and the parity gate has not run on it.
 
 **Read before touching:** changing any exit-ladder lever and needing the measurement that set its default.
 Most-cited code: `compare_strategy.py`, `sos_fade_strategy.pine`, `backtest/output.py`, `promote.py`, `execution.py`, `config.py`.

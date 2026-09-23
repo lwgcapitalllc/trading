@@ -8,6 +8,40 @@ CLAUDE.md gets at most one index line.
 
 ## Tools
 
+- **`tools/run_report.py` — TWO FIXES AND TWO NEW FLAGS (2026-09-22).**
+  🔴 **IT DATED EVERY RE-ENTRY TRADE OFF THE WRONG CLOCK, AND HAD DONE SINCE RE-ENTRIES WERE
+  WIRED IN (2026-08-16).** The row was dated `df.index[t.entry_index]`, but a re-entry's
+  `entry_index` counts bars on the FAST feed (467k M5 bars on a 2020→2026 run) while `df` is the
+  M15 frame (156k) — two units, one reader. An index past the end hit an `else df.index[-1]`
+  clamp and stamped the FINAL BAR of the run; an index that happened to fit named the wrong 15m
+  bar, which is worse, because it looks plausible. **MEASURED on a 2020→2026 replay by re-running it either
+  side of the fix: ALL 87 re-entries were mis-dated and ZERO primaries were.** 60 of them carried
+  the final bar's timestamp, which filed them under 2026; the other 27 landed on a plausible-looking
+  wrong 15m bar, which is the worse half — nothing about those rows looks off. **Totals were never
+  affected — every per-year, per-session, per-hour and regime split was.** How far off: on that run
+  2026 read 83 trades / +55.4R against a true 25 / +27.2R, and the Late session read 70 trades
+  against 13, because the final bar closed at 23:45. **Every year moved.** A row is now dated off
+  the trade's own `entry_ms`, which is frame-independent, and the regime is read at the 15m bar
+  that timestamp falls in. Rule 15 (what is this value's UNIT on each side of the boundary) and
+  rule 1 (the clamp made *out of range* and *the last bar* one value). ⚠ **Re-run before quoting a
+  per-year figure this tool produced for any run with `exec_secondary` on.**
+  - 🔴 **THE SAME TWO-CLOCK TRAP SURVIVED THE FIRST FIX, in `bars_held`.** A re-entry's entry and
+    exit indices BOTH count fast-feed bars, so their difference is a number of 5m bars sitting in a
+    column this tool's own archived README calls 15m bars. It is now **left EMPTY for a re-entry**
+    — a blank says *cannot state it in this frame*, which is true, where a number says something
+    false that nothing downstream can catch — and a new **`hours_held`** beside it is exact for
+    every trade on any frame. **Finding one instance of a unit bug is not finding the unit bug.**
+  - `trades.csv` now carries **`kind`** (primary / secondary). Without it no reader could tell a
+    15m setup from its re-entry, and the two are sized, stopped and targeted differently.
+  - **`--server`** picks the broker cache to replay, same flag and meaning as `axis_sweep.py`'s.
+    Without it the tool could only replay the attached terminal's broker, so an offline machine
+    could not run it at all.
+  - **`--cost-profile`** charges a named account's measured costs. In bar mode it is the ONLY way
+    this tool can charge anything — `--fill-model tick` needs a tick stream, which a bar cache
+    does not have — and an uncosted run flatters a tight-stop re-entry against a wide-stop
+    primary. Omitted = the zero-cost replay every stored figure from this tool was produced with,
+    so nothing re-prices.
+
 - **`tools/zone_return_audit.py`** (new 2026-09-17, Run 39) — trades the **RETURN into** the
   tradable zone, the opposite direction to Runs 27-36, which all traded the way OUT of it. The
   15m Structure fib gives the leg and the zone; the entry is the first counter-direction shift of
@@ -1585,6 +1619,68 @@ CLAUDE.md gets at most one index line.
   trade moves (the label gates nothing); the ledger's sweep figures are re-measured — the corrected
   sweep is the strongest FFT lead (2020-25 +0.37R vs +0.07R a trade, p 0.01).
 
+## `level_memory_audit.py` — the level the bot ALREADY TRADED, tapped again after the setup died (2026-09-23)
+
+**The question (Aaron, 2026-09-22 live).** The Monday-night short filled at the gap edge the setup
+published, closed at a profit stop for roughly nothing, and ~20 hours later price came all the way
+back to that same price and sold off with nothing placed. *"We did not have any logic to take that
+trade. Why? How many trades like this have we been missing?"*
+
+**Why the live bot had nothing, from its own decision record** (`algos/ledger_archive/sos_fade_demo/ledger/`,
+2026-09-21 and -22): at 05:15 UTC the setup DIED — structure re-broke, the entry price was discarded
+outright and the watch moved to a new level, which price then ran through. The short side sat at the
+first stage all evening: a sweep, but no shift of structure ever printed, so nothing armed. **The bot
+keeps no memory of a level it has already traded.** Two independent causes, and the restarts at 19:44
+and 21:20 UTC were NOT one of them — the bar record is unbroken 17:45 → 20:45.
+
+🔴 **THIS POPULATION IS NOT ONE ANY EARLIER RUN MEASURED, and that is the reason the tool exists.**
+Run 41 only reaches a return while the setup is STILL ALIVE. Runs 27–36 measured setups the primary
+NEVER traded. Run 39 measured the return into the zone from the leg EXTREME, a different geometry.
+This measures a return to a level the primary DID trade, AFTER that setup is finished.
+
+**What it does.** Replays the strategy with the re-entry pinned off, then for each primary takes the
+level, the direction and the stop distance FROM THE TRADE RECORD so nothing is re-derived, arms the
+level from the bar the primary closes, and walks the lower frame for a limit fill and its outcome.
+Each touch is tagged with whether the bot was flat and whether an armed setup already existed.
+
+**MEASURED 2026-09-23, XAUUSD.p, 158,986 M15 bars against 476,939 M5, 2020-01-01 → 2026-09-22,
+$0.20/oz round trip, 158 primaries:**
+
+- **88 of 158 (56%) came back to the entry within 5 days** after travelling at least 1R away.
+- **39 of those had the bot FLAT with nothing armed** — Aaron's exact case, ~5.8 a year, median
+  **22.5 hours** after the primary closed. 44 had an armed setup live; 5 were in a position.
+
+| Stop width, the 39 | R @1 | R @2 | R @3 |
+|---|---|---|---|
+| the original trade's own 1R | +4.91 | +11.67 | +11.80 |
+| **HALF that width** | **+10.63** | **+16.35** | **+19.35** |
+
+- 🔴 **THE ENTRY IS NOT THE VARIABLE — THE STOP WIDTH IS.** Same trades, same fills; halving the stop
+  roughly doubles the book. Median best excursion before the stop is 2.14R, so the original width is
+  paying for room these returns never use.
+- ✅ Both halves positive at every target (4.4/6.2, 5.2/11.2, 5.2/14.2), and drop-the-best survives
+  (9.64 / 14.37 / 16.37).
+- ⚠ **Against a matched random control** (400 per trade, same year, direction, stop and target) the
+  half-width book scores **z ≈ 2.0–2.2 at 1R and 2.1–2.3 at 2R across four seeds, but 1.9–2.1 at 3R
+  — the 3R target STRADDLES the z ≥ 2 bar and must not be quoted as clearing it.**
+- 🔴 **70% of the total is ONE YEAR. 2025 is +11.47R of the +16.35R from 12 of the 39 trades**, and
+  2020, 2022, 2024 and 2026 are all negative or flat at 1R. Same fragility shape as Run 41.
+- 🔴 **The 44 returns where a setup WAS armed are worth −0.02R at 1R and negative at 2R and 3R.** The
+  bot is not missing those, and no rule should be built for them.
+- Extending the window back to 2018-09 adds nothing to the 39-trade group.
+
+🔴 **`--away` (default 1.0R) IS THE POPULATION DEFINITION, NOT A KNOB, AND THE FIRST VERSION OF THIS
+TOOL SHIPPED WITHOUT IT.** A breakeven or profit stop exits AT the entry price, so "price returned to
+the level" is trivially true within minutes: a vacuity check at `--horizon 0.01` — fourteen minutes —
+still reported 82 returns and a spurious −38R. Price must now travel that far away from the level, in
+the original trade's own direction, before a return counts. Same check re-run: 2 returns, 0 graded.
+**Rule 12 in practice — the bad number was believable, and only a run that should have returned
+NOTHING exposed it.**
+
+⚠ **SCREEN, NOT A BACKTEST, and the precedent is expensive.** One position slot is not simulated, so
+none of this is charged for the trades it would queue in front of — Run 12's rule. The no-gap entry
+screened positive and replayed at −15.3R inside the bot (Runs 28→29). **Nothing here is an edge until
+it is built as a switch defaulted off and replayed with the slot on and costs charged.**
 - **`tools/fft_confluence_study.py`** (new 2026-09-22) — the user's ask: what do FFT's best trades
   (least heat, fastest to TP2) share, and does any indicator part not yet tried on FFT help? Replays
   the bot on the lab path, reads nine engine features before each fill (order blocks, VWAP, Asia point
@@ -1611,3 +1707,134 @@ re-run rather than believed.
 
 ⚠ **An in-sample loss needs no walk-forward** — you cannot overfit your way *to* a loss. Reach for
 out-of-sample when a result is POSITIVE.
+
+## `exit_study.py` — what gets us out nearer the peak? — a give-back cap, and nothing else (2026-09-22)
+
+**The question.** SOS Fade keeps 44% of the profit its trades ever show, and the leak is not the runner trail: trades reaching 5R keep 97% of their peak, while trades reaching 1-3R showed 123R and kept 11R (lab run `ea46142df097`). The band below the trail's arming point is where the money goes.
+
+**What it does.** Replays the baseline book, runs structure, liquidity, the Asia volume line, divergence and candlesticks over the same bars, then walks each trade through its own hold and prices every candidate exit at the NEXT bar's open. ⚠ **CHEAP MODE, stated in its own docstring:** one book re-walked, so an exit that frees the position slot earlier gets no credit for the trade that would have queued behind it. It ranks candidates; it decides nothing.
+
+**MEASURED 2026-09-22, XAUUSD.p M15, 2020-01-01 -> 2025-08-31, `puprime_ecn` charged, secondary pinned off — 129 trades, 317R of best case, 127R kept:**
+
+| Rule | Total R | Worst DD | Ret/DD | Fired on |
+|---|---|---|---|---|
+| hold (control) | 127.0 | 7.69 | 16.5 | — |
+| **give back at most 50% of a peak >= 1.5R** | 109.7 | 4.37 | **25.1** | 46 |
+| **give back at most 50% of a peak >= 2R** | 120.5 | 4.97 | **24.2** | 35 |
+| give back at most 50% of a peak >= 3R | 125.6 | 5.78 | 21.7 | 20 |
+| opposing CHoCH | 94.6 | 6.64 | 14.2 | 19 |
+| liquidity level ahead | 45.6 | 4.56 | 10.0 | 80 |
+| opposing divergence | 63.2 | 6.71 | 9.4 | 15 |
+| Asia volume line | 51.1 | 6.64 | 7.7 | 56 |
+| reversal candle | 33.1 | 4.64 | 7.1 | 92 |
+
+- 🔴 **The give-back cap is the only family that beats holding, and it is not close** — 25.1 against 16.5, bought by cutting the worst drawdown from 7.69R to 4.37R for 17R of the 127R.
+- 🔴 **Tighter is NOT better.** Capping the give-back at 25% or 33% loses on every band; the trade needs room to breathe. The winner keeps HALF of the peak.
+- 🔴 **Every engine-driven reversal exit LOSES to holding, including the two asked for by name.** The liquidity levels and the Asia volume line fire early and often (80 and 56 of 129 trades) and hand back half the book. This agrees with the opposing-CHoCH result already on record (`recovery_report.py --exits`, 16.2R -> 9.7R) and with the 0-of-240 result in `killzone_edge_search.py`. ⚠ **These levels are worth testing as TARGETS, where the level is known in advance; they do not work as reversal signals.**
+- ⚠ **Nothing here is a setting yet.** The winner has to be built and replayed with the position slot on before any of it is believed — the slot changes which rule wins, not just its score.
+
+### The reversal definitions Aaron gave, measured (2026-09-22)
+
+The first pass used the candlestick engine's Pine-mirroring defaults and called any of 15 patterns a "reversal" — a doji included — which fired on 127 of 129 trades and measured nothing. Re-run on HIS definitions, with the chart's own settings (`candlesticks.CHART_PRESET`), reversal rules reading the 5m chart, same 129 trades, `puprime_ecn` charged:
+
+| Rule | Total R | Worst DD | Ret/DD | Fired on |
+|---|---|---|---|---|
+| give back at most 50% of a peak >= 1.5R | 109.7 | 4.37 | **25.1** | 46 |
+| level touched twice and rejected | 45.0 | 2.13 | 21.1 | 117 |
+| shift of structure against us (5m) | 80.6 | 4.77 | 16.9 | 40 |
+| hold (control) | 127.0 | 7.69 | 16.5 | — |
+| level touched three times | 47.8 | 3.13 | 15.3 | 107 |
+| shift of structure THEN a later break | 97.6 | 6.81 | 14.3 | 15 |
+| level rejected AND structure turning | 44.5 | 4.11 | 10.8 | 55 |
+| big engulfing against us (body >= 2x the last 20 bars' median) | 45.9 | 5.45 | 8.4 | 67 |
+
+- 🔴 **Ret/DD IS the risk-normalised comparison, and it is the only fair one here** — several of these rules cut the drawdown by cutting the book. At a common 4.37R drawdown the give-back cap makes 109.7R, the structure shift 73.8R, holding 72.2R and the level rule 92.3R. Raising risk on a lower-drawdown rule does not rescue it, which is the answer to "smaller targets and up the risk".
+- ⚠ **A rule that fires on 117 of 129 trades is not a signal, it is an early exit with a story.** Both level rules and the 1m candle rule are in that class: high ret/DD bought by halving the return.
+- ⚠ **A shift of structure IS a break of structure in the engine** (a shift is a break that also flips the trend), so "shift then break" collapses into "shift" unless the break is required on a LATER bar. It did collapse — identical columns, 9 fires each — until that was fixed. With it fixed the rule fires on 15 of 129 and scores below holding.
+- **The confluence version scores worse than either half**, because waiting for both arrives after the give-back has happened.
+
+### Combinations of signals, measured (2026-09-22)
+
+Asked for because "the market doesn't always behave the same way": exit on whichever of several signals fires FIRST, or bank HALF on the first and the rest on the second. Same 129 trades, reversal rules on 5m.
+
+| Rule | Total R | Worst DD | Ret/DD |
+|---|---|---|---|
+| bank half on a level rejected twice, rest on the give-back cap | 76.1 | 3.01 | 25.3 |
+| the give-back cap alone (keep half of a peak >= 1.5R) | 109.7 | 4.37 | 25.1 |
+| bank half on a 5m structure shift, rest on the cap | 95.1 | 4.50 | 21.1 |
+| leave on the first of cap / level | 38.6 | 2.13 | 18.2 |
+| leave on the first of cap / structure shift | 60.1 | 4.37 | 13.8 |
+| leave on the first of cap / big engulfing | 41.4 | 5.45 | 7.6 |
+
+- 🔴 **Combining does not add. The top two are a DEAD HEAT** — scale the half-bank rule up to the cap's 4.37R drawdown and it makes 110.5R against 109.7R, a gap far inside this book's run-to-run noise. Quoting 25.3 over 25.1 as a win would be reading a rounding difference.
+- 🔴 **"Leave on whichever fires first" is strictly worse than the cap alone, every time.** Adding a signal to an OR can only make the exit earlier, and earlier is what costs the runners: the cap's 109.7R falls to 60.1R with a structure shift ORed in and 38.6R with a level rejection.
+- **Banking HALF on a signal and keeping the cap for the rest is the only combining shape that holds its ground** — it neither helps nor hurts, and it is the shape to carry into the real replay, where freeing the position slot earlier can pay for itself.
+
+### 🔴 THE REPLAY REVERSED THE CHEAP-MODE RANKING (2026-09-22)
+
+Everything above is a RE-WALK of one stored book: one position at a time, each trade's own bars
+re-priced under a different exit rule. It cannot see the one thing that decides whether an earlier
+exit is worth anything — the trade that queues behind it in the single position slot. The same
+rules were then replayed for real (full strategy, `puprime_ecn` charged, 2020-01-01 → 2026-09-20,
+244 trades) and the ranking did not survive.
+
+| Give-back cap, replayed | Total R | Worst DD | Ret/DD |
+|---|---|---|---|
+| off (shipped settings) | 218.5 | 7.39 | **29.5** |
+| arm 1.5R, keep half, close | 161.0 | 5.89 | 27.3 |
+| arm 2R, keep half, close | 174.6 | 5.89 | 29.6 |
+| arm 2.5R, keep half, close | 208.4 | 5.89 | 35.4 |
+| arm 3R, keep half, close | 206.0 | 5.89 | 35.0 |
+| arm 3.5R, keep half, close | 204.5 | 5.89 | 34.7 |
+| arm 4R, keep half, close | 207.8 | **7.39** | 28.1 |
+| arm 2R, keep half, bank half and trail the rest | 178.1 | 6.97 | 25.5 |
+| arm 3R, keep half, bank half and trail the rest | 209.9 | 5.89 | 35.6 |
+| arm 2.5R, keep half, tighten to the runner trail | 216.7 | 5.89 | 36.8 |
+| arm 3R, keep half, tighten to the runner trail | 217.2 | 5.89 | **36.9** |
+| arm 3.5R, keep half, tighten to the runner trail | 217.2 | 5.89 | **36.9** |
+
+- 🔴 **The cheap mode's own top rule LOSES when replayed.** Arming at 1.5R scored 25.1 against
+  16.5 for holding in the table above, and replays at 27.3 against 29.5. The re-walk rewarded it
+  for a drawdown it cut by cutting the book, and never charged it for the trades it changed.
+- 🔴 **Use the re-walk to pick what to replay. Never to decide.** That was already written above as
+  a caution; this is the measurement that makes it a rule.
+- **What survives: TIGHTEN, never CUT.** At the same arming level all three actions cut the
+  drawdown identically and differ only in what they hand back — closing gives up 11.2R that
+  tightening keeps.
+- 🔴 **THE FLAT TOP IS ONE TRADE'S HIGH-WATER MARK, NOT ROBUSTNESS.** This bullet said "3R is
+  a narrow peak" before the neighbours were replayed, and both readings were wrong. Ret/DD is flat
+  across 2.5R–3.5R and falls off a cliff at both ends — 29.6 at 2R and **28.1 at 4R, with the
+  drawdown restored to the shipped 7.39R exactly**. The reason: the 2022-06-09 trade peaks at
+  **3.84R** and closes −0.23R shipped. Any arming level under 3.84R catches it (→ +1.52R) and ends
+  the 2022 drawdown stretch early; 4R never touches it. The flat region is the gap between that one
+  trade's peak and the level below which the guard starts eating runners, so it would move the
+  moment that trade does.
+- ⚠ **The whole drawdown gain is ONE stretch**: the shipped worst drawdown runs 2022-01-24 →
+  2022-07-14 and the guard ends it on 2022-03-07 at a level the shipped run also reaches. Eight
+  trades out of 244 move at all at the tighten setting.
+- ⚠ **Capture barely moves: 41.0% → 41.1%.** The guard is close to free at 3R. It is not an answer
+  to the give-back.
+
+### Entry times of day, measured (2026-09-22)
+
+Same replay, 244 trades, half-hour slots in New York time. Asked for because "high volume comes in
+in Asian session at eight, eight fifteen, sometimes nine, nine thirty, ten".
+
+| New York slot | Trades | Total R | Avg R | Win % |
+|---|---|---|---|---|
+| 09:00 | 13 | 49.7 | 3.83 | 54 |
+| 10:00 | 19 | 37.7 | 1.98 | 58 |
+| 08:30 | 16 | 24.4 | 1.53 | 69 |
+| 21:30 | 9 | 23.6 | 2.62 | 56 |
+| 13:00 | 3 | 15.4 | 5.15 | 67 |
+| 11:30 | 10 | −4.9 | −0.49 | 20 |
+| 12:00 | 7 | −3.7 | −0.53 | 14 |
+
+- **The Asian volume window is real but thin: 8pm–11pm New York is 23 trades, 33.5R, 1.46R average
+  against 0.84R for everything else.** The win rate is the same (57% against 54%) — the difference
+  is the SIZE of the winners, which is what a volume arrival would do.
+- **The morning block is where the book is made**: 08:30–10:30 is 63 trades and 119.1R, over half
+  the total from a quarter of the trades.
+- ⚠ **11:30–15:30 New York is 48 trades for +7.0R, and 15.4R of that is ONE trade** — without it,
+  45 trades for −8.4R. It looks like a dead zone and it is NOT yet a finding: refusing those entries
+  frees the position slot, and only a replay can price what queues behind them.

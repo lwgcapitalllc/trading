@@ -336,6 +336,12 @@ test('a forex run grades against the 55% ruleset by default, and sends it', asyn
   await page.route('**/api/stress-tests?*', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
   )
+  // A busy platform greys the button (2026-09-22), and whether one is busy is the live lab's
+  // state, not this test's subject — so the platform is stated free.
+  const idle = { running: false }
+  await page.route('**/api/backtests/running-job', (route) =>
+    route.fulfill({ json: { nt8: idle, mt5: idle, python: idle } })
+  )
   await page.goto(`http://localhost:5173/backtests/runs/${run.run_id}`)
   await page
     .getByRole('button', { name: /Stress Test/ })

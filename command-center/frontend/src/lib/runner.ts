@@ -32,6 +32,19 @@ export function runningJobFor(
   return job?.[runnerScope(runner)]
 }
 
+/** Why a job on this runner cannot start right now, or `null` when its platform is free.
+ *  Worded as the backend's own refusal (`routers/_locks.py::platform_job`), so a greyed button and
+ *  the 409 it prevents say the same thing. Added 2026-09-22: Stress Test stayed pressable while a
+ *  Python stack held the slot, and its one possible outcome was an error toast. */
+export function platformBusyReason(
+  job: RunningJobStatus | undefined,
+  runner?: string | null
+): string | null {
+  if (!runningJobFor(job, runner)?.running) return null
+  const label = RUNNER_LABEL[runnerScope(runner)]
+  return `${label === 'Python' ? 'A' : 'An'} ${label} job is already running — a stress test's walk-forward and sensitivity need the platform free`
+}
+
 /** True when the runner is NinjaTrader — the only platform with futures contracts,
  *  injected ruleset foundational params, and NT8-only lab actions. */
 export function isNt8Runner(runner?: string | null): boolean {

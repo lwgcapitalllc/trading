@@ -42,7 +42,9 @@ moment the bot goes flat. Two blocks, and the split is deliberate:
       "bot": "...", "symbol": "...", "magic": 123456,
       "ticket": 320620565,
       "written": "2026-08-09T21:14:03Z",
-      "broker":   { "dir": 1, "lots": 0.25, "entry": 3290.00, "stop": 3280.00, "risk_usd": 250.0 },
+      "broker":   { "dir": 1, "lots": 0.25, "entry": 3290.00, "stop": 3280.00,
+                    "risk_usd": 250.0, "stop_opened": 3280.00 },
+      "alert_id": 4471,
       "strategy": { ... whatever the emulator needs to carry on ... }
     }
 
@@ -58,6 +60,15 @@ the distance the stop had LOCKED (or dropped, at breakeven). MT5 does not know i
 `disagreements` does not check it. A record without it (anything written before 2026-09-12) still
 restores; its R is unknown. `VERSION` was NOT bumped for it — a bump reads every open trade's
 record as NO record, and that halts the bot.
+
+⚠ **`stop_opened` and `alert_id` are the two fields MT5 has never heard of, and both are
+OPTIONAL for the same reason `risk_usd` is.** `stop_opened` is the 1R yardstick every stop-move
+message is measured against — `stop` above is rewritten on every ratchet, so without it a
+restored trade can say its stop moved but not what that move locked in. `alert_id` is Telegram's
+id for the trade's ENTRY message, so the bot goes on replying into the thread the trade already
+has instead of dropping messages loose in the room from the restart onward. A record missing
+either still restores; it loses the R, or loses the thread. **`VERSION` was NOT bumped for
+them** — a bump reads every open trade's record as NO record, and that halts the bot.
 
 ⚠ **`lots` is BROKER lots and the emulator sizes in INSTRUMENT UNITS.** They are not the same
 number — gold's contract is 100 oz — and conflating them is exactly the fault that rested a
@@ -102,6 +113,12 @@ class BrokerFacts:
     # Dollars at risk when the position OPENED (fill to the stop attached with it). `None` = not
     # recorded — never recomputed from `stop`, which is rewritten on every move.
     risk_usd: Optional[float] = None
+    # The stop the position OPENED with, in price. `None` = not recorded. Added 2026-09-22 for
+    # the same reason as `risk_usd` and it is the same trap one field along: `stop` above is
+    # rewritten on every ratchet, so after a restart there is nothing left to measure a stop
+    # move AGAINST. It is what lets a restored trade's breakeven and trail messages still quote
+    # an R — and `None` must print no R rather than 0.00R, which is rule 1.
+    stop_opened: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -113,6 +130,9 @@ class PositionRecord:
     written: str
     broker: BrokerFacts
     strategy: Dict[str, Any]
+    #: Telegram's id for this trade's ENTRY message. `None` = not recorded, and every message
+    #: about the trade then posts loose rather than under it.
+    alert_id: Optional[int] = None
 
 
 def path_for(instance_dir) -> Path:
@@ -128,6 +148,7 @@ def write(
     ticket: int,
     broker: BrokerFacts,
     strategy: Dict[str, Any],
+    alert_id=None,
 ) -> bool:
     """Record the open position. Returns False on failure rather than raising.
 
@@ -151,6 +172,15 @@ def write(
         },
         "strategy": strategy,
     }
+    # Telegram's id for this trade's ENTRY message, so a restart keeps replying into the thread
+    # the trade already has. 🔴 **Before this the thread was LOST on every restart** — the bot
+    # would go on managing the trade and every message about it would land loose in the room,
+    # detached from the fill it was about. Top level rather than inside `broker`: MT5 has never
+    # heard of it, and `disagreements` compares `broker` field by field against the position.
+    if _message_id(alert_id) is not None:
+        record["alert_id"] = int(alert_id)
+    if _entry_price(broker.stop_opened) is not None:
+        record["broker"]["stop_opened"] = float(broker.stop_opened)
     # Written only when it is a real figure, so an unknown reads back as absent — one "not
     # recorded", never a stored zero that looks like a measurement.
     if _entry_risk(broker.risk_usd) is not None:
@@ -173,6 +203,76 @@ def write(
         return False
 
 
+#: The FLAT-state record's file. Its own file, not a block inside `position.json`, because the
+#: two live in opposite states: `position.json` is deleted the moment the bot goes flat, and
+#: everything here only matters once it is.
+WATCH_FILENAME = "setup_watch.json"
+
+
+def watch_path_for(instance_dir) -> Path:
+    return Path(instance_dir) / WATCH_FILENAME
+
+
+def write_watch(instance_dir, record: Optional[Dict[str, Any]]) -> bool:
+    """Record what the strategy is still WATCHING while flat, or clear it when there is nothing.
+
+    The record is opaque here, exactly as `strategy` is in `write`: it comes from
+    `Execution.snapshot_setup_watch()` and goes straight back to `restore_setup_watch()`. This
+    module stays free of opinions about what a watch is.
+
+    ⚠ **`None` CLEARS rather than writing an empty record**, so "nothing is being watched" and
+    "nothing was ever written" are the same state on disk — which is the truth, and leaves no
+    stale artefact for the next reader.
+
+    Returns False on failure rather than raising, for `write`'s reason: this is a convenience,
+    and it must never be able to stop the trading loop.
+    """
+    target = watch_path_for(instance_dir)
+    if record is None:
+        try:
+            target.unlink()
+        except FileNotFoundError:
+            pass
+        except Exception:
+            return False
+        return True
+    payload = {
+        "written": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "watch": record,
+    }
+    tmp = target.with_suffix(".json.tmp")
+    try:
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, indent=2)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, target)
+        return True
+    except Exception:
+        try:
+            tmp.unlink()
+        except Exception:
+            pass
+        return False
+
+
+def read_watch(instance_dir) -> Optional[Dict[str, Any]]:
+    """The recorded watch, or None — absent, unreadable, torn or the wrong shape.
+
+    ⚠ **Unlike `read`, a failure here is NOT a halt and must not be treated as one.** A lost
+    watch costs one possible re-entry; it can never put the bot in a position it does not know
+    about, which is the whole reason `read`'s failures are so strict. The strategy applies its
+    own checks to whatever comes back.
+    """
+    try:
+        raw = json.loads(watch_path_for(instance_dir).read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    watch = raw.get("watch") if isinstance(raw, dict) else None
+    return watch if isinstance(watch, dict) else None
+
+
 def _entry_risk(value) -> Optional[float]:
     """The recorded entry risk, or `None` for NOT RECORDED — absent, a boolean, not a number, zero,
     negative, NaN or infinite. Optional by design: a record that cannot state its entry risk is
@@ -184,6 +284,25 @@ def _entry_risk(value) -> Optional[float]:
     return v if 0 < v < float("inf") else None
 
 
+def _entry_price(value) -> Optional[float]:
+    """A recorded PRICE, or `None` for NOT RECORDED. Same optional-by-design reading as
+    `_entry_risk` — a record that cannot state the stop it opened with is still a position the
+    bot can prove is its own, and the only cost is that its stop moves quote no R."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    v = float(value)
+    return v if 0 < v < float("inf") else None
+
+
+def _message_id(value) -> Optional[int]:
+    """A recorded Telegram message id, or `None` for NOT RECORDED. Telegram ids are positive
+    integers; anything else is a value nobody can reply to, and passing it on would cost the send
+    rather than just the thread."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value if value > 0 else None
+
+
 def read(instance_dir) -> Optional[PositionRecord]:
     """The recorded position, or None if there is not one we can fully trust.
 
@@ -191,7 +310,12 @@ def read(instance_dir) -> Optional[PositionRecord]:
     version, missing field, wrong type. The caller's response to all of them is identical (halt
     and tell a human), and giving them separate return values would invite a caller to treat one
     of them as recoverable. ⚠ `broker.risk_usd` is the one exception: optional, and read as `None`
-    when it cannot be used (`_entry_risk`), never as a failed read.
+    when it cannot be used (`_entry_risk`), never as a failed read — and since 2026-09-22
+    `broker.stop_opened` and the top-level `alert_id` read the same way, for the same reason.
+
+    ⚠ **VERSION IS DELIBERATELY NOT BUMPED FOR AN ADDED OPTIONAL FIELD.** A bump reads every
+    open trade's record as NO record, and that HALTS the bot holding it — the note already on
+    `risk_usd`, and it applies identically to the two fields added beside it.
     """
     target = path_for(instance_dir)
     try:
@@ -208,6 +332,7 @@ def read(instance_dir) -> Optional[PositionRecord]:
             entry=float(b["entry"]),
             stop=float(b["stop"]),
             risk_usd=_entry_risk(b.get("risk_usd")),
+            stop_opened=_entry_price(b.get("stop_opened")),
         )
         strategy = raw["strategy"]
         if not isinstance(strategy, dict):
@@ -220,6 +345,7 @@ def read(instance_dir) -> Optional[PositionRecord]:
             written=str(raw.get("written", "")),
             broker=broker,
             strategy=strategy,
+            alert_id=_message_id(raw.get("alert_id")),
         )
     except (KeyError, TypeError, ValueError):
         return None

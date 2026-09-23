@@ -452,3 +452,10 @@ mean.
 the resolved name and the typed name are the same string, so the fixed and the broken code produce
 identical output and the case proves nothing — the same shape as a scaling test written against a
 scale of exactly 1.
+
+## Several profiles can be "attached" at once (2026-09-22)
+
+Cost profiles are per tier AND per instrument: ECN has gold, GBPJPY and GBPUSD profiles on one
+login (700152905), so all three come back attached when that login is connected. The rule is the
+LOGIN, never "exactly one" — `tests/test_run_symbol.py` asserted one and went red when the GBP
+profiles landed. The tier's own profile sorts first, which is the one the run forms default to.

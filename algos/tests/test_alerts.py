@@ -363,3 +363,124 @@ def test_every_message_opens_with_an_icon_a_label_and_stays_short():
         assert head[0] in "📈📉✅❌➖"
         assert len(head) < 45, f"header too long to read at a glance: {head!r}"
         assert len(msg.splitlines()) <= 4
+
+
+# ── how a trade is MANAGED, between the fill and the outcome (2026-09-22) ────────────────────
+#
+# Aaron: *"if a trade moves to break even I should get an alert saying move to break even... it
+# should alert me all the way of how the trade is being managed."* These pin the three things
+# that can happen to a stop, the honest R, and the two size events.
+#
+# **PROVED BY MUTATION, 2026-09-22** — there was no bug to watch these go red against, so each
+# one was made to fail by breaking the thing it claims to pin:
+#   * `stop_locked_r` made to substitute a stand-in distance instead of answering `None` →
+#     `test_an_unknown_opening_stop_prints_no_R_at_all` red on `risk now 0.00R` appearing. That
+#     mutation IS the "no" / "cannot ask" collapse rule 1 exists to stop.
+#   * `stop_move_kind` made to ignore the PREVIOUS stop → the trail test red, reporting every
+#     later ratchet as a fresh breakeven.
+#   * `stop_move_kind` made to read a short's prices the long way round → the tighten test red,
+#     reporting a trade being taken off risk as one tightened into it.
+
+
+def test_a_stop_reaching_entry_is_reported_as_BREAKEVEN_in_those_words():
+    """The message Aaron asked for by name. It must say breakeven, and it must not claim more
+    safety than a stop can give — a gap fills through one."""
+    msg = alerts.format_stop_moved(direction=1, entry=3290.0, was=3280.0, now=3290.0)
+    assert msg.startswith("🛡 STOP AT BREAKEVEN")
+    assert "Stop 3,280.00 → 3,290.00 (entry)" in msg
+    assert "gaps through the stop" in msg
+
+
+def test_a_stop_that_JUMPS_PAST_entry_still_reports_the_breakeven_crossing():
+    """A buffered breakeven lands beyond the entry. It is still the move that took the risk off,
+    so it is still the message — reporting it as a trail would lose the one event he named, and
+    the R says where the stop actually is."""
+    msg = alerts.format_stop_moved(
+        direction=1, entry=3290.0, was=3280.0, now=3294.0, opening_stop=3280.0
+    )
+    assert msg.startswith("🛡 STOP AT BREAKEVEN")
+    assert "locking +0.40R" in msg
+    assert "(entry)" not in msg  # it is NOT at the entry, and must not say so
+
+
+def test_a_later_move_in_profit_is_a_TRAIL_and_says_what_it_locks():
+    msg = alerts.format_stop_moved(
+        direction=1, entry=3290.0, was=3290.0, now=3301.5, opening_stop=3280.0
+    )
+    assert msg.startswith("🪜 STOP TRAILED")
+    assert "Stop 3,290.00 → 3,301.50 · locking +1.15R" in msg
+
+
+def test_a_stop_still_behind_entry_is_a_TIGHTEN_and_states_the_RISK_not_the_lock():
+    """`locking -0.50R` is a sentence the reader has to translate. Below the entry the number
+    means what is still on the line, so the message says that instead."""
+    msg = alerts.format_stop_moved(
+        direction=-1, entry=3290.0, was=3300.0, now=3296.0, opening_stop=3302.0
+    )
+    assert msg.startswith("🔒 STOP TIGHTENED")
+    assert "risk now 0.50R" in msg
+    assert "locking" not in msg
+
+
+def test_a_short_reads_its_prices_the_other_way_round():
+    """Below entry is PROFIT on a short. A sign error here would report a trade being taken off
+    risk as one being tightened into it."""
+    msg = alerts.format_stop_moved(
+        direction=-1, entry=3290.0, was=3300.0, now=3290.0, opening_stop=3300.0
+    )
+    assert msg.startswith("🛡 STOP AT BREAKEVEN")
+
+
+def test_an_unknown_opening_stop_prints_no_R_at_all():
+    """Rule 1. A trade restored from a record written before its opening stop was kept has no
+    yardstick, and `0.00R` would be a measurement nobody took."""
+    msg = alerts.format_stop_moved(direction=1, entry=3290.0, was=3290.0, now=3301.5)
+    assert "R" not in msg.replace("STOP TRAILED", "")
+    assert "Stop 3,290.00 → 3,301.50" in msg
+
+
+def test_an_unthreaded_stop_move_names_the_trade_it_is_about():
+    """The same rule the exit already follows: with no entry message to hang under, a bare
+    `STOP TRAILED` floating in the group names no trade at all."""
+    msg = alerts.format_stop_moved(
+        direction=1, entry=3290.0, was=3290.0, now=3301.5, symbol="XAUUSD.s", threaded=False
+    )
+    assert msg.startswith("🪜 STOP TRAILED · LONG · XAUUSD.s")
+
+
+def test_a_banked_partial_says_what_is_left_and_where_it_filled():
+    """The size still running is the fact the reader acts on. The fill note is there because the
+    bridge banks at market on a closed bar and the lab fills at the rung — a divergence that is
+    hunted for hours if the message does not name it."""
+    msg = alerts.format_partial_banked(lots_banked=0.17, lots_before=0.42, lots_after=0.25)
+    assert msg.startswith("💰 PART BANKED")
+    assert "Took 0.17 of 0.42 lots off · 0.25 still running" in msg
+    assert "market on the bar's close" in msg
+
+
+def test_a_scale_in_restates_the_SIZE_the_entry_message_can_no_longer_be_trusted_for():
+    """The entry message stated a size and a risk. An add makes both of them stale, so this one
+    carries the new total — and calls its price an estimate, because the bridge sends an add at
+    market and never reads the deal back."""
+    msg = alerts.format_scaled_in(lots_added=0.2, lots_now=0.62, price=3305.0, stop=3296.0)
+    assert msg.startswith("➕ ADDED TO POSITION")
+    assert "Added 0.20 lots at about 3,305.00" in msg
+    assert "0.62 lots now open · every lot on the same stop 3,296.00" in msg
+
+
+def test_no_management_message_carries_markdown_that_telegram_would_reject():
+    """The rule that costs a whole message when it is broken: a lone underscore opens an italic
+    Telegram never closes. Every one of these carries a symbol, and symbols have suffixes."""
+    msgs = [
+        alerts.format_stop_moved(
+            direction=1, entry=3290.0, was=3280.0, now=3290.0, symbol="XAUUSD.s", threaded=False
+        ),
+        alerts.format_partial_banked(
+            lots_banked=0.17, lots_before=0.42, lots_after=0.25, symbol="XAUUSD.s", threaded=False
+        ),
+        alerts.format_scaled_in(
+            lots_added=0.2, lots_now=0.62, price=3305.0, symbol="XAUUSD.s", threaded=False
+        ),
+    ]
+    for m in msgs:
+        assert "*" not in m and "`" not in m

@@ -362,3 +362,79 @@ def test_a_MISSING_root_id_says_so_rather_than_returning_in_silence(monkeypatch,
     monkeypatch.setattr(bots.subprocess, "run", lambda *a, **k: _Done())
     assert bots._set_alert_thread("sos_fade_demo", mid) is False
     assert "not be threaded" in capsys.readouterr().out
+
+
+# ── Nothing new to deploy: say so, and leave the bot running (2026-09-23) ─────
+#
+# 🔴 **The failure these pin.** FFT was deployed twice inside three minutes on 2026-09-23. The
+# second run staged byte-identical code, printed `v373 -> v373`, and stopped and restarted the bot
+# anyway — cancelling the limit order it had placed ninety seconds earlier and putting an identical
+# one back a minute later. `promote.py` had ALREADY computed and printed that the code was
+# unchanged; nothing acted on it. Aaron: *"how else was I allowed to redeploy"*.
+#
+# **Watched RED at HEAD:** with the marker ignored, every one of these failed on `restarted is
+# True` and `killed == ["fft_1"]` — the bot stopped and started for a snapshot it was already
+# running, which is the defect stated as a test.
+
+
+def test_a_deploy_with_NOTHING_NEW_does_not_touch_the_running_bot(vps):
+    """The whole point. The snapshot on the box is the one the process is already running, so a
+    stop and a start cost the bot whatever it has resting and buy nothing."""
+    vps["out"] = f"{bots._NOOP_MARK}\n  nothing new for the bot to load\n{bots._PROMOTE_OK}"
+    r = bots.promote_bot("fft_1", REQ)
+    assert r.ok is True
+    assert r.nothing_new is True
+    assert r.restarted is False
+    assert vps["killed"] == [] and vps["launched"] == []
+
+
+def test_NOTHING_NEW_is_a_SUCCESS_not_a_refusal(vps):
+    """It exits 0 and has brought the record up to date. Reporting it as a failure would send a
+    reader looking for a broken deploy and, worse, teach them to press it again."""
+    vps["out"] = f"{bots._NOOP_MARK}\n{bots._PROMOTE_OK}"
+    assert bots.promote_bot("fft_1", REQ).ok is True
+
+
+def test_an_ordinary_deploy_still_restarts(vps):
+    """The guard must be narrow. Without this the two tests above pass on a bridge that never
+    restarts anything, which is a far worse bug than the one being fixed."""
+    vps["out"] = f"  pinned abc123\n{bots._PROMOTE_OK}"
+    r = bots.promote_bot("fft_1", REQ)
+    assert r.nothing_new is False
+    assert r.restarted is True and vps["killed"] == ["fft_1"]
+
+
+def test_the_NOTHING_NEW_marker_is_stripped_from_what_the_user_reads(vps):
+    """Same rule the other two markers follow: a machine-readable line is for the caller, and a
+    reader seeing `##NOTHING-NEW` learns nothing from it."""
+    vps["out"] = f"{bots._NOOP_MARK}\n  nothing new for the bot to load\n{bots._PROMOTE_OK}"
+    out = bots.promote_bot("fft_1", REQ).output
+    assert bots._NOOP_MARK not in out
+    assert "nothing new for the bot to load" in out
+
+
+def test_a_deploy_that_changed_NOTHING_does_not_claim_it_PROMOTED_anything(vps, sent):
+    """🔴 The message that started this. `v373 → v373 · deployed / Restarting it now.` was true of
+    nothing that happened, and a reader acting on it goes looking for a restart that never came."""
+    vps["out"] = f"{bots._NOOP_MARK}\n{bots._VERSION_MARK} 373 373\n{bots._PROMOTE_OK}"
+    bots.promote_bot("fft_1", REQ)
+    body = "\n".join(sent)
+    assert "PROMOTED" not in body
+    assert "Restarting it now" not in body
+    assert "NOTHING TO DEPLOY" in body
+    assert "it was left alone" in body
+
+
+def test_a_FAILED_promote_is_never_read_as_nothing_new(vps):
+    """A refusal can print anything, including the words this branch looks for. The marker is only
+    honoured on a run that reported success — the same rule the version line already follows."""
+    vps["out"] = f"{bots._NOOP_MARK}\n{bots._PROMOTE_FAIL}"
+    r = bots.promote_bot("fft_1", REQ)
+    assert r.ok is False and r.restarted is False
+
+
+def test_a_PREVIEW_says_up_front_that_a_deploy_would_do_nothing(vps):
+    """The preview is the one place a person looks BEFORE deciding, so it is the one place that
+    must not leave this out."""
+    vps["out"] = f"{bots._NOOP_MARK}\n  dry run\n{bots._PROMOTE_OK}"
+    assert bots.preview_bot_promote("fft_1", REQ).nothing_new is True

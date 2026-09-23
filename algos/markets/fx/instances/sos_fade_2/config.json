@@ -129,7 +129,13 @@
     "exec_shift_be_r": -1.0,
     "exec_short_hold": false,
     "exec_time_stop_hrs": 36.0,
-    "exec_time_stop_mode": "Before TP1 only"
+    "exec_time_stop_mode": "Before TP1 only",
+    "exec_sec_poi_fallback": "Off",
+    "exec_tp1_level": "Auto",
+    "exec_tp1_r": -1.0,
+    "exec_tp2_level": "Auto",
+    "flat_holidays": true,
+    "flat_mode": "Off"
   },
   "strategy_source_hash": "",
   "promoted_commit": "",

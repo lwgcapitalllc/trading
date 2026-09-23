@@ -844,6 +844,12 @@ class BotPromoteResult(BaseModel):
     ok: bool
     output: str  # promote.py's own text — it is written to be read
     restarted: bool = False
+    #: Nothing the bot LOADS had changed, so nothing was deployed and the bot was left running.
+    #: 🔴 Its own field rather than an inference from `restarted`, because the two answer
+    #: different questions: a promote that deployed real code with `restart=false` is also
+    #: `restarted: false`, and reading that as "nothing to do" would tell somebody a waiting
+    #: restart was unnecessary. Added 2026-09-23 — see `promote.py::nothing_new`.
+    nothing_new: bool = False
 
 
 class BotPromoteStage(BaseModel):

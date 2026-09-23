@@ -106,6 +106,13 @@ watched — while two comments claimed the lists agreed. **A list stated twice i
   alone, where it used to mark every bot stopped.
 - ⚠ `tests/test_bot_bench.py` asserts every roster IS the folders, and that the Command Center keeps
   no hand list and types no real key.
+- ✅ **A new bot's Telegram messages are NOT something anyone has to ask for (2026-09-22).** The
+  fill, the stop reaching breakeven, the stop trailing, size banked, size added and the outcome all
+  come from `live/bridge.py` — the one layer every bot's runner builds — and are classified from
+  prices rather than from any strategy's own stages, so a bot written next year inherits the whole
+  set with no wiring and no config key. Aaron: *"if I create a bot, I shouldn't have to go say, hey,
+  create telegram messages for it. It should be part of how we do work."* Detail and the throttle:
+  `notes/telegram-and-notifications.md`.
 
 ## Documentation Rules — Non-Negotiable
 
@@ -209,6 +216,16 @@ evidence go in that topic's notes file. A notes file satisfies the commit hook's
 ⚠ **An old pointer to a section of this file still resolves** — every moved heading is
 listed below under the notes file that now holds it.
 
+### Deploying — the story lives in the ROOT `notes/deploying.md`
+
+**Read before touching:** `tools/promote.py`, the snapshot pin, or anything that restarts a bot.
+🔴 **Deliberately a POINTER, not a copy** — the deploy workflow is shared with the Command Center,
+which drives the same tool, so its one account lives at the repo root. A second copy here is the
+drift this repo has already paid for three times.
+
+- 🔴 A deploy that would ship NOTHING now refuses and leaves the running bot alone (2026-09-23). It used to restart it anyway: `fft_1` was deployed twice in three minutes, the second run staged byte-identical code, and the restart cancelled the limit order the bot had placed ninety seconds earlier. It compares the STAGED tree against the DEPLOYED tree plus the pinned PARAMETERS; the commit is deliberately not part of it, and the pin is still written. `--redeploy` forces it.
+- 🔴 **`deployment_hash` folds each ROOT'S NAME into the digest, so two hashes are only comparable over the SAME root set** — and the staged hash (11 roots for `fft_1`) and the pinned hash (`cfg.source_roots`, 3) are not. The first version of the refusal above compared those two and could never fire; the `code is UNCHANGED from the running deployment` line this tool has printed since it was written has never once been true. ⚠ **Its first tests passed because they STUBBED the hash** — rule 13 inside the tests written to answer rule 9. Hash real files, or prove nothing (2026-09-23).
+
 ### `notes/order-execution.md` — Order execution — the bridge's entries, exits, banking and market orders
 
 **Read before touching:** order placement, closing, banking or the bridge's MT5 call handling.
@@ -268,6 +285,7 @@ Most-cited code: `live/setup_alerts.py`, `live/alerts.py`, `live/bridge.py`, `sh
 - ✅ The health room's icons collapsed from 14 ad hoc glyphs to 4 named severity levels; every example is in `notes/telegram-message-catalog.md` (2026-09-14)
 - 🔴 A setup's Telegram thread did NOT survive a restart — four identical alerts for one setup in 24 hours, none of the first three closable. The thread bookkeeping now lives on disk and is reconciled at the end of every warm-up (2026-09-16)
 - ✅ Setup messages are ON for every bot; the extreme-leg bot now sends them, and a bot whose strategy cannot says so in the health room (2026-09-16)
+- ✅ A trade's thread now says how it is being MANAGED — breakeven, trail, tighten, size banked, size added — and EVERY bot gets it because the bridge sends it from prices, not from a strategy's stages. The trail is throttled to 0.5R of fresh profit per message; the breakeven crossing always sends. A restart keeps the thread and the 1R yardstick (2026-09-22)
 - ✅ A second room may get a COPY of an account's SETUPS — `markets/fx/signal_copies.json`, setups only, never fills, and it takes effect at the bot's next PROMOTE (2026-09-23)
 - ✅ The REV SETUP student feed — `tools/rev_setup_feed.py` renders the bot's own decision records for a students' channel from a per-event WHITELIST, so no lot size, dollar risk or P&L can be published; off until switched on (2026-09-23)
 

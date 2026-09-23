@@ -3437,6 +3437,15 @@ lost. There is no cell where a looser gate paid for itself.
 and taking it systematically loses money.** The stop got swept because the setup was failing, and
 re-entering is buying the same idea a second time at a worse place in its life.
 
+✅ **THOSE FOUR DATES WERE CHECKED AGAINST THE 2026-09-22 MIS-DATING BUG AND THEY SURVIVE IT.**
+`run_report.py` dated re-entry rows off a fast-feed bar index read against the 15m frame, so a
+re-entry usually carried the FINAL BAR of the run (`backtest/notes/tools.md`). **The test is the
+spread**: under that bug roughly seven re-entries in ten land on one date at the end of the window,
+and these four sit in 2021, 2024 and twice in 2025, with none in the run's final month. A broken
+stamp cannot look like that. The harness here was a scratch script off a lab bar load in any case,
+and the lab dates every trade by its own timestamp. ⚠ The verdict never rested on the dates — it is
+7 trades, −0.68R, 2 wins / 4 full losses, and counts and R were never affected by that bug.
+
 ⚠ **The zone-deep lever does NOTHING on top of "Stopped only" — 1.0 and 0.886 give the identical
 book to the cent.** The swept-stop legs were never blocked by the zone; they were blocked by the
 breakeven gate alone. **Two levers that sound like the same story are not the same lever, and
@@ -4917,3 +4926,158 @@ the two defects the build caught: **`strategies/notes/flat-before-the-close.md`*
 
 - **Verdict: bank 50% at target 1 and nothing at target 2 (33.6).** Banking at target 2 never adds return per drawdown. At 50/50 nothing is left to run, and it collapses.
 - **0.236 was not built.** Every earlier rung lost, and adding it is a fib engine change with its own parity gate.
+
+## Run 41 — 2026-09-22: the gap is GONE — may a re-entry rest at the price the primary entered?
+
+**Question (Aaron):** *"if I manually close a trade and price comes back to entry I am disqualified
+for a secondary trade... should this be like this?"* — and then, narrowing it himself: *"what if the
+only signal is at the original entry point? There's nothing deeper. Have we ever measured that?"*
+
+**What it actually asks, in the bot's terms.** The gap re-entry rests at the PRIMARY's own
+point-of-interest price, which is recomputed every bar and goes `None` the moment the gap stops
+qualifying — and a primary that took that gap is usually what mitigated it. So the setup can be
+alive, price back at the entry, and the re-entry has no price to rest on. Nothing in the bot
+remembered the level.
+
+🔴 **THIS IS NOT THE NO-GAP POOL OF RUNS 27–36 AND MUST NOT BE READ AS IT.** Those runs measured
+setups the primary NEVER TRADED — price arrived in the zone with no gap on arrival — and every
+entry rule tried on them lost. This population is the opposite: the gap was real, the primary
+took it, and the door is the existing `exec_sec_require` precondition. Nothing in Runs 27–36
+covers it, which is why it was measured rather than argued from them.
+
+**Built as `exec_sec_poi_fallback` ∈ {Off, Primary entry}, default Off** — the switch is inert
+until set, so no stored figure moves. On, it rests the re-entry at the price the setup already
+published as its entry edge (`Execution._poi_last_*`, remembered per SETUP, cleared on a new
+break). It never re-derives the gap rules, and a live gap always wins over the memory.
+
+**Method:** `backtest/tools/run_report.py --server VantageMarkets_Demo --cost-profile puprime_ecn
+--start 2020-01-01 --end 2026-08-06 --no-regime`, twice, once with
+`--set "exec_sec_poi_fallback=Primary entry"`. XAUUSD, 155,807 M15 bars against 467,364 M5 bars
+(the shipped fill clock), PU Prime ECN costs charged — the same bars-and-costs pairing as Run 29.
+
+| | Trades | Total R | Max DD (R) | Return/DD |
+|---|---|---|---|---|
+| shipped (fallback Off) | 242 (155 primary / 87 re-entry) | **+267.86** | 8.37 | 32.0 |
+| fallback = Primary entry | 250 (155 primary / 95 re-entry) | **+281.56** | 8.14 | 34.6 |
+
+**The 12 trades it adds:** 7 wins, 4 losses, 1 scratch, median **+0.47R**, total **+10.68R**. It
+also replaces 4 existing re-entries with earlier ones, worth **+3.01R** between them. Net **+13.69R**
+over 6.5 years.
+
+🔴 **ONE TRADE IS +10.64R OF THE +13.69R.** Drop it and the remaining 11 trades are worth **+0.04R**,
+and the whole change is **+3.05R over six and a half years** — noise. By year it is negative in
+2021 (−2.38R) and 2026 (−1.00R), and under +1.2R in every year except 2025. **That is the same
+shape as the gap half itself**, which this file already records as one trade away from losing
+money, and two fragile features stacked is not an edge.
+
+✅ **NO DISPLACEMENT, and it was checked trade by trade rather than assumed:** all **155 primaries
+are identical** in both runs — same times, same prices, same R. The re-entry can only arm while
+flat and after the setup's primary has closed, so it cannot queue in front of a primary the way
+Run 12's loosenings did. Drawdown does not worsen (8.37R → 8.14R).
+
+**Verdict: no edge demonstrated. The switch ships Off and stays Off.** It is kept, tested and
+documented so the question is answered rather than re-asked, and so a later run can re-measure it
+on more data. Nothing about the shipped book changes.
+
+⚠ **No parity gate covers any of this** — the Pine has no re-entry, so `compare_strategy.py` has
+never entered this branch and never will. Lab finding only.
+
+🔴 **THE FIRST PAIR OF RUNS WAS DISCARDED, AND THE REASON IS WORTH MORE THAN THE RESULT.**
+`run_report.py` dated every trade off `df.index[t.entry_index]`, but a re-entry's `entry_index`
+counts bars on the FAST feed (467k M5 bars) while that frame is M15 (156k) — two units, one
+reader, and an index past the end fell to an `else df.index[-1]` clamp. **MEASURED: 60 of 242
+trades carried the final bar's timestamp**, which filed every one of them under 2026. Totals were
+never affected; every per-year, per-session and per-hour split the tool has printed since
+re-entries were wired in (2026-08-16) was. Rule 15 — ask what a value's UNIT is on each side of a
+boundary — and rule 1, because the clamp made *out of range* and *the last bar* the same value.
+Both runs above use the corrected tool, which dates a row off the trade's own `entry_ms` and now
+writes a `kind` column so primaries and re-entries can be told apart.
+
+## Run 42 — 2026-09-23: the level the bot ALREADY TRADED, tapped again after the setup died
+
+**Question (Aaron, from the live trade).** Monday night's short filled at the gap edge the setup
+published, tagged its first target, moved the stop to profit and closed there for roughly nothing —
+and price then fell about 3R. Tuesday night price came all the way back to that same price and sold
+off again with nothing placed. *"We did not have any logic to take that trade. Why? How many trades
+like this have we been missing?"*
+
+### Why the bot had nothing, from its own decision record
+
+`algos/ledger_archive/sos_fade_demo/ledger/decisions-2026-09-21.jsonl` and `-2026-09-22.jsonl`, read
+bar by bar. **Two independent causes, both sufficient on their own:**
+
+1. **The setup DIED at 05:15 UTC Tuesday.** Structure re-broke, the bot discarded the entry price
+   outright and began watching a new level — which price then ran through at 19:30 UTC, leaving the
+   watched price meaningless. **Nothing in the bot remembers a level it has already traded.**
+2. **No shift of structure ever printed on the short side all evening.** The sequence sat at its
+   first stage — a sweep and nothing more — so nothing armed and nothing could be placed.
+
+✅ **The 19:44 and 21:20 UTC restarts did NOT cost the trade, and must not be written up as if they
+did** — the decision record is unbroken 17:45 → 20:45.
+
+### The population, and why no earlier run covers it
+
+🔴 **Run 41 only reaches a return while the setup is STILL ALIVE. Runs 27–36 measured setups the
+primary NEVER traded. Run 39 measured the return into the zone from the leg EXTREME.** This is a
+return to a level the primary DID trade, AFTER that setup is finished — unmeasured until now, which
+is why it was measured rather than argued from the runs above.
+
+### Method
+
+`backtest/tools/level_memory_audit.py` (new; notes in `backtest/notes/tools.md`). Replays the
+strategy with the re-entry pinned off, then takes the level, the direction and the stop distance
+**from the trade record** so nothing is re-derived, arms the level from the bar the primary closes,
+and walks the M5 frame for a limit fill and its outcome. Each touch is tagged with whether the bot
+was flat and whether an armed setup already existed, so trades the bot could already take are not
+counted as missing.
+
+**MEASURED 2026-09-23, XAUUSD.p, 158,986 M15 bars against 476,939 M5, 2020-01-01 → 2026-09-22,
+$0.20/oz round trip, 158 primaries, 5-day memory, 3-day max hold:**
+
+- **88 of 158 (56%)** came back to the entry within 5 days after travelling at least 1R away.
+- **39** had the bot flat with **nothing armed** — Aaron's exact case. **~5.8 a year**, median
+  **22.5 hours** after the primary closed (his was ~20).
+- **44** had an armed setup live; **5** were in a position.
+
+| The 39, stop width | R @1 | R @2 | R @3 | win% @2 |
+|---|---|---|---|---|
+| the original trade's own 1R | +4.91 | +11.67 | +11.80 | 44% |
+| **HALF that width** | **+10.63** | **+16.35** | **+19.35** | 49% |
+
+- 🔴 **THE ENTRY IS NOT THE VARIABLE — THE STOP WIDTH IS.** Same trades, same fills, same targets;
+  halving the stop roughly doubles the book. Median best excursion before the stop is **2.14R**, so
+  the primary's width is paying for room these returns never use.
+- ✅ **Both halves positive at every target** (4.4/6.2, 5.2/11.2, 5.2/14.2) and **drop-the-best
+  survives** (9.64 / 14.37 / 16.37).
+- ⚠ **Matched random control** (400 per trade, same year, direction, stop and target): the half-width
+  book scores **z ≈ 2.0–2.2 at 1R and 2.1–2.3 at 2R across four seeds — but 1.9–2.1 at 3R.** The 3R
+  target STRADDLES the z ≥ 2 bar and may not be quoted as clearing it.
+- 🔴 **70% OF THE TOTAL IS ONE YEAR.** 2025 is **+11.47R of the +16.35R from 12 of the 39 trades**,
+  and 2020, 2022, 2024 and 2026 are negative or flat at 1R. **Same fragility shape as Run 41 and as
+  the gap half itself** — a result carried by one regime is not yet an edge.
+- 🔴 **THE 44 RETURNS WITH A SETUP ALREADY ARMED ARE WORTH −0.02R AT 1R** and negative at 2R and 3R.
+  The bot is not missing those, and no rule should be built for them. The missing ones are only the
+  39 where it had nothing at all.
+- Extending the window back to 2018-09 adds nothing to the 39-trade group.
+
+### A defect in this measurement, found and fixed before anything was believed
+
+🔴 **THE FIRST VERSION HAD NO "TRAVEL AWAY FIRST" GUARD AND ITS NUMBERS WERE GARBAGE.** A breakeven
+or profit stop exits AT the entry price, so "price returned to the level" is trivially true within
+minutes of the close. A vacuity check at a 14-minute memory — which should return nothing at all —
+still reported **82 returns and a spurious −38R**. The tool now requires price to travel a full 1R
+away from the level, in the original trade's own direction, before a return counts; the same check
+re-run gives 2 returns and 0 graded. **Rule 12: the bad number was believable, and only a run that
+should have produced NOTHING exposed it.** Aaron's own case travelled ~3R away before returning.
+
+### Verdict
+
+**A screen with a real signal in it, and NOT yet an edge.** ⚠ **One position slot is not simulated**,
+so none of this is charged for the trades it would queue in front of — Run 12's rule, and the
+precedent is expensive: the no-gap entry screened positive and replayed at **−15.3R** inside the bot
+(Runs 28→29).
+
+**Recommended next step, not started:** build the level memory as a switch **defaulted off** — the
+setup's own traded entry stays armed for N days after it closes, with a stop a fraction of the
+original width — and replay it inside the bot with one slot and `puprime_ecn` charged, the same
+shape as Run 41. That replay decides it. Nothing ships before it.

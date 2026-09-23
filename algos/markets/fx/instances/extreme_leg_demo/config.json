@@ -37,7 +37,11 @@
     "news_before_min": 30,
     "news_after_min": 30,
     "point_value": 1.0,
-    "symbol": "XAUUSD.p"
+    "symbol": "XAUUSD.p",
+    "close_hour_ny": 17,
+    "flat_holidays": true,
+    "flat_min": 15,
+    "flat_mode": "Off"
   },
   "strategy_source_hash": "",
   "promoted_commit": "",

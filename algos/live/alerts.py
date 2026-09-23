@@ -8,9 +8,14 @@ REPLY to that entry, so the two halves of a trade sit together in the thread and
 never separated from the setup it came from. That is why `format_entry` is paired with a stored
 `message_id` in the bridge — the reply link is part of the format, not an extra.
 
-**These are the only two TRADE-kind messages in the repo.** Everything else — starts, stops,
-halts, link outages, review findings — is HEALTH and goes to a different chat. See
-`algos/CLAUDE.md` → *Two rooms*.
+**The trades room carries a trade's WHOLE life, and since 2026-09-22 that is more than two
+messages.** The entry opens the thread, the exit closes it, and in between every change the bot
+makes to the trade replies to the entry — the stop reaching breakeven, the stop trailing, size
+banked at a rung, size added to a runner. See *how a trade is MANAGED* below for why those are
+derived from prices rather than from any one strategy's stages, which is what makes them
+automatic for a bot nobody has written yet. Everything else — starts, stops, halts, link
+outages, review findings — is HEALTH and goes to a different chat. See `algos/CLAUDE.md` →
+*Two rooms*.
 
 **The house shape and the no-Markdown rule both live in `shared/alert_format.py`** — read its
 docstring before changing any wording here. The short version: plain text always, because a lone
@@ -399,6 +404,189 @@ def format_entry(
         size,
         strategy,
     )
+
+
+# ── how a trade is MANAGED, between the fill and the outcome ─────────────────────────────────
+#
+# 🔴 **EVERY BOT GETS THESE, AND THAT IS THE WHOLE POINT OF PUTTING THEM HERE (Aaron,
+# 2026-09-22).** A trade's thread said ENTRY and then, hours later, WIN or LOSS — and everything
+# the bot did in between happened in silence: the stop reaching entry, the stop trailing a
+# winner up, size banked at a rung, size added to a runner. His words: *"right now we are only
+# told when we enter a trade and whether we won or lost but nothing about break even and nothing
+# about how the trade is being managed... I need that to be consistently applied as a rule of
+# thumb to any bots I create."*
+#
+# 🔴 **THEY ARE DERIVED FROM PRICES, NEVER FROM A STRATEGY'S OWN STAGE NUMBER.** Each strategy
+# names its stages differently — SOS Fade counts 0/1/2, others do not count at all — so a message
+# keyed off a stage would be a message only ONE bot could send, and the next bot built would
+# start silent again. The entry, the old stop and the new stop are facts the bridge holds for
+# every bot that will ever run here, so the classification below already works for a strategy
+# nobody has written yet. **That is what makes this a rule rather than a feature.**
+#
+# ⚠ **They REPLY TO THE ENTRY, not to each other.** A trade's thread has one root, and a reader
+# tapping any message in it lands on the fill that started it. A chain would make finding the
+# entry a walk back through however many trail moves there happened to be, and one failed send
+# would orphan every message after it.
+
+#: What a stop move DID to the trade's risk. These are the three things that can happen to a
+#: stop, and every bot's stop move is exactly one of them.
+TO_BREAKEVEN, TRAILING, TIGHTENED = "to_breakeven", "trailing", "tightened"
+
+_STOP_MARK = {TO_BREAKEVEN: "🛡", TRAILING: "🪜", TIGHTENED: "🔒"}
+_STOP_LABEL = {
+    TO_BREAKEVEN: "STOP AT BREAKEVEN",
+    TRAILING: "STOP TRAILED",
+    TIGHTENED: "STOP TIGHTENED",
+}
+
+
+def stop_move_kind(*, direction: int, entry: float, was: Optional[float], now: float) -> str:
+    """Which of the three a stop move is, from prices alone.
+
+    **BREAKEVEN is the CROSSING, not the price.** It is the move that takes the stop from behind
+    the entry to at-or-beyond it — the moment the trade stops being able to lose — and it is
+    reported even when the stop lands PAST the entry rather than exactly on it, because a strategy
+    that jumps straight to a buffered breakeven has still just removed the risk and that is the
+    message Aaron asked for by name. Every later move in profit is a TRAIL.
+
+    ⚠ **`was` of `None` means the previous stop is not known, and it is read as BEHIND the entry**
+    — so a first move into profit on a restored trade reports the breakeven crossing rather than a
+    trail out of nowhere. That is the safe direction: the worst case is one extra message saying a
+    true thing, where the other way round the one event he asked for goes missing.
+    """
+    at_or_past = (now >= entry) if direction > 0 else (now <= entry)
+    if not at_or_past:
+        return TIGHTENED
+    was_past = was is not None and ((was >= entry) if direction > 0 else (was <= entry))
+    return TRAILING if was_past else TO_BREAKEVEN
+
+
+def stop_locked_r(
+    *, direction: int, entry: float, stop: float, opening_stop: Optional[float]
+) -> Optional[float]:
+    """What this stop has locked in, in R. Positive = profit banked if it is hit.
+
+    🔴 **`None` means NOT KNOWN and must print as no R at all.** The yardstick is the distance
+    from entry to the stop the trade OPENED with, and a trade restored from a record written
+    before that stop was kept has no yardstick — the stop on the record has already moved, so
+    dividing by it would grade every later move against a distance the trade never risked. Rule
+    1: "no R" and "0R" are different answers and may not share a value.
+    """
+    if not opening_stop:
+        return None
+    risk = abs(entry - opening_stop)
+    if risk <= 0:
+        return None
+    return (stop - entry) * (1 if direction > 0 else -1) / risk
+
+
+def format_stop_moved(
+    *,
+    direction: int,
+    entry: float,
+    was: Optional[float],
+    now: float,
+    opening_stop: Optional[float] = None,
+    symbol: str = "",
+    digits: int = 2,
+    threaded: bool = True,
+) -> str:
+    """The stop moved. Replies to the entry.
+
+    One message shape for all three kinds, because they are one event — the bot changed what this
+    trade can still cost — and three shapes would be three things to learn.
+
+    ⚠ **The R is stated as what it MEANS on each side of entry**: `locking +1.15R` above it,
+    `risk now 0.62R` below it. The same signed number read two ways, because "locking −0.62R" is
+    a sentence a reader has to translate.
+    """
+    kind = stop_move_kind(direction=direction, entry=entry, was=was, now=now)
+    side = "LONG" if direction > 0 else "SHORT"
+    r = stop_locked_r(direction=direction, entry=entry, stop=now, opening_stop=opening_stop)
+
+    move = f"Stop {_moved(was, now, lambda v: _price(v, digits))}"
+    if kind is TO_BREAKEVEN and abs(now - entry) < 10**-digits:
+        move += " (entry)"
+    # ⚠ A figure that ROUNDS to zero is not printed. `risk now 0.00R` beside `(entry)` says the
+    # same thing twice and invites the reader to wonder which of the two is the rounding.
+    if r is not None and abs(r) >= 0.005:
+        move += f" · locking {r:+.2f}R" if r > 0 else f" · risk now {abs(r):.2f}R"
+
+    note = ""
+    if kind == TO_BREAKEVEN:
+        # ⚠ "unless price gaps through it", never "nothing left to lose". A gap or a fast market
+        # fills past a stop, and this thread's own entry message says "Risking" for the same
+        # reason — the smaller word is the accurate one.
+        note = "Out of risk on this trade now, unless price gaps through the stop."
+
+    return alert(
+        _STOP_MARK[kind],
+        _STOP_LABEL[kind],
+        joined([side, symbol]) if not threaded else "",
+        move,
+        note,
+    )
+
+
+def format_partial_banked(
+    *,
+    lots_banked: float,
+    lots_before: float,
+    lots_after: float,
+    symbol: str = "",
+    threaded: bool = True,
+) -> str:
+    """Size taken off at a rung. Replies to the entry.
+
+    ⚠ **It names WHERE the fill happened and does not pretend to a price.** The bridge banks at
+    MARKET on a closed bar, never at the rung the backtest fills at (`bridge._sync_partials`), so
+    a reader comparing this trade with the lab has the divergence in front of them instead of
+    hunting it. The price itself is deliberately absent: the bridge reconciles a SIZE and does
+    not read the deal back, and a price quoted here would be one nobody measured.
+    """
+    return alert(
+        "💰",
+        "PART BANKED",
+        symbol if not threaded else "",
+        f"Took {lots_banked:.2f} of {lots_before:.2f} lots off · {lots_after:.2f} still running",
+        "Banked at market on the bar's close, not at the rung's own price.",
+    )
+
+
+def format_scaled_in(
+    *,
+    lots_added: float,
+    lots_now: float,
+    price: Optional[float] = None,
+    stop: Optional[float] = None,
+    symbol: str = "",
+    digits: int = 2,
+    threaded: bool = True,
+) -> str:
+    """The strategy ADDED to a winner. Replies to the entry.
+
+    🔴 **This one is not a nicety.** A scale-in changes what the trade can make and lose after the
+    entry message has already stated its size and its risk, so without this the thread's only
+    statement of size is out of date from the moment the add fills — and the exit's dollars would
+    arrive with nothing in between explaining them.
+
+    ⚠ **`price` is where the STRATEGY added, which is the arming bar's close, not the broker's
+    fill.** The bridge sends an add at market and does not read the deal back, so this is an
+    estimate and the word "about" is load-bearing. Rule 3. **`None` prints no price at all** —
+    a ladder can arm two lots on one bar, and one of their two prices standing for both would be
+    a number nobody measured.
+
+    ⚠ **The LOTS are what the broker's own book gained, not what was asked for.** Rule 3 from the
+    other side: an add can be refused for size or rejected outright, and a message counting the
+    request would report size the account does not hold.
+    """
+    added = f"Added {lots_added:.2f} lots"
+    if price is not None:
+        added += f" at about {_price(price, digits)}"
+    lines = [added, f"{lots_now:.2f} lots now open"]
+    if stop is not None:
+        lines[1] += f" · every lot on the same stop {_price(stop, digits)}"
+    return alert("➕", "ADDED TO POSITION", symbol if not threaded else "", *lines)
 
 
 def format_exit(

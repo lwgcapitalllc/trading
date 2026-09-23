@@ -291,6 +291,9 @@ listed below under the notes file that now holds it.
 
 ### `notes/tools.md` — Tools
 
+- `level_memory_audit.py` (2026-09-23, Run 42) — the bot forgets a level the moment structure replaces it; 39 returns in 6.7 years it had nothing armed for, and the stop WIDTH is the whole difference. Screen only.
+- `exit_study.py` (2026-09-22) — a give-back cap is the only exit that beats holding; every engine-driven reversal exit, liquidity levels and the volume line included, loses.
+
 **Read before touching:** using, extending, or trusting the output of any script under backtest/tools/.
 
 - Tools

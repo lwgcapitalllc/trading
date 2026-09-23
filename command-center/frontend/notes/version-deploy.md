@@ -376,3 +376,50 @@ version re-read when it landed, and the bot still drawn as never deployed.
   set, which restarts the poll; the row's pill then draws the deploy like any other.
 - The success toast says *deploying it now* only when a job was actually started. What was ASKED
   for, never what finished — the deploy runs in the background and a failed one warns separately.
+
+---
+
+## 🔴 The badge kept a pre-deploy reading, so it asked for a second deploy (2026-09-23)
+
+`fft_1` was deployed, came back correctly on the new code, and its badge went on saying behind — so
+it was deployed again three minutes later. The second run shipped nothing and restarted the bot
+anyway, cancelling the limit order it had just placed. Aaron: *"the FFT badge still said v373
+behind… how else was I allowed to redeploy"*.
+
+**Why the badge was stale.** `useBotVersion` polls only while the reading says a restart is pending
+(`isRestartPending`); otherwise it has no refresh of its own beyond the app's 30s `staleTime` on a
+focus refetch. The only thing that re-reads it after a deploy is `usePromoteJobs` — and that
+watcher reconciled a finish **only when it personally saw the job go `running` → finished**.
+
+**That is an EDGE, and an edge is the wrong shape for this.** A tab not mounted, not focused, or
+opened a second after the deploy landed never sees the transition, so nothing ever asks again and
+the row draws its pre-deploy answer indefinitely.
+
+**Now keyed by JOB ID** (`_settledDeploys`, module scope in `hooks/useBots.ts`): any finished job
+this tab has not yet accounted for triggers the re-read, however it got there. A job id is a fact
+about the deploy rather than about who was watching.
+
+⚠ **The TOAST still needs the transition, and the asymmetry is deliberate.** Re-reading a stale
+version is always right; announcing a deploy this tab was not open for tells somebody something
+just happened when it did not.
+
+⚠ **Module scope, not a ref.** The row's pill and the deploy panel are separate components over ONE
+query, and a per-component memory would let one re-read while the other did not.
+
+## A deploy with NOTHING to deploy — the caption, and why its order matters
+
+`promote.py` now refuses to ship a snapshot the bot is already running, and the result carries
+`nothing_new`. The panel's caption checks it **BEFORE `restarted`**: both are false in that case and
+only one of them is the reason. Falling through printed *Deployed — restart it to pick it up* over a
+bot already running that exact code — telling the reader to do the one thing the outcome exists to
+have avoided, which is how one pointless deploy becomes two.
+
+⚠ **`nothing_new` is its own field on `BotPromoteResult`, never inferred from `restarted`.** A
+deploy that shipped real code with no restart is also `restarted: false`, and reading that as
+"nothing to do" would tell somebody a waiting restart was unnecessary.
+
+⚠ **The browser check for the stale badge answers its FIRST version read pre-deploy** whatever the
+job route has already said (`settledOnOpen` in `tests/bots-version.spec.ts`). Without that the
+check passes whenever the version fetch happens to land after the first job read — a check that
+cannot fail on the defect it names. Backend half:
+`command-center/backend/notes/bots-deploys.md`.

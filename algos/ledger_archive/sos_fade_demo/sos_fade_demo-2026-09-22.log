@@ -37,3 +37,43 @@
 2026-09-22 03:18:34,766 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
 2026-09-22 03:45:03,685 [INFO] Warmup position closed — the bot is now LIVE and will place orders.
 2026-09-22 03:45:03,685 [INFO] Equity re-anchored to the account flat between trades: 11,431.90 → 10,914.72
+2026-09-22 18:34:45,992 [ERROR] Config changed in ways that CANNOT be applied to a running bot: exec_sec_poi_fallback: None → 'Off', exec_tp1_level: None → 'Auto', exec_tp1_r: None → -1.0, exec_tp2_level: None → 'Auto', flat_holidays: None → True, flat_mode: None → 'Off'. Still running the settings loaded at startup. Restart the bot to take them (the version pin and the engine warmup are re-checked on restart).
+2026-09-22 19:43:39,138 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-22 19:43:39,143 [INFO] Stop requested — shutting down.
+2026-09-22 19:43:39,159 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-22 19:43:40,582 [INFO] MT5 disconnected.
+2026-09-22 19:44:23,756 [INFO] SOS Fade | SosFadeStrategy v364 | hash 31a2281e680a | commit 0b78283d | frozen | LIVE
+2026-09-22 19:44:24,319 [INFO] Connected | #34957946 | $10,914.72 | PUPrime-Live
+2026-09-22 19:44:24,319 [INFO] MT5 connection lock released
+2026-09-22 19:44:24,632 [INFO] Sizing against account balance $10,914.72
+2026-09-22 19:44:24,647 [INFO] Re-entry fill clock: M5 — a second bar stream beside M15.
+2026-09-22 19:44:24,647 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-22 19:44:24,663 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → account 34957946's own signals channel -1003332727688
+2026-09-22 19:44:28,682 [INFO] Warmed 5000 bars (2026-07-08 09:00:00+00:00 → 2026-09-22 19:15:00+00:00) in 3.8s
+2026-09-22 19:44:34,170 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-08 09:10:00+00:00 → 2026-09-22 19:35:00+00:00).
+2026-09-22 19:44:34,170 [INFO] Equity re-anchored to the account after warm-up: 9,764.09 → 10,914.72
+2026-09-22 19:44:35,248 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-22 21:19:57,950 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-22 21:19:57,950 [INFO] Stop requested — shutting down.
+2026-09-22 21:19:57,950 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-22 21:19:58,349 [INFO] MT5 disconnected.
+2026-09-22 21:20:20,602 [INFO] SOS Fade | SosFadeStrategy v365 | hash ad1646975716 | commit e0b07884 | frozen | LIVE
+2026-09-22 21:20:21,122 [INFO] Connected | #34957946 | $10,914.72 | PUPrime-Live
+2026-09-22 21:20:21,122 [INFO] MT5 connection lock released
+2026-09-22 21:20:21,258 [INFO] Sizing against account balance $10,914.72
+2026-09-22 21:20:21,258 [INFO] Re-entry fill clock: M5 — a second bar stream beside M15.
+2026-09-22 21:20:21,258 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-22 21:20:21,274 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → account 34957946's own signals channel -1003332727688
+2026-09-22 21:20:22,806 [INFO] Warmed 5000 bars (2026-07-08 10:15:00+00:00 → 2026-09-22 20:30:00+00:00) in 1.5s
+2026-09-22 21:20:24,620 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-08 10:25:00+00:00 → 2026-09-22 20:50:00+00:00).
+2026-09-22 21:20:24,620 [INFO] Equity re-anchored to the account after warm-up: 9,764.09 → 10,914.72
+2026-09-22 21:20:25,182 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-22 22:05:00,671 [WARNING] 13 M5 bars missed on the re-entry's feed — re-warming the fast side. The primary is untouched.
+2026-09-22 22:05:03,869 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-08 10:35:00+00:00 → 2026-09-22 22:00:00+00:00).
+2026-09-22 22:05:03,869 [INFO] The 13 M5 intervals were a market break, not lost bars — no alert.
+2026-09-22 22:15:05,864 [WARNING] 5 bars missed — re-warming the engines rather than resuming with a hole in the stream.
+2026-09-22 22:15:05,864 [INFO] Sizing against account balance $10,914.72
+2026-09-22 22:15:07,990 [INFO] Warmed 5000 bars (2026-07-08 10:45:00+00:00 → 2026-09-22 22:00:00+00:00) in 2.0s
+2026-09-22 22:15:11,240 [INFO] Fast feed bookmarked at 2026-09-22 22:14:59.999000+00:00 — the 15m context is already past it.
+2026-09-22 22:15:11,240 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-08 10:45:00+00:00 → 2026-09-22 22:10:00+00:00).
+2026-09-22 22:15:11,240 [INFO] Equity re-anchored to the account after warm-up: 9,764.09 → 10,914.72

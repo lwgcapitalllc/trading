@@ -23,8 +23,10 @@ import {
   useRunCandles,
   useStackContention,
   useStackRegimeTimeline,
+  useRunningVpsJob,
 } from '@/hooks/useLab'
 import { useGradable } from '@/hooks/useStressTests'
+import { platformBusyReason } from '@/lib/runner'
 import { ChartTabPanel, ChartModal } from '@/components/ChartTabPanel'
 import { StackConfigModal } from '@/components/StackConfigModal'
 import { RunStackStressTestModal } from '@/components/RunStackStressTestModal'
@@ -1068,6 +1070,10 @@ export function StackDetail() {
   // gradable yet for a reason that will stop being true on its own, and saying so mid-replay
   // reads as a verdict on the stack rather than on the clock.
   const { data: gradable } = useGradable(isShared && !stackRunning ? (stackId ?? null) : null)
+  // Every leg is a python strategy, so a stack's stress test waits on the Python slot.
+  const { data: runningJob } = useRunningVpsJob()
+  const stressBusy = platformBusyReason(runningJob, 'python')
+  const stressOff = (gradable ? !gradable.gradable : false) || !!stressBusy
   const deleteStack = useDeleteStack()
   const cancelStack = useCancelStack()
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -1492,12 +1498,14 @@ export function StackDetail() {
                   <button
                     data-testid="stack-stress-test"
                     onClick={() => setShowStress(true)}
-                    disabled={gradable ? !gradable.gradable : false}
+                    disabled={stressOff}
                     title={
-                      gradable && !gradable.gradable ? (gradable.reason ?? undefined) : undefined
+                      gradable && !gradable.gradable
+                        ? (gradable.reason ?? undefined)
+                        : (stressBusy ?? undefined)
                     }
                     className={`flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium border transition-colors ${
-                      gradable && !gradable.gradable
+                      stressOff
                         ? 'text-text-tertiary border-border-subtle cursor-not-allowed'
                         : 'text-text-secondary hover:text-text-primary border-border-default hover:bg-bg-hover'
                     }`}

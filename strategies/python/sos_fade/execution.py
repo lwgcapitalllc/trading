@@ -879,6 +879,23 @@ class Execution:
         # no qualifying gap, which is the honest reading: "no gap to enter on", never a price.
         self._poi_edge_l: Optional[float] = None
         self._poi_edge_s: Optional[float] = None
+        # The LAST price this setup published as its entry edge, kept after the gap itself is
+        # gone — the re-entry's `exec_sec_poi_fallback`. Per SETUP and cleared by
+        # `_sync_gap_latch`, the same key and the same lifetime as `_gap_seen_*`: a price
+        # belonging to a dead setup is how a re-entry rests at a level nothing is watching.
+        # ⚠ It is NOT a second reading of the gap rules — it is the number `_entry_edges`
+        # already published, remembered. Nothing reads it unless the fallback is switched on.
+        self._poi_last_l: Optional[float] = None
+        self._poi_last_s: Optional[float] = None
+        # A primary a PERSON closed before it reached TP1, as (sos bar, that trade's own first
+        # target) — see `_finalise_trade`. While the setup lives, price reaching that level
+        # opens the re-entry's breakeven door exactly as holding the trade would have. Per
+        # SETUP, cleared by `_sync_gap_latch`. ⚠ It is NOT carried across a restart: the bot
+        # re-warms from bars, which cannot know a person closed anything, so a restart loses the
+        # watch and the door stays shut. That is the safe direction — a missed re-entry, never
+        # an extra one.
+        self._cmd_watch_l: Optional[Tuple[int, float]] = None
+        self._cmd_watch_s: Optional[Tuple[int, float]] = None
         # The looser secondary gates (`exec_sec_require`). `_prim_closed_sos_*` = a PRIMARY has
         # traded this 15m leg and is now closed, whatever the outcome; `_prim_lost_sos_*` = it
         # closed at stage 0, i.e. never reached TP1 (the swept-stop case). Both are latched at
@@ -1048,6 +1065,62 @@ class Execution:
             return False
         self._close_requested = reason or "commanded"
         return True
+
+    def snapshot_setup_watch(self) -> Optional[dict]:
+        """What this bot is still watching WHILE FLAT, so a restart does not forget it.
+
+        Today that is one thing: a setup whose primary a PERSON closed before it reached its
+        first target (`_check_cmd_watch`). `None` when there is nothing to remember, which the
+        caller writes as "no file" rather than as an empty record.
+
+        🔴 **IT IS A SEPARATE RECORD FROM `position.json` BECAUSE IT LIVES IN THE OPPOSITE
+        STATE.** That file describes an OPEN position and is deleted the moment the bot goes
+        flat — which is exactly when this begins to matter. Folding one into the other would
+        mean either keeping a position record for a position that does not exist, or losing
+        this every time a trade closes.
+
+        ⚠ **Each side carries the leg's TIME beside its bar number**, and the time is the half
+        that survives: bar numbering is local to one run. See `_same_leg`.
+        """
+        def _one(watch):
+            if watch is None:
+                return None
+            return {"sos_bar": watch[0], "sos_ms": watch[1], "tp1": watch[2]}
+
+        if self._cmd_watch_l is None and self._cmd_watch_s is None:
+            return None
+        return {"version": 1, "long": _one(self._cmd_watch_l), "short": _one(self._cmd_watch_s)}
+
+    def restore_setup_watch(self, record: Optional[dict]) -> bool:
+        """Take a record from `snapshot_setup_watch` back. Call AFTER the warm-up.
+
+        Returns True if anything was restored. **Call it after the replay**, for the same reason
+        `restore_position` is applied there: the warm-up drives this same object through
+        thousands of bars and would clear the watch on the first new break it replays.
+
+        🔴 **A SIDE WITHOUT A LEG TIME IS DROPPED RATHER THAN RESTORED ON ITS BAR NUMBER.** The
+        numbering is rebuilt by the warm-up, so the old number now names a different bar — it
+        would open a re-entry door on a setup nobody was watching. Dropping it costs a possible
+        re-entry, which is the safe direction and the same one the missing watch had before this
+        existed. ⚠ An unreadable record is treated the same way and never raises: this is a
+        convenience, and it must not be able to stop a bot from starting.
+        """
+        if not isinstance(record, dict):
+            return False
+        took = False
+        for side, attr in (("long", "_cmd_watch_l"), ("short", "_cmd_watch_s")):
+            one = record.get(side)
+            if not isinstance(one, dict):
+                continue
+            sos_ms, tp1 = one.get("sos_ms"), one.get("tp1")
+            if sos_ms is None or tp1 is None:
+                continue
+            try:
+                setattr(self, attr, (one.get("sos_bar"), int(sos_ms), float(tp1)))
+            except (TypeError, ValueError):
+                continue
+            took = True
+        return took
 
     def snapshot_position(self) -> dict:
         """Everything needed to carry on managing the open trade, as plain JSON types."""
@@ -1289,6 +1362,7 @@ class Execution:
         # Before the edges, so a new break of structure re-opens the block leg on the same bar it
         # arms rather than one bar late.
         self._sync_gap_latch(seq)
+        self._check_cmd_watch(sig, seq)
         long_edge, short_edge = self._entry_edges(sig, seq)
         dec.long_edge, dec.short_edge = long_edge, short_edge
         # Latched for the SECONDARY's gap half (any `exec_sec_trigger` naming the gap), which
@@ -1298,6 +1372,13 @@ class Execution:
         # diverge. Reporting-free: nothing reads these unless the gap trigger is on, so the
         # shipped book cannot move. Cleared with the setup by `_sync_gap_latch`'s own caller.
         self._poi_edge_l, self._poi_edge_s = long_edge, short_edge
+        # Remember the last price this setup published, for the re-entry's gap-gone fallback.
+        # ⚠ Written unconditionally — the config is read at the ARM, not here — so switching the
+        # fallback on mid-run cannot find a half-filled memory, and the OFF path never looks.
+        if long_edge is not None:
+            self._poi_last_l = long_edge
+        if short_edge is not None:
+            self._poi_last_s = short_edge
         dec.l_stage, dec.s_stage = seq.l_stage, seq.s_stage
         dec.long_veto, dec.short_veto = sos_aware_veto(sig, seq.l_sos_bar, seq.s_sos_bar)
 
@@ -2435,8 +2516,37 @@ class Execution:
         """
         if seq.l_sos_bar != self._gap_seen_sos_l:
             self._gap_seen_sos_l, self._gap_seen_l = seq.l_sos_bar, False
+            self._poi_last_l = None
+            self._cmd_watch_l = None
         if seq.s_sos_bar != self._gap_seen_sos_s:
             self._gap_seen_sos_s, self._gap_seen_s = seq.s_sos_bar, False
+            self._poi_last_s = None
+            self._cmd_watch_s = None
+
+    def _check_cmd_watch(self, sig, seq) -> None:
+        """Price reached the first target of a trade a PERSON closed early — open the re-entry's
+        breakeven door, exactly as holding that trade would have.
+
+        Runs every bar, before the entry edges, so the door is open on the same bar a re-entry
+        could first rest on it. Reads the bar's HIGH for a long and its LOW for a short: the same
+        touch test the trade's own TP1 uses, so the watch cannot open a door the trade itself
+        would not have.
+
+        ⚠ Keyed on the SOS bar the watch was set for, and compared against the CURRENT setup —
+        a stale watch can never stamp a leg that has since broken again. `_sync_gap_latch` has
+        already cleared it in that case; this test is the second lock, because the cost of
+        getting it wrong is a re-entry on a setup nobody is watching.
+        """
+        watch = self._cmd_watch_l
+        if (watch is not None and self._same_leg(watch[0], watch[1], seq.l_sos_bar)
+                and sig.high >= watch[2]):
+            self._be_sos_l = seq.l_sos_bar
+            self._cmd_watch_l = None
+        watch = self._cmd_watch_s
+        if (watch is not None and self._same_leg(watch[0], watch[1], seq.s_sos_bar)
+                and sig.low <= watch[2]):
+            self._be_sos_s = seq.s_sos_bar
+            self._cmd_watch_s = None
 
     def _entry_edges(self, sig, seq) -> Tuple[Optional[float], Optional[float]]:
         """The resting-limit price on each side (Pine 3937-3959): the near edge of an
@@ -3330,15 +3440,45 @@ class Execution:
         # is still the trade's final stage here (it is reset a few lines below), so stage 0 means
         # "closed without ever touching TP1" — a stop-out or a time stop, which is exactly the
         # state the breakeven gate refuses.
+        # 🔴 A CLOSE A PERSON ASKED FOR IS NOT A STOP-OUT, AND CALLING IT ONE ARMS THE WRONG
+        # RE-ENTRY. `-CMD` is the tag every commanded exit carries, including the hand close the
+        # bridge adopts (`algos/live/bridge.py`, `closed_by_you`). Before 2026-09-22 such a close
+        # at stage 0 stamped `_prim_lost_sos_*`, so the RECLAIM half — built and measured for
+        # primaries the market stopped at the deep edge — would arm on a trade the owner simply
+        # ended, at a price nothing was stopped at. The setup is still recorded as CLOSED, which
+        # is true and is what the looser "Any close" door reads.
+        by_request = str(self._exit_reason or "").endswith("-CMD")
         if self._entry_kind == "primary":
             if d > 0:
                 self._prim_closed_sos_l = self._sos_bar_open
-                if self._stage == 0:
+                if self._stage == 0 and not by_request:
                     self._prim_lost_sos_l = self._sos_bar_open
             else:
                 self._prim_closed_sos_s = self._sos_bar_open
-                if self._stage == 0:
+                if self._stage == 0 and not by_request:
                     self._prim_lost_sos_s = self._sos_bar_open
+            # 🔴 KEEP WATCHING THE SETUP THE PERSON STEPPED OUT OF. Aaron, 2026-09-22: *"if I
+            # manually close a trade and price comes back to entry"* — the re-entry's door is
+            # opened by the primary REACHING ITS FIRST TARGET, and a hand close stops the bot
+            # following the trade, so a target price reached an hour later was never seen and the
+            # door never opened. The watch asks the question the trade would have asked if it had
+            # been left alone: did price reach THIS trade's own first target while the setup
+            # lived? Nothing else about the re-entry changes — the same preconditions, the same
+            # entry price, the same stop.
+            # ⚠ Only from stage 0. A trade that had already reached TP1 stamped the door open
+            # before the person closed it, so there is nothing left to watch.
+            # ⚠ It opens a door price actually reached; it never invents one. If price never gets
+            # there the watch simply expires with the setup.
+            # ⚠ The leg is identified by TIME as well as by bar number, and the time is the half
+            # that survives a restart — a bar number belongs to one run's numbering. Same pair,
+            # same reason, as `_traded_sos_l_ms`; `_same_leg` is the one reader of both.
+            if by_request and self._stage == 0 and self._tp1:
+                sos_ms = (self._bar_ms.get(self._sos_bar_open)
+                          if self._sos_bar_open is not None else None)
+                if d > 0:
+                    self._cmd_watch_l = (self._sos_bar_open, sos_ms, float(self._tp1))
+                else:
+                    self._cmd_watch_s = (self._sos_bar_open, sos_ms, float(self._tp1))
         self._account.close_position(self._leg)   # P&L already booked; free the reservation
         self._pos_dir = 0
         self._qty = 0.0

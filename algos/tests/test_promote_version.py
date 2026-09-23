@@ -344,3 +344,110 @@ def test_the_preflight_asks_whether_a_SOURCE_EXISTS_not_whether_it_is_a_FOLDER()
     assert body.strip(), "could not find the preflight — the guard is vacuous"
     assert "src.exists()" in body
     assert "is_dir()" not in body
+
+
+# ── Nothing new to deploy — `nothing_new` (2026-09-23) ───────────────────────────────────────
+#
+# 🔴 **The failure.** A bot was deployed twice inside three minutes. The second run staged
+# byte-identical code, printed `v373 -> v373`, and the tool went on to stop and restart the bot —
+# cancelling the limit order it had placed ninety seconds earlier.
+#
+# 🔴 **AND THE FIRST FIX FOR IT WAS INERT, WHICH IS THE MORE USEFUL HALF OF THIS STORY.** It
+# compared the STAGED hash with the RECORDED one, and those two are taken over different root
+# sets — `deployment_hash` folds each root's NAME into the digest, the staged hash covers every
+# tree the tool copies (11 roots for `fft_1`) and the pinned hash covers `cfg.source_roots` (3).
+# They can never be equal, so the refusal could not fire; and the `code is UNCHANGED from the
+# running deployment` line this tool has printed since it was written has never once been true.
+#
+# 🔴 **THE FIRST TESTS PASSED ANYWAY, BECAUSE THEY STUBBED `deployment_hash`.** A double more
+# capable than production, describing a system we do not have — rule 13, in the tests written to
+# prove rule 9 had been answered. **These use REAL FILES ON DISK for exactly that reason**: they
+# hash what a promote would hash, so a comparison between incomparable things cannot pass.
+#
+# **Watched RED against the shipped code:** every content check below failed on the real
+# implementation — `nothing_new` answered False for two byte-identical trees, which is the whole
+# defect. Then re-run against a version that ignores the params, and the settings check went red.
+
+
+def _tree(root: Path, files: dict) -> Path:
+    root.mkdir(parents=True, exist_ok=True)
+    for rel, body in files.items():
+        f = root / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(body, encoding="utf-8")
+    return root
+
+
+class _Cfg:
+    """Only what `nothing_new` reads. `deployed_dir` is a real directory holding real modules,
+    because the function's whole job is hashing what is actually on disk."""
+
+    def __init__(self, deployed_dir):
+        self.deployed_dir = deployed_dir
+
+
+PARAMS = {"exec_risk_pct": 5.0}
+TREES = [(None, Path("fft")), (None, Path("engines"))]
+WAS = {"strategy_source_hash": "whatever-the-record-says", "strategy_params": PARAMS}
+
+
+def _pair(tmp_path, staged_body, live_body):
+    staging, live = tmp_path / "staging", tmp_path / "deployed"
+    _tree(staging / "fft", {"strategy.py": staged_body})
+    _tree(staging / "engines", {"a/structure.py": "X = 1\n"})
+    _tree(live / "fft", {"strategy.py": live_body})
+    _tree(live / "engines", {"a/structure.py": "X = 1\n"})
+    return staging, _Cfg(live)
+
+
+def test_a_BYTE_IDENTICAL_snapshot_is_NOTHING_NEW(tmp_path):
+    """🔴 The case the shipped version could not answer. Two trees with the same content, hashed
+    the same way over the same relative destinations."""
+    staging, cfg = _pair(tmp_path, "RISK = 5\n", "RISK = 5\n")
+    assert promote_tool.nothing_new(cfg, WAS, staging, TREES, PARAMS) is True
+
+
+def test_one_CHANGED_BYTE_is_a_real_deploy(tmp_path):
+    staging, cfg = _pair(tmp_path, "RISK = 6\n", "RISK = 5\n")
+    assert promote_tool.nothing_new(cfg, WAS, staging, TREES, PARAMS) is False
+
+
+def test_a_snapshot_EDITED_IN_PLACE_is_a_real_deploy(tmp_path):
+    """The state the Bots page draws as *Snapshot modified*. Comparing a RECORD would call it
+    unchanged and leave the bot running edited code; comparing the FILES cannot."""
+    staging, cfg = _pair(tmp_path, "RISK = 5\n", "RISK = 5  # somebody edited this\n")
+    assert promote_tool.nothing_new(cfg, WAS, staging, TREES, PARAMS) is False
+
+
+def test_an_ADDED_FILE_is_a_real_deploy(tmp_path):
+    """A file present on one side only. The hash walks every `.py` under each root, so this is a
+    difference even though nothing existing changed."""
+    staging, cfg = _pair(tmp_path, "RISK = 5\n", "RISK = 5\n")
+    (staging / "fft" / "extra.py").write_text("Y = 2\n", encoding="utf-8")
+    assert promote_tool.nothing_new(cfg, WAS, staging, TREES, PARAMS) is False
+
+
+def test_changed_SETTINGS_with_identical_code_is_a_real_deploy(tmp_path):
+    """🔴 The record pins the settings a version was deployed WITH, and `config.json` is edited
+    between promotes — the Bots page writes the per-trade risk to it live. Refusing here would
+    silently keep the old settings pinned while the file says otherwise."""
+    staging, cfg = _pair(tmp_path, "RISK = 5\n", "RISK = 5\n")
+    was = {"strategy_source_hash": "x", "strategy_params": {"exec_risk_pct": 2.5}}
+    assert promote_tool.nothing_new(cfg, was, staging, TREES, PARAMS) is False
+
+
+def test_a_bot_that_has_NEVER_been_deployed_is_never_nothing_new(tmp_path):
+    """There is no *same* to be the same as. An empty record is the state that makes a bot trade
+    the repo working tree, and it must always deploy."""
+    staging, cfg = _pair(tmp_path, "RISK = 5\n", "RISK = 5\n")
+    assert promote_tool.nothing_new(cfg, {}, staging, TREES, PARAMS) is False
+    unpinned = {"strategy_source_hash": "", "strategy_params": PARAMS}
+    assert promote_tool.nothing_new(cfg, unpinned, staging, TREES, PARAMS) is False
+
+
+def test_a_MISSING_snapshot_directory_is_never_nothing_new(tmp_path):
+    """Rule 1: cannot-read is not *the same*. Without this the hash of an absent tree — the root
+    names alone — could match another absent one and refuse a deploy the bot needs."""
+    staging = tmp_path / "staging"
+    _tree(staging / "fft", {"strategy.py": "RISK = 5\n"})
+    assert promote_tool.nothing_new(_Cfg(tmp_path / "gone"), WAS, staging, TREES, PARAMS) is False

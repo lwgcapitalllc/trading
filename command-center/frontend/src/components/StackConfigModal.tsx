@@ -208,7 +208,8 @@ export function StackConfigModal({
   // ⚠ Three answers, not two. `null` = the agent could not be asked, which must never render as a
   // mismatch — the same rule the health dots follow.
   const brokerMatches: boolean | null =
-    !broker || !attachedProfile ? null : broker.id === attachedProfile.id
+    // The profile's OWN flag — several per-instrument profiles share one login (see RunBacktestModal).
+    !broker || !attachedProfile ? null : broker.attached
   // A tier whose spread has never been read carries the refusal sentinel rather than a number, and
   // the backend REFUSES to run it charged. Say so before the button, not in a 400 after the click.
   const brokerUnpriced = broker != null && broker.spread < 0

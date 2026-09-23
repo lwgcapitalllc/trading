@@ -72,6 +72,19 @@ from order_sizing import (  # noqa: E402
     plan_order,
 )
 
+#: How much the locked R must IMPROVE before another stop-move message is sent.
+#:
+#: 🔴 **THE THROTTLE IS THE FEATURE, NOT A LIMITATION OF IT (2026-09-22).** A structure trail
+#: ratchets on most bars a winner runs, so an unthrottled version would put a dozen near-identical
+#: messages under one trade — and `shared/notify.py`'s own docstring names where that ends: *"a
+#: chat that pings nine times a day for routine chatter is one you learn to ignore, and the day
+#: you mute it you mute your fills with it."* A stop that moved three points tells a reader
+#: nothing; a stop that locked another half R does.
+#:
+#: ⚠ **The BREAKEVEN crossing ignores this and always sends.** It is the event Aaron asked for by
+#: name, it happens once per trade, and it is the one that changes what the trade can still cost.
+DEFAULT_TRAIL_ALERT_STEP_R = 0.5
+
 
 class BridgeState(str, Enum):
     WARMING = "warming"  # the emulator opened a position during warmup — wait for it to flatten
@@ -582,6 +595,7 @@ class OrderBridge:
         sizing_basis_adjustment: float = 0.0,
         instance_dir: Optional[Path] = None,
         name_for_messages: Optional[Callable[[], str]] = None,
+        trail_alert_step_r: float = DEFAULT_TRAIL_ALERT_STEP_R,
     ) -> None:
         self._mt5 = bot_mt5
         # Where `position.json` lives. `None` disables the whole restore path — the bridge then
@@ -598,6 +612,7 @@ class OrderBridge:
         self._ledger = ledger
         self._log = log
         self._notify = notify or (lambda text, kind, reply_to=None: None)
+        self._trail_alert_step_r = float(trail_alert_step_r)
         self.dry_run = dry_run
         self._margin_safety_pct = float(margin_safety_pct)
         # The ACCOUNT-level cap: max open risk across EVERY bot on this account, as a % of the
@@ -694,6 +709,15 @@ class OrderBridge:
         self._pos_stop: float = 0.0
         self._pos_intended: float = 0.0
         self._pos_risk_usd: float = 0.0
+        # The stop the position OPENED with — the 1R yardstick every stop-move message is
+        # measured against. `_pos_stop` above is the CURRENT stop and is rewritten on every
+        # ratchet, so it cannot serve. `0.0` is this field's own "unknown", exactly as
+        # `_pos_risk_usd` uses it, and an unknown yardstick prints NO R rather than 0.00R.
+        self._pos_stop0: float = 0.0
+        #: The locked R last ANNOUNCED to the trades room, so a trail that ratchets every bar does
+        #: not send a message every bar. `None` = nothing said about this trade's stop yet. See
+        #: `_notify_stop_moved`.
+        self._stop_r_said: Optional[float] = None
         self._pos_opened_bar: Optional[int] = None
         # Telegram's id for THIS position's entry message. The exit replies to it, so the two
         # halves of a trade read as one thread. None means the entry alert never landed, and the
@@ -1023,9 +1047,12 @@ class OrderBridge:
         # arbitrary integer wearing a real field's name.
         self._pos_intended = 0.0
         self._pos_opened_bar = None
-        # No entry alert exists in this process, so the exit posts standalone instead of as a
-        # reply. One orphaned exit message beats no exit message.
-        self._pos_alert_id = None
+        # 🔴 **The thread is CARRIED, and it was lost here until 2026-09-22.** The record holds
+        # Telegram's id for this trade's entry message, so the stop moves, the banks and the exit
+        # go on replying under the fill they belong to across a restart. `None` — a record
+        # written before the field existed, or an entry alert that never landed — still means
+        # standalone, which is the behaviour this line used to have unconditionally.
+        self._pos_alert_id = record.alert_id
         # The risk the trade OPENED with, as recorded at its fill. 🔴 Until 2026-09-12 this was
         # recomputed off the record's stop — which `_save_position` rewrites on every move — so
         # after a ratchet every later R was divided by the distance the stop had LOCKED, and at
@@ -1033,6 +1060,13 @@ class OrderBridge:
         # a record from before the entry risk was written gives no R, never one off a stop that
         # has moved. See `position_state.BrokerFacts.risk_usd`.
         self._pos_risk_usd = record.broker.risk_usd or 0.0
+        # The yardstick every stop-move message is measured against. `0.0` — a record written
+        # before the field existed — prints no R rather than one off a stop that has moved.
+        self._pos_stop0 = record.broker.stop_opened or 0.0
+        # Nothing has been SAID about this trade's stop in THIS process, so the first move after
+        # the restart reports itself. A trail already past the step will simply say so again,
+        # which is the safe direction: one repeated message beats a silent ratchet.
+        self._stop_r_said = None
         return True
 
     def _replay_disagreements(self, p) -> list:
@@ -1111,6 +1145,10 @@ class OrderBridge:
             if first
             else 0.0
         )
+        # The same `first` in price — the stop the emulator's replay says this trade opened with.
+        # `0.0` when the replay cannot say, which prints no R.
+        self._pos_stop0 = first
+        self._stop_r_said = None
         self._pos_intent = getattr(self._ex, "entry_kind", "primary")
         self._restored = True
         self._log.info(
@@ -1282,6 +1320,58 @@ class OrderBridge:
             )
         return True
 
+    def save_setup_watch(self) -> None:
+        """Write down what the strategy is still watching while FLAT. Never raises.
+
+        🔴 **THE POINT IS THAT IT OUTLIVES THE POSITION.** `position.json` is deleted the moment
+        the bot goes flat, and the one thing this carries — a setup whose trade the OWNER closed
+        by hand before it reached its first target — only starts mattering then. Without it a
+        restart in that window silently closes a re-entry door the person would have had, and
+        this bot restarts often (four times on 2026-09-22 alone).
+
+        ⚠ Called on every bar rather than only on a change: the record is two small numbers per
+        side, and a "write it when it changes" rule needs a second piece of state to know that,
+        which is the sort of bookkeeping that goes wrong quietly. `write_watch(None)` clears.
+
+        ⚠ A strategy with no such state is not an error — the method is optional, and a bot whose
+        emulator does not offer it simply records nothing.
+        """
+        if self._instance_dir is None:
+            return
+        snapshot = getattr(self._ex, "snapshot_setup_watch", None)
+        if not callable(snapshot):
+            return
+        try:
+            position_state.write_watch(self._instance_dir, snapshot())
+        except Exception as e:
+            self._log.warning(f"Could not record the setup watch: {e}")
+
+    def restore_setup_watch(self) -> None:
+        """Hand back what was being watched while flat. Call AFTER the warm-up. Never raises.
+
+        ⚠ **AFTER, for `apply_restore`'s reason**: the warm-up replays thousands of bars through
+        this same emulator, and a new break of structure in that replay clears the watch. Applied
+        before it, this would be overwritten by a fiction every time.
+
+        ⚠ **It never halts.** A watch that cannot be restored costs one possible re-entry; it can
+        never open a position or move a stop, which is why it is not held to `restore_position`'s
+        standard.
+        """
+        if self._instance_dir is None:
+            return
+        restore = getattr(self._ex, "restore_setup_watch", None)
+        if not callable(restore):
+            return
+        try:
+            record = position_state.read_watch(self._instance_dir)
+            if record and restore(record):
+                self._log.info(
+                    "Carried a setup watch across the restart: a trade you closed by hand can "
+                    "still open its re-entry if price reaches that trade's first target."
+                )
+        except Exception as e:
+            self._log.warning(f"Could not restore the setup watch: {e}")
+
     def _save_position(self) -> None:
         """Write the open position down, so a restart can pick it up. Never raises.
 
@@ -1315,7 +1405,15 @@ class OrderBridge:
                 stop=self._pos_stop,
                 # Carried so a restart keeps the R's denominator: `stop` moves, this does not.
                 risk_usd=self._pos_risk_usd or None,
+                # The same reasoning in PRICE, and it is what lets a restored trade's stop-move
+                # messages still quote an R. `stop` above has already moved by then.
+                stop_opened=self._pos_stop0 or None,
             ),
+            # 🔴 **The trade's Telegram thread, carried across the restart (2026-09-22).** Without
+            # it the bot goes on managing a restored trade while every message about it lands
+            # loose in the room, detached from the fill it is about — and the exit, which has
+            # always replied to the entry, lands loose too.
+            alert_id=self._pos_alert_id,
             strategy=snap,
         )
         if not ok:
@@ -1444,6 +1542,10 @@ class OrderBridge:
             # 15-minute bar it never saw.
             self._sync_slot(PRIMARY_LONG, self._ex._pend_long, sig)
             self._sync_slot(PRIMARY_SHORT, self._ex._pend_short, sig)
+            # The FLAT-state record, written here because here is where the bot is flat. Its
+            # counterpart `position.json` has just been deleted by the close that got us here,
+            # and what this carries only begins to matter afterwards. See `save_setup_watch`.
+            self.save_setup_watch()
 
     def sync_fast(self, step) -> None:
         """Reconcile the RE-ENTRY, on the fill clock. **G18 stage 2.**
@@ -1716,6 +1818,8 @@ class OrderBridge:
         self._pos_ticket = None
         self._pos_dir = 0
         self._pos_risk_usd = 0.0
+        self._pos_stop0 = 0.0
+        self._stop_r_said = None
         self._pos_opened_bar = None
         self._pos_alert_id = None
         # The trade is over, so the restart record describes a ticket that no longer exists. It
@@ -2194,6 +2298,12 @@ class OrderBridge:
 
         slot = add_slot(direction)
         placed = False
+        # What the account holds under our magic BEFORE any of this bar's adds. The alert reports
+        # the difference against the broker's own book afterwards rather than the size asked for:
+        # an add can be refused for size or rejected outright, and a message counting the REQUEST
+        # would announce size the account does not hold. Rule 3.
+        held_before = self._our_lots(positions)
+        priced = []
         for intent in wanted:
             pend = _MarketIntent(
                 dir=direction,
@@ -2221,9 +2331,36 @@ class OrderBridge:
             )
             self._place(slot, plan.lots, pend, sig, plan)
             placed = True
+            priced.append(pend.edge)
         if not placed or self.dry_run:
             return positions
-        return self._mt5.get_open_positions()
+        positions = self._mt5.get_open_positions()
+        gained = self._our_lots(positions) - held_before
+        # 🔴 **`held_before` of zero is CANNOT ASK, never an empty account.** `get_open_positions`
+        # answers `[]` for both, and this path only runs with a base position already adopted —
+        # so a zero read means the book could not be read, and the difference would then report
+        # the WHOLE position as size just added. Rule 1, arriving through a subtraction.
+        if gained > 1e-9 and held_before > 0:
+            self._notify_scaled_in(
+                added=gained,
+                now=self._our_lots(positions),
+                # ONE add on this bar means one price the reader can check; a ladder arming two
+                # lots at once has two, and either one standing for both would be a number nobody
+                # measured. `None` then prints no price rather than the wrong one.
+                price=priced[0] if len(priced) == 1 else None,
+                stop=getattr(dec, "stop", None),
+            )
+        return positions
+
+    def _our_lots(self, positions) -> float:
+        """Every lot the account holds under this bot's magic, base and scale-ins together.
+
+        ⚠ **`None` (the book could not be read) answers 0.0 and the caller must only ever use
+        this as a DIFFERENCE between two reads.** A single absolute figure off an unreadable book
+        would be the no-vs-cannot-ask collapse rule 1 exists to stop; a difference taken from two
+        reads of the same source is either a real gain or zero, and zero sends nothing.
+        """
+        return sum(float(p.volume) for p in (positions or ()))
 
     def _mirror_strategy_entry(self, positions, dec, sig):
         """Open at the broker when the STRATEGY has opened a trade the broker has not.
@@ -2337,6 +2474,13 @@ class OrderBridge:
         # stop that was actually attached, not off the strategy's intended price — R has to
         # describe the trade that happened.
         self._pos_risk_usd = abs(p.price_open - p.sl) * p.volume * self._contract_size()
+        # The 1R yardstick, frozen here and never rewritten — `_pos_stop` moves, this does not.
+        # Every stop-move message measures against it, and a trade that opened with no stop
+        # attached leaves it at its own unknown (`0.0`) rather than at a price nobody set.
+        self._pos_stop0 = float(p.sl or 0.0)
+        # A new trade says nothing about the last one's stop. A latch carried across would make
+        # this trade's first trail message wait for an R the PREVIOUS trade had already reached.
+        self._stop_r_said = None
         self._log.info(
             f"POSITION OPENED | T{p.ticket} {side} {p.volume}L @ {p.price_open} | SL={p.sl}"
         )
@@ -4012,6 +4156,10 @@ class OrderBridge:
                 wanted=round(want, 2),
             )
             return
+        # Said BEFORE `_pos_lots` is overwritten, because the message needs both sizes — and
+        # only after the broker has confirmed the close, so it never reports size that is still
+        # open. Rule 3.
+        self._notify_partial_banked(banked=excess, before=held, after=want)
         self._pos_lots = want
         self._partial_alerted = ""
         self._ledger.event(
@@ -4024,6 +4172,116 @@ class OrderBridge:
             # rung's own price. A shadow diff comparing it to the lab must know that.
             fill="market_on_bar_close",
         )
+
+    def _notify_stop_moved(self, was, now) -> None:
+        """Say in the trade's thread what this stop move did to the trade. Never raises.
+
+        🔴 **EVERY BOT GETS THIS BECAUSE IT IS CLASSIFIED FROM PRICES, not from a strategy's own
+        stage number (Aaron, 2026-09-22).** SOS Fade counts stages 0/1/2, the other strategies do
+        not count at all, so a message keyed off a stage would be a message ONE bot could send and
+        the next bot built would go back to silence. The entry and the two stops are facts this
+        bridge holds for any strategy that will ever run here.
+
+        ⚠ **The BREAKEVEN crossing always sends; a TRAIL or a TIGHTEN must have earned it.** A
+        structure trail ratchets on most bars a winner runs, and a dozen near-identical messages
+        under one trade is how the room that carries fills becomes the room you mute. The step is
+        `DEFAULT_TRAIL_ALERT_STEP_R` unless the bot states one.
+
+        ⚠ **A trade whose OPENING stop was never recorded gets ONE trail message and then goes
+        quiet**, rather than either flooding the room or saying nothing at all. The R cannot be
+        computed without the yardstick (rule 1), so there is nothing to throttle on — and that is
+        a transitional state: every trade opened from here records it.
+
+        ⚠ **It is wrapped, because a message must never be able to cost a stop move.** The
+        broker's stop is already where it belongs by the time this runs; the alternative is a
+        formatting bug halting a bot mid-trade.
+        """
+        if self._pos_dir == 0 or not self._pos_entry:
+            return
+        try:
+            kind = alerts.stop_move_kind(
+                direction=self._pos_dir, entry=self._pos_entry, was=was, now=now
+            )
+            r = alerts.stop_locked_r(
+                direction=self._pos_dir,
+                entry=self._pos_entry,
+                stop=now,
+                opening_stop=self._pos_stop0 or None,
+            )
+            if kind != alerts.TO_BREAKEVEN:
+                if r is None:
+                    if self._stop_r_said is not None:
+                        return
+                elif (
+                    self._stop_r_said is not None
+                    and r - self._stop_r_said < self._trail_alert_step_r
+                ):
+                    return
+            # Recorded whether or not the R is known: `None` still marks "something has been said
+            # about this trade's stop", which is what silences the unmeasurable case after one.
+            self._stop_r_said = r if r is not None else (self._stop_r_said or 0.0)
+            self._notify(
+                alerts.format_stop_moved(
+                    direction=self._pos_dir,
+                    entry=self._pos_entry,
+                    was=was,
+                    now=now,
+                    opening_stop=self._pos_stop0 or None,
+                    symbol=getattr(self._mt5, "symbol", "") or "",
+                    digits=self._digits(),
+                    threaded=self._pos_alert_id is not None,
+                ),
+                notify.TRADE,
+                reply_to=self._pos_alert_id,
+            )
+        except Exception as e:  # pragma: no cover - a message may never cost a stop move
+            self._log.warning(f"Could not send the stop-move alert: {e}")
+
+    def _notify_partial_banked(self, *, banked: float, before: float, after: float) -> None:
+        """Say in the trade's thread that size came off at a rung. Never raises.
+
+        ⚠ **It states no PRICE.** `_sync_partials` reconciles a SIZE and does not read the deal
+        back, so any price here would be one nobody measured — and the fill is at market on a
+        closed bar rather than at the rung, which the message says instead. Rule 3.
+        """
+        try:
+            self._notify(
+                alerts.format_partial_banked(
+                    lots_banked=banked,
+                    lots_before=before,
+                    lots_after=after,
+                    symbol=getattr(self._mt5, "symbol", "") or "",
+                    threaded=self._pos_alert_id is not None,
+                ),
+                notify.TRADE,
+                reply_to=self._pos_alert_id,
+            )
+        except Exception as e:  # pragma: no cover - a message may never cost a bank
+            self._log.warning(f"Could not send the partial-bank alert: {e}")
+
+    def _notify_scaled_in(self, *, added: float, now: float, price, stop) -> None:
+        """Say in the trade's thread that the strategy ADDED to the position. Never raises.
+
+        🔴 **Not a nicety.** The entry message stated a size and a risk, and an add makes both
+        stale — so without this the thread's only statement of what is at stake is wrong from the
+        moment the lot fills, and the exit's dollars arrive with nothing explaining them.
+        """
+        try:
+            self._notify(
+                alerts.format_scaled_in(
+                    lots_added=added,
+                    lots_now=now,
+                    price=price,
+                    stop=stop,
+                    symbol=getattr(self._mt5, "symbol", "") or "",
+                    digits=self._digits(),
+                    threaded=self._pos_alert_id is not None,
+                ),
+                notify.TRADE,
+                reply_to=self._pos_alert_id,
+            )
+        except Exception as e:  # pragma: no cover - a message may never cost an add
+            self._log.warning(f"Could not send the scale-in alert: {e}")
 
     def _sync_stop(self, dec, positions=None) -> None:
         """Keep the broker's stop on the open position equal to the strategy's current stop.
@@ -4047,6 +4305,10 @@ class OrderBridge:
                 self._ledger.event(
                     "stop_moved", ticket=self._pos_ticket, was=self._pos_stop, now=want
                 )
+                # AFTER the broker has taken it and BEFORE `_pos_stop` is overwritten — the
+                # message needs both numbers, and it must never describe a stop the account is
+                # not holding. Same placement rule as the record write below it.
+                self._notify_stop_moved(self._pos_stop or None, want)
                 self._pos_stop = want
                 # Re-record: the stop is the field that moves, and a record holding the previous
                 # stop would be REFUSED at the next start because the broker's real one

@@ -22,6 +22,15 @@ from services import lab_db, nt8_switch
 _LABELS = {"mt5": "MT5", "python": "Python"}
 
 
+def platform_job(runner: str) -> str:
+    """ "An NT8 job", "An MT5 job", "A Python job" — the platform a refusal names. Anything not
+    MT5 or Python is NT8, the same fallback `has_running_job` uses. ONE copy: the stress-test
+    gate kept its own two-way version and told a reader whose Python stack was running that an
+    NT8 job was (2026-09-22), and this file said "An Python job"."""
+    label = _LABELS.get(runner, "NT8")
+    return f"{'A' if label == 'Python' else 'An'} {label} job"
+
+
 def ensure_platform_idle(runner: str) -> None:
     """Raise 503 if NT8 is switched off for an NT8 job, 409 if the platform is busy."""
     # Anything that is not MT5 or Python is NT8 — the same fallback `has_running_job` uses.
@@ -29,5 +38,6 @@ def ensure_platform_idle(runner: str) -> None:
     if runner not in _LABELS and nt8_switch.switched_off() is True:
         raise HTTPException(503, f"{nt8_switch.off_reason()} NT8 jobs can't run until it's back.")
     if lab_db.has_running_job(runner):
-        label = _LABELS.get(runner, "NT8")
-        raise HTTPException(409, f"An {label} job is already running — wait for it to finish.")
+        raise HTTPException(
+            409, f"{platform_job(runner)} is already running — wait for it to finish."
+        )

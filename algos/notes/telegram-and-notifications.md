@@ -701,6 +701,103 @@ channel is SOS-Fade-specific. The live extreme-leg bot logged "Setup alerts: OFF
 
 Tests: `algos/tests/test_setup_alerts_every_bot.py` (2, both watched RED at HEAD).
 
+---
+
+## ✅ A trade's thread now says how it is being MANAGED, and every bot gets it (2026-09-22)
+
+**Aaron's ask, in his words:** *"right now we are only told when we enter a trade and whether we
+won or lost but nothing about break even and nothing about how the trade is being managed... if a
+trade moves to break even I should get an alert saying move to break even... it should alert me all
+the way of how the trade is being managed... I need that to be consistently applied as a rule of
+thumb to any bots I create. So if I create a bot, I shouldn't have to go say, hey, create telegram
+messages for it. It should be part of how we do work."*
+
+**What was true before.** The trades room carried exactly two messages per trade: the fill, and the
+outcome hours later. Everything in between was recorded in the decision ledger — `stop_moved`,
+`partial_banked` — and the ledger is not something anyone reads on a phone. A trade could move out
+of risk, trail up through a point of profit, bank half its size and add to its runner, and the
+thread would say nothing at all until it closed.
+
+**What sends them.** `live/bridge.py`, at the three seams that already wrote those ledger events:
+`_sync_stop`, `_sync_partials` and `_mirror_strategy_add`. Formatters in `live/alerts.py`; every
+message rendered as a phone shows it is in `notes/telegram-message-catalog.md`.
+
+### 🔴 Why this is a RULE and not a feature
+
+**The bridge is the one layer every bot's runner builds.** `live/runner.py` constructs exactly one
+`OrderBridge` per bot whatever the strategy is, so a bot written next year inherits the whole set
+with no wiring, no config key and nobody remembering to ask for it. That is what makes Aaron's
+"it should be part of how we do work" true structurally rather than by discipline.
+
+**The classification is from PRICES, never from a strategy's own stage number.** SOS Fade counts
+stages 0/1/2; the other strategies do not count at all. A message keyed off a stage would be a
+message ONE bot could send, and the next bot built would start silent again — the identical shape
+as the extreme-leg bot logging "Setup alerts: OFF" for days in 2026-09-16. The entry price and the
+two stops are facts the bridge holds for any strategy, so `alerts.stop_move_kind` already works for
+a strategy nobody has written.
+
+⚠ **Anything a strategy does that the BRIDGE cannot see is still silent**, and that is the honest
+boundary of this. What the bridge sees is what it mirrors onto the broker: stop moves, banked size,
+added size. A strategy that changes something internal without the broker learning about it sends
+nothing, correctly — there is nothing in the account to report.
+
+### The throttle is the feature, not a limitation of it
+
+A structure trail ratchets on most bars a winner runs. Unthrottled, one trade would carry a dozen
+near-identical messages, and `shared/notify.py`'s own docstring already names where that ends: *"a
+chat that pings nine times a day for routine chatter is one you learn to ignore, and the day you
+mute it you mute your fills with it."*
+
+- A stop-move message is sent when the locked R has **improved by at least 0.5R since the last one
+  was sent** — not since the last MOVE, so three 0.3R ratchets in a row do report themselves.
+- **The breakeven crossing ignores the throttle and always sends.** Once per trade, it is the move
+  that changes what the trade can still cost, and it is the one Aaron asked for by name.
+- The pace is `trail_alert_step_r` in `live/live_config.py`. **No instance config states it and
+  none should yet** — a live bot runs a frozen `deployed/` snapshot and REFUSES a key that snapshot
+  has never heard of, so the default reaches every bot on its next promote with no config edit.
+
+### Two things a restart used to lose, and no longer does
+
+Both are optional fields on `position.json` (`live/position_state.py`), and **`VERSION` was
+deliberately NOT bumped for either** — a bump reads every open trade's record as NO record, which
+halts the bot holding it.
+
+- **`alert_id`** — Telegram's id for the trade's ENTRY message. Without it the bot went on managing
+  a restored trade while every message about it landed loose in the room, the exit included.
+- **`broker.stop_opened`** — the stop the trade OPENED with, which is the 1R yardstick every
+  stop-move message is measured against. `broker.stop` is rewritten on every ratchet, so it cannot
+  serve: measuring against it would divide each later move by the distance the stop had LOCKED, the
+  identical defect `risk_usd` was fixed for on 2026-09-12.
+
+⚠ **A trade restored from a record written before 2026-09-22 has neither.** It prints no R rather
+than `0.00R` (rule 1), and it gets ONE stop-move message and then goes quiet — there is no
+yardstick, so there is nothing to throttle on. Transitional: every trade opened from here records
+both.
+
+
+### Read the thread BEFORE it ships — `tools/signal_samples.py --trades`
+
+A live bot runs a frozen `deployed/` snapshot, so new wording does not reach a phone until a
+promote — and promoting two live bots in order to look at a message is the wrong way round.
+
+```
+python C:\trading\algos\tools\signal_samples.py --trades --dry-run   # prints, sends nothing
+python C:\trading\algos\tools\signal_samples.py --trades             # into the trades room
+```
+
+Three threads, 14 messages: a winner managed the whole way (breakeven → add → trail → rung banked
+→ win), a loser whose stop only ever came closer, and the scratch. **Every string comes out of the
+real `alerts.format_*` functions**, so what lands is byte-identical to what the bridge will send —
+hand-typed samples would show wording that does not exist, which is the whole point of the tool.
+
+⚠ **It posts into the room that carries real fills.** The header says none of it is live and the
+footer closes it; both are meant to be deleted afterwards. The existing no-flag mode is unchanged
+and still sends the eight SETUP threads to the signals room.
+
+⚠ **Each send names its room LITERALLY on its own branch**, not through a variable.
+`tests/test_notification_routing.py` greps every send in the repo for a stated kind, and a
+variable would route correctly while being invisible to that guard — which is the same silence
+the guard exists to catch, wearing a green tick.
 ## A SECOND room may get a COPY of the setups, and only the setups (2026-09-23)
 
 **The ask (the user, 2026-09-23):** the rev-setup bot's setup messages land in the room its own

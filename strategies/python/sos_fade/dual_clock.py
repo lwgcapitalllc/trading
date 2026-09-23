@@ -236,6 +236,7 @@ class DualClock:
             ex.prim_lost_sos_l, ex.prim_lost_sos_s,
             ex._poi_edge_l, ex._poi_edge_s,
             bar.high, bar.low,
+            ex._poi_last_l, ex._poi_last_s,
         )
         out.arm = arm
         sig_fast = FastSig(bar.index, ts, bar.open, bar.high, bar.low, bar.close,

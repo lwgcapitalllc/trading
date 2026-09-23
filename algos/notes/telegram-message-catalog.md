@@ -557,3 +557,57 @@ Replied under the trade's ENTRY message, once per level:
 ```
 ✋ STOP MOVED BY YOU · 4301.37
 ```
+
+### Trades room — how a trade is MANAGED, between the fill and the outcome (2026-09-22)
+
+Aaron: *"if a trade moves to break even I should get an alert saying move to break even... it
+should alert me all the way of how the trade is being managed... I need that to be consistently
+applied as a rule of thumb to any bots I create."* Until this date the thread said ENTRY and then,
+hours later, WIN or LOSS, and everything in between happened in silence.
+
+**Every one of these REPLIES to the trade's ENTRY message**, not to the one before it — one root
+per trade, so a reader tapping any of them lands on the fill that started it.
+
+**Every bot sends them, including one nobody has written yet**, because they are classified from
+the entry price and the two stops — facts `live/bridge.py` holds for any strategy — and never from
+a strategy's own stage numbering. Formatters: `live/alerts.py`.
+
+```
+🛡 STOP AT BREAKEVEN
+Stop 3,280.00 → 3,290.00 (entry)
+Out of risk on this trade now, unless price gaps through the stop.
+
+🛡 STOP AT BREAKEVEN
+Stop 3,280.00 → 3,294.00 · locking +0.40R
+Out of risk on this trade now, unless price gaps through the stop.
+
+🪜 STOP TRAILED
+Stop 3,290.00 → 3,301.50 · locking +1.15R
+
+🔒 STOP TIGHTENED
+Stop 3,300.00 → 3,296.00 · risk now 0.50R
+
+💰 PART BANKED
+Took 0.17 of 0.42 lots off · 0.25 still running
+Banked at market on the bar's close, not at the rung's own price.
+
+➕ ADDED TO POSITION
+Added 0.20 lots at about 3,305.00
+0.62 lots now open · every lot on the same stop 3,296.00
+```
+
+The second breakeven example is the one worth reading twice: a buffered breakeven lands PAST the
+entry, and it is still reported as the breakeven crossing rather than as a trail, because the
+crossing is the event — the moment the trade stopped being able to lose — and it is the one Aaron
+named. Every later move in profit is a trail.
+
+⚠ **`locking … R` above the entry, `risk now … R` below it.** The same signed number read two
+ways, because "locking -0.50R" is a sentence the reader has to translate.
+
+⚠ **A trade whose opening stop was never recorded prints NO R at all** — not `0.00R`. The
+yardstick is the distance from the entry to the stop the trade OPENED with, and the stop on a
+record written before 2026-09-22 has already moved. Rule 1.
+
+⚠ **Three new icons in this room** — 🛡 breakeven, 🪜 trail, 🔒 tighten — plus 💰 for size banked
+and ➕ for size added. They answer WHAT the message is about, which is this room's question; the
+health room's four severity icons are a separate, closed set and are not touched.
