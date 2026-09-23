@@ -3013,6 +3013,15 @@ class LiveRunner:
         the startup banner already names that state.
         """
         try:
+            # 🔴 OFF unless a bot's own config asks for it — a PERMISSION default, not a risk one.
+            # `algos/live` is frozen per bot, so a default of True would start writing these on
+            # the other owner's LIVE bots at his next promote without him having chosen it.
+            # ⚠ **Read INSIDE the try, and that is not tidiness.** It was outside for one commit
+            # and reading `self.cfg` on a runner built without one raised straight into the bar
+            # loop's `finally` — three of the alert tests went red and the real loop would have
+            # lost the bar. Nothing in this method may reach the caller.
+            if not getattr(self.cfg, "record_setups", False):
+                return
             from backtest.setups import implements_contract
 
             ex = getattr(self.strategy, "execution", self.strategy)
@@ -3021,7 +3030,16 @@ class LiveRunner:
             for snap in ex.live_setups():
                 self.ledger.event("setup", **_setup_row(snap))
         except Exception as e:  # noqa: BLE001 — see the docstring
-            self.log.warning(f"could not record this bar's setups: {e}")
+            # ⚠ **The logger is fetched DEFENSIVELY and the warning itself is wrapped**, the same
+            # call `_refresh_account_room` makes one screen down. This is an error path inside the
+            # bar loop's `finally`: a reporter that raises while reporting takes the bar with it,
+            # and it did — two of the alert tests went red on a log double with no `warning`.
+            try:
+                log = getattr(self, "log", None)
+                if log is not None:
+                    log.warning(f"could not record this bar's setups: {e}")
+            except Exception:  # noqa: BLE001 — there is nowhere left to say it
+                pass
 
     def _drain_records(self) -> None:
         """Write any blocked/missed setups the strategy recorded on this bar, then forget them —

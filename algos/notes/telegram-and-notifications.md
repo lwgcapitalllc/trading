@@ -898,8 +898,16 @@ LIVE."* So the feed renders his four lines with his label and no live/demo tag:
   that a setup had happened at all. It reads through `live_setups()`, never `drain_setups()`, so
   the alert layer is still the one that clears the terminal snapshots and a thread keeps its
   closing message. Tests: `algos/tests/test_setup_records.py` (6, three mutations watched RED).
-  ⚠ **`algos/live` is frozen into each bot's snapshot, so a bot writes these only after its next
-  promote** — until then the feed falls back to the per-bar stages, and it stands down again
+  🔴 **OFF by default, per bot (`record_setups`), and that is a PERMISSION default rather than a
+  risk one** (the user, 2026-09-23: *"Never touch anything with his live trading that I may be
+  working on without his permission."*). The write is reporting-only and cannot move a trade, but
+  `algos/live` is frozen per bot, so a default of True would start it on the other owner's LIVE
+  bots at his next promote without him choosing it. It is ON for `sos_fade_1` alone — the demo bot
+  the feed reads — and that bot's config says why. ⚠ Both the setting and the contract check are
+  read INSIDE the method's try: the check sat outside for one commit, and reading `self.cfg` on a
+  runner built without one raised straight into the bar loop's `finally` (three alert tests red).
+  The warning itself is wrapped too, because a log double without `warning` took the bar with it.
+  ⚠ **A bot writes these only after its next promote** — until then the feed falls back to the per-bar stages, and it stands down again
   automatically once snapshot rows appear (a day's grace, so the fallback self-heals if a promote
   ever goes back).
 - **With the rows, the feed renders his message exactly**, which is the shape he asked for:

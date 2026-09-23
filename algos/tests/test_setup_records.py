@@ -8,12 +8,18 @@ content (`algos/tools/rev_setup_feed.py`), and there was nothing to read — so 
 each snapshot to the decision stream. An audit of how many setups become trades, and any later
 study of refusals, wanted the same record.
 
-**Watched RED (2026-09-23), three mutations:**
+🔴 **It is OFF by default and that is a PERMISSION default, not a risk one.** `algos/live` is
+frozen into each bot's snapshot, so a default of True would start writing these rows on the other
+owner's LIVE bots at his next promote without him having chosen it — the user's rule, same day:
+*"Never touch anything with his live trading that I may be working on without his permission."*
+
+**Watched RED (2026-09-23), four mutations:**
 - removing the `_record_setups()` call from `_settle_primary`'s `finally` -> the first test;
 - swapping `live_setups()` for `drain_setups()` -> the test that the alert layer still gets the
   terminal snapshot (the closing message would be stolen from the room it belongs to);
 - letting the exception out instead of warning -> the test that a broken strategy cannot break
-  the bar loop.
+  the bar loop;
+- defaulting `record_setups` to True -> the test that a bot which has not asked records nothing.
 """
 
 from __future__ import annotations
@@ -104,11 +110,21 @@ class _Strategy:
         self.execution = execution
 
 
-def _runner(strategy):
+class _Cfg:
+    """The one live-config field this reads. Default ON here because every test below is about a
+    bot that has asked for the records; the OFF default is its own test."""
+
+    record_setups = True
+
+
+def _runner(strategy, record=True):
     r = live_runner.LiveRunner.__new__(live_runner.LiveRunner)
     r.strategy = strategy
     r.ledger = _Ledger()
     r.log = _Log()
+    cfg = _Cfg()
+    cfg.record_setups = record
+    r.cfg = cfg
     return r
 
 
@@ -210,3 +226,44 @@ def test_the_row_carries_no_account_number_at_all():
     for banned in ("lots", "risk_pct", "risk_usd", "pnl_usd", "balance", "equity", "ticket"):
         assert banned not in row
     assert "$" not in json.dumps(row)
+
+
+def test_a_bot_that_has_not_ASKED_records_nothing():
+    """🔴 The permission default. A bot whose config does not ask writes no rows and says nothing
+    — so the other owner's live bots cannot inherit this at his next promote.
+
+    MUTATION: default `record_setups` to True, or drop the check -> red.
+    """
+    r = _runner(_Strategy(_Execution(_snap())), record=False)
+    r._record_setups()
+    assert r.ledger.rows == [] and r.log.warnings == []
+
+
+def test_the_field_ships_OFF():
+    """Pin the default where it is declared, not just where it is read."""
+    import dataclasses
+
+    import live_config
+
+    field = {f.name: f for f in dataclasses.fields(live_config.LiveConfig)}["record_setups"]
+    assert field.default is False
+
+
+def test_a_runner_with_NO_such_setting_records_nothing_and_does_not_raise():
+    """🔴 This is the shape that broke three of the alert tests for one commit: the check sat
+    OUTSIDE the try, so a runner built without a config raised straight into the bar loop's
+    `finally`. Nothing in this method may reach the caller.
+
+    MUTATION: default the `getattr` to True, or move the check out of the try -> red.
+    """
+
+    class _NoCfg:
+        pass
+
+    r = _runner(_Strategy(_Execution(_snap())))
+    r.cfg = _NoCfg()
+    r._record_setups()
+    assert r.ledger.rows == []
+    del r.cfg
+    r._record_setups()  # not even a config attribute — still silent
+    assert r.ledger.rows == [] and len(r.log.warnings) == 1
