@@ -69,6 +69,14 @@ from version import current_commit, deployment_hash  # noqa: E402
 # it. Kept out of the prose lines so rewording one cannot break the other.
 _VERSION_MARK = "##VERSIONS"
 
+#: Printed INSTEAD of deploying when nothing the bot loads has changed — see `nothing_new`.
+#:
+#: 🔴 **Why a marker rather than prose (2026-09-23).** The caller has to make a DECISION on this
+#: (the Command Center must not stop and restart a bot for a snapshot identical to the one it is
+#: already running), and a decision read out of a sentence breaks the first time somebody rewords
+#: it. Same reasoning as `##VERSIONS` above, which was added for the same reason.
+_NOOP_MARK = "##NOTHING-NEW"
+
 
 def repo_trees(cfg) -> list[tuple[Path, Path]]:
     """(source in the repo, destination inside `deployed/`) for each tree, layout preserved.
@@ -573,6 +581,49 @@ def verify(cfg, root: Path) -> tuple[bool, str]:
     return True, marker[0][2:] if marker else "{}"
 
 
+def nothing_new(cfg, was: dict, new_hash: str, params: dict) -> bool:
+    """Is there genuinely nothing for the bot to LOAD? Then a restart costs and buys nothing.
+
+    🔴 **Built 2026-09-23, after a bot was deployed twice inside three minutes.** The second
+    deploy staged byte-identical code, printed `v373 -> v373`, and stopped and restarted the bot
+    anyway — which cancelled the limit order it had just placed and put an identical one back a
+    minute later. **The tool already KNEW** (it printed *code is UNCHANGED from the running
+    deployment*) and carried on regardless: a fact computed, reported and then ignored. Aaron:
+    *"how else was I allowed to redeploy"*.
+
+    🔴 **THREE things must agree, not one, and each one has cost a real failure somewhere in this
+    repo:**
+
+    * **the staged code against the RECORD** — the ordinary case, one deploy behind another;
+    * **the staged code against WHAT IS ON DISK** — because a snapshot edited in place has a
+      record that still matches while the files do not, and refusing on the record alone would
+      leave that bot running edited code with the tool insisting there was nothing to do. It is
+      the state the Bots page draws as *Snapshot modified*, and repairing it is a real deploy;
+    * **the parameters** — `deployed.json` pins the settings a version was deployed WITH, and
+      `config.json` is edited between promotes (the Bots page writes the per-trade risk to it
+      live). Identical code with different settings is a bot that needs the new settings pinned,
+      and refusing there would silently keep the old ones.
+
+    ⚠ **The COMMIT is deliberately NOT one of them.** A commit that changes no file this bot
+    loads — a test, a doc, another bot's strategy — is not something to restart a live bot for.
+    The caller still refreshes the record so the page stops asking; see the no-op branch in
+    `main`.
+    """
+    if not was:
+        return False  # never deployed: there is no "same" to be the same as
+    if not was.get("strategy_source_hash") or was["strategy_source_hash"] != new_hash:
+        return False
+    try:
+        on_disk = deployment_hash(cfg.source_roots)
+    except Exception:
+        # ⚠ CANNOT READ is never "the same" (rule 1). An unreadable snapshot is exactly the case
+        # a deploy would repair, and the safe direction here is to deploy rather than to refuse.
+        return False
+    if on_disk != new_hash:
+        return False
+    return (was.get("strategy_params") or {}) == (params or {})
+
+
 def write_pin(
     cfg, hash_: str, commit: str, when: str, files: int, version: Optional[int] = None
 ) -> None:
@@ -660,6 +711,11 @@ def main(argv=None) -> int:
         "--allow-open-position",
         action="store_true",
         help="promote even though the open position's record cannot be restored by this version",
+    )
+    ap.add_argument(
+        "--redeploy",
+        action="store_true",
+        help="rewrite the snapshot even though nothing the bot loads has changed",
     )
     args = ap.parse_args(argv)
 
@@ -820,8 +876,32 @@ def main(argv=None) -> int:
         f"{to_version if to_version is not None else '?'}"
     )
 
+    # 🔴 **NOTHING NEW TO LOAD: refresh the record, leave the RUNNING BOT ALONE (2026-09-23).**
+    # A restart here cancels whatever the bot has resting and buys nothing, because the snapshot it
+    # would come back on is the one it is already running. See `nothing_new` for the three things
+    # that have to agree before this branch is taken.
+    #
+    # ⚠ **The pin is still REWRITTEN, and that half is not optional.** The commit and the version
+    # move even when no deployed file does, and the Bots page measures *how far behind* against the
+    # recorded commit — so skipping the write would leave the page asking for a deploy that can
+    # never satisfy it. Nothing is deployed; the record is brought up to date and says so.
+    idle = nothing_new(cfg, was, new_hash, cfg.strategy_params)
+    if idle and not args.dry_run and not args.redeploy:
+        shutil.rmtree(staging, ignore_errors=True)
+        write_pin(cfg, new_hash, commit, date.today().isoformat(), n, version=to_version)
+        print(f"{_NOOP_MARK}")
+        print("  nothing new for the bot to load — the snapshot is already what it is running.")
+        print("  the bot was NOT restarted, and its record now names this commit.")
+        print("  pass --redeploy to rewrite the snapshot anyway.")
+        return 0
+
     if args.dry_run:
         shutil.rmtree(staging, ignore_errors=True)
+        if idle:
+            # Said on the PREVIEW too, or the one place a person looks before deciding is the one
+            # place that does not mention it.
+            print(f"{_NOOP_MARK}")
+            print("  nothing new for the bot to load — a deploy would restart it for nothing.")
         print("  dry run — nothing was deployed, the running bot is untouched.")
         return 0
 

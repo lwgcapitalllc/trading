@@ -299,6 +299,7 @@ listed below under the notes file that now holds it.
 **Read before touching:** deploying to the box, stopping a bot, or restarting one.
 
 - VPS Deploy Workflow
+- 🔴 A deploy that would ship nothing now REFUSES and leaves the running bot alone — it used to restart it anyway, which cancelled a resting order for nothing (2026-09-23)
 
 ### `notes/committing.md` — Committing — the doc rule, the evidence rule and the tripwires
 

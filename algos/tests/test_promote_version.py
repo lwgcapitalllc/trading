@@ -344,3 +344,90 @@ def test_the_preflight_asks_whether_a_SOURCE_EXISTS_not_whether_it_is_a_FOLDER()
     assert body.strip(), "could not find the preflight — the guard is vacuous"
     assert "src.exists()" in body
     assert "is_dir()" not in body
+
+
+# ── Nothing new to deploy — `nothing_new` (2026-09-23) ───────────────────────────────────────
+#
+# 🔴 **The failure.** A bot was deployed twice inside three minutes. The second run staged
+# byte-identical code, printed `v373 -> v373`, and the tool went on to stop and restart the bot —
+# cancelling the limit order it had placed ninety seconds earlier. It had ALREADY computed and
+# printed *code is UNCHANGED from the running deployment* and then ignored its own finding.
+#
+# **Watched RED at HEAD:** `nothing_new` did not exist, so every test below failed on
+# `AttributeError`. Each one was then re-run against a version that compares ONLY the recorded
+# hash — the obvious one-line version — and the two that matter went red: the modified snapshot
+# and the changed settings. Those are the cases where refusing would leave a bot running code or
+# settings nobody chose, which is worse than the pointless restart being fixed.
+
+
+class _Cfg:
+    """Only what `nothing_new` reads. Deliberately NOT a real `LiveConfig`: a double that carries
+    more than the function touches invites a test to describe a shape production never sees."""
+
+    def __init__(self, on_disk, params):
+        self.source_roots = ["<unused>"]
+        self.strategy_params = params
+        self._on_disk = on_disk
+
+
+@pytest.fixture
+def hashes(monkeypatch):
+    """`deployment_hash` answers whatever the config says is on disk."""
+    box = {"value": "same"}
+    monkeypatch.setattr(promote_tool, "deployment_hash", lambda _roots: box["value"])
+    return box
+
+
+PARAMS = {"exec_risk_pct": 5.0}
+
+
+def test_identical_code_and_settings_is_NOTHING_NEW(hashes):
+    was = {"strategy_source_hash": "same", "strategy_params": PARAMS}
+    assert promote_tool.nothing_new(_Cfg("same", PARAMS), was, "same", PARAMS) is True
+
+
+def test_changed_CODE_is_a_real_deploy(hashes):
+    was = {"strategy_source_hash": "old", "strategy_params": PARAMS}
+    assert promote_tool.nothing_new(_Cfg("old", PARAMS), was, "new", PARAMS) is False
+
+
+def test_a_snapshot_EDITED_IN_PLACE_is_a_real_deploy(hashes):
+    """🔴 The record still matches while the FILES do not — what the Bots page draws as *Snapshot
+    modified*. Comparing the record alone would refuse to repair it and insist there was nothing
+    to do, leaving the bot running edited code."""
+    hashes["value"] = "edited"
+    was = {"strategy_source_hash": "same", "strategy_params": PARAMS}
+    assert promote_tool.nothing_new(_Cfg("edited", PARAMS), was, "same", PARAMS) is False
+
+
+def test_changed_SETTINGS_with_identical_code_is_a_real_deploy(hashes):
+    """🔴 The record pins the settings a version was deployed WITH, and `config.json` is edited
+    between promotes — the Bots page writes the per-trade risk to it live. Refusing here would
+    silently keep the old settings pinned while the file says otherwise."""
+    was = {"strategy_source_hash": "same", "strategy_params": {"exec_risk_pct": 2.5}}
+    assert promote_tool.nothing_new(_Cfg("same", PARAMS), was, "same", PARAMS) is False
+
+
+def test_a_bot_that_has_NEVER_been_deployed_is_never_nothing_new(hashes):
+    """There is no *same* to be the same as. An empty record used to be the state that made a bot
+    trade the repo working tree, and it must always deploy."""
+    assert promote_tool.nothing_new(_Cfg("same", PARAMS), {}, "same", PARAMS) is False
+
+
+def test_an_UNREADABLE_snapshot_is_never_nothing_new(monkeypatch):
+    """Rule 1: cannot-read is not *the same*. An unreadable snapshot is exactly what a deploy
+    repairs, so the safe direction is to deploy rather than to refuse."""
+
+    def boom(_roots):
+        raise OSError("the snapshot directory could not be read")
+
+    monkeypatch.setattr(promote_tool, "deployment_hash", boom)
+    was = {"strategy_source_hash": "same", "strategy_params": PARAMS}
+    assert promote_tool.nothing_new(_Cfg("same", PARAMS), was, "same", PARAMS) is False
+
+
+def test_a_record_with_NO_HASH_is_never_nothing_new(hashes):
+    """An empty string is not a hash that matches an empty string — it is a record that never
+    said. Falsy and equal are different questions and this one asks the first."""
+    was = {"strategy_source_hash": "", "strategy_params": PARAMS}
+    assert promote_tool.nothing_new(_Cfg("", PARAMS), was, "", PARAMS) is False

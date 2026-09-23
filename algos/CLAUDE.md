@@ -216,6 +216,15 @@ evidence go in that topic's notes file. A notes file satisfies the commit hook's
 ⚠ **An old pointer to a section of this file still resolves** — every moved heading is
 listed below under the notes file that now holds it.
 
+### Deploying — the story lives in the ROOT `notes/deploying.md`
+
+**Read before touching:** `tools/promote.py`, the snapshot pin, or anything that restarts a bot.
+🔴 **Deliberately a POINTER, not a copy** — the deploy workflow is shared with the Command Center,
+which drives the same tool, so its one account lives at the repo root. A second copy here is the
+drift this repo has already paid for three times.
+
+- 🔴 A deploy that would ship NOTHING now refuses and leaves the running bot alone (2026-09-23). It used to restart it anyway: `fft_1` was deployed twice in three minutes, the second run staged byte-identical code, and the restart cancelled the limit order the bot had placed ninety seconds earlier. Three things must agree before it refuses — the code against the RECORD, the code against WHAT IS ON DISK, and the PARAMETERS — and the commit is deliberately not one of them while the pin is still written. `--redeploy` forces it.
+
 ### `notes/order-execution.md` — Order execution — the bridge's entries, exits, banking and market orders
 
 **Read before touching:** order placement, closing, banking or the bridge's MT5 call handling.
