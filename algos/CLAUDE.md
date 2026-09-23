@@ -223,7 +223,8 @@ listed below under the notes file that now holds it.
 which drives the same tool, so its one account lives at the repo root. A second copy here is the
 drift this repo has already paid for three times.
 
-- 🔴 A deploy that would ship NOTHING now refuses and leaves the running bot alone (2026-09-23). It used to restart it anyway: `fft_1` was deployed twice in three minutes, the second run staged byte-identical code, and the restart cancelled the limit order the bot had placed ninety seconds earlier. Three things must agree before it refuses — the code against the RECORD, the code against WHAT IS ON DISK, and the PARAMETERS — and the commit is deliberately not one of them while the pin is still written. `--redeploy` forces it.
+- 🔴 A deploy that would ship NOTHING now refuses and leaves the running bot alone (2026-09-23). It used to restart it anyway: `fft_1` was deployed twice in three minutes, the second run staged byte-identical code, and the restart cancelled the limit order the bot had placed ninety seconds earlier. It compares the STAGED tree against the DEPLOYED tree plus the pinned PARAMETERS; the commit is deliberately not part of it, and the pin is still written. `--redeploy` forces it.
+- 🔴 **`deployment_hash` folds each ROOT'S NAME into the digest, so two hashes are only comparable over the SAME root set** — and the staged hash (11 roots for `fft_1`) and the pinned hash (`cfg.source_roots`, 3) are not. The first version of the refusal above compared those two and could never fire; the `code is UNCHANGED from the running deployment` line this tool has printed since it was written has never once been true. ⚠ **Its first tests passed because they STUBBED the hash** — rule 13 inside the tests written to answer rule 9. Hash real files, or prove nothing (2026-09-23).
 
 ### `notes/order-execution.md` — Order execution — the bridge's entries, exits, banking and market orders
 

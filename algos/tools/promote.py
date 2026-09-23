@@ -581,45 +581,54 @@ def verify(cfg, root: Path) -> tuple[bool, str]:
     return True, marker[0][2:] if marker else "{}"
 
 
-def nothing_new(cfg, was: dict, new_hash: str, params: dict) -> bool:
+def nothing_new(cfg, was: dict, staging, trees, params: dict) -> bool:
     """Is there genuinely nothing for the bot to LOAD? Then a restart costs and buys nothing.
 
     🔴 **Built 2026-09-23, after a bot was deployed twice inside three minutes.** The second
     deploy staged byte-identical code, printed `v373 -> v373`, and stopped and restarted the bot
     anyway — which cancelled the limit order it had just placed and put an identical one back a
-    minute later. **The tool already KNEW** (it printed *code is UNCHANGED from the running
-    deployment*) and carried on regardless: a fact computed, reported and then ignored. Aaron:
-    *"how else was I allowed to redeploy"*.
+    minute later. Aaron: *"how else was I allowed to redeploy"*.
 
-    🔴 **THREE things must agree, not one, and each one has cost a real failure somewhere in this
-    repo:**
+    🔴 **IT COMPARES THE STAGED SNAPSHOT AGAINST THE ONE ON DISK, AND THE FIRST VERSION OF THIS
+    COMPARED THE STAGED HASH AGAINST THE RECORDED ONE — WHICH CAN NEVER MATCH.** The two are
+    hashed over DIFFERENT ROOT SETS: `deployment_hash` folds each root's NAME into the digest, the
+    staged hash is taken over every tree this tool copies (11 roots for `fft_1` — the strategy's
+    whole dependency closure, `engines`, `backtest`, `execution` and the order path), and the
+    PINNED hash is taken over `cfg.source_roots` (3). **So the `old_hash == new_hash` line this
+    file has printed since it was written — *code is UNCHANGED from the running deployment* — has
+    never once been true**, and a check built on it was a refusal that could not fire. Rule 9, and
+    rule 13 one layer out: the first tests passed because they stubbed `deployment_hash`, which
+    made the double more capable than production and described a system we do not have. **The
+    tests below use real files on disk for exactly that reason.**
 
-    * **the staged code against the RECORD** — the ordinary case, one deploy behind another;
-    * **the staged code against WHAT IS ON DISK** — because a snapshot edited in place has a
-      record that still matches while the files do not, and refusing on the record alone would
-      leave that bot running edited code with the tool insisting there was nothing to do. It is
-      the state the Bots page draws as *Snapshot modified*, and repairing it is a real deploy;
-    * **the parameters** — `deployed.json` pins the settings a version was deployed WITH, and
-      `config.json` is edited between promotes (the Bots page writes the per-trade risk to it
-      live). Identical code with different settings is a bot that needs the new settings pinned,
-      and refusing there would silently keep the old ones.
+    Comparing the staged tree with the DEPLOYED tree is like for like — same relative
+    destinations, same root names, same hash function — and it subsumes the check that was going
+    to be written separately for a snapshot edited in place, because it hashes what is actually
+    there rather than what a record claims.
 
-    ⚠ **The COMMIT is deliberately NOT one of them.** A commit that changes no file this bot
-    loads — a test, a doc, another bot's strategy — is not something to restart a live bot for.
-    The caller still refreshes the record so the page stops asking; see the no-op branch in
-    `main`.
+    ⚠ **The PARAMETERS are the second half and they are not optional.** `deployed.json` pins the
+    settings a version was deployed WITH, and `config.json` is edited between promotes (the Bots
+    page writes the per-trade risk to it live). Identical code with different settings is a bot
+    that needs the new settings pinned, and refusing there would silently keep the old ones.
+
+    ⚠ **The COMMIT is deliberately NOT part of it.** A commit that changes no file this bot loads
+    — a test, a doc, another bot's strategy — is not something to restart a live bot for. The
+    caller still refreshes the record so the page stops asking; see the no-op branch in `main`.
+
+    ⚠ **CANNOT READ is never "the same"** (rule 1). An unreadable snapshot is exactly the case a
+    deploy would repair, so the safe direction here is to deploy rather than to refuse.
     """
-    if not was:
+    if not was or not was.get("strategy_source_hash"):
         return False  # never deployed: there is no "same" to be the same as
-    if not was.get("strategy_source_hash") or was["strategy_source_hash"] != new_hash:
+    deployed = Path(cfg.deployed_dir)
+    if not deployed.is_dir():
         return False
     try:
-        on_disk = deployment_hash(cfg.source_roots)
+        staged_hash = deployment_hash([Path(staging) / rel for _, rel in trees])
+        live_hash = deployment_hash([deployed / rel for _, rel in trees])
     except Exception:
-        # ⚠ CANNOT READ is never "the same" (rule 1). An unreadable snapshot is exactly the case
-        # a deploy would repair, and the safe direction here is to deploy rather than to refuse.
         return False
-    if on_disk != new_hash:
+    if staged_hash != live_hash:
         return False
     return (was.get("strategy_params") or {}) == (params or {})
 
@@ -885,7 +894,7 @@ def main(argv=None) -> int:
     # move even when no deployed file does, and the Bots page measures *how far behind* against the
     # recorded commit — so skipping the write would leave the page asking for a deploy that can
     # never satisfy it. Nothing is deployed; the record is brought up to date and says so.
-    idle = nothing_new(cfg, was, new_hash, cfg.strategy_params)
+    idle = nothing_new(cfg, was, staging, trees, cfg.strategy_params)
     if idle and not args.dry_run and not args.redeploy:
         shutil.rmtree(staging, ignore_errors=True)
         write_pin(cfg, new_hash, commit, date.today().isoformat(), n, version=to_version)

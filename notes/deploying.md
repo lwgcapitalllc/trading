@@ -141,12 +141,25 @@ earlier — fifty-one seconds with nothing resting, for nothing.
 
 It now **refuses**, prints `##NOTHING-NEW` for its caller, and says so. `--redeploy` forces it.
 
-⚠ **Three things must agree before it refuses** (`nothing_new`): the staged code against the
-RECORD, the staged code against WHAT IS ON DISK (a snapshot edited in place has a record that still
-matches while the files do not, and repairing that is a real deploy), and the PARAMETERS (the
-record pins the settings a version was deployed with, and `config.json` is edited between
-promotes). Cannot-read is never "the same", and a bot that has never been deployed is never a
-no-op.
+🔴 **THE FIRST VERSION OF THAT FIX WAS INERT, AND THAT IS THE MORE USEFUL HALF OF THIS STORY.**
+It compared the STAGED hash with the RECORDED one — and those two are taken over **different root
+sets**. `deployment_hash` folds each root's NAME into the digest; the staged hash covers every tree
+the tool copies (**11 roots** for `fft_1` — the strategy's whole dependency closure, `engines`,
+`backtest`, `execution` and the order path), while the pinned hash covers `cfg.source_roots`
+(**3**). They can never be equal. So the refusal could not fire — **and the `code is UNCHANGED from
+the running deployment` line this tool has printed since it was written has never once been true.**
+
+**It now compares the STAGED tree against the DEPLOYED tree**, same relative destinations, same
+root names, same hash function. Like for like. That also subsumes the *snapshot edited in place*
+case for free, because it hashes what is actually there rather than what a record claims.
+
+⚠ **The first tests passed anyway, because they stubbed `deployment_hash`** — a double more
+capable than production, describing a system we do not have. Rule 13, inside the tests written to
+prove rule 9 had been answered. They use real files on disk now.
+
+⚠ **The PARAMETERS are the second half** (the record pins the settings a version was deployed with,
+and `config.json` is edited between promotes — the Bots page writes the per-trade risk to it live).
+Cannot-read is never "the same", and a bot that has never been deployed is never a no-op.
 
 ⚠ **The COMMIT is deliberately not one of the three, and the pin is STILL written on the no-op.**
 A commit touching no file the bot loads is not worth restarting a live bot for — but the Command
