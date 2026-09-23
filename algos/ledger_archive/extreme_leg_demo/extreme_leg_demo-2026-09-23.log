@@ -87,3 +87,9 @@
 2026-09-23 20:15:03,384 [INFO] Priority 2 on this account: waiting 17s for the bots above
 2026-09-23 20:30:02,328 [INFO] Priority 2 on this account: waiting 18s for the bots above
 2026-09-23 20:45:02,053 [INFO] Priority 2 on this account: waiting 18s for the bots above
+2026-09-23 22:05:06,970 [WARNING] 13 bars missed — re-warming the engines rather than resuming with a hole in the stream.
+2026-09-23 22:05:06,978 [INFO] Sizing against account balance $10,914.40
+2026-09-23 22:05:14,275 [INFO] Warmed 15000 bars (2026-07-09 10:35:00+00:00 → 2026-09-23 22:00:00+00:00) in 6.9s
+2026-09-23 22:05:14,291 [INFO] Equity re-anchored to the account after warm-up: 10,701.90 → 10,914.40
+2026-09-23 22:05:14,291 [INFO] Restored position T366380390 — LONG 0.32 lots @ 4291.05, stop 4273.84, stage ?, opened by the primary. It will be managed from the next bar.
+2026-09-23 22:15:05,717 [INFO] Priority 2 on this account: waiting 14s for the bots above
