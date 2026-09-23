@@ -4992,3 +4992,92 @@ re-entries were wired in (2026-08-16) was. Rule 15 — ask what a value's UNIT i
 boundary — and rule 1, because the clamp made *out of range* and *the last bar* the same value.
 Both runs above use the corrected tool, which dates a row off the trade's own `entry_ms` and now
 writes a `kind` column so primaries and re-entries can be told apart.
+
+## Run 42 — 2026-09-23: the level the bot ALREADY TRADED, tapped again after the setup died
+
+**Question (Aaron, from the live trade).** Monday night's short filled at the gap edge the setup
+published, tagged its first target, moved the stop to profit and closed there for roughly nothing —
+and price then fell about 3R. Tuesday night price came all the way back to that same price and sold
+off again with nothing placed. *"We did not have any logic to take that trade. Why? How many trades
+like this have we been missing?"*
+
+### Why the bot had nothing, from its own decision record
+
+`algos/ledger_archive/sos_fade_demo/ledger/decisions-2026-09-21.jsonl` and `-2026-09-22.jsonl`, read
+bar by bar. **Two independent causes, both sufficient on their own:**
+
+1. **The setup DIED at 05:15 UTC Tuesday.** Structure re-broke, the bot discarded the entry price
+   outright and began watching a new level — which price then ran through at 19:30 UTC, leaving the
+   watched price meaningless. **Nothing in the bot remembers a level it has already traded.**
+2. **No shift of structure ever printed on the short side all evening.** The sequence sat at its
+   first stage — a sweep and nothing more — so nothing armed and nothing could be placed.
+
+✅ **The 19:44 and 21:20 UTC restarts did NOT cost the trade, and must not be written up as if they
+did** — the decision record is unbroken 17:45 → 20:45.
+
+### The population, and why no earlier run covers it
+
+🔴 **Run 41 only reaches a return while the setup is STILL ALIVE. Runs 27–36 measured setups the
+primary NEVER traded. Run 39 measured the return into the zone from the leg EXTREME.** This is a
+return to a level the primary DID trade, AFTER that setup is finished — unmeasured until now, which
+is why it was measured rather than argued from the runs above.
+
+### Method
+
+`backtest/tools/level_memory_audit.py` (new; notes in `backtest/notes/tools.md`). Replays the
+strategy with the re-entry pinned off, then takes the level, the direction and the stop distance
+**from the trade record** so nothing is re-derived, arms the level from the bar the primary closes,
+and walks the M5 frame for a limit fill and its outcome. Each touch is tagged with whether the bot
+was flat and whether an armed setup already existed, so trades the bot could already take are not
+counted as missing.
+
+**MEASURED 2026-09-23, XAUUSD.p, 158,986 M15 bars against 476,939 M5, 2020-01-01 → 2026-09-22,
+$0.20/oz round trip, 158 primaries, 5-day memory, 3-day max hold:**
+
+- **88 of 158 (56%)** came back to the entry within 5 days after travelling at least 1R away.
+- **39** had the bot flat with **nothing armed** — Aaron's exact case. **~5.8 a year**, median
+  **22.5 hours** after the primary closed (his was ~20).
+- **44** had an armed setup live; **5** were in a position.
+
+| The 39, stop width | R @1 | R @2 | R @3 | win% @2 |
+|---|---|---|---|---|
+| the original trade's own 1R | +4.91 | +11.67 | +11.80 | 44% |
+| **HALF that width** | **+10.63** | **+16.35** | **+19.35** | 49% |
+
+- 🔴 **THE ENTRY IS NOT THE VARIABLE — THE STOP WIDTH IS.** Same trades, same fills, same targets;
+  halving the stop roughly doubles the book. Median best excursion before the stop is **2.14R**, so
+  the primary's width is paying for room these returns never use.
+- ✅ **Both halves positive at every target** (4.4/6.2, 5.2/11.2, 5.2/14.2) and **drop-the-best
+  survives** (9.64 / 14.37 / 16.37).
+- ⚠ **Matched random control** (400 per trade, same year, direction, stop and target): the half-width
+  book scores **z ≈ 2.0–2.2 at 1R and 2.1–2.3 at 2R across four seeds — but 1.9–2.1 at 3R.** The 3R
+  target STRADDLES the z ≥ 2 bar and may not be quoted as clearing it.
+- 🔴 **70% OF THE TOTAL IS ONE YEAR.** 2025 is **+11.47R of the +16.35R from 12 of the 39 trades**,
+  and 2020, 2022, 2024 and 2026 are negative or flat at 1R. **Same fragility shape as Run 41 and as
+  the gap half itself** — a result carried by one regime is not yet an edge.
+- 🔴 **THE 44 RETURNS WITH A SETUP ALREADY ARMED ARE WORTH −0.02R AT 1R** and negative at 2R and 3R.
+  The bot is not missing those, and no rule should be built for them. The missing ones are only the
+  39 where it had nothing at all.
+- Extending the window back to 2018-09 adds nothing to the 39-trade group.
+
+### A defect in this measurement, found and fixed before anything was believed
+
+🔴 **THE FIRST VERSION HAD NO "TRAVEL AWAY FIRST" GUARD AND ITS NUMBERS WERE GARBAGE.** A breakeven
+or profit stop exits AT the entry price, so "price returned to the level" is trivially true within
+minutes of the close. A vacuity check at a 14-minute memory — which should return nothing at all —
+still reported **82 returns and a spurious −38R**. The tool now requires price to travel a full 1R
+away from the level, in the original trade's own direction, before a return counts; the same check
+re-run gives 2 returns and 0 graded. **Rule 12: the bad number was believable, and only a run that
+should have produced NOTHING exposed it.** Aaron's own case travelled ~3R away before returning.
+
+### Verdict
+
+**A screen with a real signal in it, and NOT yet an edge.** ⚠ **One position slot is not simulated**,
+so none of this is charged for the trades it would queue in front of — Run 12's rule, and the
+precedent is expensive: the no-gap entry screened positive and replayed at **−15.3R** inside the bot
+(Runs 28→29).
+
+**Recommended next step, not started:** build the level memory as a switch **defaulted off** — the
+setup's own traded entry stays armed for N days after it closes, with a stop a fraction of the
+original width — and replay it inside the bot with one slot and `puprime_ecn` charged, the same
+shape as Run 41. That replay decides it. Nothing ships before it.

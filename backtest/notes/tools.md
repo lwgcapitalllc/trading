@@ -1619,6 +1619,69 @@ CLAUDE.md gets at most one index line.
   trade moves (the label gates nothing); the ledger's sweep figures are re-measured — the corrected
   sweep is the strongest FFT lead (2020-25 +0.37R vs +0.07R a trade, p 0.01).
 
+## `level_memory_audit.py` — the level the bot ALREADY TRADED, tapped again after the setup died (2026-09-23)
+
+**The question (Aaron, 2026-09-22 live).** The Monday-night short filled at the gap edge the setup
+published, closed at a profit stop for roughly nothing, and ~20 hours later price came all the way
+back to that same price and sold off with nothing placed. *"We did not have any logic to take that
+trade. Why? How many trades like this have we been missing?"*
+
+**Why the live bot had nothing, from its own decision record** (`algos/ledger_archive/sos_fade_demo/ledger/`,
+2026-09-21 and -22): at 05:15 UTC the setup DIED — structure re-broke, the entry price was discarded
+outright and the watch moved to a new level, which price then ran through. The short side sat at the
+first stage all evening: a sweep, but no shift of structure ever printed, so nothing armed. **The bot
+keeps no memory of a level it has already traded.** Two independent causes, and the restarts at 19:44
+and 21:20 UTC were NOT one of them — the bar record is unbroken 17:45 → 20:45.
+
+🔴 **THIS POPULATION IS NOT ONE ANY EARLIER RUN MEASURED, and that is the reason the tool exists.**
+Run 41 only reaches a return while the setup is STILL ALIVE. Runs 27–36 measured setups the primary
+NEVER traded. Run 39 measured the return into the zone from the leg EXTREME, a different geometry.
+This measures a return to a level the primary DID trade, AFTER that setup is finished.
+
+**What it does.** Replays the strategy with the re-entry pinned off, then for each primary takes the
+level, the direction and the stop distance FROM THE TRADE RECORD so nothing is re-derived, arms the
+level from the bar the primary closes, and walks the lower frame for a limit fill and its outcome.
+Each touch is tagged with whether the bot was flat and whether an armed setup already existed.
+
+**MEASURED 2026-09-23, XAUUSD.p, 158,986 M15 bars against 476,939 M5, 2020-01-01 → 2026-09-22,
+$0.20/oz round trip, 158 primaries:**
+
+- **88 of 158 (56%) came back to the entry within 5 days** after travelling at least 1R away.
+- **39 of those had the bot FLAT with nothing armed** — Aaron's exact case, ~5.8 a year, median
+  **22.5 hours** after the primary closed. 44 had an armed setup live; 5 were in a position.
+
+| Stop width, the 39 | R @1 | R @2 | R @3 |
+|---|---|---|---|
+| the original trade's own 1R | +4.91 | +11.67 | +11.80 |
+| **HALF that width** | **+10.63** | **+16.35** | **+19.35** |
+
+- 🔴 **THE ENTRY IS NOT THE VARIABLE — THE STOP WIDTH IS.** Same trades, same fills; halving the stop
+  roughly doubles the book. Median best excursion before the stop is 2.14R, so the original width is
+  paying for room these returns never use.
+- ✅ Both halves positive at every target (4.4/6.2, 5.2/11.2, 5.2/14.2), and drop-the-best survives
+  (9.64 / 14.37 / 16.37).
+- ⚠ **Against a matched random control** (400 per trade, same year, direction, stop and target) the
+  half-width book scores **z ≈ 2.0–2.2 at 1R and 2.1–2.3 at 2R across four seeds, but 1.9–2.1 at 3R
+  — the 3R target STRADDLES the z ≥ 2 bar and must not be quoted as clearing it.**
+- 🔴 **70% of the total is ONE YEAR. 2025 is +11.47R of the +16.35R from 12 of the 39 trades**, and
+  2020, 2022, 2024 and 2026 are all negative or flat at 1R. Same fragility shape as Run 41.
+- 🔴 **The 44 returns where a setup WAS armed are worth −0.02R at 1R and negative at 2R and 3R.** The
+  bot is not missing those, and no rule should be built for them.
+- Extending the window back to 2018-09 adds nothing to the 39-trade group.
+
+🔴 **`--away` (default 1.0R) IS THE POPULATION DEFINITION, NOT A KNOB, AND THE FIRST VERSION OF THIS
+TOOL SHIPPED WITHOUT IT.** A breakeven or profit stop exits AT the entry price, so "price returned to
+the level" is trivially true within minutes: a vacuity check at `--horizon 0.01` — fourteen minutes —
+still reported 82 returns and a spurious −38R. Price must now travel that far away from the level, in
+the original trade's own direction, before a return counts. Same check re-run: 2 returns, 0 graded.
+**Rule 12 in practice — the bad number was believable, and only a run that should have returned
+NOTHING exposed it.**
+
+⚠ **SCREEN, NOT A BACKTEST, and the precedent is expensive.** One position slot is not simulated, so
+none of this is charged for the trades it would queue in front of — Run 12's rule. The no-gap entry
+screened positive and replayed at −15.3R inside the bot (Runs 28→29). **Nothing here is an edge until
+it is built as a switch defaulted off and replayed with the slot on and costs charged.**
+
 ## `gbpjpy_travel_test.py` — does a strategy TRAVEL to another instrument? (2026-09-17)
 
 Runs one config on two instruments with costs ON and OFF, and prints the four-way table. Written
