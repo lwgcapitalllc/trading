@@ -41,3 +41,51 @@
 2026-09-23 03:13:00,742 [INFO] PENDING PLACED | ticket=386786414 | bearish 0.54L @ 4356.69 | SL=4371.15 TP=4347.76
 2026-09-23 03:15:01,206 [INFO] Priority 4 on this account: waiting 59s for the bots above
 2026-09-23 03:20:01,077 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-23 03:25:01,031 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-23 03:30:01,070 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-23 03:35:00,770 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-23 03:40:00,940 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-23 03:45:01,070 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-23 03:50:00,900 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-23 03:52:11,146 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-23 03:52:11,147 [INFO] Stop requested — shutting down.
+2026-09-23 03:52:11,147 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-23 03:52:11,772 [INFO] MT5 disconnected.
+2026-09-23 03:52:34,147 [INFO] FFT | FftStrategy v373 | hash b9097e7f28bf | commit 0f9f93dd | frozen | LIVE
+2026-09-23 03:52:34,178 [INFO] Waiting for MT5 lock (held by realign_1_700152905, 1s)...
+2026-09-23 03:52:37,804 [INFO] Connected | #700152905 | $15,765.48 | PUPrime-Demo
+2026-09-23 03:52:37,804 [INFO] MT5 connection lock released
+2026-09-23 03:52:38,211 [INFO] Sizing against account balance $15,765.48
+2026-09-23 03:52:38,211 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-23 03:52:38,226 [WARNING] Setup alerts: OFF — FftStrategy does not report its setups yet. It is not that there are no setups; it cannot report any. See docs/LIVE_SETUP_ALERTS.md.
+2026-09-23 03:52:39,008 [INFO] Cancelling stale pending order T386786414 from a previous run
+2026-09-23 03:52:39,008 [INFO] cancel stale pending T386786414
+2026-09-23 03:52:40,257 [INFO] PENDING CANCELLED | T386786414
+2026-09-23 03:52:54,338 [INFO] Warmed 45000 bars (2026-08-07 09:11:00+00:00 → 2026-09-23 03:51:00+00:00) in 12.7s
+2026-09-23 03:52:54,338 [INFO] Equity re-anchored to the account after warm-up: 17,441.65 → 15,765.48
+2026-09-23 03:52:55,010 [INFO] Watching for closed M1 bars (poll 10s). Ctrl-C to stop.
+2026-09-23 03:53:05,215 [INFO] place bearish primary limit 0.54L @ 4356.6912999999995 SL 4371.15 TP 4347.7587
+2026-09-23 03:53:05,309 [INFO] PENDING PLACED | ticket=386811083 | bearish 0.54L @ 4356.69 | SL=4371.15 TP=4347.76
+2026-09-23 03:54:55,591 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-23 03:54:55,591 [INFO] Stop requested — shutting down.
+2026-09-23 03:54:55,593 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-23 03:54:56,328 [INFO] MT5 disconnected.
+2026-09-23 03:55:09,982 [INFO] FFT | FftStrategy v373 | hash b9097e7f28bf | commit 0f9f93dd | frozen | LIVE
+2026-09-23 03:55:10,513 [INFO] Connected | #700152905 | $15,765.48 | PUPrime-Demo
+2026-09-23 03:55:10,513 [INFO] MT5 connection lock released
+2026-09-23 03:55:10,732 [INFO] Sizing against account balance $15,765.48
+2026-09-23 03:55:10,732 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-23 03:55:10,732 [WARNING] Setup alerts: OFF — FftStrategy does not report its setups yet. It is not that there are no setups; it cannot report any. See docs/LIVE_SETUP_ALERTS.md.
+2026-09-23 03:55:11,342 [INFO] Cancelling stale pending order T386811083 from a previous run
+2026-09-23 03:55:11,342 [INFO] cancel stale pending T386811083
+2026-09-23 03:55:11,420 [INFO] PENDING CANCELLED | T386811083
+2026-09-23 03:55:22,235 [INFO] Warmed 45000 bars (2026-08-07 09:14:00+00:00 → 2026-09-23 03:54:00+00:00) in 10.1s
+2026-09-23 03:55:22,235 [INFO] Equity re-anchored to the account after warm-up: 17,441.65 → 15,765.48
+2026-09-23 03:55:22,782 [INFO] Watching for closed M1 bars (poll 10s). Ctrl-C to stop.
+2026-09-23 03:56:02,944 [INFO] place bearish primary limit 0.54L @ 4356.6912999999995 SL 4371.15 TP 4347.7587
+2026-09-23 03:56:03,037 [INFO] PENDING PLACED | ticket=386812843 | bearish 0.54L @ 4356.69 | SL=4371.15 TP=4347.76
+2026-09-23 04:00:03,730 [INFO] Priority 4 on this account: waiting 56s for the bots above
+2026-09-23 04:05:00,813 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-23 04:10:01,025 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-23 04:15:00,889 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-23 04:20:00,969 [INFO] Priority 4 on this account: waiting 39s for the bots above
