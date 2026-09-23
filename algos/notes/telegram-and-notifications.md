@@ -773,3 +773,28 @@ halts the bot holding it.
 than `0.00R` (rule 1), and it gets ONE stop-move message and then goes quiet — there is no
 yardstick, so there is nothing to throttle on. Transitional: every trade opened from here records
 both.
+
+
+### Read the thread BEFORE it ships — `tools/signal_samples.py --trades`
+
+A live bot runs a frozen `deployed/` snapshot, so new wording does not reach a phone until a
+promote — and promoting two live bots in order to look at a message is the wrong way round.
+
+```
+python C:\trading\algos\tools\signal_samples.py --trades --dry-run   # prints, sends nothing
+python C:\trading\algos\tools\signal_samples.py --trades             # into the trades room
+```
+
+Three threads, 14 messages: a winner managed the whole way (breakeven → add → trail → rung banked
+→ win), a loser whose stop only ever came closer, and the scratch. **Every string comes out of the
+real `alerts.format_*` functions**, so what lands is byte-identical to what the bridge will send —
+hand-typed samples would show wording that does not exist, which is the whole point of the tool.
+
+⚠ **It posts into the room that carries real fills.** The header says none of it is live and the
+footer closes it; both are meant to be deleted afterwards. The existing no-flag mode is unchanged
+and still sends the eight SETUP threads to the signals room.
+
+⚠ **Each send names its room LITERALLY on its own branch**, not through a variable.
+`tests/test_notification_routing.py` greps every send in the repo for a stated kind, and a
+variable would route correctly while being invisible to that guard — which is the same silence
+the guard exists to catch, wearing a green tick.
