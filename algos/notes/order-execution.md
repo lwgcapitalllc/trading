@@ -155,6 +155,14 @@ promote tool would have drifted the first time either moved. Tests drive the rea
 subprocess against a real staged snapshot, because a hand-written payload would only prove the
 parser reads my own dict.
 
+
+🔴 **The runner's wait for a late 15m bar had no test that could fail (found 2026-09-23).** Removing
+it left every merge check green, although one check's own note said that change would break 39
+pairs. With both feeds on time the wait never binds — a 5m bar is delivered only after it closes, by
+which time its 15m context has closed too — so only a LATE 15m bar exercises it.
+`tests/test_dual_feed_merge.py` → *a LATE 15m bar holds the fast bars back* delivers the 15m feed ten
+minutes late; with the wait removed, 70 fast bars read the wrong 15m context and it goes red.
+
 ## 🔴 The bridge could not bank at a price, and only two of the six rungs were refused (2026-09-01)
 
 **`assert_supported` read `exec_tp1_pct`/`exec_tp2_pct` and nothing else — which is the LAST branch
