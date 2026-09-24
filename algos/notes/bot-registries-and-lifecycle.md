@@ -259,6 +259,9 @@ below 200 — read its `Warmed N bars` line on the first start before trusting i
 `realign_flat_before_weekend`, which its repo code no longer has, so its NEXT promote builds a bot
 that refuses its own settings; `b_leg_demo` does not pin `flat_mode` / `flat_holidays`. Both red in
 `test_live_runner_startup` / `test_bot_bench` on `main` before FFT was added.
+⚠ **2026-09-22: the config pins FFT's two new settings** — "Sweep setup size" 1.5 (a sweep setup
+trades at 1.5x, the user's call) and "Only sweep setups" off. With 1.5x the account's half-size floor
+is 3.75% of room, so on this crowded account a sweep setup is refused a little more often.
 
 ---
 

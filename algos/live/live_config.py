@@ -156,6 +156,18 @@ class LiveConfig:
     telegram_signal_chat: str = ""
     telegram_token_key: str = ""
     setup_alert_categories: Optional[List[str]] = None
+    #   record_setups     — write each live setup to the DECISION ledger, one row per bar, as the
+    #                       signals room describes it: the confluences in the strategy's own
+    #                       words (the swept level's NAME lives nowhere else), the tradeable band,
+    #                       the projected stop, what is refusing it. See `runner._record_setups`.
+    #                       🔴 **OFF by default, and that is a PERMISSION default rather than a
+    #                       risk one** (the user, 2026-09-23: *"Never touch anything with his live
+    #                       trading that I may be working on without his permission."*). The write
+    #                       is reporting-only and cannot move a trade — but `algos/live` is frozen
+    #                       per bot, so a default of True would reach the other owner's LIVE bots
+    #                       at his next promote without him having chosen it. A bot that wants the
+    #                       records says so in its own config.
+    record_setups: bool = False
 
     # ── runtime ─────────────────────────────────────────────────────────────
     warmup_bars: int = 5000  # history replayed to warm the engines before acting

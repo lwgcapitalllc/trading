@@ -368,6 +368,237 @@ in). Page: https://claude.ai/artifact/VJbyecKjWZRfRmkHG6TYwy (marks save to its 
 `blind_replay_grade.py` on `FFT_r`, and read the takes within sweep / no-sweep as well: the sweep is
 on the page, so a pick that just follows it would beat random without the eye adding anything.
 
+## Sweep-only — the A+ label as a filter (2026-09-22, the bot, lab path)
+
+The bot's "Only sweep setups" setting, replayed exactly as the lab replays it: PU Prime `XAUUSD.p`
+1m, 2020-01-01 → 2026-09-22, ECN bid/ask fills + commission + swap, 5%, TP2. Lab runs 08c84d0de04f
+(all) and 82868e38f223 (sweep only). R columns from the same replay; sizing never changes which
+trades are taken here (one slot, no shared budget), so the weighted rows are exact in R.
+
+| | trades | win | avg R | total R | worst DD | return/DD | 2020-25 | last yr |
+|---|---|---|---|---|---|---|---|---|
+| all setups | 187 | 71.1% | +0.148 | +27.71R | 4.11R | 6.7 | +23.22R | +4.49R |
+| **sweep only** | 53 | 83.0% | +0.325 | +17.21R | 3.21R | **5.4** | +15.49R | +1.72R |
+| all, sweeps at 1.5x | 187 | | | +36.31R | 5.01R | 7.2 | +30.97R | +5.35R |
+| all, sweeps at 2x | 187 | | | +44.92R | 6.43R | 7.0 | +38.71R | +6.20R |
+
+- 🔴 **Sweep-only is WORSE per unit of drawdown (5.4 vs 6.7).** The 134 non-sweep trades average
+  +0.078R — thin but positive — and skipping them costs 38% of the total R for 0.9R less drawdown.
+- **Sizing the sweeps up beats filtering on them** (7.2 at 1.5x), but by a small margin, and the
+  label's lead was found on these same bars. A candidate for demo, not a result.
+- The filter decides at placement what the touch then records: 53/53 traded touches labelled sweep,
+  0 of 525 refusals (`tests/test_fft.py`).
+- **SHIPPED 2026-09-22 at the user's call: every setup taken, sweeps at 1.5x** ("Sweep setup size"
+  default 1.5). The sweep-only filter stays OFF.
+- Lab run 046197075b55 at the shipped 1.5x, same basis as 08c84d0de04f (1x), both from $10,000: the
+  same 187 trades, PF 1.407 vs 1.375, max drawdown **23.5% vs 19.2%**, net +$41,651 vs +$24,923.
+
+## The best trades, and every indicator part not yet tried (2026-09-22, `backtest/tools/fft_confluence_study.py`)
+
+Frozen before any feature was computed; the bot's 187 trades on the lab path (dev 153 to 2025-08,
+recent 34). CLEAN = TP2 with never more than 0.30R against (65 trades); FAST = TP2 within 30 min (42).
+
+- **What the clean winners share:** the sweep (37% of clean winners vs 17% of losers — already sized
+  1.5x) and an equal level between the entry and TP2 (11% vs 0%). Nothing else separates them.
+- **Nine features, none past the luck bar** (pooled t, bar 2.78): order block in the entry-to-stop
+  zone (in ~90% of all trades, t −0.35), VWAP side (−1.50), Asia point of control behind the entry
+  (+1.40 dev, reversed last year), 1m RSI divergence in the pullback (+0.22), equal level past the
+  stop (+0.44), a reversal candle before the fill (+0.15), a trending day (+0.34), a high-volatility
+  day (never occurs).
+- **LEAD — an equal high (for a buy; equal low for a sell) between the entry and TP2:** 11 trades in
+  6.7 years, **11 winners**, heat 0.22R vs 0.55R. 6 of the 11 are sweeps and already trade at 1.5x.
+  NOT proven: t 1.97; a random 10 dev trades all win 3% of the time, so one of nine features doing it
+  by luck is ~1 in 4. ⚠ The frozen Welch t scored it 7.22 and "passed" it — a statistic that divides
+  by a winners-only group's zero spread; replaced by a pooled t in the tool.
+- **The EQT lead on other markets, frozen, cost-free — NOT CONFIRMED** (`--market`): EURUSD 4 EQT
+  trades, 2 won, −0.13R vs the rest (p 0.58); NAS100 7, 6 won, +0.33R (p 0.13). Same direction on
+  NAS100 only. The bot now RECORDS the label (`eq_target`) and `tools/forward_log.py` grades it as
+  lead 4 on demo trades — nothing trades on it.
+- 🔴 **More depth (2026-09-22, `--depth`, frozen) — the equal-level lead is most likely a STREAK.**
+  Gold's 69 equal-level touches FFT does not trade win 58% vs 62% without (p 0.82), and no gate group
+  shows it. Nine more markets: equal-level touches win 64.9% vs 61.7% (661 of 31,630 touches,
+  +0.049R, p 0.10, up on 7 of 9) — a small tilt, not proven. Out of sample the would-be setup's own
+  trades (all FFT rules + an equal level) win 39 of 58 (67%), break-even ~62% before costs — about
+  FFT's normal edge. Gold 2018-19 supports it (12 touches, 83%, p 0.02). **Do not build a standalone
+  setup on it.**
+- **A time exit FAILS:** winners and losers both take ~1 hour (median 59 / 60 min), so a cut at
+  15 / 30 / 60 / 120 min lowers total R in both windows (dev +23.2R held vs +1.7 to +14.3R).
+
+## NAS100 as a second instrument — uncorrelated, and it still makes the book WORSE (2026-09-23)
+
+The other route to the dollar target. Both sides cost-free on the identical version-1 rule, PU Prime
+1m, 2020-01-01 → 2026-09-11 (the window both feeds cover). ⚠ **NAS100 has NO measured spread or swap
+anywhere in this repo** — `backtest/fills.py` prices gold, cable and pound-yen only — so a costed
+comparison was impossible and gold's numbers may not be borrowed. That turned out not to matter: it
+fails before costs.
+
+**They ARE genuinely independent — that was never the problem.**
+
+- monthly R correlation **+0.037** over 80 months;
+- 10 months where both lost, against **9.3** that independence predicts — dead on;
+- only **8 of 190** gold trades (4.2%) have a NAS100 trade open at the same time, 4 (2.1%) same side.
+
+**But uncorrelated is not the same as additive.** Return per unit of drawdown, which is scale-free
+and therefore the only number that survives a change of risk setting:
+
+| stream | n | total R | avg R | max DD | return/DD |
+|---|---|---|---|---|---|
+| **gold** | 190 | +28.4R | +0.149 | 3.82R | **7.43** |
+| NAS100, all | 241 | +17.9R | +0.074 | 8.29R | **2.15** |
+| NAS100, buys only | 117 | +17.3R | **+0.148** | 4.91R | 3.52 |
+| NAS100, sells only | 124 | +0.6R | +0.005 | 10.88R | **0.05** |
+
+- **NAS100's sells are the whole problem**: +0.6R of profit carrying a 10.88R drawdown. They are
+  noise with a long losing run attached, and they are half the trades.
+- **NAS100's buys earn the same per-trade edge as gold** (+0.148 vs +0.149) — but on a 4.91R drawdown
+  for 17.3R, so their quality is less than half gold's. ⚠ Buys-only is a POST-HOC split on the same
+  window, and NASDAQ rose hard across it, so read it as drift until an untouched window says otherwise.
+
+🔴 **THE PORTFOLIO TEST — at the risk that holds combined drawdown at gold's own 3.82R:**
+
+| book | total R at equal drawdown |
+|---|---|
+| **gold alone** | **+28.4R** |
+| gold + NAS100 buys | +23.0R |
+| gold + NAS100 all | +16.1R |
+
+**Adding NAS100 costs you R at every risk setting, even in its best form.** Return/DD falls 7.43 →
+6.02 (buys) → 4.22 (all). Diversification cannot rescue a stream whose own return per drawdown is
+half the book's; it dilutes instead. **The repo's philosophy line "stacking only reduces drawdown if
+the strategies are actually independent" needs its other half: independence is necessary and NOT
+sufficient — the added stream must also be comparable in quality.**
+
+**Verdict: NAS100 is out.** Not for correlation, which is excellent — for quality.
+
+**Where that leaves the dollar target.** Three routes were tested and two are now closed: the sniper
+(costs, above) and a second instrument (this section). The only one left is running gold harder — the
+swept setups at 2x (+44.92R, return/DD 7.0, barely below the shipped 1.5x's 7.2) plus the second
+touch when flat (~+21%) — which reaches roughly 54R, the ~53R the $100,390 solo figure needs, and
+lands drawdown near 33% against the extreme leg's 27.72%. **There is no free route to it.**
+
+## The sniper entry through REAL costs — the owed measurement, and it is a NO (2026-09-23)
+
+⚠ **RE-WRITTEN 2026-09-23 after being lost.** This section was written once and disappeared from the
+file — a merge landed between it and the next edit, and the later sections went on top of a reverted
+copy. It was never committed, so there was nothing to recover; the numbers below are the same run's.
+**The lesson is the ordinary one: an uncommitted note in a shared clone is not a record.**
+
+`backtest/tools/fft_first_touch_study.py --sniper-costs`. This file had carried "Costs are still
+owed: on a ~$1 sniper stop the spread alone is ~0.1R per trade" since 2026-09-21. Now measured, and
+**the estimate was low by half.**
+
+**The gate is trustworthy because the control reproduces.** Version 1 runs in every window on the
+same cost model and lands on this file's own published figures to three decimals — 2020-25: 152
+trades, 71.1%, +0.149R cost-free → **+0.140R costed, +21.3R**; recent year: 29 trades, +0.172R →
+**+0.165R, +4.8R**.
+
+**And the cost-free baseline reconciles.** On the identical 237 trades `walk()` and `managed()` agree
+exactly — both +0.364R, 26.6% win, +86.2R, **0 sign disagreements** — matching this file's +0.36R
+row. The sniper's cost-free edge was never overstated; what follows is a cost, not a correction.
+
+PU Prime ECN, gold, $0.10 through the level, TP2, one position at a time:
+
+| | 2020-01 → 2025-08 | recent year |
+|---|---|---|
+| **version 1 (shipped), costed** | 152 / +0.140R / **+21.3R** | 29 / +0.165R / **+4.8R** |
+| sniper overlap 61.8-88.6, ≤1 BOS | 228 / +0.133R / +30.3R | 55 / **+0.048R** / +2.6R |
+| sniper overlap 61.8-88.6, 0 BOS | 110 / +0.227R / +25.0R | 30 / **−0.236R** / −7.1R |
+| sniper zone at 0.702-0.786, any BOS | 106 / −0.016R / −1.7R | 18 / +0.491R / +8.8R |
+
+🔴 **THE SPREAD COSTS THE SNIPER 0.21R A TRADE, NOT 0.1R.** Cost-free +0.364R → costed +0.133R on the
+≤1 BOS model. **Almost none of it is commission** (median 0.018R — $0.02/oz round turn over a $1.12
+median zone). It is the FILL: a buy limit needs the ASK at the level, so the bid must trade one spread
+further through it, and a sell's stop and target both trigger one spread early on the bid. On a $1.12
+stop a $0.12 spread is 10.7% of R, and it turns winners into losers — the win rate falls 26.6% →
+24.1%, which on a ~4R payout is most of the damage. **A cost that moves the WIN RATE cannot be
+subtracted from avgR afterwards**, which is exactly why the earlier estimate missed.
+
+**Verdict — the sniper does not replace version 1 and does not reach the dollar target.**
+
+- ≤1 BOS earns **+0.133R against version 1's +0.140R** in dev — the same edge per trade, from 50% more
+  trades. It reaches +30.3R vs +21.3R on VOLUME, not on quality.
+- In the recent year its edge collapses to **+0.048R while version 1 holds +0.165R**: double the
+  trades for half the total R. That is the window that matters, and it fails there.
+- 0 BOS looked best in dev (+0.227R) and is **negative in the recent year** (−0.236R). A model that
+  flips sign is not a model.
+- The 0.702-0.786 zone is negative in dev and positive on 18 recent trades — the wrong way round to
+  believe, and the smaller sample is the positive one.
+
+⚠ **This prices rows ALREADY chosen in the table above; it is not a new search.** Costs can only
+subtract, so no luck bar is owed — and equally, none of these rows gets a second chance on a cheaper
+basis. The $0.10-through rule and the bid-chart spread are independent effects (queue position vs
+bid/ask), so stacking them is right rather than double-counting.
+
+## What drawdown each dollar target costs — the exact ladder (2026-09-23)
+
+The user asked what drawdown reaches the extreme leg's solo **$100,390**. Answered exactly, not
+derived loosely: the per-trade R sequence and stop prices are stored in each lab run's
+`equity_curve.json`, so the fixed-fractional path is reconstructable for ANY risk setting and sweep
+multiple.
+
+**The model is validated on three runs, one of them PREDICTED before it finished:**
+
+| run | stored net | model net | stored DD | model DD |
+|---|---|---|---|---|
+| 08c84d0de04f (sweeps 1x, 5%) | $24,922.93 | $24,922.66 | 19.19% | 19.19% |
+| 046197075b55 (sweeps 1.5x, 5%) | $41,650.76 | $41,650.37 | 23.50% | 23.50% |
+| **5eaf0eb0f790 (sweeps 2x, 5%)** | **$65,205.21** | **$65,218** (predicted) | **29.5%** | **29.5%** |
+
+That third row is the one that earns the model trust — the figure was computed from the 1.5x trade
+list before the 2x run completed. It also gives 2x's other numbers: **PF 1.414** (vs 1.407 at 1.5x,
+1.375 at 1x — the sweep label is genuinely predictive) but **Sharpe 0.748** (vs 0.782), so sizing up
+buys money and lumpiness together.
+
+**The ladder, $10,000 start, 187 trades, PU Prime ECN:**
+
+| sweep x | risk 5% | 6% | 7% | 8% | 9% | 10% |
+|---|---|---|---|---|---|---|
+| 1.0 | $24.9k / 19.2% | $33.4k / 22.8% | $43.4k / 26.5% | $54.9k / 30.0% | $68.0k / 33.5% | $82.8k / 37.0% |
+| 1.5 | $41.7k / 23.5% | $58.8k / 27.8% | $80.3k / 32.0% | $106.9k / 36.0% | $139.2k / 39.9% | $177.6k / 43.6% |
+| 2.0 | $65.2k / 29.5% | $96.6k / 34.7% | $138.2k / 39.7% | $192.2k / 44.5% | $255.3k / 49.0% ⚠ | $320.1k / 53.3% ⚠ |
+
+⚠ the venue lot ceiling binds on 2 trades — past there the dollars stop describing a tradeable
+account (rule 17).
+
+**Second touch when flat, measured (lab `4b19d1ff1847`, sweeps 1.5x, 5%):** 233 trades (+46),
+net **$63,173.36**, DD **29.25%**, PF 1.375, Sharpe 0.774. The model reproduces it to $13 and the
+drawdown exactly — a fourth confirmation.
+
+**🔴 The answer: ~35% drawdown, and NOTHING on the board beats it.**
+
+| config | total R | net @5% | DD @5% | risk for $100,390 | its DD |
+|---|---|---|---|---|---|
+| **second touch off, sweeps 1.5x (shipped)** | +36.3R | $41,660 | 23.5% | 7.77% | **35.1%** |
+| second touch off, sweeps 2.0x | +44.9R | $65,218 | 29.5% | 6.10% | 35.3% |
+| second touch ON, sweeps 1.5x | +44.2R | $63,186 | 29.2% | 6.20% | 35.3% |
+| second touch ON, sweeps 2.0x | +51.8R | $89,341 | 36.6% | 5.27% | **38.2%** |
+
+🔴 **Every lever lands on the same ~35%, and stacking BOTH makes it worse (38.2%).** R per point of
+drawdown falls monotonically as levers are added — 1.545 → 1.522 → 1.514 → 1.415. **The shipped
+config is the highest-QUALITY version of this strategy; every lever trades quality for size.** A
+dollar target is priced by return-per-drawdown (~7 here) and cannot be rearranged around by sizing.
+
+**If one lever must be chosen, take the SECOND TOUCH over the 2x sweep size.** They are
+indistinguishable on the target (6.20% → 35.3% vs 6.10% → 35.3%), but the second touch gets there on
+**233 trades instead of 187** and with a better Sharpe (0.774 vs 0.748), whereas 2x just bets harder
+on the 53 trades carrying a label whose lead was found in-sample. More trades is the more robust way
+to the same number. (2x does hold a better profit factor, 1.414 vs 1.375 — that is the trade.)
+
+
+| route to $100,390 | risk/trade | max drawdown |
+|---|---|---|
+| sweeps 1.5x (as shipped) | **7.77%** | **35.1%** |
+| sweeps 2.0x | **6.10%** | **35.3%** |
+| sweep sizing off | 11.08% | 40.6% |
+
+- **Sizing the sweeps up does not buy a cheaper path to a fixed dollar target** — 35.1% vs 35.3%. It
+  lets the same money be made at lower per-trade risk, nothing more. Return per drawdown is ~7
+  whatever the multiple, and that ratio is what prices the target.
+- **Keeping the sweep sizing is still right**: switching it off costs 5 points of drawdown (40.6%).
+- **The binding constraint is the ACCOUNT CAP, not the drawdown.** 7.77% a trade against a 10% cap
+  leaves 2.23% for two bots currently on 5% each — **$100k from FFT means FFT runs alone.**
+- For reference the extreme leg reaches the same $100,390 at **27.72%** while sharing the account.
+
 ## Tested and NOT profitable — do not re-test
 - **After a stop-out, does price come back?** (2026-09-21, version 1, cost-free.) Within 24h of the
   stop, 58% of 2020-25 losses (26/45) went back to TP1 and 51% on to TP2; last year 5/10 and 4/10.

@@ -1701,6 +1701,15 @@ not the answer. ⚠ **Do not quote the +16.35R without this paragraph.**
 none of this is charged for the trades it would queue in front of — Run 12's rule. The no-gap entry
 screened positive and replayed at −15.3R inside the bot (Runs 28→29). **Nothing here is an edge until
 it is built as a switch defaulted off and replayed with the slot on and costs charged.**
+- **`tools/fft_confluence_study.py`** (new 2026-09-22) — the user's ask: what do FFT's best trades
+  (least heat, fastest to TP2) share, and does any indicator part not yet tried on FFT help? Replays
+  the bot on the lab path, reads nine engine features before each fill (order blocks, VWAP, Asia point
+  of control, RSI divergence, equal levels on either side, candle patterns, the day's regime label),
+  scores SIZE and SKIP against a shuffled luck bar and both windows, and tests a time exit. Plan and
+  result in its docstring; the record is `fft_ledger.md`. ⚠ **Its gate uses a POOLED t**: FFT's R is
+  two-valued, so a winners-only group has zero spread and a Welch t explodes (it "passed" a lead at
+  7.22 that pools to 1.97). ⚠ Caches the trade table in `backtest/reports/fft_confluence.pkl` —
+  delete it after a bot change.
 
 ## `gbpjpy_travel_test.py` — does a strategy TRAVEL to another instrument? (2026-09-17)
 

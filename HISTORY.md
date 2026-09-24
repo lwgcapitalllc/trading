@@ -1587,3 +1587,61 @@ places still calling the standalone account capless after the venue ceiling land
 sentences was a legitimate summary in its owning file; the fact they shared was simply no longer
 true. **A doc goes stale where a property is RESTATED, and restating is unavoidable — so the
 maintenance job is to sweep for the falsified sentence at the moment you falsify it.**
+
+
+---
+
+## 2026-09-23 — FFT earns a place in the book, and two platform defects found on the way
+
+**For Aaron.** Kelly asked for a strategy that beats FFT and the extreme leg. The answer is that the
+BOOK does, and both halves already exist. Record: `backtest/notes/portfolio-stack.md`,
+`backtest/notes/fft_ledger.md`.
+
+**The performance gain, stated the only way it survives a change of risk setting.** Pairwise monthly
+R correlation over 81 months (standard error ~0.113 each, so read these as "mutually uncorrelated"
+rather than as point estimates):
+
+| | fade | extreme | fft | realign |
+|---|---|---|---|---|
+| fade | 1.000 | +0.018 | **−0.056** | −0.038 |
+| extreme | +0.018 | 1.000 | −0.274 | **+0.283** |
+| fft | −0.056 | −0.274 | 1.000 | −0.149 |
+
+**FFT is uncorrelated with everything in the book**, including the fade bot it would sit beside. The
+risk needed to reach the extreme leg's own solo $100,390, and the drawdown it costs:
+
+| book | total risk | max drawdown |
+|---|---|---|
+| fade + extreme (the live account today) | 1.98% | **9.1%** |
+| fade + extreme + FFT | 2.57% | **7.1%** |
+| FFT alone | 7.77% | 35.1% |
+
+**Adding FFT cuts drawdown at that target from 9.1% to 7.1% — 22% — with no bot changing a line.**
+The only pair worth a second look is the extreme leg with realign at +0.283, the one positive
+reading in the matrix.
+
+🔴 **DEFECT 1 — `stack_run.py` silently skips the cost layers of any leg that does not bill its own.**
+The extreme leg declares `supports_bid_ask_fills: False` and its costs are applied by the LAB's
+cost-layer machinery; the stack tool builds each leg straight from `LAB_STRATEGY["config"]`, so those
+layers never run. Measured: its solo close in a stack is **$127,171 against its lab run's $110,390**
+on the same window — ~$16.8k, about 14% of its profit, missing. FFT is unaffected because its fill
+model lives inside the strategy. **This affects every stack run in the lab**, including the five-bot
+`st_51adad44e2`. Not fixed — it is your seam.
+
+🔴 **DEFECT 2 — three lab-registered strategies were missing from `stack_run.py`'s `_STRATEGIES`
+dict**, so a stack could not ask for them and answered "unknown strategy" as though they did not
+exist (rule 8). `fft` was added because it was measured through the tool; **`realign` and
+`smc_session_sweep` were deliberately left out** rather than registering a leg nobody has run. A
+`--fill-profile` flag went in with it.
+
+⚠ **A caution on every net-dollar figure in the lab.** The fade bot's run `97a34e6e844e` compounds
+$10,000 to **$13.1M** at 5% risk (my model reproduces it to 0.1%, so the run is self-consistent) —
+which is far past the 100-lot venue ceiling, where compounding turns linear and the number stops
+describing a tradeable account (rule 17). The same regime explains the extreme leg's four
+multi-million stack legs. **Judge a book by drawdown at a FIXED dollar target, never by its net.**
+
+⚠ Also measured and closed today, so nobody re-runs them: the order-block + 1-minute-shift reversal
+(failed its own luck bar, then failed out of sample), FFT's sniper entry (the spread costs it 0.21R,
+not the ~0.1R estimated), NAS100 as a second instrument (genuinely uncorrelated but its return per
+drawdown is half gold's, so it dilutes), and the extreme leg's regime cut transferred to FFT
+(transitioning is FFT's BEST regime, not its worst).
