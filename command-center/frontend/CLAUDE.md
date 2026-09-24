@@ -420,6 +420,7 @@ Most-cited code: `components/Drawer.tsx`, `components/FleetControls.tsx`, `pages
 - The affirmation ribbon, and why it holds still
 - Key UI decisions
 - An account's Results page — `/bots/accounts/:account` (2026-09-17)
+- 🔴 The top-right Refresh button re-read status and P&L only, so version badges stayed "behind" after a deploy made off the page until a full reload; it now re-reads everything the page shows (2026-09-24)
 
 ### `notes/accounts-broker.md` — Accounts and broker connections
 

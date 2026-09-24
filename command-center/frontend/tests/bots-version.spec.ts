@@ -1227,3 +1227,41 @@ test('a deploy with NOTHING NEW says so, and never asks for a restart', async ({
   await expect(banner(page)).not.toContainText('restart')
   expect(posts.length, 'the deploy really ran').toBe(1)
 })
+
+test('the Refresh button re-reads the VERSION badges, not just status and P&L', async ({
+  page,
+}) => {
+  /**
+   * 🔴 The failure (Aaron, 2026-09-24): four demo bots were deployed from outside the page, and
+   * *"I click that refresh icon… and it still said they were not up to latest versions. I had to
+   * then refresh the whole page."* The button called the SNAPSHOT's own refetch — status and P&L —
+   * and never touched the per-bot version query, which has no poll of its own.
+   *
+   * ⚠ **The version route answers "behind" until the deploy has landed, and the deploy lands
+   * with the page already open and NO job the page could have watched** — the shape of a deploy
+   * made from the CLI or the trading-box tool. Nothing but the button can make the page ask again.
+   *
+   * MUTATION: point the button back at the snapshot's `refetch` → red, the pill still `behind`.
+   */
+  const before = compare({ deployed_version: 100, local_version: 121, versions_behind: 21 })
+  let landed = false
+  await pinSnapshot(page, false)
+  await page.route('**/api/bots/*/version', (r) =>
+    r.fulfill({
+      json: version(
+        landed ? { ...before, deployed_version: 121, versions_behind: 0, changes: [] } : before,
+        null,
+        true
+      ),
+    })
+  )
+  await page.route('**/api/bots/*/promote/job', (r) => r.fulfill({ json: null }))
+  await page.goto('/bots')
+  await expect(rowPill(page)).toHaveAttribute('data-state', 'behind', { timeout: 20_000 })
+
+  landed = true // deployed from somewhere this page was not watching
+  await page.getByTestId('refresh-bots').click()
+
+  await expect(rowPill(page)).not.toHaveAttribute('data-state', 'behind', { timeout: 20_000 })
+  await expect(rowPill(page)).toContainText('v121')
+})

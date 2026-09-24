@@ -51,6 +51,7 @@
  * carries the account's sign, so no edge colour repeats it.
  */
 import { useState, useEffect, useRef } from 'react'
+import { useIsFetching, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import {
   FileText,
@@ -1016,7 +1017,24 @@ function withPinnedFirst<T extends { group: BotAccountGroup }>(accounts: T[]): T
 }
 
 export function Bots() {
-  const { data: snapshot, isLoading, isFetching, error, dataUpdatedAt, refetch } = useBotSnapshot()
+  const { data: snapshot, isLoading, error, dataUpdatedAt } = useBotSnapshot()
+  const qc = useQueryClient()
+  // 🔴 **THE REFRESH BUTTON RE-READS EVERYTHING THE PAGE SHOWS, NOT JUST THE SNAPSHOT
+  // (2026-09-24).** It called the snapshot's own `refetch`, so it re-read status and P&L and left
+  // every VERSION badge on whatever it last read. The version is a separate per-bot query with no
+  // poll of its own, so after a deploy the page did not start — the CLI, the trading-box tool, the
+  // other clone — the badges went on saying "behind" through any number of clicks, and only a full
+  // reload cleared them. Aaron: *"I click that refresh icon… and it still said they were not up to
+  // latest versions."* A button labelled Refresh that refreshes part of the screen is a label
+  // with no code behind it (rule 7).
+  //
+  // ⚠ **The whole `['bots']` prefix, deliberately** — snapshot, versions, deploy jobs, params,
+  // accounts. Listing keys here would be a second statement of what the page reads, stale the day
+  // someone adds a query. The version reads are one SSH round trip per bot (measured 4.5s), which
+  // is why nothing polls them — and a person clicking a button is exactly when that cost is
+  // wanted.
+  const refreshAll = () => qc.invalidateQueries({ queryKey: ['bots'] })
+  const refreshing = useIsFetching({ queryKey: ['bots'] }) > 0
   const { data: accountGroups, isPending: accountsPending } = useBotAccounts()
   const { data: registry, isPending: registryPending } = useRegisteredAccounts()
   // 🔴 THE TRADING BOX HAS NOT ANSWERED YET — its FIRST read is in flight. This is the only thing
@@ -2218,7 +2236,8 @@ export function Bots() {
             Users {users?.length ?? ''}
           </button>
           <button
-            onClick={() => refetch()}
+            data-testid="refresh-bots"
+            onClick={refreshAll}
             title={
               dataUpdatedAt
                 ? `Updated ${relativeTime(new Date(dataUpdatedAt).toISOString())}`
@@ -2226,7 +2245,7 @@ export function Bots() {
             }
             className="w-[28px] h-[28px] grid place-items-center rounded-md border border-border-default text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors"
           >
-            <RefreshCw size={12} className={isFetching ? 'animate-spin' : ''} />
+            <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
           </button>
         </div>
       </div>

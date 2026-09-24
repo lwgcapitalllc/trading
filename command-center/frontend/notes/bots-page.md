@@ -1815,3 +1815,26 @@ live — it only reads). Backend: `backend/notes/accounts-risk.md` → *An accou
   unchanged.
 - The account page shows the Price tab as loading while the backend fills the bars in the
   background, and asks again every 4s until they arrive (about 20s on the real accounts).
+
+---
+
+## 🔴 The Refresh button refreshed half the screen (2026-09-24)
+
+Four demo bots were deployed from outside the page, and the version badges went on saying
+*behind* through any number of clicks on the top-right Refresh button; only a full page reload
+cleared them. Aaron: *"I click that refresh icon… and it still said they were not up to latest
+versions."*
+
+**Why.** The button called the SNAPSHOT query's own `refetch` — status and P&L. The version badges
+come from a separate per-bot query with no poll of its own (it is one SSH round trip per bot,
+measured 4.5s, so nothing polls it), and the deploy watcher only re-reads it for a deploy it can
+see. A deploy made from the CLI, the trading-box tool or the other clone is invisible to both, so
+the badges had exactly one way to update — a remount.
+
+**Now** the button invalidates the whole `['bots']` prefix — snapshot, versions, deploy jobs,
+params, accounts — and spins while any of them is in flight. ⚠ **The prefix, not a list of keys**:
+a list is a second statement of what the page reads, stale the day somebody adds a query.
+
+A label on a button is a claim about code somewhere else (rule 7). *Refresh* claimed the screen and
+delivered one of its queries. Check: `tests/bots-version.spec.ts` → *the Refresh button re-reads
+the VERSION badges*, red when pointed back at the snapshot alone.
