@@ -15,3 +15,18 @@
 2026-09-24 01:10:01,686 [INFO] Priority 3 on this account: waiting 18s for the bots above
 2026-09-24 01:15:01,145 [INFO] Priority 3 on this account: waiting 39s for the bots above
 2026-09-24 01:20:02,037 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-24 01:22:40,662 [ERROR] TRADING OFF: the broker has switched trading off for this account — it is read-only. Every order this bot sends will be refused.
+2026-09-24 01:22:51,624 [INFO] Trading is allowed on this account again.
+2026-09-24 01:25:03,960 [INFO] Priority 3 on this account: waiting 16s for the bots above
+2026-09-24 01:30:01,166 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-24 01:35:01,758 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-24 01:40:01,482 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-24 01:45:01,549 [INFO] Priority 3 on this account: waiting 38s for the bots above
+2026-09-24 01:50:01,408 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-24 01:55:01,491 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-24 02:00:01,582 [INFO] Priority 3 on this account: waiting 38s for the bots above
+2026-09-24 02:05:02,068 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-24 02:05:40,074 [INFO] Equity re-anchored to the account flat between trades: 15,765.02 → 14,862.76
+2026-09-24 02:10:01,701 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-24 02:15:01,552 [INFO] Priority 3 on this account: waiting 38s for the bots above
+2026-09-24 02:20:01,122 [INFO] Priority 3 on this account: waiting 19s for the bots above

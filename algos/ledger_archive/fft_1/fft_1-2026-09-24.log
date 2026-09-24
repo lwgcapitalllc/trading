@@ -15,3 +15,22 @@
 2026-09-24 01:10:01,626 [INFO] Priority 4 on this account: waiting 38s for the bots above
 2026-09-24 01:15:01,409 [INFO] Priority 4 on this account: waiting 59s for the bots above
 2026-09-24 01:20:01,216 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-24 01:22:40,662 [ERROR] TRADING OFF: the broker has switched trading off for this account — it is read-only. Every order this bot sends will be refused.
+2026-09-24 01:22:51,703 [INFO] Trading is allowed on this account again.
+2026-09-24 01:25:07,383 [INFO] Priority 4 on this account: waiting 33s for the bots above
+2026-09-24 01:30:01,166 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-24 01:35:01,962 [INFO] Priority 4 on this account: waiting 38s for the bots above
+2026-09-24 01:40:01,392 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-24 01:45:01,549 [INFO] Priority 4 on this account: waiting 58s for the bots above
+2026-09-24 01:50:01,487 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-24 01:55:01,571 [INFO] Priority 4 on this account: waiting 38s for the bots above
+2026-09-24 02:00:01,537 [INFO] Priority 4 on this account: waiting 58s for the bots above
+2026-09-24 02:01:01,517 [INFO] place bearish primary limit 0.81L @ 4293.61068 SL 4303.26 TP 4287.64932
+2026-09-24 02:01:01,814 [INFO] PENDING PLACED | ticket=388167084 | bearish 0.81L @ 4293.61 | SL=4303.26 TP=4287.65
+2026-09-24 02:01:11,865 [INFO] cancel bearish primary limit T388167084
+2026-09-24 02:01:12,006 [INFO] PENDING CANCELLED | T388167084
+2026-09-24 02:05:03,553 [INFO] Priority 4 on this account: waiting 36s for the bots above
+2026-09-24 02:05:40,013 [INFO] Equity re-anchored to the account flat between trades: 15,765.02 → 14,862.76
+2026-09-24 02:10:01,740 [INFO] Priority 4 on this account: waiting 38s for the bots above
+2026-09-24 02:15:01,881 [INFO] Priority 4 on this account: waiting 58s for the bots above
+2026-09-24 02:20:01,185 [INFO] Priority 4 on this account: waiting 39s for the bots above
