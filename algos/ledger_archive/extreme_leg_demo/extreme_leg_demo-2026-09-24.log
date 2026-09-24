@@ -84,3 +84,7 @@ Not booked as a hand close because the broker closed it (its stop) and the strat
 2026-09-24 09:45:05,501 [INFO] Priority 2 on this account: waiting 14s for the bots above
 2026-09-24 10:00:05,219 [INFO] Priority 2 on this account: waiting 15s for the bots above
 2026-09-24 10:15:04,910 [INFO] Priority 2 on this account: waiting 15s for the bots above
+2026-09-24 10:30:05,605 [INFO] Priority 2 on this account: waiting 14s for the bots above
+2026-09-24 10:45:04,713 [INFO] Priority 2 on this account: waiting 15s for the bots above
+2026-09-24 11:00:05,468 [INFO] Priority 2 on this account: waiting 15s for the bots above
+2026-09-24 11:15:05,258 [INFO] Priority 2 on this account: waiting 15s for the bots above
