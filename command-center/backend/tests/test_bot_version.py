@@ -353,3 +353,34 @@ def test_only_a_START_is_read_out_of_the_section():
     assert bots._latest_startup(section) == (_EARLY, "abc1234")
     assert bots._latest_startup("") is None
     assert bots._latest_startup(None) is None
+
+
+def test_no_more_than_three_version_reads_are_on_the_box_at_once(vps, monkeypatch):
+    """The page asks for every bot at once, and each read starts Python on a two-CPU box that
+    the live bots trade from — ten at once buried the status read (3.1s alone, 26.7s beside
+    them, MEASURED 2026-09-24). MUTATION: drop the `with _VERSION_READS` — the peak reaches six
+    and this reddens (killed 2026-09-24)."""
+    import threading
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    answer = bots._ssh
+    lock = threading.Lock()
+    live = {"now": 0, "peak": 0}
+
+    def slow(cmd: str) -> str:
+        # Only the read that starts Python counts; the record is a plain `type` and is not capped.
+        if "--show" not in cmd:
+            return answer(cmd)
+        with lock:
+            live["now"] += 1
+            live["peak"] = max(live["peak"], live["now"])
+        time.sleep(0.2)
+        with lock:
+            live["now"] -= 1
+        return answer(cmd)
+
+    monkeypatch.setattr(bots, "_ssh", slow)
+    with ThreadPoolExecutor(6) as ex:
+        list(ex.map(lambda _: bots.get_bot_version("sos_fade_demo"), range(6)))
+    assert live["peak"] == 3

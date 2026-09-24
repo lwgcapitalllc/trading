@@ -234,11 +234,12 @@ export function useBotVersion(botName: string | null) {
  * rather than healthy (`no data` and `cannot ask` are not the same value — the rule this repo
  * learned from a bot that was blind for 50 minutes).
  */
-export function useBotVersions(botNames: string[]) {
+export function useBotVersions(botNames: string[], enabled = true) {
   return useQueries({
     queries: botNames.map((name) => ({
       queryKey: ['bots', 'version', name],
       queryFn: () => readVersion(name),
+      enabled,
       staleTime: 30_000,
       retry: false,
       // ⚠ The SAME poll rule as `useBotVersion`, through the same function. These share a cache

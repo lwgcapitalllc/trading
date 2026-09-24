@@ -907,3 +907,28 @@ alone (`_running_older_code`, the same prefix comparison the confirm step uses):
 
 TESTED: `tests/test_bot_promote.py`, three tests faking the box at the SSH boundary only; three
 mutations run, each red.
+
+## The status read runs its two calls side by side, and version reads are capped at three (2026-09-24)
+
+Aaron: *"the bots page takes so dam long to load."* MEASURED on the live box, one page load:
+
+| | before | after |
+|---|---|---|
+| status read, alone | 9.3–11.7s | 3.1s |
+| status read, on a real page load | 26.7s | 4.4–5.2s |
+| every version badge filled | ~27s | ~29s |
+
+- **The status read's two SSH calls run side by side** (`_SNAPSHOT_POOL`). Neither reads the other's
+  answer; one after the other they cost 5.2s + 4.0s.
+- **At most three version reads on the box at once** (`_VERSION_READS`). Each one starts Python on
+  the box to re-hash the bot's frozen code (~5s of its ~9s), and the box has **two CPUs** and runs
+  the live bots. Ten at once buried the status read. Only the read that starts Python is capped;
+  the plain `type` of the deploy record is not.
+- **The page asks for versions only once status has answered** — see frontend `notes/bots-page.md`.
+- ⚠ **The version column is still ~29s to fill, and this app cannot fix that.** The cost is the
+  tamper check in `algos/tools/promote.py --show`, re-hashing 223 files per bot. A cheaper check
+  lives in `algos/`, which this app may not touch.
+
+TESTED: `test_bot_version.py` → `test_no_more_than_three_version_reads_are_on_the_box_at_once`,
+`test_bots_snapshot_parse.py` → `test_the_snapshot_s_two_calls_run_side_by_side`; each red under
+its mutation, run in memory.

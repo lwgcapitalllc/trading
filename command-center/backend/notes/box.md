@@ -509,3 +509,24 @@ the third is worse than a stale value.
   each its own copy of the two git calls, so the guard restated the thing it guarded and could not
   fail when it broke — dropping `--force-remove` now turns both red together, which was run and
   watched.
+
+## Every SSH call rides ONE shared login — `services/vps_ssh.py` (2026-09-24)
+
+Aaron: *"the bots page takes so dam long to load."* Each call to the box opened its own
+connection, and the login alone cost **2.2s** (MEASURED, `echo hi`, three runs). The Bots page makes
+a dozen calls per load. `vps_ssh.run` now adds ssh's own connection sharing to every COMMAND run:
+the first call logs in and keeps the connection for 5 minutes, and each call after it opens a
+channel on it — **0.45s** for the same `echo hi`.
+
+- **Past 10 at once, ssh logs in fresh ON ITS OWN.** The box allows 10 channels per connection;
+  MEASURED with 14 at once: 10 shared, 4 fell back, all 14 answered. Nothing here handles it.
+- **A tunnel (`-N`/`-L`/`-R`/`-D`) is never shared.** A forward made through the shared login would
+  live and die with it, not with the `ssh -N` that `start.sh` kills by name.
+- **The shared login clears the ssh config's forwards** (`ClearAllForwardings`), or it would sit on
+  the tunnel's port 8765 for as long as it lives.
+- **A dead link ends it within ~15s** (keep-alives every 5s, three missed), so a laptop sleep does
+  not leave later calls hanging on a dead connection.
+- **The reachability probe is still honest**: `echo ok` still runs ON THE BOX; only the login is
+  reused.
+
+TESTED: `tests/test_vps_ssh.py`, the shared-login block; three mutations run in memory, each red.

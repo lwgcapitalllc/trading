@@ -1879,3 +1879,21 @@ to Removing…*, which was red on the old condition.
 2026-09-16 panel redesign (1d4651ee): the "stops it first" line is on the heading's hover, the
 record is four tiles including net dollars, and each setting row carries its own name once. All
 152 checks in the file pass.
+
+## Version reads start once the status read has answered (2026-09-24)
+
+Aaron: *"the bots page takes so dam long to load."* The page sent all ten version reads at the same
+moment as the status read. Each version read starts Python on a two-CPU trading box, so the status
+read queued behind them: **MEASURED 3.1s alone, 26.7s beside the ten**, and the whole page
+shimmered for half a minute. `useBotVersions` now takes `enabled`, and the page passes `!asking`,
+so status and P&L land first (4.4–5.2s) and the version badges fill in after.
+
+- ⚠ **`!asking`, never `!!snapshot`.** A FAILED status read must still let the version column try,
+  or a down box leaves the badges shimmering for ever.
+- **The keys still come off the config list**, so a version never waits for its bot to show up in
+  the snapshot — the 2026-09-10 reason for starting them early still holds for the KEYS.
+- **A not-yet-started read shows as loading, not as "No version"** — the pill reads `isPending`,
+  which is true for a query that has not been allowed to run yet.
+
+TESTED: `tests/bots-version.spec.ts` → *no version read is sent until the status read has
+answered*; red with the gate removed (3 early reads), green restored.

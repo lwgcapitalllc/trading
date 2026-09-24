@@ -219,6 +219,7 @@ Most-cited code: `services/agent_supervisor.py`, `routers/bots.py`, `services/nt
 
 - The agent supervisor — and the two indicators that were lying
 - The box refuses SSH when it is crowded — `services/vps_ssh.py` (2026-09-11)
+- Every SSH call rides ONE shared login — 2.2s → 0.45s a call; never a tunnel (2026-09-24)
 - The calendar's polarity list was written for the wrong provider
 - Readiness — the checks whose failure mode is silence
 - A unit test may not reach the VPS, and now it cannot
@@ -273,6 +274,7 @@ Most-cited code: `routers/bots.py`, `services/bot_versions.py`.
 - Nav activity — three booleans so the sidebar stops pulling three lists
 - The snapshot says whether a bot's account may TRADE (2026-09-12)
 - The snapshot carries the bot's open trade and its halt (2026-09-12)
+- The status read runs its two calls side by side, and version reads are capped at three (2026-09-24)
 
 ### `notes/optimizer.md` — Optimizer and worthiness
 

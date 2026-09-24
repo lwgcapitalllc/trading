@@ -212,7 +212,10 @@ def _ledger_command(monkeypatch) -> str:
 
     monkeypatch.setattr(bots, "_ssh", fake_ssh)
     bots._fetch_vps_snapshot()
-    return sent[-1]
+    # ⚠ By content, never `sent[-1]`: the fetch's two calls run side by side since 2026-09-24,
+    # so which one arrives last is a race.
+    (state,) = [c for c in sent if "===TASKS===" not in c]
+    return state
 
 
 def test_the_fetch_asks_for_TRADE_rows_only_and_not_the_whole_ledger(monkeypatch):
@@ -323,3 +326,20 @@ def test_the_boxs_run_startups_are_read_back_off_the_same_section():
     out = bots._parse_live_starts({bots._ledger_section(key): line + "\n"})
     assert out[key] == [("2026-09-11T00:13:59+00:00", 34957946)]
     assert out[other] is None
+
+
+def test_the_snapshot_s_two_calls_run_side_by_side(monkeypatch):
+    """One after the other they were the page's whole first wait (5.2s + 4.0s, MEASURED
+    2026-09-24). Each call waits at a two-party barrier, so they can only both get through if
+    they are in flight together. MUTATION: `_SNAPSHOT_POOL.submit(...).result()` straight away —
+    the barrier times out and this reddens (killed 2026-09-24)."""
+    import threading
+
+    meet = threading.Barrier(2, timeout=5)
+
+    def fake_ssh(cmd, timeout=60):
+        meet.wait()
+        return "" if "===TASKS===" in cmd else "===TELEGRAM_START===\n{}"
+
+    monkeypatch.setattr(bots, "_ssh", fake_ssh)
+    bots._fetch_vps_snapshot()

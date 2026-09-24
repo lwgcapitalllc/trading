@@ -1265,3 +1265,38 @@ test('the Refresh button re-reads the VERSION badges, not just status and P&L', 
   await expect(rowPill(page)).not.toHaveAttribute('data-state', 'behind', { timeout: 20_000 })
   await expect(rowPill(page)).toContainText('v121')
 })
+
+test('no version read is sent until the status read has answered', async ({ page }) => {
+  /**
+   * 🔴 The failure (Aaron, 2026-09-24: *"the bots page takes so dam long to load"*): the page
+   * sent all ten version reads the same moment as the status read. Each one starts Python on a
+   * two-CPU trading box, and the status read queued behind them — MEASURED 3.1s alone, 26.7s
+   * beside the ten — so the whole page shimmered for half a minute.
+   *
+   * The status read is HELD here until released, and no version read may arrive before that.
+   * MUTATION: drop the `!asking` gate on `useBotVersions` → red, versions arrive while it is held.
+   */
+  let release!: () => void
+  const held = new Promise<void>((r) => (release = r))
+  let statusAnswered = false
+  let earlyVersions = 0
+  let versions = 0
+  await page.route('**/api/bots/snapshot', async (r) => {
+    await held
+    statusAnswered = true
+    return r.fulfill({ json: recorded<BotSnapshot>('/bots/snapshot') })
+  })
+  await page.route('**/api/bots/*/version', (r) => {
+    versions += 1
+    if (!statusAnswered) earlyVersions += 1
+    return r.fulfill({ json: version(compare(), null, true) })
+  })
+  await page.route('**/api/bots/*/promote/job', (r) => r.fulfill({ json: null }))
+  await page.goto('/bots')
+  // Long enough for the config list to answer and the version reads to have gone out if ungated.
+  await page.waitForTimeout(1_500)
+  expect(earlyVersions).toBe(0)
+  release()
+  await expect.poll(() => versions, { timeout: 20_000 }).toBeGreaterThan(0)
+  expect(earlyVersions).toBe(0)
+})

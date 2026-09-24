@@ -199,9 +199,10 @@ Each now shimmers until its OWN source has answered.
   private copy of it — the Bots page skeleton renders the same net figure, P&L cell and version pill
   the real card does.
 - **No "Loading…" text or spinner beside a shimmer** — they say the same thing twice.
-- **Start independent reads in parallel.** A read keyed off another read's answer cannot begin
-  until that one lands; the Bots version pills waited ~4s for the snapshot before their own ~4.5s
-  read could start, and are now keyed off the config list instead.
+- **Start independent reads in parallel — unless they fight over the same machine.** A read keyed
+  off another read's answer cannot begin until that one lands, so the Bots version pills are keyed
+  off the config list. ⚠ **But since 2026-09-24 they START once the status read has answered**:
+  ten of them at once buried it on the two-CPU trading box (3.1s → 26.7s). `notes/bots-page.md`.
 
 ⚠ **Theme tokens only**; the sweep stops under reduced-motion. 🔴 **The sweep is
 `animate-skeleton-sweep` in `src/index.css` — never Tailwind's `animate-shimmer`, which SLIDES an
@@ -422,6 +423,7 @@ Most-cited code: `components/Drawer.tsx`, `components/FleetControls.tsx`, `pages
 - An account's Results page — `/bots/accounts/:account` (2026-09-17)
 - 🔴 The top-right Refresh button re-read status and P&L only, so version badges stayed "behind" after a deploy made off the page until a full reload; it now re-reads everything the page shows (2026-09-24)
 - Starting, stopping or restarting a bot locks THAT bot's buttons only, never the page — several bots can be acted on at once (2026-09-24)
+- Version reads start once the status read has answered — ten at once buried it on the two-CPU box (2026-09-24)
 
 ### `notes/accounts-broker.md` — Accounts and broker connections
 
