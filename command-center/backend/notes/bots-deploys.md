@@ -774,6 +774,11 @@ on RUNNING**: a stopped bot's trade may have closed since its last heartbeat.
   NaN and infinity) and DROPPED when unreadable — a 500 here blanks every bot on the page.
 - ⚠ Declared on the model, or Pydantic drops them. Tests: 3 in `test_bot_registry.py`; 7 mutations
   run, 7 killed.
+- **`target` / `target_r` / `target_reported` (2026-09-24)** — the broker's take-profit on the
+  trade and its R off the opening stop. 🔴 **Three answers (rule 1)**: `target_reported` False is
+  a runner that predates the field (no promote yet) and says NOTHING — never "no target", which
+  is live SOS Fade's real everyday answer. A target that is not a positive finite price is dropped,
+  and its R with it. Test: `test_the_target_has_three_answers…`, 2 mutations run, 2 killed.
 
 ---
 

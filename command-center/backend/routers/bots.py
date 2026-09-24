@@ -1573,6 +1573,7 @@ def _position_payload(raw) -> Optional[dict]:
     if side not in ("long", "short", "mixed") or lots is None or lots <= 0:
         return None
     tickets = raw.get("tickets")
+    target = _finite(raw.get("target"))
     return {
         "side": side,
         "lots": lots,
@@ -1581,6 +1582,12 @@ def _position_payload(raw) -> Optional[dict]:
         "profit_usd": _finite(raw.get("profit_usd")),
         "risk_usd": _finite(raw.get("risk_usd")),
         "r": _finite(raw.get("r")),
+        # A price is positive; anything else is dropped, never served as a target at 0.
+        "target": target if target is not None and target > 0 else None,
+        "target_r": _finite(raw.get("target_r")) if target is not None and target > 0 else None,
+        # Whether the runner SAYS anything about a target — its absence is an older runner, which
+        # is "not reported", never "none" (rule 1).
+        "target_reported": "target" in raw,
         "tickets": tickets if type(tickets) is int and tickets > 0 else 1,
     }
 

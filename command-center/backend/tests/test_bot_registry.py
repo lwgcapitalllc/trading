@@ -345,6 +345,31 @@ def test_the_snapshot_carries_the_open_trade_and_the_halt_only_while_running(mon
     assert (row.bridge_state, row.halt_reason, row.in_trade, row.position) == (None,) * 4
 
 
+def test_the_target_has_three_answers_a_price_none_and_not_reported(monkeypatch):
+    """2026-09-24. The runner reports the broker's take-profit and its R. A runner from before that
+    says NOTHING about a target, and that must not read as "this trade has no target" — live SOS
+    Fade's ordinary trade really has none, so the two would be indistinguishable on the page.
+
+    MUTATION: serve `target_reported` True always → red on the older runner.
+    MUTATION: let a 0 through as a price → red on the zero.
+    """
+    base = {"side": "long", "lots": 0.4, "entry": 3290.0, "stop": 3280.0, "tickets": 1}
+
+    def served(pos):
+        return _row_for(
+            monkeypatch, {"bridge_state": "live", "in_trade": True, "position": pos}
+        ).position
+
+    got = served({**base, "target": 3320.0, "target_r": 3.0})
+    assert (got.target, got.target_r, got.target_reported) == (3320.0, 3.0, True)
+    got = served({**base, "target": None, "target_r": None})
+    assert (got.target, got.target_r, got.target_reported) == (None, None, True)
+    got = served(dict(base))
+    assert (got.target, got.target_r, got.target_reported) == (None, None, False)
+    got = served({**base, "target": 0.0, "target_r": -9.0})
+    assert (got.target, got.target_r, got.target_reported) == (None, None, True)
+
+
 def test_a_bot_on_an_older_runner_still_shows_its_halt_and_a_watchdog_word_is_not_one(monkeypatch):
     """Until 2026-09-12 the runner wrote the bridge's state only into `status` — a key the watchdog
     and the launcher also write (running / stalled / stopped / offline). A halt there must still

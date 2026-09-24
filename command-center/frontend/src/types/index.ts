@@ -363,6 +363,14 @@ export interface BotPosition {
   /** Open profit over that risk. `null` when the opening risk is unknown (a trade picked back up
    *  after a restart from an older record) — never a figure off a stop that has since moved. */
   r: number | null
+  /** The broker's own take-profit on the trade (2026-09-24). `null` = none at the broker. */
+  target: number | null
+  /** Its distance in R off the stop the trade OPENED with; `null` when that is unknown. */
+  target_r: number | null
+  /** 🔴 `false` = the bot's runner predates the field and said NOTHING — "not reported", never
+   *  "no target" (rule 1). Live SOS Fade's ordinary trade really has none, so the two must not
+   *  read alike. A promote brings the field. */
+  target_reported: boolean
   tickets: number
 }
 

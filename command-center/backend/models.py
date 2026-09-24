@@ -305,6 +305,13 @@ class BotPosition(BaseModel):
     # Open profit over that risk. `None` when the entry risk is unknown (a trade picked back up
     # from a record older than 2026-09-12) — never a figure off a stop that has since moved.
     r: Optional[float] = None
+    # 🔴 The trade's TARGET (2026-09-24) — the broker's own take-profit on it, and its distance in R
+    # off the stop the trade OPENED with. THREE answers (rule 1): `target_reported` False = the
+    # bot's runner predates the field and said nothing (a promote brings it); True with `target`
+    # `None` = the broker holds no take-profit (live SOS Fade's ordinary trade rides its stop).
+    target: Optional[float] = None
+    target_r: Optional[float] = None
+    target_reported: bool = False
     tickets: int = 1
 
 
