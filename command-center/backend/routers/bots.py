@@ -32,9 +32,11 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time as _time
+import uuid
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
@@ -5259,28 +5261,22 @@ def preview_bot_promote(bot_name: str, req: BotPromoteRequest):
 
 @router.post("/{bot_name}/promote", response_model=BotPromoteResult)
 def promote_bot(bot_name: str, req: BotPromoteRequest):
-    """One action at a time on a bot: refused (409) while it is mid-action (`services/bot_ops.py`)."""
-    _, bot_key = _resolve_bot(bot_name)
-    with _acting(bot_key, _DEPLOYING):
-        return _promote_bot(bot_name, req)
-
-
-def _promote_bot(bot_name: str, req: BotPromoteRequest):
-    """Deploy the current VPS code to this bot, then restart it onto the new version.
+    """Deploy the current VPS code to this bot, then restart it onto the new version — and answer
+    with the result in ONE request (the trading-box tool, a terminal).
 
     This is the ONLY action that changes what a bot trades. A pull does not, a restart does
     not, a lab experiment does not — see `algos/live/version.py`.
+
+    🔴 **Through the SAME job as the page's Deploy button since 2026-09-24**, so it runs in the
+    deploy's own process and a backend restart cannot cut it off. It used to run inside this
+    request. Refused (409) while the bot is mid-action (`services/bot_ops.py`).
     """
     _, bot_key = _resolve_bot(bot_name)
     try:
-        reported, out, versions, idle = _run_promote(
-            bot_key, dry_run=False, pull=req.pull, allow_dirty=req.allow_dirty
-        )
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=504, detail="VPS SSH call timed out")
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
-    return _finish_promote(bot_key, req, reported, out, versions, nothing_new=idle)
+        job = _begin_promote_job(bot_key, req)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return _await_promote_result(job["job_id"])
 
 
 def _finish_promote(
@@ -5408,11 +5404,13 @@ def _finish_promote(
 # and a person running it from a terminal wants one answer. Both go through `_run_promote` and
 # `_finish_promote`, so there is one implementation of what a deploy DOES.
 #
-# 🔴 **SAVED TO DISK since 2026-09-24 (`services/promote_jobs.py`).** This said "in memory, and
-# that is enough — a restart loses the readout, never the deploy". Wrong: the deploy runs on THIS
-# process's thread and dies with it. A restart mid-deploy of the LIVE SOS Fade bot erased the job
-# and every trace that a deploy had been asked for. A job left `running` is now closed on start-up
-# as failed, with the step it was on and what that means for the bot.
+# 🔴 **A DEPLOY RUNS IN ITS OWN PROCESS since 2026-09-24 (`services/promote_worker.py`).** It ran
+# on a thread in THIS process, which restarts on any `.py` edit under `backend/` — and did, twice
+# that day, mid-deploy: the LIVE SOS Fade deploy to v394 never happened, and a demo Realign one was
+# cut off during its pull. The job now runs in a process started in its own session, so a backend
+# restart leaves it running; it writes its progress to its own file (`services/promote_jobs.py`),
+# and everything here READS that file. A job whose process is gone is closed as failed at the step
+# it was on. This note said "in memory, and that is enough" until the same day, which was wrong.
 
 _PROMOTE_STAGE_KEYS = ("pull", "build", "stop", "start", "confirm")
 # How long the job waits for the restarted bot to report the new code, and how often it asks.
@@ -5420,16 +5418,55 @@ _PROMOTE_STAGE_KEYS = ("pull", "build", "stop", "start", "confirm")
 # and the version panel's own *restart pending* warning, which re-reads every 15s, carries on.
 _CONFIRM_POLL_SECONDS = 5
 _CONFIRM_ATTEMPTS = 48  # four minutes
-_PROMOTE_JOBS: dict[str, dict] = {}
+# Guards one job's dict against the threads of ONE process. Across processes there is nothing to
+# guard: a job's file has one writer at a time (`services/promote_jobs.py`).
 _PROMOTE_JOBS_LOCK = threading.Lock()
 # Enough to cover every bot several times over; a job is only ever read while it runs and for
 # the minutes after. The OLDEST finished jobs go first — a running one is never evicted.
 _PROMOTE_JOBS_CAP = 20
+_BACKEND_DIR = Path(__file__).resolve().parent.parent
 
 
-def _spawn(fn: Callable[[], None]) -> None:
-    """Run a job off the request thread. A seam so a test can run it inline instead."""
-    threading.Thread(target=fn, daemon=True).start()
+def _worker_argv(job_id: str) -> list[str]:
+    """The command that runs one job. `promote_worker` in it is what `promote_jobs.alive` reads to
+    tell the job's process from an unrelated one that inherited its pid."""
+    return [sys.executable, "-m", "services.promote_worker", job_id]
+
+
+def _launch_worker(job_id: str) -> None:
+    """Start the job's own process, in its OWN SESSION — `start_new_session` is the whole point: a
+    backend restart signals the backend's session, and this is not in it. Its output goes to the
+    job's log, beside its record."""
+    log = promote_jobs.log_path(job_id)
+    if log is not None:
+        log.parent.mkdir(parents=True, exist_ok=True)
+    out = open(log, "ab") if log is not None else subprocess.DEVNULL  # noqa: SIM115
+    try:
+        subprocess.Popen(
+            _worker_argv(job_id),
+            cwd=_BACKEND_DIR,
+            stdin=subprocess.DEVNULL,
+            stdout=out,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+            close_fds=True,
+        )
+    finally:
+        if out is not subprocess.DEVNULL:
+            out.close()
+
+
+# Where a job is started. A seam: the test suite runs the job INLINE instead (`tests/conftest.py`),
+# so no test can ever start a real deploy process — one that would reach the trading box outside
+# the suite's guards.
+_spawn: Callable[[str], None] = _launch_worker
+
+
+def _interrupted(stage: str | None) -> str:
+    """What it means for the bot that a job's process ended before the job did."""
+    return _describe_job_failure(
+        stage, what="stopped unexpectedly — the deploy's own process ended"
+    )
 
 
 def _job_view(job: dict) -> BotPromoteJob:
@@ -5461,7 +5498,7 @@ def _job_enter(job: dict, key: str) -> None:
                 s["state"], s["ended"] = "done", now
         s = job["stages"][key]
         s["state"], s["started"] = "active", now
-        promote_jobs.save(_PROMOTE_JOBS)
+        promote_jobs.write(job)
 
 
 def _job_close(job: dict, *, status: str, result=None, error=None) -> None:
@@ -5476,7 +5513,7 @@ def _job_close(job: dict, *, status: str, result=None, error=None) -> None:
             elif s["state"] == "pending":
                 s["state"] = "skipped"
         job["status"], job["result"], job["error"], job["ended"] = status, result, error, now
-        promote_jobs.save(_PROMOTE_JOBS)
+        promote_jobs.write(job)
 
 
 def _describe_job_failure(
@@ -5589,12 +5626,27 @@ def _await_new_version(bot_key: str, before: dict | None) -> bool:
     return False
 
 
-def _run_promote_job(job: dict, bot_key: str, req: BotPromoteRequest) -> None:
-    """The deploy's thread. Releases the bot's claim however it ends."""
+def _run_promote_job(job_id: str) -> None:
+    """Run one job to its end — what the job's OWN process does (`services/promote_worker.py`).
+
+    It stamps its pid first: from then on the job is alive exactly as long as this process is. It
+    never touches the in-memory claims; the job's file is the claim (`bot_ops.set_external`)."""
+    job = promote_jobs.read(job_id)
+    if job is None:
+        return
+    job["pid"] = os.getpid()
+    promote_jobs.write(job)
     try:
-        _run_promote_steps(job, bot_key, req)
-    finally:
-        bot_ops.release(bot_key, _DEPLOYING)
+        _run_promote_steps(job, job["bot"], BotPromoteRequest(**job["request"]))
+    except Exception as e:  # noqa: BLE001 - the steps catch their own; this is the last line
+        if job.get("status") == "running":
+            # Not a network failure — the steps turn those into their own words. This is the job
+            # failing in a way they did not catch, so it says only what it knows.
+            with _PROMOTE_JOBS_LOCK:
+                stage = next((k for k, s in job["stages"].items() if s["state"] == "active"), None)
+            _job_close(
+                job, status="failed", error=_describe_job_failure(stage, what=f"failed ({e})")
+            )
 
 
 def _run_promote_steps(job: dict, bot_key: str, req: BotPromoteRequest) -> None:
@@ -5618,6 +5670,11 @@ def _run_promote_steps(job: dict, bot_key: str, req: BotPromoteRequest) -> None:
         result = _finish_promote(
             bot_key, req, reported, out, versions, stage=stage, nothing_new=idle
         )
+        # Recorded the moment it exists: the one-shot route answers with it rather than waiting
+        # out the confirm step, which can take four minutes (`_await_promote_result`).
+        with _PROMOTE_JOBS_LOCK:
+            job["result"] = result
+            promote_jobs.write(job)
         if result.ok and result.restarted:
             stage("confirm")
             if not _await_new_version(bot_key, before or None):
@@ -5626,7 +5683,7 @@ def _run_promote_steps(job: dict, bot_key: str, req: BotPromoteRequest) -> None:
                 with _PROMOTE_JOBS_LOCK:
                     s = job["stages"]["confirm"]
                     s["state"], s["ended"] = "unconfirmed", _time.time()
-                    promote_jobs.save(_PROMOTE_JOBS)
+                    promote_jobs.write(job)
     except Exception as e:  # everything — a job that dies silently leaves the page waiting
         _job_close(job, status="failed", error=_describe_job_failure(current(), e))
         return
@@ -5642,16 +5699,6 @@ def _run_promote_steps(job: dict, bot_key: str, req: BotPromoteRequest) -> None:
     _job_close(job, status="done" if result.ok else "failed", result=result, error=error)
 
 
-def _evict_promote_jobs() -> None:
-    """Drop the oldest FINISHED jobs past the cap. Caller holds the lock."""
-    finished = sorted(
-        (j for j in _PROMOTE_JOBS.values() if j["status"] != "running"),
-        key=lambda j: j["started"],
-    )
-    while len(_PROMOTE_JOBS) > _PROMOTE_JOBS_CAP and finished:
-        _PROMOTE_JOBS.pop(finished.pop(0)["job_id"], None)
-
-
 def _begin_promote_job(bot_key: str, req: BotPromoteRequest, take_over: str | None = None) -> dict:
     """Register a promote job for `bot_key` and set it running in the background.
 
@@ -5664,10 +5711,12 @@ def _begin_promote_job(bot_key: str, req: BotPromoteRequest, take_over: str | No
     is a second answer about what a deploy does — on the one action here that changes what a live
     account trades.
     """
-    # 🔴 **The deploy HOLDS the bot from here until its thread ends (2026-09-24)** — see
+    # 🔴 **The deploy HOLDS the bot from here until its process ends (2026-09-24)** — see
     # `services/bot_ops.py`. It used to refuse only a second deploy, so Stop, Start and Restart
     # went straight through mid-deploy and raced its own stop/start on a live process.
     # `take_over` is a caller already holding the bot (a move) handing its claim straight on.
+    # ⚠ The in-memory claim covers only the CREATE; once the job's file says running, that file is
+    # the claim (it outlives a backend restart), and the in-memory one is let go.
     if take_over is not None:
         if not bot_ops.hand_over(bot_key, take_over, _DEPLOYING):
             raise ValueError(f"{_bot_label(bot_key)} is not held by the step handing it over.")
@@ -5677,18 +5726,29 @@ def _begin_promote_job(bot_key: str, req: BotPromoteRequest, take_over: str | No
         except bot_ops.Busy as e:
             raise ValueError(str(e)) from None
     try:
-        job = _new_promote_job(bot_key)
-        _spawn(lambda: _run_promote_job(job, bot_key, req))
-    except BaseException:
+        job = _new_promote_job(bot_key, req)
+        try:
+            _spawn(job["job_id"])
+        except Exception as e:
+            # Never started: say so now, rather than leave it `running` until its grace runs out.
+            job = promote_jobs.read(job["job_id"]) or job
+            _job_close(
+                job,
+                status="failed",
+                error=f"The deploy could not be started ({e}). "
+                "Nothing was deployed and the bot is untouched.",
+            )
+            raise ValueError(job["error"]) from None
+    finally:
         bot_ops.release(bot_key, _DEPLOYING)
-        raise
-    return job
+    return promote_jobs.read(job["job_id"]) or job
 
 
-def _new_promote_job(bot_key: str) -> dict:
+def _new_promote_job(bot_key: str, req: BotPromoteRequest) -> dict:
     with _PROMOTE_JOBS_LOCK:
         job = {
-            "job_id": f"pj_{int(_time.time() * 1000)}_{bot_key}",
+            # The random part: two jobs made in one millisecond must not share a FILE.
+            "job_id": f"pj_{int(_time.time() * 1000)}_{uuid.uuid4().hex[:6]}_{bot_key}",
             "bot": bot_key,
             "status": "running",
             "stages": {
@@ -5698,21 +5758,47 @@ def _new_promote_job(bot_key: str) -> dict:
             "error": None,
             "started": _time.time(),
             "ended": None,
+            # What the job's process runs, and — once it has started — which process that is.
+            "request": req.model_dump(),
+            "pid": None,
         }
-        _PROMOTE_JOBS[job["job_id"]] = job
-        _evict_promote_jobs()
-        promote_jobs.save(_PROMOTE_JOBS)
+        promote_jobs.write(job)
+        promote_jobs.prune(_PROMOTE_JOBS_CAP)
     return job
 
 
-# Loaded once, when the backend starts: a job the last process left `running` died with it.
-_PROMOTE_JOBS.update(
-    promote_jobs.load(
-        lambda stage: _describe_job_failure(
-            stage, what="was cut off when the Command Center restarted"
-        )
-    )
-)
+# A deploy's claim on its bot is its job FILE, so a restarted backend still sees it.
+bot_ops.set_external(lambda: promote_jobs.running_bots(_interrupted))
+
+# How long the one-shot route waits for a deploy's RESULT — under the trading-box tool's own 120s.
+_ONE_SHOT_WAIT_S = 110
+_ONE_SHOT_POLL_S = 1.0
+
+
+def _await_promote_result(job_id: str) -> BotPromoteResult:
+    """The deploy's result as soon as it has one, for the one-shot route. The job carries on in
+    its own process past this — its confirm step can take four minutes — and the page watches it."""
+    deadline = _time.time() + _ONE_SHOT_WAIT_S
+    while True:
+        job = promote_jobs.read(job_id)
+        if job is not None:
+            job = promote_jobs.settle_if_dead(job, _interrupted)
+            if job.get("result") is not None:
+                return (
+                    BotPromoteResult(**job["result"])
+                    if isinstance(job["result"], dict)
+                    else job["result"]
+                )
+            if job.get("status") != "running":
+                return BotPromoteResult(ok=False, output=job.get("error") or "", restarted=False)
+        if _time.time() >= deadline:
+            return BotPromoteResult(
+                ok=False,
+                restarted=False,
+                output=f"Still deploying after {_ONE_SHOT_WAIT_S}s. It carries on in its own "
+                "process — watch the bot's deploy on the Bots page before assuming either way.",
+            )
+        _time.sleep(_ONE_SHOT_POLL_S)
 
 
 @router.post("/{bot_name}/promote/job", response_model=BotPromoteJob, status_code=202)
@@ -5728,8 +5814,7 @@ def start_promote_job(bot_name: str, req: BotPromoteRequest):
         job = _begin_promote_job(bot_key, req)
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
-    with _PROMOTE_JOBS_LOCK:  # the thread is already writing to it
-        return _job_view(job)
+    return _job_view(job)
 
 
 @router.get("/{bot_name}/promote/job", response_model=Optional[BotPromoteJob])
@@ -5739,12 +5824,8 @@ def get_promote_job(bot_name: str):
     Addressed by the BOT rather than a job id, so a page reopened mid-deploy finds the run that
     is already going instead of offering a second Deploy button over it."""
     _, bot_key = _resolve_bot(bot_name)
-    with _PROMOTE_JOBS_LOCK:
-        mine = [j for j in _PROMOTE_JOBS.values() if j["bot"] == bot_key]
-        if not mine:
-            return None
-        job = max(mine, key=lambda j: j["started"])
-        return _job_view(job)
+    job = promote_jobs.latest_for(bot_key, _interrupted)
+    return _job_view(job) if job is not None else None
 
 
 # ── Reading and changing a bot's settings ─────────────────────────────────────

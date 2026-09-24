@@ -10,13 +10,16 @@ simply went through. Non-vacuity is by MUTATION, named per test.
 
 from __future__ import annotations
 
-import json
+import os
+import signal
+import subprocess
+import sys
 
 import pytest
 from fastapi import HTTPException
 from models import BotPromoteRequest
 from routers import bots
-from services import bot_ops, promote_jobs
+from services import bot_ops, promote_jobs, promote_worker
 
 REQ = BotPromoteRequest(pull=False, restart=True, allow_dirty=False)
 
@@ -102,23 +105,21 @@ def test_another_bot_is_not_held_by_this_ones_deploy(monkeypatch, box):
 
 
 @pytest.mark.parametrize("ends", ["finishes", "raises"])
-def test_the_deploy_frees_its_bot_when_its_thread_ends(monkeypatch, ends):
-    """MUTATION: drop the `finally` release in `_run_promote_job` — both cases redden, and the bot
-    is locked until the backend restarts (killed 2026-09-24)."""
-    ran = []
-    monkeypatch.setattr(bots, "_spawn", lambda fn: ran.append(fn))
+def test_the_deploy_frees_its_bot_when_its_process_ends(monkeypatch, ends):
+    """The claim IS the job file while it says running. MUTATION: `_run_promote_job` without its
+    last-line close — the `raises` case reddens, and the bot stays locked until the grace runs
+    out (killed 2026-09-24)."""
+    monkeypatch.setattr(bots, "_spawn", lambda job_id: None)
 
     def steps(job, bot_key, req):
         if ends == "raises":
             raise RuntimeError("box went away")
+        bots._job_close(job, status="done")
 
     monkeypatch.setattr(bots, "_run_promote_steps", steps)
-    bots._begin_promote_job("sos_fade_demo", REQ)
+    job = bots._begin_promote_job("sos_fade_demo", REQ)
     assert bot_ops.doing("sos_fade_demo") == "deploying"
-    try:
-        ran[0]()
-    except RuntimeError:
-        pass
+    bots._run_promote_job(job["job_id"])
     assert bot_ops.doing("sos_fade_demo") is None
 
 
@@ -184,62 +185,133 @@ def test_the_fleet_stop_is_refused_mid_deploy_and_holds_nothing_after(monkeypatc
     assert set(bot_ops.snapshot()) == {bots._BOTS[-1].key}
 
 
-# ── a deploy survives a restart as a record ───────────────────────────────────
+# ── a deploy runs in its own process, and outlives a backend restart ─────────
 
 
-def test_a_job_left_running_is_read_back_as_failed_at_its_step(tmp_path):
-    """THE 2026-09-24 LOSS: the backend restarted mid-deploy and the job vanished.
-    MUTATION: `load` returns the jobs untouched — this reddens (killed 2026-09-24)."""
-    f = tmp_path / "jobs.json"
-    stages = {
-        k: {"state": "pending", "started": None, "ended": None} for k in bots._PROMOTE_STAGE_KEYS
-    }
-    stages["pull"] = {"state": "done", "started": 100.0, "ended": 110.0}
-    stages["build"] = {"state": "active", "started": 110.0, "ended": None}
-    job = {
-        "job_id": "pj_1",
-        "bot": "sos_fade_demo",
-        "status": "running",
-        "stages": stages,
-        "result": None,
-        "error": None,
-        "started": 100.0,
-        "ended": None,
-    }
-    promote_jobs.save({"pj_1": job}, f)
-
-    back = promote_jobs.load(
-        lambda stage: bots._describe_job_failure(
-            stage, what="was cut off when the Command Center restarted"
-        ),
-        f,
-    )["pj_1"]
-    assert back["status"] == "failed"
-    assert back["stages"]["build"]["state"] == "failed"
-    assert back["stages"]["stop"]["state"] == "skipped"
-    assert "build was cut off" in back["error"] and "may or may not have deployed" in back["error"]
-    assert back["ended"] == 110.0, "ended at the last moment it was known alive"
-    assert bots._job_view(back).status == "failed"
+def _sleeper(tmp_path) -> list[str]:
+    """A stand-in for the job's process: harmless, long enough to watch, and carrying the mark
+    `promote_jobs.alive` reads in a pid's command line."""
+    return [sys.executable, "-c", "import time; time.sleep(30)", promote_jobs.WORKER_MARK]
 
 
-def test_a_saved_job_with_a_result_reads_back(tmp_path):
-    f = tmp_path / "jobs.json"
-    job = {
-        "job_id": "pj_2",
-        "bot": "b",
-        "status": "done",
-        "stages": {},
-        "started": 1.0,
-        "ended": 2.0,
-        "error": None,
-        "result": bots.BotPromoteResult(ok=True, output="x", restarted=True),
-    }
-    promote_jobs.save({"pj_2": job}, f)
-    assert json.loads(f.read_text())["pj_2"]["result"]["restarted"] is True
+def test_the_job_is_started_in_its_OWN_session(monkeypatch, tmp_path):
+    """THE POINT: a backend restart signals the backend's session, and the deploy must not be in
+    it. MUTATION: drop `start_new_session` — this reddens (killed 2026-09-24)."""
+    seen = {}
+    real = subprocess.Popen
+
+    def popen(argv, **kw):
+        seen["argv"], seen["kw"] = argv, kw
+        p = real(_sleeper(tmp_path), **kw)
+        seen["pid"] = p.pid
+        return p
+
+    monkeypatch.setattr(bots.subprocess, "Popen", popen)
+    bots._launch_worker("pj_x")
+    try:
+        assert seen["kw"].get("start_new_session") is True
+        assert os.getsid(seen["pid"]) != os.getsid(0)
+        assert seen["argv"][-2:] == ["services.promote_worker", "pj_x"]
+    finally:
+        os.kill(seen["pid"], signal.SIGKILL)
 
 
-def test_an_empty_path_turns_saving_off(tmp_path, monkeypatch):
-    monkeypatch.setenv("CC_PROMOTE_JOBS_FILE", "")
-    assert promote_jobs.path() is None
-    promote_jobs.save({"a": {}})
-    assert promote_jobs.load(lambda s: "") == {}
+def test_a_restarted_backend_still_refuses_a_stop_mid_deploy(monkeypatch, tmp_path, box):
+    """🔴 What the in-memory lock could not do: the backend restarts (every in-memory claim is
+    gone), the deploy's process is still at work, and Stop must STILL be refused.
+    MUTATION: `bot_ops` without the external claims — this reddens (killed 2026-09-24)."""
+    monkeypatch.setattr(bots, "_spawn", lambda job_id: None)
+    job = bots._begin_promote_job("sos_fade_demo", REQ)
+    worker = subprocess.Popen(_sleeper(tmp_path))
+    try:
+        job = promote_jobs.read(job["job_id"])
+        job["pid"] = worker.pid
+        promote_jobs.write(job)
+        bot_ops._ops.clear()  # the restart
+        with pytest.raises(HTTPException) as e:
+            bots.stop_bot("sos_fade_demo")
+        assert e.value.status_code == 409 and box == []
+    finally:
+        worker.kill()
+        worker.wait()
+
+
+def test_a_job_whose_process_is_GONE_is_closed_at_its_step_and_frees_the_bot(monkeypatch):
+    """A job still saying `running` on disk whose process ended (a reboot, a crash) must not hold
+    its bot for ever. MUTATION: `alive` trusts the status field alone — this reddens (killed
+    2026-09-24)."""
+    monkeypatch.setattr(bots, "_spawn", lambda job_id: None)
+    job = bots._begin_promote_job("sos_fade_demo", REQ)
+    gone = subprocess.Popen([sys.executable, "-c", "pass"])
+    gone.wait()
+    job = promote_jobs.read(job["job_id"])
+    job["pid"] = gone.pid
+    job["stages"]["build"] = {"state": "active", "started": job["started"], "ended": None}
+    promote_jobs.write(job)
+
+    view = bots.get_promote_job("sos_fade_demo")
+    assert view.status == "failed"
+    assert "stopped unexpectedly" in view.error and "may or may not have deployed" in view.error
+    assert bot_ops.doing("sos_fade_demo") is None
+
+
+def test_a_live_pid_that_is_NOT_a_deploy_process_does_not_hold_the_bot(monkeypatch):
+    """Pids are reused. MUTATION: `alive` checks only that the pid exists — this reddens, because
+    this test's own pid is certainly alive (killed 2026-09-24)."""
+    monkeypatch.setattr(bots, "_spawn", lambda job_id: None)
+    job = bots._begin_promote_job("sos_fade_demo", REQ)
+    job = promote_jobs.read(job["job_id"])
+    job["pid"] = os.getpid()
+    promote_jobs.write(job)
+    assert bot_ops.doing("sos_fade_demo") is None
+
+
+def test_a_job_not_yet_started_is_held_through_its_launch_grace(monkeypatch):
+    """No pid yet: the process is still importing. Freed only once the grace has run out."""
+    monkeypatch.setattr(bots, "_spawn", lambda job_id: None)
+    job = bots._begin_promote_job("sos_fade_demo", REQ)
+    assert bot_ops.doing("sos_fade_demo") == "deploying"
+    job = promote_jobs.read(job["job_id"])
+    job["started"] -= promote_jobs.LAUNCH_GRACE_S + 1
+    promote_jobs.write(job)
+    assert bot_ops.doing("sos_fade_demo") is None
+
+
+def test_a_job_that_cannot_be_LAUNCHED_says_so_and_frees_the_bot(monkeypatch):
+    def broken(job_id):
+        raise OSError("no python")
+
+    monkeypatch.setattr(bots, "_spawn", broken)
+    with pytest.raises(ValueError, match="could not be started"):
+        bots._begin_promote_job("sos_fade_demo", REQ)
+    assert bots.get_promote_job("sos_fade_demo").status == "failed"
+    assert bot_ops.doing("sos_fade_demo") is None
+
+
+def test_the_one_shot_route_answers_with_the_RESULT_not_after_the_confirm(monkeypatch):
+    """The trading-box tool gives up at 120s; the confirm step can take four minutes. MUTATION:
+    wait for the job's END instead of its result — this reddens (killed 2026-09-24)."""
+    monkeypatch.setattr(bots, "_spawn", lambda job_id: None)
+    job = bots._begin_promote_job("sos_fade_demo", REQ)
+    job = promote_jobs.read(job["job_id"])
+    job["pid"] = None  # still inside its grace, so still running
+    job["result"] = {"ok": True, "output": "pinned", "restarted": True, "nothing_new": False}
+    promote_jobs.write(job)
+    monkeypatch.setattr(bots, "_ONE_SHOT_WAIT_S", 0)
+    r = bots._await_promote_result(job["job_id"])
+    assert r.ok is True and r.restarted is True
+
+
+def test_the_one_shot_route_never_reports_a_deploy_still_running_as_done(monkeypatch):
+    monkeypatch.setattr(bots, "_spawn", lambda job_id: None)
+    job = bots._begin_promote_job("sos_fade_demo", REQ)
+    monkeypatch.setattr(bots, "_ONE_SHOT_WAIT_S", 0)
+    r = bots._await_promote_result(job["job_id"])
+    assert r.ok is False and "Still deploying" in r.output
+
+
+def test_the_worker_entry_runs_the_job_it_is_given(monkeypatch):
+    ran = []
+    monkeypatch.setattr(bots, "_run_promote_job", lambda job_id: ran.append(job_id))
+    assert promote_worker.main(["promote_worker", "pj_1"]) == 0 and ran == ["pj_1"]
+    assert promote_worker.main(["promote_worker"]) == 2

@@ -967,17 +967,15 @@ ANY bot is mid-action; the fleet start / stop / restart also hold every bot whil
   four-minute deploy looks like a hung page.
 - **Claims are in memory, per backend.** Two clones do not see each other's claims; the box has no
   lock to offer. A restart clears them, which is right — whatever held them died with it.
-- **Deploy jobs are saved to disk** (`services/promote_jobs.py` → `data/promote_jobs.json`,
-  git-ignored). On start-up a job still marked running is closed as failed, at the step it was on,
-  with the same per-step wording a timeout gets: *"The build was cut off when the Command Center
-  restarted before it reported a result. It may or may not have deployed — check the version."*
+- **Deploy jobs are saved to disk** — superseded the same day by one file per job, written by the
+  deploy's own process; see *A deploy runs in its own process* below.
 - ⚠ **What is NOT locked, deliberately:** Logs, the version read, the deploy preview (it stages to
   a scratch copy and writes nothing), an account's pin, its password and its channel test (none
   changes what a bot trades).
 - ⚠ **A move or removal waiting on a stop still locks EVERY bot's start/stop on the page** — the
   page-wide half of `busyFor`, kept because `useStopFirst` holds one waiting bot. Not widened here.
-- ⚠ **Still open: a backend restart still KILLS a running deploy** — it is now reported, not
-  prevented. Never edit a `.py` under `backend/` while a deploy runs (`uvicorn --reload`).
+- ~~⚠ **Still open: a backend restart still KILLS a running deploy**~~ **Fixed the same day — a
+  deploy runs in its own process now.** See *A deploy runs in its own process* below.
 
 TESTED: `tests/test_bot_ops.py` (21 tests); seven mutations run in memory, each red — the routes
 without the lock, the deploy without its claim, the thread without its release, `hold` releasing a
@@ -1011,3 +1009,43 @@ only the panel asks for, and the three-at-once cap moved with it.
 TESTED: `test_bot_version.py` — the files check's three answers, the box down, the version read
 sending no `--show`, the cap on the check. Mutations: old verdict (red), cap removed (red), `--show`
 put back on the version read (red, on a scratch copy — the live server reloads on a source edit).
+
+## A deploy runs in its own process, and a backend restart no longer touches it (2026-09-24)
+
+Aaron: *"yes"* — to running deploys outside the server. The backend restarts on any `.py` edit under
+`backend/` (`uvicorn --reload`), and a deploy ran on one of its threads, so it died with it — twice
+that day: the LIVE SOS Fade deploy to v394 never happened, and a demo Realign one was cut off during
+its pull. A deploy stops and starts a live bot; it must never end halfway because a file was saved.
+
+**How it works now:**
+
+- **Its own process, in its own session.** `_launch_worker` starts `python -m
+  services.promote_worker <job id>` with `start_new_session=True`; a backend restart signals the
+  backend's session and this is not in it. It runs the SAME steps the thread did
+  (`_run_promote_job` → `_run_promote_steps`) — one implementation of what a deploy does.
+- **One file per job** (`data/promote_jobs/<job id>.json`, git-ignored; its output beside it in
+  `.log`). The backend writes it ONCE, at creation; then only the job's process writes it. The
+  backend writes a running job again only once that process is provably gone. No shared file, so
+  no lost update between processes.
+- **Running = the status says so AND its process is alive** (`promote_jobs.alive`): the pid exists
+  and its command line still carries `promote_worker` (pids are reused). No pid yet = still
+  importing, held for a 90s grace. A job whose process is gone (reboot, crash) is closed as failed
+  at its step: *"The build stopped unexpectedly — the deploy's own process ended before it
+  reported a result. It may or may not have deployed — check the version."*
+- **The deploy's claim on its bot is its FILE** (`bot_ops.set_external`), so a restarted backend
+  still refuses a Stop mid-deploy. The in-memory claim covers only the create.
+- **The one-shot route (the trading-box tool) goes through the same job** and answers with the
+  deploy's RESULT, recorded before the confirm step — the tool gives up at 120s and the confirm can
+  take four minutes. Past 110s it says *still deploying*, never done.
+- 🔴 **No test may start a real deploy process** — one is outside every guard `tests/conftest.py`
+  puts round the trading box. The suite swaps `_spawn` for the in-process runner in an autouse
+  fixture; a test that needs a job left running swaps in a no-op.
+
+⚠ **What still stops a deploy:** the Mac sleeping or shutting down mid-deploy, or its process being
+killed by hand. Both are now REPORTED at the step they hit, never silent.
+
+TESTED: `tests/test_bot_ops.py` — its own session, a restarted backend still refusing Stop, a gone
+process closed at its step, a reused pid not holding the bot, the launch grace, a failed launch,
+the one-shot answering with the result. Six mutations run, each red. End to end: a real worker
+process, launched by a parent that exited at once, stamped its pid and recorded its failure (a
+deliberately invalid request, so nothing reached the box).

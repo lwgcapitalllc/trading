@@ -277,6 +277,7 @@ Most-cited code: `routers/bots.py`, `services/bot_versions.py`.
 - The status read runs its two calls side by side, and version reads are capped at three (2026-09-24)
 - The files (tamper) check is its own read, asked only by the bot panel; an unanswered check is unknown, never a pass (2026-09-24)
 - 🔴 One action at a time per bot, and an account holds still while one of its bots is mid-action — every route that changes a bot or an account goes through `services/bot_ops.py`; deploy jobs are saved to disk (2026-09-24)
+- 🔴 A deploy runs in its OWN process (`services/promote_worker.py`) and outlives a backend restart; its job file is its claim on the bot. No test may start a real one (2026-09-24)
 
 ### `notes/optimizer.md` — Optimizer and worthiness
 
