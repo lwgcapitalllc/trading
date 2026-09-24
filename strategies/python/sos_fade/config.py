@@ -633,6 +633,40 @@ class SosFadeConfig:
     #   winners into losers, which is the one thing the affordability rule promises cannot
     #   happen. "Trail" is a MARKET rule, so it still carries the trigger-to-fill gap that the
     #   resting limit closed for "BOS retest". At 3 and below the worst trade never moves.
+    exec_scale_gate: str = "Stop improved"   # "↳ When it may add again"
+    #   ∈ {"Stop improved", "Past the last add"}. WHAT HAS TO HAPPEN before a second (or third)
+    #   add is allowed. Both readings also require the ceiling above and the affordability rule.
+    #   "Stop improved" is the rule every measurement in this package was taken on: the trail
+    #   must have ratcheted past the stop the LAST add was sized against, by any amount at all.
+    #   "Past the last add" also requires the stop to have ratcheted past the PRICE the last add
+    #   was BOUGHT at — i.e. the previous lot must actually be in profit at the shared stop
+    #   before another is bought.
+    #
+    #   🔴 IT SHIPS OFF, AND IT SHIPPED ON FOR A FEW HOURS ON 2026-09-23 ON REASONING ALONE.
+    #   MEASURED the same day (Run 43, `backtest/tools/scale_in_grid.py`, 37 cells, XAUUSD.p 15m
+    #   2018-09-14 → 2026-08-14, PU Prime ECN costs), at the shipped 3 adds x 0.5x:
+    #       sizing fix, "Stop improved"     ALL 163.57R dd 7.27  ret/DD 22.51   EX20 ret/DD 18.08
+    #       sizing fix, "Past the last add" ALL 150.78R dd 7.16  ret/DD 21.07   EX20 ret/DD 17.24
+    #   It costs 12.79R and buys 0.11R of drawdown. The worst trade is -2.07R either way, so it
+    #   is not buying safety either — the sizing fix below had already taken the tail.
+    #   ⚠ IT IS NOT DEAD CODE AND MUST NOT BE DELETED: at 4 adds x 0.5x it WINS (ret/DD 21.21 vs
+    #   19.95, EX20 17.38 vs 16.16), because that is where the trail stalls and the ladder keeps
+    #   buying. Anyone raising the add count re-runs the grid before leaving this at its default.
+    #   ⚠ At ONE add all three readings are identical to the cent, which is the check that the
+    #   grid is measuring what it claims — there is no second add to gate or to mis-size.
+    #
+    #   🔴 IT EXISTS BECAUSE "BY ANY AMOUNT AT ALL" IS NOT A CONDITION. On `sos_fade_1`
+    #   2026-09-22 the stop moved 4357.859 → 4356.691 — **1.17 points** — and that authorised a
+    #   second add while the first sat **36 points** underwater against the same stop. The old
+    #   reading asks whether the trade improved; this one asks whether the thing you last bought
+    #   is working, which is the question the size rule is actually resting on.
+    #   ⚠ IT IS NOT A SUBSTITUTE FOR THE SIZING FIX and neither replaces the other.
+    #   `_locked_at_stop` makes the worst case flat at ANY number of adds; this decides whether a
+    #   further add is taken at all. Shipping the sizing fix alone leaves the ladder buying tiny
+    #   lots behind a stalled trail; shipping this alone leaves the double-spend intact whenever
+    #   the gate does open.
+    #   ⚠ A string rather than a bool so the optimizer can sweep it and so a third reading has
+    #   somewhere to go — same standing as `exec_scale_mode`.
     exec_scale_cap_x: float = 0.5      # "↳ Biggest add, as a multiple of the original size"
     #   Per-add ceiling as a multiple of the BASE quantity. The affordability rule alone would
     #   sometimes permit 4x or more.
@@ -2045,6 +2079,12 @@ class SosFadeConfig:
                 f"{self.exec_nogap_arm!r}. It gates the no-FVG fallback entry and is read only "
                 "when exec_req_fvg is False."
             )
+        if self.exec_scale_in and self.exec_scale_gate not in (
+                "Stop improved", "Past the last add"):
+            raise ValueError(
+                f"exec_scale_gate={self.exec_scale_gate!r} is not a rule. Use 'Stop improved' or "
+                "'Past the last add'. A typed value that is not a rule must never fall through "
+                "to a default — that replays a whole book against a rule nobody chose.")
         if self.exec_secondary and self.exec_sec_max_per_setup < 1:
             # 0 would be "a cap of none", which reads as unlimited and means the opposite. The
             # switch for no cap is `exec_sec_once_per_setup = False`, and having two ways to say it

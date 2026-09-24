@@ -402,6 +402,31 @@ every commanded exit carries — including the hand close `algos/live/bridge.py`
   `tests/test_commanded_close.py` is the whole of the evidence; 5 tests, 2 mutations.
 - ⚠ **It needs a PROMOTE to reach the live bot**, like everything else in this package.
 
+## 🔴 An add is sized against the WHOLE position's locked profit, never the base lot's
+
+The size rule promises *an add can shrink a winner but never manufacture a loser*. Reading the
+base lot alone made that exact for ONE add and double-spent from the second onward. **Fixed
+2026-09-23, found by a live trade: +$2,890 open, closed −$690.**
+
+- **The rule: mark every open lot to the shared stop, signed.** The base term stays at the size
+  the trade OPENED with — reading the remaining base instead breaks the invariant that banking
+  at a price and stopping at that price are the same thing.
+- **The stricter re-arm gate ships OFF**, on a measurement, and is NOT dead code — it wins at 4
+  adds. Re-measure before raising the add count.
+- ✅ **PARITY PROVEN ON A SECOND GOLDEN, `exports/golden/..._scalein_stress.csv` (2026-09-24).** The
+  first golden cannot see this fix — the pre-fix sizing passes it. The stress file (4 adds, 2.0x cap,
+  re-arm on "Stop improved") is green on the shipped sizing and RED on the pre-fix one at bar 6,120.
+  ⚠ **"Past the last add" cannot prove the sizing**: it only re-arms once every earlier add is in
+  profit, which is the one state the double-spend needed to be absent. An export at that reading
+  proved the GATE (20 adds against 30) and was blind to the sizing.
+- ⚠ **Run the gate at the warm-up `golden.json` records**, or it reports chart state a cold replay
+  cannot have as a mismatch in the first 98 bars.
+- ⚠ **Runs 19–22's own questions are still pre-fix numbers.** Only the BUDGET was re-earned
+  (Run 43); where an add happens and where its lots bank were not.
+- ⚠ **Two live-side defects found with it and NOT fixed**: the bot buys each add a full bar
+  after the lab does, and the ledger records the risk an add was SIZED at, not the risk it took.
+- Story, arithmetic, the grid and the mutation record: `notes/sizing_and_risk_history.md`.
+
 ## Flat before the close — `flat_mode`, and it is NOT `flat_by_close` any more
 
 **`flat_mode` is the setting: `"Off"` / `"Friday only"` / `"Every day"`, shipped Off.** The clock

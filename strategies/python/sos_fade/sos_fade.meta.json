@@ -676,6 +676,21 @@
       ]
     },
     {
+      "name": "exec_scale_gate",
+      "group": "Exit ladder",
+      "label": "When it may add again",
+      "short": "When it may add again",
+      "choices": ["Stop improved", "Past the last add"],
+      "show_if": {
+        "exec_scale_in": true
+      },
+      "desc": "What has to happen before another add is allowed. Stop improved is the old rule: the trailing stop only has to have moved at all since the last add. Past the last add also requires the stop to have moved beyond the price the last lot was bought at, so the previous add must actually be in profit before another is bought. MEASURED: on 22 Sep 2026 a 1.17-point stop move let a second lot be bought while the first sat 36 points underwater, and that trade went from $2,890 up to $690 down. It still ships OFF: measured over 2018-2026 at the shipped three adds it costs 12.79R of return and buys 0.11R of drawdown, and the worst trade is the same either way. At four adds it wins, so re-measure before raising the add count.",
+      "guide": [
+        "Stop improved — more adds, and one can be bought over a lot that is still losing",
+        "Past the last add — fewer adds, each bought only over lots that are working"
+      ]
+    },
+    {
       "name": "exec_scale_tp_mode",
       "group": "Exit ladder",
       "label": "Where the adds take profit",

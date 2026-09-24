@@ -3955,6 +3955,51 @@ class Execution:
 
         self._maybe_scale_in(sig)
 
+    def _locked_at_stop(self, stop: float) -> float:
+        """The profit the shared stop already guarantees on the WHOLE position, in currency.
+
+        🔴 **THIS IS THE WHOLE POSITION, AND THAT IS THE FIX.** It used to read the BASE lot
+        alone (`(stop - entry) * base_qty`), which makes the affordability rule below exact for
+        the FIRST add and wrong for every one after it: each new add pledged the base's locked
+        profit again, while the lots already bought — the ones furthest from the stop, because
+        scale-ins only fill as price runs — were invisible to the arithmetic meant to protect
+        them. The promise on the tin ("an add can shrink a winner, it cannot manufacture a
+        loser") therefore held at one add and was spent twice at two.
+
+        MEASURED on the trade that found it, `sos_fade_1` 2026-09-22, short 0.37L @ 4369.93:
+        add 1 (0.17L @ 4320.58) and add 2 (0.10L @ 4300.90) both sized against the base's ~$486,
+        both stopped at 4356.86. Base +$483, adds −$617 and −$560, **net −$690 on a trade that
+        was +$2,890 open**. When add 2 was sized, add 1 was already $634 under the shared stop
+        and nothing looked at it.
+
+        ⚠ **Signed, deliberately.** A lot already in profit at the stop ADDS to the guarantee and
+        may fund a larger add; a lot underwater SUBTRACTS and shrinks or refuses the next one.
+        Both directions are the same statement — worst case at the stop is flat.
+
+        🔴 **THE BASE TERM IS DELIBERATELY UNCHANGED, AT THE SIZE THE TRADE OPENED WITH.** A
+        rung that banks part of the base banks it AT THAT RUNG'S PRICE, and the stage-2 stop floor
+        IS that rung's price on the shipped ladder — so `(stop - entry) * base_qty` is still the
+        base's guaranteed profit whether it banked early or not. Reading the REMAINING base
+        instead was tried and REVERTED the same hour: it made a trade that banks half at the first
+        target buy a smaller add than an identical trade that banks nothing, which breaks the
+        invariant `test_a_tp_rung_does_not_slice_the_adds` exists to hold — banking at a price and
+        stopping at that same price are the same thing. Only the ADDS were ever unaccounted for,
+        and only the adds are added here.
+
+        ⚠ **`exec_scale_cap_x` multiplies `_base_qty` and is not part of this sum** — the cap is a
+        statement about the size the trade opened with.
+
+        ⚠ Mirrors `sos_fade_strategy.pine`, which sums the same two things: `lBaseQty` off the
+        entry, then every OPEN trade whose id names it an add. The two must move together or the
+        parity gate is measuring a strategy neither side runs.
+        """
+        d, pv = self._pos_dir, self._pv()
+        locked = (stop - self._entry) * d * self._base_qty * pv
+        for px, qty in self._adds:
+            if qty > 1e-12:
+                locked += (stop - px) * d * qty * pv
+        return locked
+
     def _maybe_scale_in(self, sig) -> None:
         """PLACE an add order on a runner the trail is already protecting (Pine `execScaleIn`).
 
@@ -4010,6 +4055,14 @@ class Execution:
         # the add happens: without it a stalling runner re-adds every bar on one guarantee.
         if self._add_stop is not None and (stop - self._add_stop) * d <= 0:
             return
+        # 🔴 AND, on "Past the last add", the stop must have ratcheted past the PRICE the last add
+        # was bought at — not merely past the stop it was sized against. The weaker test above is
+        # what let 2026-09-22 buy a second lot on a 1.17-point stop improvement while the first lot
+        # sat 36 points underwater. See `_locked_at_stop` for the other half of that fix.
+        if (getattr(cfg, "exec_scale_gate", "Stop improved") == "Past the last add"
+                and self._add_last_px is not None
+                and (stop - self._add_last_px) * d <= 0):
+            return
 
         mode = getattr(cfg, "exec_scale_mode", "Trail")
         if mode == "Trail":
@@ -4048,7 +4101,7 @@ class Execution:
         # Refuse once the stop is already past the level — that is not an add, it is a loss.
         if (level - stop) * d <= 0:
             return
-        locked = (stop - self._entry) * d * self._base_qty * pv
+        locked = self._locked_at_stop(stop)
         per_unit = (level - stop) * d * pv
         if locked <= 0 or per_unit <= 0:
             return

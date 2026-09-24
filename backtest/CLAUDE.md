@@ -291,6 +291,7 @@ listed below under the notes file that now holds it.
 
 ### `notes/tools.md` — Tools
 
+- `scale_in_grid.py` (2026-09-23, SOS Fade Run 43) — the scale-in budget re-earned after the sizing fix: the fix makes more money at less drawdown and restores the worst trade to -2.07R in every scaled cell; the stricter re-arm gate ships OFF. 🔴 A control arm the process pool turned into a copy of the treatment arm — read the notes before trusting any patched-arm tool.
 - `run_report.py` (2026-09-23) — 🔴 it chose the 15m-only path off `exec_secondary` alone, so a run of the LEVEL MEMORY with the re-entry off booked none of its trades and said nothing. Anything needing the fast feed has to be asked about in the path chooser.
 - `level_memory_audit.py` (2026-09-23, Run 42) — the bot forgets a level the moment structure replaces it; 39 returns in 6.7 years it had nothing armed for, and the stop WIDTH is the whole difference. Screen only.
 - `exit_study.py` (2026-09-22) — a give-back cap is the only exit that beats holding; every engine-driven reversal exit, liquidity levels and the volume line included, loses.

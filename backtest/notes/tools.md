@@ -8,6 +8,29 @@ CLAUDE.md gets at most one index line.
 
 ## Tools
 
+- **`tools/scale_in_grid.py` — the scale-in budget, re-earned after the sizing fix (2026-09-23, SOS Fade Run 43).**
+  Replays three ARMS over identical bars and config — the pre-fix affordability rule, the fixed one,
+  and the fixed one plus the stricter re-arm gate — across 1-4 adds x 3 caps, so the only thing that
+  moves between cells is the rule. Basis lives in one block of module constants rather than at five
+  call sites (rule 11). **Found: the fix makes MORE money at LESS drawdown at nearly every cell, and
+  restores the worst trade to -2.07R in all 24 scaled cells where the old rule degraded to -2.86R;
+  the new gate costs 12.79R for 0.11R of drawdown at the shipped budget and now ships OFF.**
+  ⚠ **No stored run re-prices** — this tool reads fills, costs and the replay loop, it changes none
+  of them.
+  - 🔴 **THE OLD RULE IS BOUND TO ONE EMULATOR INSTANCE, NEVER ASSIGNED TO THE CLASS, AND THE FIRST
+    VERSION GOT THAT WRONG.** It patched `Execution._locked_at_stop` on the class inside a worker,
+    and `ProcessPoolExecutor` REUSED that worker — so every cell that landed after an `old` cell
+    silently ran the old rule too. The table came back with the before and after columns **identical
+    to the cent in all twelve rows**, which reads exactly like *the fix changes nothing* rather than
+    like a bug. **A control arm that a pool can quietly turn into a copy of the treatment arm is the
+    general trap**, and it is invisible in the output: every number was internally consistent.
+  - Every cell now **asserts which of the two rules it actually ran, in both directions**, and the
+    line being replaced is checked against the shipped source before anything starts — so an edit
+    to the shipped method makes the tool refuse rather than compare the fix with itself. Rule 12
+    applied to a measurement tool instead of a test.
+  - The tell that the grid is measuring what it claims: **at ONE add all three arms are identical to
+    the cent.** They must be — there is no second add to gate or to mis-size.
+
 - **`tools/run_report.py` — TWO FIXES AND TWO NEW FLAGS (2026-09-22).**
   🔴 **IT DATED EVERY RE-ENTRY TRADE OFF THE WRONG CLOCK, AND HAD DONE SINCE RE-ENTRIES WERE
   WIRED IN (2026-08-16).** The row was dated `df.index[t.entry_index]`, but a re-entry's

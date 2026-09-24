@@ -235,3 +235,23 @@ cfg_scale_mode=1 / cfg_scale_adds=4 / cfg_scale_cap=2` — one that genuinely ex
 rather than reading all zeros. **The same gate on the same schema was RED before the fix**, which is
 what makes the green worth something. Full grid and the void banner:
 `strategies/python/sos_fade/sos_fade_optimization.md` → Run 21.
+
+## 🔴 Two mid-list inserts in a week scrambled a saved chart, and the trade count fell 159 → 48 (2026-09-24)
+
+TradingView restores a saved chart's inputs by DECLARATION ORDER within each type. On 2026-09-21
+three inputs (target 1 level, target 2 level, first target in R) were inserted in the middle of
+section 6, and on 2026-09-23 a fourth ("When it may add again") went between the add cap and the
+add mode. **Aaron pasted the updated `sos_fade_strategy.pine` onto his saved chart and the Strategy
+Tester fell from 159 trades to 48** — every input below the inserts had taken its neighbour's
+value. Nothing errored and nothing on the chart said why. A "Reset settings to defaults" and
+re-entering his values put it back.
+
+- **The rule already existed** (`strategies/CLAUDE.md` → standing instructions) and was broken
+  twice in three days, once by a session that had read it. **Append a new input after the LAST
+  input of its type** and accept the panel reading slightly out of order.
+- The fourth insert was moved to the end on 2026-09-24. The three from 2026-09-21 were **left
+  where they are on purpose**: moving them now would shuffle every chart a second time, including
+  the one Aaron just repaired.
+- ⚠ **An export chart can look untouched while the regular chart is scrambled.** The export twin's
+  settings matched its 10 Sep golden exactly, so the gate said nothing — the damage was on the
+  chart nobody exports.
