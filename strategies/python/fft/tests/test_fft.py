@@ -122,6 +122,83 @@ def test_the_15m_overextension_skip_refuses_at_four_bos_and_not_three():
     assert _ready_to_buy(6, on=False)._decide(50, ts)["order"] is not None
 
 
+
+def test_the_sweep_only_filter_is_off_by_default():
+    """A lead found on the bars it would be judged on — present, not on (2026-09-22)."""
+    assert FftConfig().only_sweep is False
+
+
+def _ready_to_buy_swept(active_lo=(), swept_at=None) -> FftStrategy:
+    s = _ready_to_buy(0, on=False)
+    s.config = FftConfig(only_sweep=True)
+    s.row5.active_lo = tuple(active_lo)
+    if swept_at is not None:
+        s._swept[swept_at] = ((99.0,), ())
+    return s
+
+
+def test_the_sweep_filter_trades_only_a_pullback_that_takes_a_level():
+    """The 61.8 is 100.73 and price 103. A live low at 102 sits between them, so the fill itself
+    takes it; one at 99 lies past the 61.8 and a fill there takes nothing. Mutation: `not` dropped
+    from the gate → the level-less setup is the one traded; went RED 2026-09-22."""
+    import pandas as pd
+
+    ts = int(pd.Timestamp("2026-03-24 15:00", tz="UTC").value // 10**6)
+    assert _ready_to_buy_swept()._decide(50, ts)["why"] == "no_sweep"
+    assert _ready_to_buy_swept(active_lo=(99.0,))._decide(50, ts)["why"] == "no_sweep"
+    assert _ready_to_buy_swept(active_lo=(102.0,))._decide(50, ts)["order"] is not None
+    # A level already taken by a closed 5m candle since the extreme (bar 8) counts too.
+    assert _ready_to_buy_swept(swept_at=9)._decide(50, ts)["order"] is not None
+    assert _ready_to_buy_swept(swept_at=8)._decide(50, ts)["why"] == "no_sweep"
+
+
+
+def test_a_sweep_setup_trades_at_one_and_a_half_times_by_default():
+    """The user's call, 2026-09-22 — the size that measured best for profit per drawdown."""
+    assert FftConfig().sweep_risk_x == 1.5
+
+
+@pytest.mark.parametrize("bad", [0.0, 0.9, 2.1])
+def test_a_sweep_size_outside_one_to_two_is_refused(bad):
+    with pytest.raises(ValueError, match="sweep setup size"):
+        FftConfig(sweep_risk_x=bad)
+
+
+def _sized_buy(swept: bool, x: float) -> float:
+    import pandas as pd
+
+    s = _ready_to_buy(0, on=False)
+    s.config = FftConfig(sweep_risk_x=x)
+    s.row5.active_lo = (102.0,) if swept else ()
+    ts = int(pd.Timestamp("2026-03-24 15:00", tz="UTC").value // 10**6)
+    return s._decide(50, ts)["order"]["pend"].qty
+
+
+def test_the_sweep_size_scales_only_the_sweep_setup():
+    """Same equity, same stop: the sweep setup's order is 1.5x the plain one's, and at 1.0 the two
+    are equal. Mutation: the multiplier dropped from `size` → equal sizes; went RED 2026-09-22."""
+    plain, swept = _sized_buy(False, 1.5), _sized_buy(True, 1.5)
+    assert swept == pytest.approx(1.5 * plain)
+    assert _sized_buy(True, 1.0) == pytest.approx(plain)
+
+
+
+def test_the_equal_level_label_reads_only_the_target_side_between_the_618_and_tp2():
+    """Equal highs for a buy, equal lows for a sell, strictly past the 61.8 and up to TP2.
+    Mutation: the side swapped (lows for a buy) → the buy reads False; went RED 2026-09-22."""
+    s = FftStrategy()
+    buy = {"E1": 100.0, "TP2": 110.0}
+    s._eqh, s._eql = (105.0,), (95.0,)
+    assert s._eq_target(1, buy) is True
+    s._eqh = (115.0,)
+    assert s._eq_target(1, buy) is False
+    sell = {"E1": 100.0, "TP2": 90.0}
+    s._eqh, s._eql = (95.0,), (92.0,)
+    assert s._eq_target(-1, sell) is True
+    s._eql = (88.0,)
+    assert s._eq_target(-1, sell) is False
+
+
 # ── the order layer ──────────────────────────────────────────────────────────
 def _ex(profile=None, capital=10_000.0) -> FftExecution:
     return FftExecution(FftConfig(), initial_capital=capital, profile=profile)
@@ -328,3 +405,83 @@ def test_three_months_of_real_bars_reproduce_the_same_nine_trades():
         ("2025-11-07 11:32:00", 1, "target"),
         ("2025-11-26 15:30:00", -1, "target"),
     ]
+
+
+@pytest.mark.skipif(not _CACHE.exists(), reason="no PU Prime M1 cache on this machine")
+def test_the_sweep_filter_decides_at_placement_what_the_touch_then_records():
+    """The filter asks at the order what the touch's own label will say. On real bars every trade
+    it lets through must be labelled a sweep, and every setup it refuses must not be — a refused
+    sweep, or a traded non-sweep, means placement and touch read different pictures."""
+    import pandas as pd
+
+    sys.path.insert(0, str(_ROOT / "backtest" / "tools"))
+    from loaded_level_study import clean_reopens
+
+    df = pd.read_csv(_CACHE, usecols=["time", "open", "high", "low", "close"], parse_dates=["time"])
+    df = df[(df.time >= "2025-09-01") & (df.time < "2025-12-01")].set_index("time").astype(float)
+    clean, _ = clean_reopens(df)
+    s = FftStrategy(FftConfig(only_sweep=True)).run(clean)
+    traded = [t for t in s.touches if t.traded]
+    refused = [t for t in s.touches if t.why == "no_sweep"]
+    assert traded and refused
+    assert all(t.swept for t in traded)
+    assert not any(t.swept for t in refused)
+
+
+@pytest.mark.skipif(not _CACHE.exists(), reason="no PU Prime M1 cache on this machine")
+def test_the_sweep_size_moves_no_trade_and_sizes_each_sweep_trade_up():
+    """On fixed contracts the multiple is exact: each sweep trade is 1.5 contracts, every other 1,
+    and the trades themselves are the ones a 1x run takes — sizing decides nothing else here."""
+    import pandas as pd
+
+    sys.path.insert(0, str(_ROOT / "backtest" / "tools"))
+    from loaded_level_study import clean_reopens
+
+    df = pd.read_csv(_CACHE, usecols=["time", "open", "high", "low", "close"], parse_dates=["time"])
+    df = df[(df.time >= "2025-09-01") & (df.time < "2025-12-01")].set_index("time").astype(float)
+    clean, _ = clean_reopens(df)
+    fixed = dict(size_mode="Fixed contracts", fixed_qty=1.0)
+    one = FftStrategy(FftConfig(sweep_risk_x=1.0, **fixed)).run(clean)
+    up = FftStrategy(FftConfig(sweep_risk_x=1.5, **fixed)).run(clean)
+
+    def book(s):
+        return [(t.entry_ms, t.dir, t.exit_reason) for t in s.execution.trades]
+
+    assert book(up) == book(one)
+    touched = sorted((u for u in up.touches if u.traded), key=lambda u: u.ts_ms)
+    trades = sorted(up.execution.trades, key=lambda t: t.entry_ms)
+    assert len(touched) == len(trades) and any(u.swept for u in touched)
+    assert [t.qty for t in trades] == [1.5 if u.swept else 1.0 for u in touched]
+
+
+
+
+@pytest.mark.skipif(not _CACHE.exists(), reason="no PU Prime M1 cache on this machine")
+def test_the_equal_level_label_matches_the_study_that_found_it():
+    """The bot's label is the study's EQT (`backtest/tools/fft_confluence_study.py`) on the same bars
+    — the same engine, the same last-closed 5m candle, the same band — so the forward log grades
+    the lead that was measured, not a cousin of it."""
+    import importlib.util
+
+    import pandas as pd
+
+    sys.path.insert(0, str(_ROOT / "backtest" / "tools"))
+    from loaded_level_study import clean_reopens
+
+    spec = importlib.util.spec_from_file_location(
+        "fft_confluence_study", _ROOT / "backtest" / "tools" / "fft_confluence_study.py"
+    )
+    study = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(study)
+    df = pd.read_csv(_CACHE, usecols=["time", "open", "high", "low", "close"], parse_dates=["time"])
+    df = df[(df.time >= "2025-06-01") & (df.time < "2025-12-01")].set_index("time").astype(float)
+    clean, _ = clean_reopens(df)
+    s = FftStrategy(FftConfig(max_bos=-1, req_15m=False)).run(clean)
+    touches = [u for u in s.touches if u.kind == "first"]
+    tb = pd.DataFrame(
+        [dict(entry_ms=u.ts_ms, dir=u.dir, entry=u.levels["E1"], stop=u.levels["1.0"],
+              tp2=u.levels["TP2"]) for u in touches]
+    )
+    got = [u.eq_target for u in touches]
+    assert len(got) > 100 and any(got), "the comparison must cover labels of both values"
+    assert got == list(study.feat_5m(clean, tb).EQT)

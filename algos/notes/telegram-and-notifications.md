@@ -798,3 +798,152 @@ and still sends the eight SETUP threads to the signals room.
 `tests/test_notification_routing.py` greps every send in the repo for a stated kind, and a
 variable would route correctly while being invisible to that guard — which is the same silence
 the guard exists to catch, wearing a green tick.
+## A SECOND room may get a COPY of the setups, and only the setups (2026-09-23)
+
+**The ask (the user, 2026-09-23):** the rev-setup bot's setup messages land in the room its own
+account names, and he wanted the same messages in HIS signals room as well — a second reader for
+the same setups, with the fills left exactly where they are. He asked twice, after being told the
+notifier is Aaron's file and that his own standing rule says hands off, and told me to do it.
+
+**What was built:** `markets/fx/signal_copies.json` maps an account to extra rooms, and
+`shared/notify.py::send_telegram_id` posts the same text to each of them after the message's own
+room has taken it. Enabled today for 34957946 → the other owner's signals room.
+
+- 🔴 **SIGNAL ONLY, checked in the code.** A setup is an opinion about where price is; a fill is
+  somebody's money. The whole per-account routing design above exists so a live fill never reaches
+  a room the wrong person reads, so `kind` is tested at the copy and a trades or health room
+  written into that file still receives nothing. That is the property the tests are weighted
+  toward, not the copy working.
+- ⚠ **The copy is FLAT.** A `reply_to` id belongs to the chat it was posted in, so replaying one in
+  another room is either refused by Telegram or files the follow-up under a stranger's message.
+  The copy room gets each message loose; the thread stays in the bot's own room.
+- ⚠ **A courtesy, never a substitute.** It runs only after the primary succeeded, it cannot change
+  the message id the follow-ups reply to, and a dead copy room prints once and is otherwise
+  ignored. A live account that names no signals room still sends NOTHING, copy list or not.
+- ⚠ **Its own file rather than a field on the account's row, and that is the interesting part.**
+  `command-center/.../bot_account_registry.upsert_account` REPLACES a row when somebody edits that
+  account on the page, keeping only the `_`-prefixed prose keys — so a field the page does not know
+  about would be dropped the next time anyone touched the account, silently, and found months later
+  by a room that had quietly stopped receiving. Adding it to the page instead means the dataclass,
+  the API model and the form, and the payload still wipes what it does not send.
+- 🔴 **IT NEEDS A PROMOTE, and the data arriving on the box is not enough.** `algos/shared` is in
+  `live_config.ORDER_PATH_ROOTS`, so every promoted bot runs this module from its own frozen
+  snapshot. The file is read live through `repo_paths` (an edit needs no restart), but a bot
+  promoted before today copies nothing until its next promote.
+- ⚠ **A test that sends a SIGNAL for a real account must point the copies file at nowhere**, the
+  way the registry already is. `test_live_rooms_runner.py`'s fixture promised "nothing here reads
+  the committed channels" and this gave it a second committed file to hold off — one extra post in
+  one assertion, caught in the suite.
+
+Tests: `algos/tests/test_signal_copies.py` (13; two mutations watched RED — removing the copy call
+reddens the six that assert a copy arrives, and removing the `kind` guard reddens the two that
+assert fills and health never copy).
+
+## The REV SETUP student feed — the bot's own behaviour, with the money removed (2026-09-23)
+
+**The ask (the user, 2026-09-23):** his students run the MPC JARVIS indicator on their own charts,
+and when they are away from the chart he wants the channel (MPC Signals, `-1004314325555`) to tell
+them what the BOT is doing — a rev setup forming, where the entry would be, the limit going on, the
+stop being moved, how it ended. Named **REV SETUP**, which is what the students are taught to call
+it. *"The bot itself that we built. Because the bot has its own set of rules when taking a trade,
+those are the things that I want captured."*
+
+**Built as `algos/tools/rev_setup_feed.py`** with `markets/fx/rev_feed.json`, shipped `enabled:
+false`. It reads the bot's `decisions-YYYY-MM-DD.jsonl` and renders its own lines.
+
+- 🔴 **It does NOT forward the bot's messages, and that is the whole design.** Those carry the lot
+  size and the dollar risk (see *THE RESTING MESSAGE CARRIES ITS LOT SIZE* above), so forwarding
+  them publishes an owner's position sizing — and his balance by arithmetic — to a class. The feed
+  renders from a per-event **whitelist** (`_RENDER`), so a field nobody listed cannot be published:
+  a record that grows a field tomorrow is left out rather than leaked.
+- ⚠ **No promote needed, which is why it is a tool and not a change to the bot.** `algos/shared`
+  and `algos/live` are frozen into each bot's snapshot, so anything added to the bot's own
+  messaging reaches a running bot only at its next promote. This reads files already being written.
+- **The forming half comes from the per-bar records.** A bar carries each side's stage
+  (`sos_fade/sequence.py`: 1 sweep, 2 shift confirmed, 3 the 50%, 4 the 61.8%), so a stage RISING
+  is the "setup forming" event. Stage 1 is not published — it fires constantly.
+- 🔴 **Three things only real rows taught it** (MEASURED against `sos_fade_1`, 2026-09-22): a
+  market add's `price` is the ESTIMATE the size came from and `fill_price` is where it traded
+  (4332.00 against 4320.58, so publishing `price` states a price the bot never traded); one trail
+  move writes ONE RECORD PER LEG, so the same sentence arrived twice; and four of that day's seven
+  stop moves were 1c-13c of trail, hence a `$1` floor that publishes the three that mattered.
+- ⚠ **A failed send rolls back EVERY cursor, not just the line count.** Rolling back one left the
+  stage and last-stop cursors ahead, and the retry then suppressed the unsent message as a
+  duplicate — caught by its own test, not in production.
+- ⚠ A run that cannot run says so in the HEALTH room, never in the student channel.
+
+**The shape is the bot's OWN signals-room shape**, which the user asked for by pasting a real
+message (2026-09-23) — *"basically i want these info and format… Just keep mines as REV and remove
+LIVE."* So the feed renders his four lines with his label and no live/demo tag:
+
+    👀 SETUP FORMING · SHORT          ➕ ADDED TO THE SAME POSITION · SHORT
+    REV · XAUUSD · 3 of 3             REV · XAUUSD
+    Sweep · SOS confirmed ·           Added at 4,320.58 · one stop for it all 4,357.86
+    tagged the 50%                    Your add: 0.32× your first lot
+    Entry 4,369.93 · stop 4,391.88
+                                      ✅ CLOSED · SHORT
+    🔒 STOP MOVED · SHORT             REV · XAUUSD
+    REV · XAUUSD                      Out at 4,356.86 · +0.59R
+    4,391.88 → 4,369.63
+    Risk off — the stop is now past the entry
+
+- **"n of 3" counts the same three confluences the bot counts** — the arm, the shift of structure,
+  and the retrace zone being tagged — so a student reading both rooms sees one scale. The four
+  internal STAGES are not exposed.
+- ✅ **THE SETUPS ARE NOW WRITTEN DOWN, and that closed the gap** (the user's call, same day:
+  *"You can take the snapshot lines it's fine"*). `runner._record_setups` writes one `setup` row
+  per live setup per bar — the confluence details in the strategy's own words (the swept level's
+  NAME lives nowhere else), the tradeable band, the projected stop, and what is refusing or pausing
+  it. Before this the signals room's message was the only copy in existence: nothing on disk held
+  that a setup had happened at all. It reads through `live_setups()`, never `drain_setups()`, so
+  the alert layer is still the one that clears the terminal snapshots and a thread keeps its
+  closing message. Tests: `algos/tests/test_setup_records.py` (6, three mutations watched RED).
+  🔴 **OFF by default, per bot (`record_setups`), and that is a PERMISSION default rather than a
+  risk one** (the user, 2026-09-23: *"Never touch anything with his live trading that I may be
+  working on without his permission."*). The write is reporting-only and cannot move a trade, but
+  `algos/live` is frozen per bot, so a default of True would start it on the other owner's LIVE
+  bots at his next promote without him choosing it. It is ON for `sos_fade_1` alone — the demo bot
+  the feed reads — and that bot's config says why. ⚠ Both the setting and the contract check are
+  read INSIDE the method's try: the check sat outside for one commit, and reading `self.cfg` on a
+  runner built without one raised straight into the bar loop's `finally` (three alert tests red).
+  The warning itself is wrapped too, because a log double without `warning` took the bar with it.
+  ⚠ **A bot writes these only after its next promote** — until then the feed falls back to the per-bar stages, and it stands down again
+  automatically once snapshot rows appear (a day's grace, so the fallback self-heals if a promote
+  ever goes back).
+- **With the rows, the feed renders his message exactly**, which is the shape he asked for:
+
+        👀 SETUP FORMING · LONG          👀 SETUP FORMING · LONG
+        SOS Fade · LIVE · XAUUSD.p ·     REV · XAUUSD · 2 of 3
+        2 of 3                           Sweep · Day Low · SOS confirmed ·
+        Sweep · Day Low · SOS            not tagged yet
+        confirmed · not tagged yet       Zone 4,251.87 – 4,308.23 ·
+        Zone 4,251.87 – 4,308.23 ·       stop 4,251.87
+        stop 4,251.87
+        (the trading room)               (MPC Signals)
+
+  One message per CHANGE rather than per bar, and a FILLED snapshot is not announced at all — the
+  trade record already carries the fill at the price the broker gave, and two "ENTERED" messages
+  for one trade is the "two claims about one setup" failure.
+- ⚠ **The whitelist is the only route a value has, and that bit twice in one hour**: the first
+  render of this shape said "SOS confirmed" with no "Sweep" beside it, and showed no stop, because
+  `l_arm_src`/`s_arm_src`/`stop` were not on the `bar` list. Add the field to `_RENDER` when the
+  message starts showing it.
+- 🔴 **THE ADD MULTIPLE IS WORKED OUT FROM THE PRICE THE MESSAGE SHOWS, and that is a safety
+  decision.** The bot's rule is (profit the stop already locks in) / (what one more lot risks to
+  that same stop), sized on the arming bar's CLOSE and then filled at market. On 2026-09-22 the
+  gap was $11.42 the wrong way: it sized 0.47x against 4332.00 and sold at 4320.58, where the same
+  arithmetic allows 0.32x — so its add risked 6.34 price-units × lots against 4.47 of locked
+  profit, and the "worst case flat" guarantee did not hold on that fill. A student copying the
+  bot's multiple at the worse price would be carrying the same uncovered risk, so the feed
+  publishes the multiple for the price in front of them, capped at the bot's own 0.5x.
+  ⚠ **Worth passing to Aaron: the trigger-to-fill gap can break the affordability guarantee on a
+  Trail add.** His own config note already warns the market rule carries that gap; this is a
+  measured instance of it. Not touched.
+- The user chose "just the multiple" in the message, with the method in a pinned channel post.
+- "Risk off" is said ONCE per trade, and says what is true ("the stop is now past the entry")
+  rather than "cannot lose" — price that gaps through a stop fills past it.
+
+Still open: the scheduled task on the box (it runs on demand until then), the `enabled` flag, and
+the pinned post explaining the add sizing.
+
+Tests: `algos/tests/test_rev_setup_feed.py` (18; five mutations watched RED, listed in its docstring).

@@ -673,3 +673,98 @@ on — does not change). See `algos/notes/telegram-message-catalog.md` for what 
 
 ⚠ An observer that throws is swallowed. It reports; it never decides. A Telegram outage that
 refused entries would be the safety feature causing the incident.
+
+
+---
+
+## FFT + the extreme leg as ONE BOOK — the pair beats either bot (2026-09-23)
+
+The user asked for a strategy that beats FFT and the extreme leg. The answer is that **the book
+does, and both halves already exist.** Measured from the two solo lab runs' stored equity curves
+(`046197075b55` FFT, `2c3698c96b26` extreme leg), simulated on one shared $10,000 balance with each
+bot risking its own fraction of current equity at its own entry and booking at its own exit, events
+in true time order so concurrent trades really overlap.
+
+**They are not correlated — if anything the reverse.**
+
+- monthly R correlation **−0.278** over 79 months. ⚠ With n=79 the standard error is ~0.115, so this
+  is ~2.4 SE from zero: read it as **genuinely uncorrelated**, and do NOT bank on the negative sign.
+- FFT lost 24 months of 79, the extreme leg 20, **both lost only 6** — independence predicts 6.1.
+- Only **10 of 187** FFT trades have an extreme-leg trade open at the same time (5.3%), so the 10%
+  cap almost never has to refuse one. At a 5/5 split both can hold a full trade at once anyway.
+
+🔴 **What that is worth — the risk needed to reach the extreme leg's own $100,390, and its drawdown:**
+
+| book | total risk | max drawdown |
+|---|---|---|
+| FFT only | 7.77% | **35.1%** |
+| extreme leg only | 5.00% | **27.7%** |
+| **50/50 split** | 5.60% | **15.5%** |
+| 25/75 split | 5.21% | 21.5% |
+
+**The pair reaches the same dollar target at 15.5% drawdown — 44% less than the extreme leg alone
+and well under half of FFT alone.** Run at the full 10% cap (5/5) the book makes **$572,193 at 26.5%
+drawdown**, against the extreme leg's $100,390 at 27.7% on its own.
+
+**Why it is multiplicative rather than additive:** on a shared balance each bot compounds the other's
+gains. The extreme leg alone is 11.0x and FFT alone 5.16x; 11.0 × 5.16 = 56.8x, and the measured book
+is 57.2x. That is the entire effect, and it is why this was worth measuring rather than assumed.
+
+**Best split measured** (net dollars per point of drawdown, shared balance): 5/5 at 21,586, then
+3.3/6.7 at 19,215, then 2.5/7.5 at 17,922. **Even splits win** — tilting toward the better bot makes
+the book worse, because the diversification is worth more than the edge difference.
+
+⚠ **Read the dollar column only against other rows in this table.** These are shared-balance figures
+and rule 6 forbids comparing them to a solo run's dollars; the solo numbers above are each bot's own
+basis, printed for reference, never a term in a sum.
+⚠ The two runs use different cost models (the extreme leg a modelled spread, FFT bid/ask fills) and
+different bar sizes. That shifts each bot's LEVEL and not WHEN its trades happen, which is what the
+correlation and the overlap read. Levels are taken as each run measured them.
+⚠ The simulator does not enforce the cap's refusal when both want size at once. At 5/5 the shares sum
+to exactly the cap and overlap is 5.3%, so the error is small — but a real lab stack run is what
+would settle it.
+
+**What this replaces:** the 2026-09-23 conclusion that $100k from FFT costs ~35% drawdown and the
+whole account. It does — *alone*. Run as a book with the extreme leg it costs 15.5%, and neither bot
+has to change by a line.
+
+### The real stack run — mechanism CONFIRMED, and a defect in the stack path (2026-09-23)
+
+`backtest/tools/stack_run.py --legs fft:1,extreme_leg:5 --symbol XAUUSD.p --server PUPrime-Demo
+--start 2020-01-01 --end 2026-09-22 --balance 10000 --risk-cap 10 --risk-pct 5 --fill-profile puprime_ecn`
+
+⚠ **`fft` was not in this tool's `_STRATEGIES` dict and neither are `realign` or
+`smc_session_sweep`** — all three are lab-registered, and the tool answered "unknown strategy" as
+though they did not exist (rule 8: a hand-maintained registry that went stale). `fft` was added;
+the other two deliberately were NOT, because adding a leg nobody has run through this tool is a
+registry that answers confidently about something untested. A `--fill-profile` flag was added with it.
+
+| | shared trades | shared R | solo trades | solo R | solo close |
+|---|---|---|---|---|---|
+| fft (1m) | 187 | +27.71 | 187 | +27.71 | **$51,650.76** |
+| extreme_leg (5m) | 116 | +58.26 | 116 | +58.26 | $127,171.16 |
+| shared closing | | | | | **$668,616.03** |
+
+**✅ The mechanism is confirmed.** FFT solo closes at **$51,650.76** — its lab run's net of
+$41,650.76 on a $10,000 start, **to the cent**, so this path is faithful for that leg. Compounding is
+multiplicative as predicted: 5.165x × 12.717x = 65.69x against 66.86x measured, inside 2%.
+
+**✅ Contention is real but cheap.** Peak open risk hit the 10.00% cap exactly, peak legs holding at
+once **2 of 2**, and 5 FFT entries were shrunk ($10,523.48 of risk refused) out of 303 trades. **R is
+identical shared and solo on both legs** — a shrink scales risk and profit together, so contention
+costs DOLLARS and no edge. It would also nudge drawdown slightly DOWN, never up.
+
+🔴 **DO NOT QUOTE THE $668,616 — the extreme leg is UNDER-COSTED in every stack run.** Its
+`LAB_STRATEGY` says `"supports_bid_ask_fills": False` and its costs are billed by the LAB's cost-layer
+machinery, not by anything its config declares. `stack_run.py` builds a leg straight from
+`LAB_STRATEGY["config"]`, so those layers never run: its solo close here is **$127,171.16 (net
+$117,171) against its lab run's net $100,390.48** — the missing costs are worth ~$16.8k, about 14% of
+its profit. FFT is unaffected because its fill model lives inside the strategy.
+
+**This is a property of the stack PATH, not of this pair, so it affects every stack run in the lab** —
+including the 5-bot `st_51adad44e2` whose legs summed to $36.8M. Reported, not fixed: it is the
+platform's own seam.
+
+**What still stands:** the 15.5% drawdown for the $100,390 target, because that figure comes from the
+model built on BOTH legs' measured LAB runs, which are correctly costed — and contention, now
+measured, moves it down rather than up.

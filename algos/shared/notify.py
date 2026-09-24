@@ -16,6 +16,7 @@ Usage:
     send_telegram("🟢 *Bot online*", HEALTH)
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -27,6 +28,7 @@ except ImportError:
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from credentials import get as _cred  # noqa: E402
 from credentials import telegram_credentials
+from repo_paths import ALGOS_ROOT  # noqa: E402
 
 # ── Where a message goes is decided by WHAT IT IS ────────────────────────────────────────────
 #
@@ -109,6 +111,106 @@ ACCOUNT_ROOM_KEYS = {
 #: The rooms a LIVE account must name before a bot on it may trade. HEALTH is deliberately not one
 #: of them — see the block above. `live/runner.py` refuses to start without these.
 REQUIRED_LIVE_KINDS = (TRADE, SIGNAL)
+
+# ── A SECOND ROOM MAY GET A COPY OF THE SETUPS, AND ONLY THE SETUPS (2026-09-23) ─────────────
+#
+# The ask (the user, 2026-09-23): the setup messages about one owner's account also arrive in the
+# OTHER owner's signals room, so both read the same setups while each account's fills stay where
+# they are. Nothing about the primary room changes — this adds a destination, it never moves one.
+#
+# 🔴 **SIGNAL ONLY, and that asymmetry is the whole design.** A setup is an opinion about where
+# price is; a fill is somebody's money, and the one-room rule above exists precisely so a live
+# fill never reaches a room the wrong person reads. So `kind` is checked at the copy: TRADE and
+# HEALTH never copy, whatever this file says. A copy of a fill is the one thing here that could
+# not be taken back.
+#
+# ⚠ **The copy is FLAT — never threaded.** A `reply_to` id belongs to the chat it was posted in,
+# so replaying it in another room is either refused by Telegram or files the follow-up under a
+# stranger's message. The copy room gets each message loose; the thread stays in the room the
+# bot's own account owns.
+#
+# ⚠ **Its own file, NOT a field on the account's registry row, and that is deliberate.** The
+# Command Center REPLACES a row when somebody edits that account on the page — it keeps only the
+# `_`-prefixed prose keys (`bot_account_registry.upsert_account`) — so a field the page does not
+# know about would be dropped the next time anyone touched the account: silently, and discovered
+# months later by a room that quietly stopped receiving. This file is written by a person and
+# read here, and nothing else touches it.
+#
+# ⚠ **Read through `repo_paths`, per message, exactly like the registry**, so an edit reaches a
+# running bot with no restart and a bot running from its frozen snapshot still reads the repo's
+# copy. 🔴 **The CODE here IS frozen into that snapshot** (`algos/shared` is in
+# `live_config.ORDER_PATH_ROOTS`), so a bot promoted before this change sends no copies until its
+# next promote — the data arriving on a pull is not enough on its own.
+SIGNAL_COPIES = ALGOS_ROOT / "markets" / "fx" / "signal_copies.json"
+
+#: Which copy problems have already been printed. Same reason as `_warned_kinds`: a bot sends on
+#: a bar loop, so a broken copy destination must say so once rather than on every setup.
+_warned_copies: set = set()
+
+
+def signal_copy_chats(account) -> tuple:
+    """The extra rooms a COPY of this account's SETUP messages goes to. `()` when there are none.
+
+    ⚠ **The three states collapse to two here, unlike `account_rooms`, and on purpose.** A file
+    naming nobody and a file that cannot be read both mean NO COPY: the message itself has already
+    gone to the room that owns it, so there is nothing a caller could do differently with the
+    distinction. It is SAID once per cause instead of returned.
+
+    NEVER raises.
+    """
+    if account is None:
+        return ()
+    try:
+        raw = json.loads(SIGNAL_COPIES.read_text(encoding="utf-8"))
+        rooms = (raw.get("copies") or {}).get(str(account)) or ()
+    except FileNotFoundError:
+        return ()  # nobody on this box has asked for a copy — the ordinary state, said nothing about
+    except (OSError, ValueError, AttributeError) as e:
+        if "unreadable" not in _warned_copies:
+            _warned_copies.add("unreadable")
+            print(
+                f"notify: {SIGNAL_COPIES} could not be read, so NO setup copies are being sent "
+                f"({e}). Every message still reaches its own room."
+            )
+        return ()
+    if isinstance(rooms, str):  # one room may be written as a bare string
+        rooms = (rooms,)
+    # `dict.fromkeys`: a room listed twice is one room, and the order stays the one a person wrote.
+    return tuple(dict.fromkeys(str(c).strip() for c in rooms if str(c).strip()))
+
+
+def _copy_signal(text: str, account, primary: str, token: str, mode) -> None:
+    """Post `text` to every extra room this account names for setups. Never raises.
+
+    ⚠ Called only AFTER the message's own room has taken it, so a copy can never stand in for the
+    real one, and a failure here leaves the primary's message id — the thread everything replies
+    to — untouched.
+
+    `mode` is the parse mode that actually DELIVERED the primary, not the one asked for: a message
+    whose Markdown Telegram rejected was resent as plain text, and a copy that asked for parsing
+    again would fail in the copy room alone.
+    """
+    if _requests is None:
+        return
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    for chat in signal_copy_chats(account):
+        if chat == primary:
+            continue  # the copy room IS the room it has already gone to
+        body = {"chat_id": chat, "text": text}
+        if mode:
+            body["parse_mode"] = mode
+        try:
+            resp = _requests.post(url, json=body, timeout=5)
+            if resp.status_code != 200 and chat not in _warned_copies:
+                _warned_copies.add(chat)
+                print(
+                    f"notify: the setup copy to {chat} returned {resp.status_code}: "
+                    f"{resp.text[:200]}"
+                )
+        except Exception as e:  # noqa: BLE001 — a courtesy copy may never break a send
+            if chat not in _warned_copies:
+                _warned_copies.add(chat)
+                print(f"notify: the setup copy to {chat} failed: {e}")
 
 
 def _account_row(account):
@@ -353,10 +455,17 @@ def send_telegram_id(
             # crash, whose text is a traceback full of paths. Measured on the first real send:
             # "MT5_FFT" alone was enough. Retry unformatted rather than lose it.
             print(f"notify: Markdown rejected, resending as plain text - {r.text[:160]}")
-            r = _post(None, reply_to)
+            # Reassigned, not passed inline: this is now the mode that DELIVERED, and the setups
+            # copy below reuses it rather than repeating a request Telegram has just refused.
+            mode = None
+            r = _post(mode, reply_to)
         if r.status_code != 200:
             print(f"notify: Telegram returned {r.status_code}: {r.text[:200]}")
             return None
+        if kind == SIGNAL:
+            # A second room may read the setups — see the copies block above. Deliberately after
+            # the primary has succeeded, and it cannot change what this returns.
+            _copy_signal(text, account, dest, token, mode)
         return (r.json().get("result") or {}).get("message_id")
     except Exception as e:
         print(f"notify: send failed: {e}")

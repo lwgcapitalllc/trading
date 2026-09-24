@@ -99,6 +99,13 @@ _DECISION_EVENTS = {
     "close_requested",
     "commanded_close",
     "commanded_close_failed",
+    # One setup the strategy is WATCHING, as the signals room describes it — its confluences with
+    # their own wording (the swept level's name lives nowhere else), the tradeable band, the
+    # projected stop, and what is refusing or pausing it. Added 2026-09-23 at the user's call.
+    # A decision, not health: every field answers "why would it trade, or not", which is this
+    # stream's question, and a setup that never becomes a trade is exactly what no broker
+    # statement contains. ⚠ Written every bar a setup is live — see `runner._record_setups`.
+    "setup",
     # the broker's answer to an order the strategy asked for
     "order_placed",
     # ⚠ `order_refused` absorbed the old `order_too_small` on 2026-08-07. Both were "the
