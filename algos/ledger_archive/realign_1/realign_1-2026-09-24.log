@@ -321,3 +321,10 @@
 2026-09-24 20:45:00,907 [INFO] Priority 3 on this account: waiting 39s for the bots above
 2026-09-24 20:50:01,178 [INFO] Priority 3 on this account: waiting 19s for the bots above
 2026-09-24 20:55:00,890 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-24 22:05:04,777 [WARNING] 13 bars missed — re-warming the engines rather than resuming with a hole in the stream.
+2026-09-24 22:05:04,902 [INFO] Sizing against account balance $14,862.76
+2026-09-24 22:05:13,531 [INFO] Warmed 15000 bars (2026-07-10 10:35:00+00:00 → 2026-09-24 22:00:00+00:00) in 8.3s
+2026-09-24 22:05:13,531 [INFO] Equity re-anchored to the account after warm-up: 14,808.95 → 14,862.76
+2026-09-24 22:10:04,284 [INFO] Priority 3 on this account: waiting 16s for the bots above
+2026-09-24 22:15:00,690 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-24 22:20:00,696 [INFO] Priority 3 on this account: waiting 19s for the bots above

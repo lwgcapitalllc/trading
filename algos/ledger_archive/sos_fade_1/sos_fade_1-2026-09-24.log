@@ -224,3 +224,12 @@
 2026-09-24 20:29:59,487 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-10 09:55:00+00:00 → 2026-09-24 20:20:00+00:00).
 2026-09-24 20:29:59,518 [INFO] Equity re-anchored to the account after warm-up: 15,671.11 → 14,862.76
 2026-09-24 20:30:00,612 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-24 22:05:04,902 [WARNING] 13 M5 bars missed on the re-entry's feed — re-warming the fast side. The primary is untouched.
+2026-09-24 22:05:11,109 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-10 10:35:00+00:00 → 2026-09-24 22:00:00+00:00).
+2026-09-24 22:05:11,109 [INFO] The 13 M5 intervals were a market break, not lost bars — no alert.
+2026-09-24 22:15:04,219 [WARNING] 5 bars missed — re-warming the engines rather than resuming with a hole in the stream.
+2026-09-24 22:15:04,219 [INFO] Sizing against account balance $14,862.76
+2026-09-24 22:15:06,305 [INFO] Warmed 5000 bars (2026-07-10 10:45:00+00:00 → 2026-09-24 22:00:00+00:00) in 2.0s
+2026-09-24 22:15:09,087 [INFO] Fast feed bookmarked at 2026-09-24 22:14:59.999000+00:00 — the 15m context is already past it.
+2026-09-24 22:15:09,087 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-10 10:45:00+00:00 → 2026-09-24 22:10:00+00:00).
+2026-09-24 22:15:09,087 [INFO] Equity re-anchored to the account after warm-up: 15,671.11 → 14,862.76
