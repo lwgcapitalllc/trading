@@ -11,8 +11,9 @@ import type { BotPosition, BotStatus } from '@/types'
  *
  * ⚠ **Every state has its colour, drawn as one pill** (`components/BotStatus.tsx`, 2026-09-13):
  * `bad` needs a person, `warn` is worth a look, `ok` is a healthy running bot — green, since Aaron
- * asked for running and stopped to be colour coded — and `idle` / `unknown` are grey. No dot beside
- * the name since 2026-09-12; the worst thing a row hides is its count's colour (`moreTone`).
+ * asked for running and stopped to be colour coded — and `idle` / `unknown` are grey. The worst thing
+ * a row hides is its count's colour (`moreTone`). ⚠ **The Bots rows draw it as a DOT before the name
+ * since 2026-09-24** (`StatusDot`) — the drawers and the Overview keep the pill.
  *
  * ⚠ **Every flag is read as the field states it: `=== false` / `=== true` only.** `null` is
  * could-not-ask, and a problem is never raised off a question nobody answered (rule 1).
@@ -45,6 +46,8 @@ export interface TradeView {
   /** "Long 0.40 lots" — the unit is named, because a bare figure here is where ounces get read
    *  as lots. */
   head: string
+  /** Which way it is on, for a one-word tag — `null` when its details could not be read. */
+  side: BotPosition['side'] | null
   /** "+1.2R" and its sign, or `null` when the risk the trade opened with is unknown. */
   r: { text: string; sign: -1 | 0 | 1 } | null
   title: string
@@ -154,7 +157,7 @@ function positionTitle(p?: BotPosition | null): string {
 }
 
 function tradeView(p?: BotPosition | null): TradeView {
-  return { head: positionHead(p), r: positionR(p), title: positionTitle(p) }
+  return { head: positionHead(p), side: p?.side ?? null, r: positionR(p), title: positionTitle(p) }
 }
 
 /** Every problem the bot reports, worst first. */

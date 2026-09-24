@@ -50,7 +50,7 @@
  * anywhere on this page"*).** A section heading names the kind, so no card repeats it; the net figure
  * carries the account's sign, so no edge colour repeats it.
  */
-import { useState, useEffect, useRef } from 'react'
+import { Fragment, useState, useEffect, useRef, type ReactNode } from 'react'
 import { useIsFetching, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import {
@@ -67,6 +67,7 @@ import {
   Plus,
   GripVertical,
   Loader2,
+  ChevronRight,
 } from 'lucide-react'
 import {
   useBotSnapshot,
@@ -89,6 +90,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { openingRecorder } from '@/lib/accountEarnings'
 import { botLabel as labelOf } from '@/lib/botLabel'
 import type {
+  BotPosition,
   BotStatus,
   BotAccountBot,
   BotAccountGroup,
@@ -104,9 +106,9 @@ import { accountName, emptyGroup, nameOf } from './AccountForm'
 import { VpsSyncDrawer } from './VpsSyncDrawer'
 import { useStopFirst } from './stopFirst'
 import { KIND_NAME, KIND_TINT, KindChip, tintOf } from './kind'
-import { botCondition, worstCondition } from '@/lib/botCondition'
+import { botCondition, worstCondition, type Condition } from '@/lib/botCondition'
 import { restartReason, versionNeed, type VersionNeed } from '@/lib/botVersion'
-import { StatusText, TONE_DOT } from '@/components/BotStatus'
+import { StatusDot, StatusText, TONE_DOT, TONE_TEXT } from '@/components/BotStatus'
 
 function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime()
@@ -326,11 +328,13 @@ function pnlCls(v: number | null | undefined): string {
  *  row, ~185px of buttons in a bot row. On a 1280px screen the bot row ran out of room, squeezed its
  *  name column, and every value sat ~50px left of its heading while the heading row did not move. A
  *  `minmax(fixed, fr)` track ignores what is in it, so every row still gets the same columns. */
-//  🔴 **FIVE tracks since 2026-09-15, not nine** — Bot, Status, Performance, Version, Actions.
-//  P&L, Trades and Per trade became ONE Performance cell; Return % and Risk left the row (the
-//  bot panel states both, and the account band states the risk budget). See `Performance`.
-const GRID =
-  'grid-cols-[minmax(140px,1.3fr)_minmax(140px,1.2fr)_minmax(230px,2fr)_minmax(128px,1fr)_150px]'
+//  🔴 **FOUR tracks since 2026-09-24** — Bot, P&L, Version, Actions. Aaron: *"what I really care
+//  about is the state of the bot, the name, any action buttons, and how much the bot has made"*,
+//  and the version, *"I need to see that to know if we're behind"*. The state became a dot before
+//  the name (`StatusDot`); the trade count, R per trade and the open trade's detail moved into the
+//  bot row's EXPANSION (`BotDetail`). Only BOT rows expand — the account band keeps everything.
+//  ⚠ P&L is right-aligned in tabular digits, so every figure lines up to the cent.
+const GRID = 'grid-cols-[minmax(200px,1fr)_minmax(150px,210px)_minmax(150px,200px)_150px]'
 
 /** R per trade: what a bot's closed trades made on average, in units of the risk each one took.
  *  `null` when there is nothing to average — no record, or no closed trade — never 0. */
@@ -397,77 +401,226 @@ function Dash() {
 }
 
 /**
- * What a bot has done, on ONE line: its own closed-trade money, how many trades that rests on, and
- * R per trade — "+$1,305.58 · 1 trade · +2.10R" (2026-09-15, the fleet-table rebuild Aaron picked
- * off a mockup after *"does it feel too busy?"*).
- *
- * 🔴 **One LINE, never stacked.** Aaron, 2026-09-10: *"I don't want anything stacked on top of each
- * other in columns like that."* That is why these were three columns; they are one cell now because
- * three columns each printing nothing for a bot that has not traded was most of the ink on the
- * page. Inline with a `·` between them keeps each figure on its own, on one baseline.
- *
- * ⚠ **The trade count still sits BESIDE the R** — on one or two trades a lead is not a verdict, and
- * the count next to the score is the only thing on the row saying so (root CLAUDE.md → Trading
- * Philosophy). The trophy stays on the R, via `PerTrade`.
+ * What a bot's own closed trades came to — the one figure on the row (2026-09-24).
  *
  * ⚠ **Three states, three looks** (rule 1): no record → `Contribution`'s own words; a record holding
- * no closed trade → "no trades yet", a MEASURED zero said once in words; traded → the line.
- *
- * ⚠ **Return % left the row.** It is the one figure this rebuild drops from the page's face — the
- * bot panel still states it, and the account band carries the account's own return.
+ * no closed trade → a dash (a MEASURED nothing, its hover says so); traded → the dollars. The count
+ * and R per trade that sat beside it are in the expanded row now (`BotDetail`).
  */
-function Performance({
+function PnlCell({ e, asking }: { e: BotEarnings | undefined; asking: boolean }) {
+  const body = (() => {
+    if (!e && asking) return <Shimmer className="h-[13px] w-[72px]" />
+    if (!e || !e.traded) return <Contribution e={e} asking={asking} />
+    if (!e.closed_trades)
+      return (
+        <span
+          data-testid="bot-pnl"
+          data-count="0"
+          title={`Its record was read and holds no closed trade · recorded ${e.records_from} → ${e.records_to}`}
+          className="text-[12px] text-text-tertiary cursor-default"
+        >
+          —
+        </span>
+      )
+    return <Contribution e={e} asking={asking} />
+  })()
+  return (
+    <span data-testid="performance" className="flex justify-end min-w-0 whitespace-nowrap">
+      {body}
+    </span>
+  )
+}
+
+/** One labelled figure in an expanded row. */
+function Fact({
+  label,
+  children,
+  testId,
+}: {
+  label: string
+  children: ReactNode
+  testId?: string
+}) {
+  return (
+    <div data-testid={testId} className="flex flex-col gap-[3px] min-w-0">
+      <span className="text-[9.5px] font-semibold uppercase tracking-[0.7px] text-text-tertiary">
+        {label}
+      </span>
+      <span className="text-[12.5px] font-mono tabular-nums text-text-primary">{children}</span>
+    </div>
+  )
+}
+
+function FactGroup({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-[8px]">
+      <span className="text-[11px] font-semibold text-text-secondary">{title}</span>
+      <div className="flex flex-wrap gap-x-[32px] gap-y-[10px]">{children}</div>
+    </div>
+  )
+}
+
+const fmtPrice = (v: number) =>
+  v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 5 })
+
+/**
+ * Everything about a bot that is NOT needed at a glance, behind the row's arrow (2026-09-24,
+ * Aaron: *"I want the expand row to give the details I don't necessarily need to care about when
+ * I glance at the bot page"*).
+ *
+ * ⚠ **Every figure here is one the page already had** — nothing is worked out new. The open
+ * trade is the broker's reading off the heartbeat (`BotPosition`), the record is `BotEarnings`.
+ * ⚠ **The trade's TARGET is not here because nothing sends it** — the heartbeat reports side,
+ * lots, entry, stop, open profit and the risk at entry, and no more.
+ * ⚠ **The trophy lives here now, beside the R it is judged on** — never beside dollars, which
+ * would crown the demo by default (see `PerTrade`).
+ */
+function BotDetail({
+  cond,
+  position,
   e,
   asking,
   top,
 }: {
+  cond: Condition
+  position: BotPosition | null | undefined
   e: BotEarnings | undefined
   asking: boolean
   top: boolean
 }) {
-  const body = (() => {
-    if (!e && asking) return <Shimmer className="h-[13px] w-[170px]" />
-    if (!e || !e.traded) return <Contribution e={e} asking={asking} />
-    const n = e.closed_trades ?? 0
-    const recorded = `recorded ${e.records_from} → ${e.records_to}`
-    if (n === 0)
-      return (
-        <span
-          data-testid="trades"
-          data-count="0"
-          title={`Its record was read and holds no closed trade · ${recorded}`}
-          className="text-[12px] text-text-tertiary cursor-default"
-        >
-          no trades yet
-        </span>
-      )
-    return (
-      <>
-        <Contribution e={e} asking={asking} />
-        <span className="text-[11.5px] text-text-tertiary">·</span>
-        <span
-          title={`${e.wins ?? 0} won, ${e.losses ?? 0} lost · ${recorded}`}
-          className="text-[12px] font-mono tabular-nums text-text-tertiary cursor-default"
-        >
-          <span data-testid="trades" data-count={n}>
-            {n}
-          </span>{' '}
-          {n === 1 ? 'trade' : 'trades'}
-        </span>
-        <span className="text-[11.5px] text-text-tertiary">·</span>
-        <PerTrade e={e} asking={asking} top={top} />
-      </>
-    )
-  })()
+  const n = e?.closed_trades ?? 0
   return (
-    <span
-      data-testid="performance"
-      // Centred, not baseline — the trophy icon inside `PerTrade` has no text baseline, so on a
-      // baseline row it lifted the top bot's R ~2px above the figures beside it.
-      className="flex items-center gap-[6px] min-w-0 whitespace-nowrap"
+    <div
+      data-testid="bot-detail"
+      className="flex flex-col gap-[14px] pl-[46px] pr-3 pt-[10px] pb-[14px] border-t border-border-subtle bg-bg-sunken/40"
     >
-      {body}
-    </span>
+      {cond.issues.length > 0 && (
+        <FactGroup title="Needs a look">
+          <ul className="flex flex-col gap-[4px] text-[12px] leading-[1.5]">
+            {cond.issues.map((i) => (
+              <li key={i.key}>
+                <span className={`font-medium ${TONE_TEXT[i.tone]}`}>{i.word}</span>
+                <span className="text-text-secondary"> — {i.detail}</span>
+              </li>
+            ))}
+          </ul>
+        </FactGroup>
+      )}
+
+      {cond.trade && (
+        <FactGroup title="Open trade">
+          {position ? (
+            <>
+              <Fact label="Position">{cond.trade.head}</Fact>
+              <Fact label="Entry">
+                {position.entry != null ? fmtPrice(position.entry) : '—'}
+                {position.tickets > 1 && (
+                  <span className="text-text-tertiary"> avg · {position.tickets} tickets</span>
+                )}
+              </Fact>
+              <Fact label="Stop">
+                {position.stop != null ? (
+                  fmtPrice(position.stop)
+                ) : (
+                  <span className="text-neg-text">none at the broker</span>
+                )}
+              </Fact>
+              <Fact label="Open P&L">
+                <span className={pnlCls(position.profit_usd)}>
+                  {position.profit_usd != null ? money(position.profit_usd) : '—'}
+                </span>
+                {position.r != null && (
+                  <span className="text-text-secondary"> · {fmtR(position.r)}</span>
+                )}
+              </Fact>
+              <Fact label="Risked at entry">
+                {position.risk_usd != null ? money(position.risk_usd, false) : '—'}
+              </Fact>
+            </>
+          ) : (
+            <span className="text-[12px] text-text-tertiary">
+              It holds a position at the broker; its details could not be read.
+            </span>
+          )}
+        </FactGroup>
+      )}
+
+      <FactGroup title="Record">
+        {!e && asking ? (
+          <Shimmer className="h-[28px] w-[260px]" />
+        ) : !e || !e.traded ? (
+          <span className="text-[12px] text-text-tertiary">
+            {e?.reason ?? 'No record has been read for this bot.'}
+          </span>
+        ) : (
+          <>
+            <Fact label="Trades">
+              <span data-testid="trades" data-count={n}>
+                {n}
+              </span>
+              {n > 0 && (
+                <span className="text-text-tertiary">
+                  {' '}
+                  · {e.wins ?? 0} won, {e.losses ?? 0} lost
+                </span>
+              )}
+            </Fact>
+            <Fact label="R per trade">
+              <PerTrade e={e} asking={asking} top={top} />
+            </Fact>
+            <Fact label="Total R">{n > 0 && e.realised_r != null ? fmtR(e.realised_r) : '—'}</Fact>
+            <Fact label="Return on account">
+              {e.pct_of_opening != null && n > 0 ? (
+                <span className={pnlCls(e.pct_of_opening)}>
+                  {e.pct_of_opening > 0 ? '+' : ''}
+                  {e.pct_of_opening.toFixed(1)}%
+                </span>
+              ) : (
+                '—'
+              )}
+            </Fact>
+            <Fact label="Recorded">
+              <span className="text-text-secondary">
+                {e.records_from} → {e.records_to}
+              </span>
+            </Fact>
+          </>
+        )}
+      </FactGroup>
+    </div>
+  )
+}
+
+/** The arrow that opens a row's detail. Its own button, so it never fires the row's other click. */
+function ExpandToggle({
+  open,
+  onToggle,
+  label,
+  testId,
+}: {
+  open: boolean
+  onToggle: () => void
+  label: string
+  testId: string
+}) {
+  return (
+    <button
+      data-testid={testId}
+      aria-expanded={open}
+      aria-label={label}
+      title={label}
+      onClick={(ev) => {
+        ev.stopPropagation()
+        onToggle()
+      }}
+      onKeyDown={(ev) => ev.stopPropagation()}
+      className="w-[18px] h-[18px] shrink-0 flex items-center justify-center rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors"
+    >
+      <ChevronRight
+        size={12}
+        className={`transition-transform motion-reduce:transition-none ${open ? 'rotate-90' : ''}`}
+      />
+    </button>
   )
 }
 
@@ -935,12 +1088,17 @@ function ColumnHeadings() {
       data-testid="column-headings"
       className={`grid ${GRID} items-center gap-3 pr-3 py-[7px] rounded-t-lg border-b border-border-default bg-bg-sunken text-[9.5px] font-semibold uppercase tracking-[0.7px] text-text-tertiary`}
     >
-      <span className="pl-4">Bot</span>
-      <span title="What the bot is doing, or the worst thing wrong with it — hover a row for everything">
-        Status
+      <span
+        className="pl-4"
+        title="The dot is the bot's state — hover a bot for everything, or open its row"
+      >
+        Bot
       </span>
-      <span title="What this bot's own closed trades came to, how many trades that rests on, and R per trade — what each trade made in units of the risk it took. The top bot is picked on R per trade, never on dollars.">
-        Performance
+      <span
+        className="text-right"
+        title="What this bot's own closed trades came to. Open a bot's row for its trades, R per trade and open trade."
+      >
+        P&amp;L
       </span>
       <span>Version</span>
       <span className="text-right">Actions</span>
@@ -983,8 +1141,7 @@ function BotsPageSkeleton() {
           <span className="flex items-center pl-4">
             <Shimmer className="h-[13px] w-[96px]" />
           </span>
-          <Shimmer className="h-[12px] w-[90px]" />
-          <Performance e={undefined} asking top={false} />
+          <PnlCell e={undefined} asking />
           <VersionPill version={undefined} loading />
           <span className="flex gap-[4px] justify-end">
             <Shimmer className="h-[26px] w-[52px]" />
@@ -1066,6 +1223,17 @@ export function Bots() {
    * the only reset this state ever gets.
    */
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set())
+  /** Which bot rows have their DETAIL open (2026-09-24) — keyed `bot:<account>:<key>`, since one
+   *  bot key can sit on two accounts' tables. All closed on load: the
+   *  row's face is the glance, the detail is asked for. */
+  const [openRows, setOpenRows] = useState<ReadonlySet<string>>(new Set())
+  const toggleRow = (id: string) =>
+    setOpenRows((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
   // Flips the moment a reader opens or closes anything by hand — see the effect below. Once true,
   // nothing may overwrite `expandedAccounts` again for the rest of this page load.
   const userTouchedExpand = useRef(false)
@@ -1787,7 +1955,7 @@ export function Bots() {
         >
           {/* 🔴 THE NUMBER LEADS (2026-09-06) — the login is what the broker, the terminal and every
            *  refusal message name the account by; the nickname is something somebody typed here. */}
-          <span className="col-span-2 flex items-center gap-3 min-w-0 pl-4">
+          <span className="flex items-center gap-3 min-w-0 pl-4">
             <span className="text-[13.5px] font-mono font-semibold tabular-nums shrink-0">
               {account}
             </span>
@@ -1827,9 +1995,11 @@ export function Bots() {
           </span>
 
           {/* 🔴 The band sits on the bots' own grid (Aaron, 2026-09-16), so each figure lines up
-           *  with a column on every account: the return under Performance, the cap under Version,
-           *  the equity under Actions. */}
-          <span className="min-w-0">
+           *  with a column on every account: the return under P&L — right-aligned, so its dollars
+           *  end where the bots' dollars end — the cap under Version, the equity under Actions.
+           *  ⚠ The band does NOT expand (Aaron, 2026-09-24: "I don't want the account to expand
+           *  just the bots"), so everything it had stays on it. */}
+          <span className="flex justify-end min-w-0">
             <AccountNet e={earn} asking={asking} />
           </span>
           <span className="min-w-0">
@@ -1880,164 +2050,200 @@ export function Bots() {
           // answered for still has one.
           const name = live?.name ?? cfg.display
           const acting = actionOf(cfg.key)
+          const rowId = `bot:${account}:${cfg.key}`
+          const open = openRows.has(rowId)
+          const version = (
+            <VersionPill
+              version={versionByKey.get(cfg.key)?.data}
+              loading={versionByKey.get(cfg.key)?.isPending}
+              deploying={jobByKey.get(cfg.key)?.status === 'running'}
+              error={versionByKey.get(cfg.key)?.error}
+              restart={restartReason(versionByKey.get(cfg.key)?.data, live, snapshot?.fetched_at)}
+            />
+          )
           return (
-            <div
-              key={cfg.key}
-              data-testid="bot-row"
-              data-bot={cfg.key}
-              draggable={canReorder}
-              onDragStart={(e) => {
-                if (!canReorder) return
-                e.dataTransfer.effectAllowed = 'move'
-                e.dataTransfer.setData('text/plain', cfg.key)
-                setDragKey(cfg.key)
-              }}
-              onDragOver={(e) => {
-                if (!dragKey) return
-                e.preventDefault()
-                e.dataTransfer.dropEffect = 'move'
-                setOverKey(cfg.key)
-              }}
-              onDragLeave={() => setOverKey((k) => (k === cfg.key ? null : k))}
-              onDrop={(e) => {
-                e.preventDefault()
-                if (dragKey) moveBot(account, order, servedSig, dragKey, i)
-                setDragKey(null)
-                setOverKey(null)
-              }}
-              onDragEnd={() => {
-                setDragKey(null)
-                setOverKey(null)
-              }}
-              className={`group grid ${GRID} items-center gap-3 pr-3 py-[10px] transition-colors hover:bg-bg-surface-2 ${
-                i > 0 ? 'border-t border-border-subtle' : ''
-              } ${dragKey === cfg.key ? 'opacity-40' : ''} ${
-                overKey === cfg.key && dragKey !== cfg.key ? 'bg-accent/10' : ''
-              }`}
-            >
-              {/* The NAME is the button, not the whole row — a row-wide click behind the controls
-               *  would make every miss open a drawer over the thing you were aiming at. */}
-              <span className="flex items-center min-w-0 pl-[2px]">
-                {/* ⚠ **The grip KEEPS ITS SPACE on every row and is only REVEALED on hover** — the
-                 *  rail's pin idiom, for the rail's reason: a box that collapses would twitch every
-                 *  bot name sideways as the pointer crosses the list. An account with ONE bot gets
-                 *  the space and no grip: there is nobody to go ahead of. */}
-                <span
-                  data-testid="bot-grip"
-                  aria-hidden
-                  title="Drag to set which bot trades first"
-                  className={`w-[14px] shrink-0 flex justify-center text-text-tertiary ${
-                    canReorder
-                      ? 'opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing'
-                      : 'invisible'
-                  }`}
-                >
-                  <GripVertical size={12} />
-                </span>
-                <button
-                  onClick={() => set('bot', cfg.key)}
-                  title={`Open ${name} — risk, return, version, account and its settings`}
-                  className="flex items-center font-medium text-[13px] text-left min-w-0"
-                >
-                  <span className="truncate group-hover:text-accent transition-colors">{name}</span>
-                </button>
-              </span>
-
-              {/* 🔴 ONE status per row (2026-09-12) — the worst problem or what the bot is doing,
-               *  a count of anything else, and the whole story on hover. */}
-              {!asked && asking ? (
-                <Shimmer className="h-[12px] w-[90px]" />
-              ) : (
-                <StatusText cond={cond} />
-              )}
-
-              <Performance e={be} asking={asking} top={topBot === cfg.key} />
-
-              {/* Calm when current, amber only when it needs a person — the pill's own rule, and
-               *  the same one the "needs you" line above the table counts by (`versionNeed`). */}
-              <VersionPill
-                version={versionByKey.get(cfg.key)?.data}
-                loading={versionByKey.get(cfg.key)?.isPending}
-                deploying={jobByKey.get(cfg.key)?.status === 'running'}
-                error={versionByKey.get(cfg.key)?.error}
-                restart={restartReason(versionByKey.get(cfg.key)?.data, live, snapshot?.fetched_at)}
-              />
-
-              <span className="flex gap-[4px] justify-end items-center">
-                {/* 🔴 **NOTHING IS OFFERED WHILE THE STATE IS UNKNOWN (2026-09-06).** Pressing
-                 *  Start on a bot that is already trading is the one mistake this row can make
-                 *  that costs money, and an unanswered box is a reason to ask again, never to act. */}
-                {acting ? (
-                  <BotActionPill action={acting} />
-                ) : !asked && asking ? (
-                  <>
-                    <Shimmer className="h-[26px] w-[52px]" />
-                    <Shimmer className="h-[26px] w-[26px]" />
-                  </>
-                ) : !asked ? (
+            <Fragment key={cfg.key}>
+              <div
+                data-testid="bot-row"
+                data-bot={cfg.key}
+                draggable={canReorder}
+                onDragStart={(e) => {
+                  if (!canReorder) return
+                  e.dataTransfer.effectAllowed = 'move'
+                  e.dataTransfer.setData('text/plain', cfg.key)
+                  setDragKey(cfg.key)
+                }}
+                onDragOver={(e) => {
+                  if (!dragKey) return
+                  e.preventDefault()
+                  e.dataTransfer.dropEffect = 'move'
+                  setOverKey(cfg.key)
+                }}
+                onDragLeave={() => setOverKey((k) => (k === cfg.key ? null : k))}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  if (dragKey) moveBot(account, order, servedSig, dragKey, i)
+                  setDragKey(null)
+                  setOverKey(null)
+                }}
+                onDragEnd={() => {
+                  setDragKey(null)
+                  setOverKey(null)
+                }}
+                className={`group grid ${GRID} items-center gap-3 pr-3 py-[10px] transition-colors hover:bg-bg-surface-2 ${
+                  i > 0 ? 'border-t border-border-subtle' : ''
+                } ${dragKey === cfg.key ? 'opacity-40' : ''} ${
+                  overKey === cfg.key && dragKey !== cfg.key ? 'bg-accent/10' : ''
+                }`}
+              >
+                {/* The NAME is the button, not the whole row — a row-wide click behind the controls
+                 *  would make every miss open a drawer over the thing you were aiming at. */}
+                <span className="flex items-center min-w-0 pl-[2px]">
+                  {/* ⚠ **The grip KEEPS ITS SPACE on every row and is only REVEALED on hover** — the
+                   *  rail's pin idiom, for the rail's reason: a box that collapses would twitch every
+                   *  bot name sideways as the pointer crosses the list. An account with ONE bot gets
+                   *  the space and no grip: there is nobody to go ahead of. */}
                   <span
-                    title="The trading box has not answered for this bot, so there is nothing safe to offer here — its state is unknown, not stopped."
-                    className="text-[11px] text-text-tertiary pr-1 cursor-default"
+                    data-testid="bot-grip"
+                    aria-hidden
+                    title="Drag to set which bot trades first"
+                    className={`w-[14px] shrink-0 flex justify-center text-text-tertiary ${
+                      canReorder
+                        ? 'opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing'
+                        : 'invisible'
+                    }`}
                   >
-                    unknown
+                    <GripVertical size={12} />
                   </span>
-                ) : running ? (
-                  <PrimaryBtn
-                    label="Stop"
-                    tone="neg"
-                    disabled={busyFor(cfg.key)}
-                    onClick={() => act(cfg.key, 'stop', () => stopOne.mutateAsync(cfg.key))}
+                  <ExpandToggle
+                    testId="bot-expand"
+                    open={open}
+                    onToggle={() => toggleRow(rowId)}
+                    label={
+                      open
+                        ? `Hide ${name}'s trades, R and open trade`
+                        : `Show ${name}'s trades, R and open trade`
+                    }
                   />
-                ) : (
-                  <PrimaryBtn
-                    label="Start"
-                    tone="pos"
-                    disabled={busyFor(cfg.key)}
-                    onClick={() => act(cfg.key, 'start', () => startOne.mutateAsync(cfg.key))}
+                  {/* 🔴 The state is a DOT before the name, and a word only when there is something to
+                   *  say (2026-09-24, `StatusDot`). While the box is still being asked there is no
+                   *  state to draw, so the dot shimmers rather than guessing. */}
+                  <span className="flex items-center min-w-0 pl-[6px]">
+                    {!asked && asking ? (
+                      <span className="flex items-center gap-[8px] min-w-0">
+                        <Shimmer className="w-[8px] h-[8px] rounded-full" />
+                        <span className="font-medium text-[13px] truncate">{name}</span>
+                      </span>
+                    ) : (
+                      <StatusDot
+                        cond={cond}
+                        name={
+                          <button
+                            onClick={() => set('bot', cfg.key)}
+                            title={`Open ${name} — risk, return, version, account and its settings`}
+                            className="flex items-center font-medium text-[13px] text-left min-w-0"
+                          >
+                            <span className="truncate group-hover:text-accent transition-colors">
+                              {name}
+                            </span>
+                          </button>
+                        }
+                      />
+                    )}
+                  </span>
+                </span>
+
+                <PnlCell e={be} asking={asking} />
+
+                {/* Calm when current, amber only when it needs a person — the pill's own rule, and
+                 *  the same one the "needs you" line above the table counts by (`versionNeed`). */}
+                {version}
+
+                <span className="flex gap-[4px] justify-end items-center">
+                  {/* 🔴 **NOTHING IS OFFERED WHILE THE STATE IS UNKNOWN (2026-09-06).** Pressing
+                   *  Start on a bot that is already trading is the one mistake this row can make
+                   *  that costs money, and an unanswered box is a reason to ask again, never to act. */}
+                  {acting ? (
+                    <BotActionPill action={acting} />
+                  ) : !asked && asking ? (
+                    <>
+                      <Shimmer className="h-[26px] w-[52px]" />
+                      <Shimmer className="h-[26px] w-[26px]" />
+                    </>
+                  ) : !asked ? (
+                    <span
+                      title="The trading box has not answered for this bot, so there is nothing safe to offer here — its state is unknown, not stopped."
+                      className="text-[11px] text-text-tertiary pr-1 cursor-default"
+                    >
+                      unknown
+                    </span>
+                  ) : running ? (
+                    <PrimaryBtn
+                      label="Stop"
+                      tone="neg"
+                      disabled={busyFor(cfg.key)}
+                      onClick={() => act(cfg.key, 'stop', () => stopOne.mutateAsync(cfg.key))}
+                    />
+                  ) : (
+                    <PrimaryBtn
+                      label="Start"
+                      tone="pos"
+                      disabled={busyFor(cfg.key)}
+                      onClick={() => act(cfg.key, 'start', () => startOne.mutateAsync(cfg.key))}
+                    />
+                  )}
+                  {/* ⚠ **Configure STAYS on the row, not in the "···" (2026-09-15).** Aaron lost this
+                   *  control twice when it was something to find — once as a whole row, once as a bare
+                   *  icon among three others (*"where is configure?"*). The menu takes only what a
+                   *  reader never goes looking for. Same target as clicking the name. */}
+                  <IconBtn
+                    testId="configure-bot"
+                    icon={SlidersHorizontal}
+                    title={`Configure ${name} — risk per trade, version, account and all its settings`}
+                    onClick={() => set('bot', cfg.key)}
                   />
-                )}
-                {/* ⚠ **Configure STAYS on the row, not in the "···" (2026-09-15).** Aaron lost this
-                 *  control twice when it was something to find — once as a whole row, once as a bare
-                 *  icon among three others (*"where is configure?"*). The menu takes only what a
-                 *  reader never goes looking for. Same target as clicking the name. */}
-                <IconBtn
-                  testId="configure-bot"
-                  icon={SlidersHorizontal}
-                  title={`Configure ${name} — risk per trade, version, account and all its settings`}
-                  onClick={() => set('bot', cfg.key)}
+                  {/* Hidden while this bot's pill shows — the pill needs the room. The drawer keeps
+                   *  its own Logs and Restart throughout. */}
+                  {!acting && (
+                    <OverflowMenu
+                      testId="bot-menu"
+                      label={`More for ${name}`}
+                      items={[
+                        ...(asked && running
+                          ? [
+                              {
+                                key: 'restart',
+                                label: 'Restart',
+                                icon: RotateCcw,
+                                testId: 'bot-restart',
+                                disabled: busyFor(cfg.key),
+                                onSelect: () =>
+                                  act(cfg.key, 'restart', () => restartOne.mutateAsync(cfg.key)),
+                              },
+                            ]
+                          : []),
+                        {
+                          key: 'logs',
+                          label: 'Logs',
+                          icon: FileText,
+                          testId: 'bot-logs',
+                          onSelect: () => setLogBot(cfg.key),
+                        },
+                      ]}
+                    />
+                  )}
+                </span>
+              </div>
+              {open && (
+                <BotDetail
+                  cond={cond}
+                  position={live?.position}
+                  e={be}
+                  asking={asking}
+                  top={topBot === cfg.key}
                 />
-                {/* Hidden while this bot's pill shows — the pill needs the room. The drawer keeps
-                 *  its own Logs and Restart throughout. */}
-                {!acting && (
-                  <OverflowMenu
-                    testId="bot-menu"
-                    label={`More for ${name}`}
-                    items={[
-                      ...(asked && running
-                        ? [
-                            {
-                              key: 'restart',
-                              label: 'Restart',
-                              icon: RotateCcw,
-                              testId: 'bot-restart',
-                              disabled: busyFor(cfg.key),
-                              onSelect: () =>
-                                act(cfg.key, 'restart', () => restartOne.mutateAsync(cfg.key)),
-                            },
-                          ]
-                        : []),
-                      {
-                        key: 'logs',
-                        label: 'Logs',
-                        icon: FileText,
-                        testId: 'bot-logs',
-                        onSelect: () => setLogBot(cfg.key),
-                      },
-                    ]}
-                  />
-                )}
-              </span>
-            </div>
+              )}
+            </Fragment>
           )
         })}
 
@@ -2092,7 +2298,7 @@ export function Bots() {
             data-testid="no-bot-row"
             className={`grid ${GRID} items-center gap-3 pr-3 py-[10px]`}
           >
-            <span className="col-span-4 flex items-center pl-4 text-[12.5px] text-text-tertiary">
+            <span className="col-span-2 flex items-center pl-4 text-[12.5px] text-text-tertiary">
               No bot is on this account now
             </span>
             <span className="flex justify-end">

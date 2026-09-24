@@ -521,6 +521,9 @@ trade open, each its own colour and shape. On the live account two wrapped and c
 header, the account panel, the Overview — and `src/components/BotStatus.tsx` draws it: one pill, a
 count.
 
+- ⚠ **Reversed 2026-09-24 on the Bots ROWS** — the Status column went and the dot came back,
+  with a word beside it. See *The bot row: a dot, the name, P&L, version, buttons*. The panels
+  and the Overview keep the pill.
 - 🔴 **No dot, since the same day.** One sat before every name and said what the Status column
   says — Aaron: *"the status column is redundant … remove the dots and just use the status column
   solely since you put other statuses there."* The word is the one kept: it says what a dot cannot.
@@ -1936,3 +1939,32 @@ read, while only the bot panel's *Snapshot modified* warning uses it. `useBotFil
 
 TESTED: `bots-version.spec.ts` → *the rows never ask for the files check; the panel does, and only
 a definite no warns*; red with the rows asking, red with the old `!snapshot_ok`.
+
+
+## The bot row: a dot, the name, P&L, version, buttons — the rest behind an arrow (2026-09-24)
+
+Aaron, off a screenshot: *"the status column seems like a waste of space … can we just do a
+colored dot before the bot name?"*, *"I hate that we repeat the word trades"*, then *"what I really
+care about is the state of the bot, the name, any action buttons, and how much the bot has made.
+That's it."* — and, mid-build, *"keep the version on the bot row, I need to see if we're behind"*
+and *"I don't want the account to expand, just the bots."* Picked off a mockup.
+
+- **Four tracks: Bot, P&L, Version, Actions** (`GRID` in `src/pages/Bots/index.tsx`). P&L is
+  right-aligned in tabular digits, so every dollar figure — the bots' and the account band's
+  net — ends on one edge. The heading-alignment test compares RIGHT edges for that reason.
+- **The state is a dot before the name** (`StatusDot`, `src/components/BotStatus.tsx`) in the row's
+  worst tone. ⚠ **A dot alone was rejected**: eleven states share four colours ("Halted" and
+  "Stopped" are both red), so any bot that is not simply running also shows its WORD, and the `+N`
+  count stays. A healthy bot shows the dot and nothing else.
+- ⚠ **An open trade keeps a one-word tag on the row (LONG / SHORT / BOTH).** Money at risk is
+  state, not detail — least of all on a halted bot. Its size, entry, stop, open P&L and R are in
+  the expansion.
+- **The expansion (`BotDetail`)** holds what a glance does not need: the problems spelled out, the
+  open trade, and the record — trades (won/lost), R per trade with the TROPHY (it stays beside the
+  R it is judged on, never beside dollars), total R, return on the account, the recorded span.
+  ⚠ **No target price**: the heartbeat never sends one, so the detail cannot show it.
+- **A record with no closed trade reads "—" on the row**, its reason on hover, and `0` in the
+  detail. "no record yet" is still its own words — a different answer (rule 1).
+- **The account band does NOT expand** and keeps its return, cap and "Not from these bots" line.
+- **Configure stays on the row** — the mockup folded it into "···", and the 2026-09-15 note says
+  Aaron lost that control twice when it had to be found.

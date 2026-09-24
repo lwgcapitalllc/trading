@@ -413,6 +413,7 @@ Most-cited code: `components/Drawer.tsx`, `components/FleetControls.tsx`, `pages
 - The Equity slot's real fix, and an explicit "no bot" status (2026-09-15)
 - Every strategy is a standing placeholder — "Add a bot" offers ALL of them, forever (2026-09-14)
 - The Bots page shows what each BOT made, and colour means one thing (2026-09-05)
+- The bot row: a dot, the name, P&L, version, buttons — the rest behind an arrow (2026-09-24)
 - Copying a stress test's settings onto a bot — the list IS the change (2026-09-06)
 - 🔴 The page may NOT add the risk shares up itself (2026-09-04)
 - Shares past the cap SHARE the room, and the account panel has a PRIORITY list (2026-09-15)
