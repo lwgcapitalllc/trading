@@ -17,6 +17,15 @@ WATCHED RED against HEAD, and what each one failed with:
     first bar) and it goes red. 🔴 This is the defect the AUDIT shipped with: a breakeven or
     profit stop exits AT the entry price, so "price came back to the level" is trivially true
     minutes later, and a fourteen-minute window still reported 82 returns and a spurious -38R.
+
+RUN 45's filter tests were MUTATION-PROVED, 2026-09-23, each mutation applied alone to
+level_memory.py and every one went red:
+  - gap filter never refuses a dead gap          -> the gap-live test.
+  - a level with no gap trades unfiltered        -> wrong-direction, no-gap and tolerance tests.
+  - sweep filter reads the opposite side         -> the sweep-side test.
+  - shift entry drops the risk cap               -> the wide-risk test.
+  - shift window never closes                    -> the window test.
+  - shift entry ignores whether a shift printed  -> the tap-then-shift test.
 """
 
 import pytest
@@ -238,3 +247,118 @@ def test_a_refused_record_is_not_re_examined_every_bar():
     m.observe(None, (4369.93, 0.0, 0))
     m.observe(None, (4369.93, 0.0, 0))
     assert m.watching() == (None, None)
+
+
+# ── Run 45: the three pre-registered confluence filters ─────────────────────────────────────────
+#
+# The fixtures below carry ONLY the fields the real 15m signal record and the fast structure state
+# carry (`fvgs`, `recent_bsl`, `recent_ssl`; `new_bear_sos`, `new_bull_sos`) — rule 13, a double
+# that answers something the real thing cannot is describing a system we do not have.
+
+from types import SimpleNamespace  # noqa: E402
+
+from strategies.python.sos_fade.config import SosFadeConfig as _Cfg  # noqa: E402
+
+# A bearish gap above the short's level, the shape the primary took its entry from.
+GAP = (4375.0, 4369.0, False, 100)       # (top, bottom, is_bullish, born)
+
+
+def _sig(fvgs=(), bsl="", ssl=""):
+    return SimpleNamespace(fvgs=list(fvgs), recent_bsl=bsl, recent_ssl=ssl)
+
+
+def _m1(bear=False, bull=False):
+    return SimpleNamespace(new_bear_sos=bear, new_bull_sos=bull)
+
+
+def _cmem(mode, sig=None, **kw):
+    m = LevelMemory(_Cfg(exec_lvl_memory=True, exec_lvl_confluence=mode, **kw))
+    m.observe(None, SHORT, sig=sig)
+    return m
+
+
+def _cstep(m, *, hours, high, low, sig=None, m1=None, close=None, flat=True):
+    return m.update(now_ms=int(hours * HOUR), high=high, low=low, flat=flat,
+                    primary_resting_l=False, primary_resting_s=False,
+                    sig=sig, m1=m1, close=close)
+
+
+def test_gap_filter_rests_only_while_the_original_gap_is_live():
+    live = _sig([GAP])
+    m = _cmem("Gap still open", sig=live)
+    assert _cstep(m, hours=1, high=4360.0, low=4310.0, sig=live).s_armed
+    gone = _sig([])                                     # closed through, or pushed off the list
+    assert not _cstep(m, hours=2, high=4360.0, low=4310.0, sig=gone).s_armed
+
+
+def test_gap_filter_ignores_a_gap_of_the_wrong_direction():
+    """A short's level came from a BEARISH gap; a bullish one at the same price is another thing."""
+    wrong = _sig([(4375.0, 4369.0, True, 100)])
+    m = _cmem("Gap still open", sig=wrong)
+    assert not _cstep(m, hours=1, high=4360.0, low=4310.0, sig=wrong).s_armed
+
+
+def test_gap_filter_spends_a_level_that_had_no_gap_when_it_was_taken():
+    """No gap to watch is not permission to trade unfiltered."""
+    m = _cmem("Gap still open", sig=_sig([]))
+    later = _sig([GAP])                                 # a gap appearing later is not this level's
+    assert not _cstep(m, hours=1, high=4360.0, low=4310.0, sig=later).s_armed
+
+
+def test_gap_filter_tolerance_is_a_fraction_of_the_original_risk():
+    near = _sig([(4375.0, 4371.0, False, 100)])         # 1.07 below the band; 0.1 x 20 = 2.0
+    m = _cmem("Gap still open", sig=near)
+    assert _cstep(m, hours=1, high=4360.0, low=4310.0, sig=near).s_armed
+    far = _sig([(4380.0, 4373.0, False, 100)])          # 3.07 below the band
+    m = _cmem("Gap still open", sig=far)
+    assert not _cstep(m, hours=1, high=4360.0, low=4310.0, sig=far).s_armed
+
+
+def test_sweep_filter_reads_the_trades_own_side():
+    m = _cmem("Sweep first")
+    assert not _cstep(m, hours=1, high=4360.0, low=4310.0, sig=_sig(ssl="Day Low")).s_armed
+    assert _cstep(m, hours=2, high=4360.0, low=4310.0, sig=_sig(bsl="Day High")).s_armed
+
+
+def test_shift_entry_waits_for_the_tap_then_the_shift():
+    m = _cmem("Shift confirms")
+    _cstep(m, hours=1, high=4360.0, low=4310.0, m1=_m1(), close=4320.0)            # away
+    assert not _cstep(m, hours=2, high=4365.0, low=4350.0, m1=_m1(bear=True),
+                      close=4355.0).s_armed                                       # no tap yet
+    assert not _cstep(m, hours=3, high=4372.0, low=4360.0, m1=_m1(), close=4365.0).s_armed
+    arm = _cstep(m, hours=3.1, high=4368.0, low=4358.0, m1=_m1(bear=True), close=4360.0)
+    assert arm.s_armed and arm.s_src == SRC
+    assert arm.s_edge == pytest.approx(4360.0)          # the confirming bar's close
+    assert arm.s_sl == pytest.approx(4372.0)            # the extreme since the tap
+    assert arm.s_tp1 == pytest.approx(4360.0 - 2 * 12.0)
+
+
+def test_shift_entry_window_closes_and_spends_the_level():
+    m = _cmem("Shift confirms", exec_lvl_shift_bars=2)
+    _cstep(m, hours=1, high=4360.0, low=4310.0, m1=_m1(), close=4320.0)
+    for h in (2.0, 2.1, 2.2):                           # tap bar, then two more — window used up
+        _cstep(m, hours=h, high=4372.0, low=4360.0, m1=_m1(), close=4365.0)
+    assert not _cstep(m, hours=2.3, high=4368.0, low=4358.0, m1=_m1(bear=True),
+                      close=4360.0).s_armed
+
+
+def test_shift_entry_refuses_a_risk_wider_than_the_original_trade():
+    m = _cmem("Shift confirms")
+    _cstep(m, hours=1, high=4360.0, low=4310.0, m1=_m1(), close=4320.0)
+    _cstep(m, hours=2, high=4395.0, low=4365.0, m1=_m1(), close=4390.0)          # tap, runs 25
+    assert not _cstep(m, hours=2.1, high=4380.0, low=4360.0, m1=_m1(bear=True),
+                      close=4362.0).s_armed                                       # risk 33 > 20
+
+
+def test_shift_entry_is_a_market_order_and_the_others_are_not():
+    from strategies.python.sos_fade.execution import Execution
+
+    assert Execution(_Cfg(exec_lvl_memory=True, exec_lvl_confluence="Shift confirms")
+                     )._market_entry(SRC) is True
+    assert Execution(_Cfg(exec_lvl_memory=True, exec_lvl_confluence="Gap still open")
+                     )._market_entry(SRC) is False
+
+
+def test_refuses_a_confluence_that_is_not_one():
+    with pytest.raises(ValueError):
+        _Cfg(exec_lvl_memory=True, exec_lvl_confluence="gap")

@@ -1853,6 +1853,27 @@ class SosFadeConfig:
     #   rather than the rule being absent, and is what the screen graded.
     #   ⚠ Read only when exec_lvl_memory is on.
 
+    exec_lvl_confluence: str = "None"  # "↳ Extra condition before it trades"
+    #   ∈ {"None", "Gap still open", "Sweep first", "Shift confirms"}. Aaron, off Run 44: *"did you
+    #   add any confluences to test how we can filter out some of the losers ... in this case it
+    #   came back to the original FVG"*. Run 45 tests each one ALONE, pre-registered in
+    #   `notes/level_memory.md` before any of them was replayed.
+    #   "Gap still open" — rest only while the gap the level came from is still on the gap engine's
+    #   live list. "Sweep first" — rest only while the primary's own liquidity-sweep reading is
+    #   live on the trade's side. "Shift confirms" — no resting order: wait for a fast-chart shift
+    #   of structure after the tap, enter at market, stop at the extreme since the tap.
+    #   ⚠ Read only when exec_lvl_memory is on.
+
+    exec_lvl_gap_tol_r: float = 0.1    # "↳ Gap match tolerance (R)"
+    #   How far outside a gap's band the level may sit and still count as that gap's, as a fraction
+    #   of the original trade's 1R — the entry edge can be snapped or deepened before it is
+    #   published. ⚠ Read only when exec_lvl_confluence is "Gap still open".
+
+    exec_lvl_shift_bars: int = 24      # "↳ Wait for the shift for (fast bars)"
+    #   How long after the tap a shift of structure may confirm. FAST-CLOCK bars, so it moves with
+    #   the fill clock: 24 is two hours on the shipped 5-minute feed. ⚠ Read only when
+    #   exec_lvl_confluence is "Shift confirms".
+
     def __post_init__(self) -> None:
         """Refuse a Custom SL ratio outside (0, 1.0], and a time stop of 0 hours — LOUDLY,
         at construction.
@@ -2327,6 +2348,20 @@ class SosFadeConfig:
                 raise ValueError(
                     f"exec_lvl_be_keep_r must sit in [0, 1), got {self.exec_lvl_be_keep_r!r}. At "
                     f"1.0 the 'protected' stop IS the original stop.")
+            from .level_memory import CONFLUENCES as _LVL_CONFLUENCES
+
+            if self.exec_lvl_confluence not in _LVL_CONFLUENCES:
+                raise ValueError(
+                    f"exec_lvl_confluence must be one of {list(_LVL_CONFLUENCES)}, got "
+                    f"{self.exec_lvl_confluence!r}. A typed value that is not a mode must never "
+                    f"fall through to the unfiltered feature.")
+            if self.exec_lvl_gap_tol_r < 0:
+                raise ValueError(
+                    f"exec_lvl_gap_tol_r must be 0 or more, got {self.exec_lvl_gap_tol_r!r}.")
+            if self.exec_lvl_shift_bars < 0:
+                raise ValueError(
+                    f"exec_lvl_shift_bars must be 0 or more, got {self.exec_lvl_shift_bars!r}. "
+                    f"0 allows only a shift on the tap bar itself.")
 
         if self.exec_sl_level != "Custom":
             return

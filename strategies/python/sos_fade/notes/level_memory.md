@@ -84,3 +84,63 @@ Full numbers in `sos_fade_optimization.md` → Run 44. The short version: **65 l
 +22.31R primary on 2023-01-12, so the replayed book falls 168.1R → 150.7R primary-only and
 227.5R → 215.7R with the re-entry on. **The screen's +16.35R did not survive the position slot** —
 the same shape as the no-gap entry, which screened positive and replayed at −15.3R (Runs 28→29).
+
+---
+
+## Run 45 — PRE-REGISTERED 2026-09-23, written BEFORE any filtered replay was run
+
+Aaron, off Run 44: *"did you add any confluences to test how we can filter out some of the losers
+... in this case it came back to the original FVG"*. Three filters, fixed here before looking. Each is
+tested ALONE, on top of the Run 44 feature exactly as it shipped (half-width stop, 2R, 72h, quiet
+gate on), in the shipped configuration (re-entry ON), same window, bars and costs as Run 44.
+
+🔴 **Why the rules below are fixed in advance.** The feature adds 65 trades worth +0.85R. Any filter
+chosen AFTER seeing which of 65 trades won will look good — that is a fit, not a finding. So the
+definitions, their one parameter each, and the pass bar are written down first, and all three are
+reported whatever they show.
+
+| # | Filter | Definition — every piece reuses a reading the bot already has |
+|---|---|---|
+| 1 | **Gap still open** | When the memory is taken, find the gap of the trade's own direction on the gap engine's live list whose band holds the level (within 0.1 x the original 1R). The limit rests only while THAT gap is still on the live list. |
+| 2 | **Sweep first** | The limit rests only while the primary's own liquidity-sweep reading is live on the trade's side — buy-side swept for a short, sell-side for a long. The same reading that arms a primary. |
+| 3 | **Shift confirms** | No resting limit. Once price has tapped the level, wait up to **24 fast bars (2 hours on the 5-minute feed)** for a shift of structure in the trade's direction; enter at the next bar's open, stop at the most extreme price since the tap, target 2R of THAT risk. Refused if that risk is wider than the original trade's full 1R. One attempt per level. |
+
+⚠ **Filter 1 has a known blind spot, stated before the result:** the gap engine keeps at most seven
+gaps and pushes the oldest out, so a gap can leave the live list without price ever closing through
+it. Filter 1 therefore reads *still open AND still recent*. If it passes, how often it refused on a
+push-out rather than a fill gets measured before it is believed.
+
+**The pass bar — all three, or it fails:**
+1. The whole book beats the shipped **+227.5R** (Run 44's baseline) — net of anything it displaces.
+2. The level-memory trades themselves are positive in BOTH halves, split at 2023-05-01 (Run 42's split).
+3. They stay positive with their single best trade removed.
+
+A filter that passes gets the primary-only replay as well before anything is said about it.
+
+### Run 45 — the result: all three FAIL. `exec_lvl_confluence` stays at None, the feature stays Off
+
+Full numbers in `sos_fade_optimization.md` → Run 45. Scored exactly on the bar above.
+
+| Filter | Book (re-entry on) | Added trades | Halves | Drop best | Verdict |
+|---|---|---|---|---|---|
+| Gap still open | **+230.8R** vs +227.5R | 22, +2.33R | +1.40 / +0.93 | +0.25 | passed — then **failed primary-only**: 166.1R vs 168.1R, added 21 worth −2.04R, first half −3.97 |
+| Sweep first | +215.7R | 66, +8.45R | +5.31 / +3.14 | +4.42 | **fails bar 1** — it displaced the same +22.31R primary on 2023-01-12 |
+| Shift confirms | +227.5R | **0** | — | — | **never trades** — see below |
+
+- 🔴 **The gap filter's pass was the re-entry's, not its own.** With the re-entry on it added +3.33R;
+  with it off the same filter lost 2.04R. The +5.98R of 2025 carries it both times, and 2026 is
+  negative both times. Its eviction blind spot was therefore not measured — nothing survived to
+  need it.
+- **The sweep reading barely filters.** 66 added trades against Run 44's 65 unfiltered: a sweep is
+  live on the trade's side almost always, so it removes little and still collides with the
+  2023-01-12 winner. The added trades themselves did improve (+0.85R → +8.45R), which is the one
+  thing here worth remembering — but a filter that cannot avoid the slot collision cannot ship.
+- **"Shift confirms" is wired, and its rule is simply too tight to fire.** Instrumented over 2025:
+  ~20 taps, 40 fast shifts in the year, only **2** landed inside a tap window, and both needed a
+  stop wider than the original 1R, which the pre-registered rule refuses. Loosening that cap
+  after seeing this would be the fit the pre-registration exists to prevent.
+
+**Where this leaves the idea.** Four measurements now (Runs 42, 44, 45) say re-trading a level the
+primary already used does not add money once the position slot is honest. The limiting cost is
+not the losers these filters target — it is the one displaced primary. Not worth a fourth filter.
+

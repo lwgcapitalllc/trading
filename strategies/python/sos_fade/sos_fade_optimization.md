@@ -40,6 +40,7 @@ Standing rules for anything recorded here:
 | 21 | 2026-08-18 | 🔴 **The scale-in grid RE-RUN on a corrected fill** — Run 20 priced every add at its TRIGGER, not where Pine buys it. 32 cells (2 modes × 1-4 adds × 4 caps) + a ladder-shape test, XAUUSD 15m 2018-09-13 → 2026-08-14, PU Prime ECN costs | **`Trail` 3 adds × 0.5x cap SHIPPED** — 194.15R vs 128.26R not scaling, drawdown 6.03 → 7.24, and the only cell better than baseline on **both** axes over the full book. **`BOS retest` LOSES money outside 2020 at every budget above one add.** The CAP is the drawdown lever, not the add count. Ladder shape (big-first vs flat vs small-first) is inside the 15.06R jitter. ⚠ No cell beats baseline ret/DD ex-2020. | **SHIPPED (mode + adds + cap) — PARITY GREEN** |
 | 22 | 2026-08-19 | 🔴 **WHERE THE SCALE-IN ADDS TAKE PROFIT** — the adds had no exit of their own, so this asked whether banking them beats riding. Two independent target families: a flat multiple of base risk (1R…8R, the control) and real structure (prev day/week H/L, H4, session H/L, and combinations). 16 configurations, XAUUSD 15m 2018-09-13 → 2026-08-14, PU Prime ECN costs, on `Trail` 3 × 0.5x | **EVERY TARGET LOSES TO RIDING**, and they lose in order of how OFTEN the target fires — Ride 194.15R (0 banks), prev week 168.51R (16), prev day 157.57R (25), H4 146.09R (47). The flat-risk control produced the same monotonic curve independently, and banking at 1R (126.76R) came out **below never scaling at all**. 🔴 **The first structural table was VOID and these are RE-MEASURED** — the harness resolved its target from the LIVE bar, so `Prev day`/`H4` banked ZERO times in 8 years while resolving 1,804 and 2,438 valid targets; day/H4 levels die on a WICK and the engine steps first, so the level was gone on the exact bar it would have filled. **Weekly dies on a CLOSE through and was immune, hiding it on the only mode being watched.** ⚠ Worst trade is −2.06R in every configuration — the affordability rule already prevents the giveback a target was asked for. ⚠ **Strip the top 20 trades and banking WINS on risk-adjusted return** (prev day 14.49, H4 14.60 vs Ride 11.99): it smooths the ordinary book and pays for it out of the tail. | **`exec_scale_tp_mode` SHIPPED defaulting to `"Prev week H/L"` — Aaron's call, AGAINST the measurement.** 🔴 **DEFAULT UNDER REVIEW** — he chose it on a 4.38R gap said to be inside the 15.06R jitter; the true gap is **25.64R, outside it**. 🔴 **NOT PARITY-GATED YET** |
 | 44 | 2026-09-23 | 🔴 **THE LEVEL MEMORY REPLAYED INSIDE THE BOT** — rest a limit again at the price a primary already entered at, once the setup is dead and price has travelled 1R away; half-width stop, 2R target, 3-day hold. Four replays, XAUUSD.p 15m+5m 2020-01-01 → 2026-09-21, PU Prime ECN costs | **Run 42's +16.35R screen did not survive the position slot.** The 65 trades it adds are worth **+0.85R in 6.5 years** (+0.80R without their best one) and 2025 carries all of it; one collision on 2023-01-12 cost a **+22.31R** primary. Replayed **215.7R vs 227.5R** with the re-entry on and **150.7R vs 168.1R** primary-only. Two defects found by RUNNING it: the memory resurrected itself (141 trades), and the report tool could not reach the fast clock with the re-entry off. | **MEASURED NEGATIVE — `exec_lvl_memory` ships Off and stays Off** |
+| 45 | 2026-09-23 | 🔴 **THREE PRE-REGISTERED FILTERS ON THE LEVEL MEMORY** — only while the original gap is still open, only after a liquidity sweep on the trade's side, or no limit at all and a market entry on a fast shift after the tap. Same window, bars and costs as Run 44 | **All three fail.** The gap filter beat the book with the re-entry on (+230.8R vs +227.5R, 22 trades +2.33R) and then LOST primary-only (166.1R vs 168.1R, first half −3.97R). The sweep filter hardly filters (66 trades vs 65) and hits the same +22.31R collision (+215.7R). The shift entry never fired — 2 chances in 2025, both wider than 1R. | **MEASURED NEGATIVE — `exec_lvl_confluence` stays None, `exec_lvl_memory` stays Off** |
 | 23 | 2026-08-19 | **THE SECONDARY (1m re-entry), END TO END** — 7 levers, 26 replays: the entry gates (swept-stop re-entry, zone depth) and then the exit ladder (depth cap, 1m direction filter, where breakeven fires, banking at TP1). | **The entry gates are already right and the exit ladder was not.** Every loosened door is worse, monotonically. Depth 2/3/5/unlimited are byte-identical (n=1 in 6.6 years). Banking part of a re-entry at TP1 is the first change in 26 replays that works — win/loss 1/1 → 4/1 — and it costs the tail. | measured, **nothing adopted** |
 | 24 | 2026-08-19 | 🔴 **THE LOSS-RECOVERY LEG** — nine stop placements and six exit ladders on the 25%-size counter-trade taken after every SOS Fade loss (`strategies/python/loss_recovery/`). Not a sweep of this bot's params; its population is SOS Fade's 62 real stop-outs. | **Nothing beat the shipped rule, and its best-looking challenger was five trades.** A stop on the CHoCH bar's own extreme scores +24.4R against +16.2R on a 7x tighter stop with lower drawdown — and **−7.4R once its best five are deleted**, where the shipped stop survives at +2.3R. `soft_stop_r=-0.3` is the one free change: same net R, avg loss −1.01R → −0.30R, win 58% → 37%. Everything else lost. | measured, **nothing adopted; `loss_recovery` still ships `enabled=False`** |
 
@@ -5170,3 +5171,47 @@ arriving through a second door. **Anything that needs the fast feed has to be as
 
 ⚠ **No parity gate covers any of this** — the Pine has no fast clock and no level memory, so
 `compare_strategy.py` has never entered this branch and never will. Lab finding only.
+
+## Run 45 — 2026-09-23: three PRE-REGISTERED filters on the level memory — 🔴 all three fail
+
+**What this settles.** Aaron, off Run 44, asked whether a confluence could filter out the level
+memory's losers — the live trade that started it came back to its ORIGINAL gap. Three filters were
+defined, one parameter each, and a pass bar was written BEFORE any filtered replay ran:
+`strategies/python/sos_fade/notes/level_memory.md` → *Run 45 — PRE-REGISTERED*. Setting:
+`exec_lvl_confluence` = `Gap still open` / `Sweep first` / `Shift confirms` (default `None`).
+
+**Method.** `backtest/tools/run_report.py --server PUPrime_Demo --symbol XAUUSD_p --cost-profile
+puprime_ecn --start 2020-01-01 --end 2026-09-21 --no-regime`, fresh baseline in the same tree,
+scored by trade-by-trade matching against it (added, displaced, halves split 2023-05-01, drop-best).
+
+| Replay | Trades | Book | Added | Displaced | Halves | Drop best | Bar |
+|---|---|---|---|---|---|---|---|
+| Baseline (re-entry on) | 249 | +227.51R | — | — | — | — | — |
+| Gap still open | 270 | **+230.85R** | 22, +2.33R | 1, −1.00R | +1.40 / +0.93 | +0.25 | pass |
+| Sweep first | 311 | +215.66R | 66, +8.45R | 4, +20.31R | +5.31 / +3.14 | +4.42 | **fail** (1) |
+| Shift confirms | 249 | +227.51R | 0 | 0 | — | — | **fail** (no trades) |
+| Baseline, primary only | 159 | +168.15R | — | — | — | — | — |
+| Gap still open, primary only | 180 | +166.11R | 21, −2.04R | 0 | −3.97 / +1.93 | −4.11 | **fail** (1, 2, 3) |
+
+- 🔴 **The gap filter's pass belonged to the re-entry.** The pre-registration required a passing
+  filter to survive primary-only before anything was said about it; it did not. By year its added
+  trades are +5.98R in 2025 and negative or flat nearly everywhere else, in BOTH replays.
+- **Sweep first** is live on the trade's side almost all the time, so it removes one trade in 66 and
+  still displaces the 2023-01-12 +22.31R primary. Its added trades are better than unfiltered
+  (+8.45R vs +0.85R), but the book is what gets paid.
+- **Shift confirms is not a wiring fault** — checked, because zero trades is what a dead wire also
+  returns (rule 2). Instrumented over 2025: its code ran on 18,052 fast bars, ~500 bars sat inside a
+  tap window, 40 fast shifts printed, 2 of them inside a window, and both needed a stop wider than
+  the original trade's 1R, which the pre-registered rule refuses.
+- ⚠ **Process defect, caught before any number was read:** the first launch put the shared options
+  in one shell variable, which zsh does not word-split, so all four runs died on argument parsing
+  and the waiter — matching `Error` case-sensitively — hung on `error:`. Relaunched with the options
+  inline; every figure above is from the relaunch.
+
+**Verdict.** Runs 42, 44 and 45 together: re-trading a level the primary already used does not pay
+once the position slot is honest, and the cost is the displaced primary, not the losers a filter
+can see. Everything ships Off. Tests: 10 filter tests, each mutation-proved (`test_level_memory.py`
+docstring).
+
+⚠ **No parity gate covers any of this** — the Pine has no fast clock and no level memory. Lab finding only.
+
