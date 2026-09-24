@@ -752,6 +752,102 @@ class SosFadeConfig:
     #   ⚠ **"Always" cuts winners and losers at nearly the same rate below ~16h**, because losers
     #   die FASTER than winners here (median hold: losers 2.0h, winners 17.8h). The stop is already
     #   the fast exit; the clock can only ever catch the tail that lingers.
+    exec_giveback_arm_r: float = -1.0  # "Give-back guard: arm at (R)"
+    #   -1 (default) = OFF and nothing changes. Otherwise: once the trade's best price has been
+    #   worth this many R, the guard starts watching what the trade HANDS BACK from that best.
+    #   ⚠ It arms off the trade's own high-water mark, not off a target — a trade that never
+    #   reaches the arm level is managed exactly as it is today.
+    #   WHY IT EXISTS. MEASURED 2026-09-21 on lab run `ea46142df097`: the book keeps 44% of the
+    #   profit its trades ever show (533R of best case, 235R kept), and the leak is NOT the
+    #   runner trail — trades reaching 5R keep 97% of their peak, while trades reaching 1-3R
+    #   showed 123R and kept 11R. The band below the trail's arming point had no protection at
+    #   all. MEASURED 2026-09-22 (`backtest/tools/exit_study.py`, 129 trades, 2020-01-01 →
+    #   2025-08-31, puprime_ecn charged): arming at 1.5R and allowing half the peak back scores
+    #   25.1 return-per-drawdown against 16.5 for holding, by cutting the worst drawdown from
+    #   7.69R to 4.37R for 17R of the 127R.
+    #   🔴 THAT FIGURE IS FROM A RE-WALK OF ONE BOOK, AND THE REPLAY OVERTURNED IT. A re-walk
+    #   cannot see that leaving earlier frees the one position slot for the next setup. Replayed
+    #   (244 trades, 2020-01-01 -> 2026-09-20, `puprime_ecn`): arming at 1.5R scores 27.3 against
+    #   29.5 for the shipped ladder — it LOSES, having scored 25.1 against 16.5 in the re-walk.
+    #   The re-walk rewarded it for a drawdown it cut by cutting the book. The arming levels that
+    #   survive a replay are 2.5R-3.5R, and only when the action TIGHTENS rather than closes.
+    #   🔴 USE THE RE-WALK TO PICK WHAT TO REPLAY, NEVER TO DECIDE.
+    exec_giveback_pct: float = 50.0    # "↳ How much of the best it may hand back (%)"
+    #   Read only when the guard is armed. 50 = leave when the trade has given back more than
+    #   half of its best. MEASURED: tighter is WORSE, not better — 25% scores 10.5 and 33%
+    #   scores 9.9 against 25.1 at 50%, because a trade that cannot breathe is stopped out of
+    #   the move it was right about. Must be above 0 and below 100: at 0 the guard closes on the
+    #   arming bar, and at 100 it can never fire, both of which read as a setting that is on.
+    exec_giveback_action: str = "Close"  # "↳ What it does when it fires"
+    #   ∈ {"Close", "Hand to the trail", "Bank half"}. Read only when the guard is armed.
+    #   "Close" (default) flattens at the next bar's open.
+    #   "Hand to the trail" leaves the trade open and puts it straight onto the runner trail —
+    #   the stop the trade would have had after its second target — so a runner is TIGHTENED
+    #   rather than cut.
+    #   "Bank half" sells half of what is still open at the next bar's open and puts the rest on
+    #   that same trail, so the trade SECURES money and still runs. It fires ONCE per trade —
+    #   halving again every bar would walk a runner out of the market a rung at a time.
+    #   ⚠ A market exit takes every scale-in add in full, the way a stop does, so on a laddered
+    #   trade "half" means half the BASE plus all the adds. That is the Pine's own rule for a
+    #   force-close and not a choice made here.
+    #   WHY THE SECOND OPTION EXISTS, REPLAYED 2026-09-22 (244 trades, 2020-01-01 -> 2026-09-20,
+    #   `puprime_ecn` charged, full strategy — NOT the cheap re-walk). At one arming level all
+    #   three actions cut the worst drawdown IDENTICALLY, 7.39R -> 5.89R, and differ only in what
+    #   they hand back. Arm 3R / half the peak: tighten 217.2R (ret/DD 36.9), bank half 209.9R
+    #   (35.6), close 206.0R (35.0), against 218.5R (29.5) shipped. TIGHTEN, NEVER CUT — closing
+    #   gives up 11.2R that tightening keeps, for the same drawdown.
+    #   🔴 THE FLAT TOP IS ONE TRADE'S HIGH-WATER MARK, AND THIS COMMENT CLAIMED THE OPPOSITE
+    #   UNTIL THE NEIGHBOURS WERE REPLAYED. It said "its neighbours LOSE (2R arm 31.2, 4R arm
+    #   28.1)" on cheap-mode numbers. They do not: 2.5R scores 36.8 and 3.5R scores 36.9. What
+    #   the replay actually shows is a bracket — the 2022-06-09 trade peaks at 3.84R and closes
+    #   -0.23R shipped, so ANY arming level under 3.84R catches it (-0.23R -> +1.52R) and ends
+    #   the 2022 drawdown stretch early, while a 4R arm never touches it and the drawdown returns
+    #   to the shipped 7.39R exactly.
+    #   🔴 WHICH IS WHY THE DEFAULT IS OFF AND SHOULD STAY OFF. Eight of 244 trades change. The
+    #   profit actually kept moves 41.0% -> 41.1%. A 25% drawdown improvement decided by one
+    #   trade is a coincidence with an alibi, not an edge.
+    #   ⚠ THE TRAIL IS ALSO WHAT PERMITS SCALING IN, so on this option a trade that trips the
+    #   guard becomes eligible to ADD. That is a real behaviour change, not a side effect to
+    #   discover later: with adds switched on, run both and compare.
+    exec_rev_exit: str = "Off"          # "Reversal exit: what it does"
+    #   ∈ {"Off", "Bank half", "Tighten to the trail", "Close"}. OFF by default and inert.
+    #   WHAT FIRES IT: a shift of structure AGAINST an open primary, printed on the FAST frame
+    #   (`exec_sec_fill_tf_min`, 5 minutes by default) — Aaron's own definition of a reversal,
+    #   2026-09-22: *"if we're getting a shift of structure and then break of structure coming
+    #   back towards us on lower time frames, that tells me price is reversing."*
+    #
+    #   🔴 IT READS A DIFFERENT CHART FROM THE ONE THE TRADE WAS FOUND ON, AND THAT IS THE POINT.
+    #   A 15m reversal is confirmed long after the turn: by the time the bar closes the profit has
+    #   already been handed back. MEASURED 2026-09-22 (`backtest/tools/exit_study.py`): the same
+    #   rule read on the trade's own 15m frame is worth less than reading it on 5m, because the
+    #   signal arrives after the money has gone.
+    #   🔴 IT IS A SIGNAL, NOT A PERCENTAGE, and that is the whole difference from the give-back
+    #   guard above. The guard fires off the trade's own profit curve, which says nothing about
+    #   whether the market turned; this fires off what the market did.
+    #   ⚠ PRIMARY POSITIONS ONLY. The fast stream already owns the re-entry's ladder
+    #   (`step_secondary` → `_manage_open`), and a second exit path on the same bar and the same
+    #   position is two rules answering one question. The 15m stream owns the primary's ladder,
+    #   so this is the one place a primary is touched off a fast bar — deliberately, and it is
+    #   why it prices at the next FAST bar's open rather than the next 15m one.
+    #   ⚠ IT FIRES ONCE PER TRADE on the two actions that leave the trade open. Re-banking half
+    #   on every later shift would walk a runner out of the market a rung at a time — the same
+    #   reason the give-back guard's "Bank half" is spent after one use.
+    #   ⚠ NO PINE COUNTERPART, so the parity gate is structurally blind to it and every figure
+    #   taken with it on is a lab finding. Same standing as the give-back guard.
+    #   🔴 IT AND THE GIVE-BACK GUARD ARE INDEPENDENT AND BOTH CAN FIRE ON ONE TRADE. They keep
+    #   separate pending slots (`_pending_rev` on the fast clock, `_pending_bank` on the 15m one)
+    #   because a fast-frame decision dropped into the 15m slot would wait up to a whole 15m bar
+    #   to fill. The consequence is arithmetic rather than a defect: with BOTH set to "Bank half"
+    #   a trade can sell half and then half of the remainder — three quarters of what it held.
+    #   Every figure in this repo measured one of them with the other pinned OFF; the pair has
+    #   never been replayed together, so do not assume their results add.
+    exec_rev_arm_r: float = 1.0         # "↳ Arm once the best has reached (R)"
+    #   Read only when the reversal exit is on. The trade's best price must have been worth at
+    #   least this many R before a shift against it can close anything.
+    #   ⚠ WITHOUT AN ARMING LEVEL THIS IS A STOP LOSS WITH EXTRA STEPS. A trade that has never
+    #   been in profit does not need a reversal exit — it has a stop, and the stop is the faster
+    #   of the two. The guard exists for the trade that showed real money and gave it back.
+    #   Must be positive; 0 would arm at the fill.
     exec_time_stop_hrs: float = 36.0   # "Time stop (hours)"
     #   Calendar hours since the FILL, weekends included — the same clock a swap is charged on, and
     #   the one a reader can check against a chart. Read only when the mode is not "Off".
@@ -1849,6 +1945,37 @@ class SosFadeConfig:
             raise ValueError(
                 f"exec_tp1_r must be -1 (use the frozen 15m fib TP1) or a positive R multiple, "
                 f"got {self.exec_tp1_r!r}. Zero would put the first target ON the entry.")
+        if self.exec_rev_exit not in (
+                "Off", "Bank half", "Tighten to the trail", "Close"):
+            raise ValueError(
+                "exec_rev_exit is 'Off', 'Bank half', 'Tighten to the trail' or 'Close'. "
+                f"Got {self.exec_rev_exit!r}. A typed value that is not a mode must never fall "
+                "through to a default — that replays a whole book against a rule nobody chose."
+            )
+        if self.exec_rev_exit != "Off" and self.exec_rev_arm_r <= 0:
+            raise ValueError(
+                "exec_rev_arm_r must be a positive number of R — at 0 the reversal exit arms on "
+                "the fill, which makes it a second stop loss rather than a way of keeping "
+                f"profit that was actually shown. Got {self.exec_rev_arm_r}."
+            )
+        if self.exec_giveback_arm_r != -1.0 and self.exec_giveback_arm_r <= 0:
+            raise ValueError(
+                "exec_giveback_arm_r is -1 for off, or a positive number of R. "
+                f"Got {self.exec_giveback_arm_r}."
+            )
+        if self.exec_giveback_action not in ("Close", "Hand to the trail", "Bank half"):
+            raise ValueError(
+                "exec_giveback_action is 'Close', 'Hand to the trail' or 'Bank half'. "
+                f"Got {self.exec_giveback_action!r}. A typed value that is not a mode must "
+                "never fall through to a default — that replays a whole book against a rule "
+                "nobody chose."
+            )
+        if self.exec_giveback_arm_r != -1.0 and not (0 < self.exec_giveback_pct < 100):
+            raise ValueError(
+                "exec_giveback_pct must be above 0 and below 100 — at 0 the guard closes the "
+                "trade the moment it arms, and at 100 it can never fire, and both read as a "
+                f"guard that is switched on. Got {self.exec_giveback_pct}."
+            )
         if self.exec_secondary and not (self.exec_sec_tp_r == -1.0 or self.exec_sec_tp_r > 0):
             raise ValueError(
                 f"exec_sec_tp_r must be -1 (use the 15m 0.5 fib) or a positive R multiple, got "

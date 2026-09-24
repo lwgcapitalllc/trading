@@ -600,3 +600,10 @@ page hides the whole bullet. That is why breakeven sits in the always-shown stop
 ## SOS Fade target-level settings inherited (2026-09-20)
 
 This strategy builds on the SOS Fade config, so it inherits three new exit-ladder settings: "Target 1 level", "Target 2 level" and "First target, in R". They are off by default and change nothing here. They are listed in this meta file so the lab page shows them rather than silently accepting them. They have not been measured for this strategy. SOS Fade results: `strategies/python/sos_fade/sos_fade_optimization.md` Run 40.
+
+## Two inherited exit rules, both OFF — never measured on this bot (2026-09-23)
+
+⚠ The give-back guard and the reversal exit arrive from SOS Fade's config and default OFF, so
+nothing here moved. 🔴 **Neither was measured on this bot**; on SOS Fade's book the reversal exit
+lost on all six settings. Switching one on here is a new experiment, and neither has a Pine side.
+Evidence: `strategies/python/sos_fade/notes/exit_ladder_history.md`.

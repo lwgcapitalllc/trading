@@ -224,6 +224,17 @@ class DualClock:
         # computing over a history that never happened the moment it was switched on.
         m1 = self.struct_fast.update(bar.index, bar.open, bar.high, bar.low, bar.close)
 
+        # The REVERSAL EXIT runs here, BEFORE the re-entry's early return, and the order matters
+        # twice over. It reads the fast structure feed rather than the arm state, so it must not
+        # be switched off with the re-entry; and it can free the position slot on this very bar,
+        # which is the effect a cheap re-walk of a stored book can never see and the whole reason
+        # this rule has to be replayed rather than screened. `exec_rev_exit` is "Off" by default,
+        # so this is inert on every stored run.
+        ex_rev = self._st.execution
+        sig_rev = FastSig(bar.index, ts, bar.open, bar.high, bar.low, bar.close,
+                          self.struct_fast.conf_high, self.struct_fast.conf_low)
+        ex_rev.step_reversal(sig_rev, m1)
+
         if not self._st.config.exec_secondary or self.last_sig is None:
             return out
 

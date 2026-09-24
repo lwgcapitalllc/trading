@@ -119,22 +119,98 @@
       "label": "Flat before the close",
       "widget": "switch",
       "choices": ["Off", "Friday only", "Every day"],
-      "desc": "Closes any open trade shortly before the market shuts, so nothing is held through a break. Friday only covers the weekend and the holiday closes of the same shape; Every day also closes overnight. MEASURED 2020-2026 with costs charged: Off +82.41R, Friday only +58.34R, Every day +36.26R \u2014 and neither setting reduced the drawdown."
+      "desc": "Closes any open trade shortly before the market shuts, so nothing is held through a break. Friday only covers the weekend and the holiday closes of the same shape; Every day also closes overnight. MEASURED 2020-2026 with costs charged: Off +82.41R, Friday only +58.34R, Every day +36.26R — and neither setting reduced the drawdown."
     },
     {
       "name": "flat_by_close_min",
       "group": "Exit",
-      "label": "\u21b3 Flat how many minutes before the close",
+      "label": "↳ Flat how many minutes before the close",
       "unit": "minutes",
-      "desc": "How far ahead of the close the position is given up. It must be larger than one bar, because the exit is a market order filled at the next bar's open \u2014 a shorter window could only fire on the session's last bar, after which there is no next bar until the market reopens. Read only when Flat before the close is on."
+      "desc": "How far ahead of the close the position is given up. It must be larger than one bar, because the exit is a market order filled at the next bar's open — a shorter window could only fire on the session's last bar, after which there is no next bar until the market reopens. Read only when Flat before the close is on."
     },
     {
       "name": "flat_holidays",
       "group": "Exit",
-      "label": "\u21b3 Also flatten before holiday closes",
+      "label": "↳ Also flatten before holiday closes",
       "widget": "toggle",
-      "options": { "off": "No", "on": "Yes" },
-      "desc": "Covers the early closes and market holidays too \u2014 Christmas Eve, New Year's Eve, the Thursday before Good Friday and Thanksgiving. Read only when Flat before the close is on."
+      "options": {
+        "off": "No",
+        "on": "Yes"
+      },
+      "desc": "Covers the early closes and market holidays too — Christmas Eve, New Year's Eve, the Thursday before Good Friday and Thanksgiving. Read only when Flat before the close is on."
+    },
+    {
+      "name": "exec_giveback_arm_r",
+      "group": "Exit ladder",
+      "label": "Give-back guard: arm at (R)",
+      "short": "Give-back guard",
+      "desc": "Watches how much of its best price a trade hands back. -1 switches it off and nothing changes. Any other number is how far in front the trade must have been, in R, before the guard starts watching. It reads the trade's own best price, not a target, so a trade that never gets that far is managed exactly as it is today.",
+      "step": 0.5,
+      "guide": [
+        "Low — protects small winners, and costs the big ones far more than it saves",
+        "Off at -1, or high — only the trades that were well in front are watched"
+      ]
+    },
+    {
+      "name": "exec_giveback_pct",
+      "group": "Exit ladder",
+      "label": "How much of the best it may hand back (%)",
+      "short": "Give-back allowed",
+      "desc": "Read only when the guard is armed. 50 means the guard fires once the trade has given back more than half of its best. MEASURED: tighter is worse, not better — a quarter and a third both score below half, because a trade that cannot breathe is stopped out of the move it was right about.",
+      "step": 5,
+      "show_if": {
+        "exec_giveback_arm_r": {
+          "gt": 0
+        }
+      },
+      "guide": [
+        "Tight — fires often, and cuts trades that were only pausing",
+        "Loose — fires almost never"
+      ]
+    },
+    {
+      "name": "exec_giveback_action",
+      "group": "Exit ladder",
+      "label": "What it does when it fires",
+      "short": "Give-back action",
+      "desc": "Read only when the guard is armed. Close flattens the trade at the next bar's open. Tighten the stop leaves it open and puts it straight on the runner trail. Bank half sells half of what is still open and puts the rest on that trail, and fires once per trade. MEASURED over 2020-2026: tightening kept 11R more than closing for the same drawdown.",
+      "choices": ["Close", "Hand to the trail", "Bank half"],
+      "show_if": {
+        "exec_giveback_arm_r": {
+          "gt": 0
+        }
+      },
+      "guide": [
+        "Close — takes the money and gives up the rest of the move",
+        "Hand to the trail — keeps the runner, gives back a little more"
+      ]
+    },
+    {
+      "name": "exec_rev_exit",
+      "group": "Exit ladder",
+      "label": "Reversal exit: what it does",
+      "short": "Reversal exit",
+      "desc": "Watches for a shift of structure against an open trade on the FASTER chart — the same 5-minute stream the re-entry fills on — and acts on it. Off changes nothing. This is a SIGNAL rather than a percentage: the give-back guard above fires off the trade's own profit curve, which says nothing about whether the market turned, while this fires off what the market actually did. It reads the faster chart because a 15-minute reversal is confirmed long after the turn, by which time the profit is already gone. It only ever touches the first trade of a setup, never a re-entry.",
+      "choices": ["Off", "Bank half", "Tighten to the trail", "Close"],
+      "guide": [
+        "Off — the trailing stop is the only thing protecting an open profit",
+        "On — a turn on the faster chart can bank or protect what the trade showed"
+      ]
+    },
+    {
+      "name": "exec_rev_arm_r",
+      "group": "Exit ladder",
+      "label": "Arm once the best has reached (R)",
+      "short": "Reversal exit arms at",
+      "desc": "Read only when the reversal exit is on. How far in front the trade must have been, in R, before a turn against it can close anything. Without it this would be a second stop loss: a trade that has never been in profit already has a stop, and the stop is the faster of the two. The guard exists for the trade that showed real money and handed it back.",
+      "step": 0.5,
+      "show_if": {
+        "exec_rev_exit": ["Bank half", "Tighten to the trail", "Close"]
+      },
+      "guide": [
+        "Low — watches almost every trade, including ones only pausing",
+        "High — only the trades that were well in front are watched"
+      ]
     }
   ]
 }

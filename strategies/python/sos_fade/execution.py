@@ -756,6 +756,34 @@ class Execution:
         # close 3651.28 while Pine closed at bar 697's open 3651.23, one bar apart on every
         # clock-driven exit. See `### The time stop` in this package's CLAUDE.md.
         self._pending_close: Optional[Tuple[str, str]] = None
+        # The give-back guard's partial, decided at a bar's close and filled at the next bar's
+        # open — the same one-bar delay every other exit here carries. A QUANTITY rather than a
+        # flag so the amount is fixed at the moment the rule fired, not recomputed on a bar the
+        # position may already have changed size on.
+        self._pending_bank: float = 0.0
+        # Whether the guard has already acted on THIS trade. Only the two keep-it-open actions
+        # read it: without it, "hand to the trail" would swallow the time stop on every later
+        # bar and "bank half" would halve the runner again and again.
+        self._gave_back: bool = False
+        # The reversal exit's decision, taken at a FAST bar's close and filled at the NEXT fast
+        # bar's open. It is a SEPARATE slot from `_pending_close` on purpose: that one is drained
+        # by the 15m path, and a fast-frame decision landing in it would wait up to a whole 15m
+        # bar to fill — which is exactly the delay reading a faster chart exists to avoid.
+        self._pending_rev: Optional[str] = None
+        # Whether the reversal exit has already acted on THIS trade. Read by the two actions that
+        # leave the trade open, for the same reason `_gave_back` is.
+        self._rev_done: bool = False
+        # The trade's best price AS THE FAST FRAME HAS SEEN IT, in the trade's favour. `None`
+        # until the first fast bar of a trade.
+        #
+        # 🔴 IT EXISTS BECAUSE `_ext_high` / `_ext_low` ARE REPORTING ONLY AND SAY SO. They are
+        # widened inside `_manage_open`, which for a PRIMARY runs on the 15m stream — so read
+        # from a fast bar they are stale by up to a whole 15m bar, which is exactly the delay
+        # reading a faster chart exists to remove. Reading them here would also turn a field the
+        # file documents as "never read by a decision" into one, silently, for every later
+        # reader. The give-back guard above CAN read them because it runs on the 15m path, where
+        # `_manage_open` has just widened them on this same bar.
+        self._rev_best: Optional[float] = None
         # A close a PERSON asked for, holding the reason to book it under, or None for the
         # only state this has in the lab and in every parity run: nobody has asked. Nothing in
         # `backtest/`, in the Pine, or in `compare_strategy.py` can reach `request_close`, so
@@ -1009,7 +1037,8 @@ class Execution:
         "_risk_usd", "_entry_equity", "_costs_usd", "_last_roll_ms", "_max_fav",
         "_rec_be_armed", "_exc_be_armed",
         "_trail_swing_hi", "_trail_swing_lo", "_ext_high", "_ext_low", "_legs",
-        "_pending_close",
+        "_pending_close", "_pending_bank", "_gave_back",
+        "_pending_rev", "_rev_done", "_rev_best",
         # Scale-in lots, and they belong here for the reason the warning above gives: a
         # restored position that dropped them would carry the base's stop while the adds it
         # actually holds went unpriced and unclosed. `_add_stop` is the stop the last add was
@@ -1238,6 +1267,16 @@ class Execution:
         filled_dir: Optional[int] = None
 
         # ── Phase A: fill / manage against THIS fill-clock bar ──
+        # A close decided at the LAST fill-clock bar's close is a market order, so it fills at
+        # THIS bar's open — ahead of any stop or target, exactly as the 15m side does it.
+        # ⚠ Guarded on the kind: `_pending_close` is a shared slot, and the 15m `step` only
+        # ever writes it for a position IT manages. Draining someone else's would close a
+        # primary on the wrong clock.
+        if (self._pending_close is not None and self._pos_dir != 0
+                and self._entry_kind == "secondary"):
+            _reason, _tag = self._pending_close
+            self._pending_close = None
+            self._close_at(sig1m, sig1m.open, _reason, sink, tag=_tag)
         if self._pos_dir == 0 and self._pend_sec is not None:
             pend = self._pend_sec
             adj = self._ask_adj(pend.dir, entry=True)   # the sniper is a resting limit too
@@ -1405,6 +1444,11 @@ class Execution:
             reason, tag = self._pending_close
             self._close_at(sig, sig.open, reason, dec, tag=tag)
         self._pending_close = None
+        # The give-back guard's partial fills in the same slot and for the same reason: it is a
+        # market order the broker already has, so it goes before any stop or target this bar.
+        if self._pending_bank > 0 and self._pos_dir != 0 and not opened:
+            self._exit_portion("GIVE", sig.open, self._pending_bank, sig, dec)
+        self._pending_bank = 0.0
         # Exit orders are placed at a bar's close and active the NEXT bar, so a trade
         # never fills an exit on the bar it opened (TradingView one-bar delay). A secondary
         # position is managed on the fill-clock stream, so a 15m bar never touches it.
@@ -1486,6 +1530,13 @@ class Execution:
                 # overnight — the exact thing it exists to prevent — and would charge the swap it
                 # was switched on to avoid.
                 self._close_at(sig, sig.close, "flat-by-close", dec)
+            # optional give-back guard — how much of its BEST this trade has handed back.
+            # It sits ahead of the clock because it is a price rule and the clock is not: a bar
+            # that trips both is a trade that gave its profit back, which is the more specific
+            # reason to name on the exit. It closes at the NEXT bar's open like every other
+            # force-close here, never at the close of the bar that tripped it.
+            elif self._giveback_due(sig.close) and self._giveback_has_work():
+                self._apply_giveback()
             # optional time stop (Pine execTimeStopMode) — the clock, not the price
             elif self._time_stop_due(sig):
                 self._pending_close = ("time-stop", "TIME")
@@ -2949,6 +3000,11 @@ class Execution:
         # reading it again at the fill would report a leg the resting limit was never priced on.
         self._fib = pend.fib
         self._stage = 0
+        self._gave_back = False
+        self._pending_bank = 0.0
+        self._rev_done = False
+        self._pending_rev = None
+        self._rev_best = None
         self._filled_qty = 0.0
         # Snapshot the OPENING size and clear the add ledger. Every add sizes off `_base_qty`
         # rather than the live position: sizing off the live one would compound, so add #2
@@ -3485,6 +3541,11 @@ class Execution:
         self._filled_qty = 0.0
         self._last_asked_stop = None   # a new trade's first stop is a real instruction
         self._stage = 0
+        self._gave_back = False
+        self._pending_bank = 0.0
+        self._rev_done = False
+        self._pending_rev = None
+        self._rev_best = None
         self._adds = []
         self._add_lots = []
         self._add_stop = None
@@ -4573,6 +4634,155 @@ class Execution:
             )
             self._flat_rule_bar_min = bar_min
         return self._flat_rule.due(sig.time_ms)
+
+    def step_reversal(self, sig_fast, m1) -> None:
+        """Advance the REVERSAL EXIT on one fast bar. Primary positions only.
+
+        Two phases, the same shape every other exit on this engine has:
+          A. fill what was decided at the LAST fast bar's close, at THIS bar's open.
+          B. decide, at THIS bar's close, whether the next bar opens with an order resting.
+
+        🔴 IT IS THE ONE PLACE A PRIMARY IS TOUCHED OFF A FAST BAR, and that is deliberate. The
+        15m stream owns the primary's ladder (`step` → `_manage_open`) and the fast stream owns
+        the re-entry's; this cuts across that split because the signal it reads only exists on
+        the fast frame and waiting for the 15m close is the delay it is built to avoid. It
+        touches ONLY the exit, never a stop, a target or a size, so the two streams cannot
+        disagree about where the trade's ladder is — `_stage` is the single piece of shared
+        state it writes, and it writes the value the ladder itself uses for "the trail governs
+        this stop".
+
+        ⚠ CALLED ON EVERY FAST BAR, INDEPENDENTLY OF THE RE-ENTRY. `DualClock.step_fast` runs it
+        before its own `exec_secondary` early return, because the fast STRUCTURE feed is stepped
+        unconditionally and this rule reads that feed rather than the re-entry's arm state.
+
+        ⚠ `m1` is the fast frame's `M1State`. `new_bull_sos` / `new_bear_sos` are THIS bar's
+        events, not latches — a latched flag would re-fire the rule on every later bar of the
+        trade, which is a different rule silently answered.
+        """
+        if self._cfg.exec_rev_exit == "Off":
+            return
+        sink = Decision(index=sig_fast.index)
+        self._stamp_account_clock(sig_fast)
+
+        # ── Phase A: the order decided last bar is a MARKET order the broker already has ──
+        act, self._pending_rev = self._pending_rev, None
+        if act is not None and self._pos_dir != 0 and self._entry_kind == "primary":
+            if act == "Close":
+                self._close_at(sig_fast, sig_fast.open, "reversal", sink, tag="REV")
+            else:
+                if act == "Bank half":
+                    # Half of what is still OPEN, for the reason the give-back guard's own
+                    # comment gives: a trade that already banked a rung holds less than it was
+                    # sold. Fixed at the moment the rule fired, not recomputed here.
+                    half = max(self._qty - self._filled_qty, 0.0) * 0.5
+                    if half > 0:
+                        self._exit_portion("REV", sig_fast.open, half, sig_fast, sink)
+                # Hand what is left to the runner trail rather than cutting it. MEASURED
+                # 2026-09-22 on the give-back guard, which has the same three actions: at one
+                # arming level all three cut the worst drawdown identically and differ only in
+                # what they hand back, and closing gave up 11.2R that tightening kept.
+                if self._pos_dir != 0:
+                    self._stage = 2
+                self._rev_done = True
+
+        # ── Phase B: decide at this bar's close ──
+        # The high-water mark is carried on THIS frame, from this bar's own extreme, so a trade
+        # that spikes and turns inside one 15m bar is armed by the move that actually happened.
+        if self._pos_dir != 0 and self._entry_kind == "primary":
+            d = self._pos_dir
+            here = sig_fast.high if d > 0 else sig_fast.low
+            if self._rev_best is None:
+                self._rev_best = self._entry
+            self._rev_best = max(self._rev_best, here) if d > 0 else min(self._rev_best, here)
+        if self._reversal_due(m1):
+            self._pending_rev = self._cfg.exec_rev_exit
+
+    def _reversal_due(self, m1) -> bool:
+        """Has the fast frame just shifted structure AGAINST an armed primary?
+
+        R is priced off the FROZEN entry risk (`_entry` - `_init_stop`), the same denominator
+        every other R in this file uses, so a trade whose stop has since ratcheted is still
+        measured against what it originally risked.
+        """
+        cfg = self._cfg
+        if cfg.exec_rev_exit == "Off" or self._pos_dir == 0:
+            return False
+        if self._entry_kind != "primary":
+            return False
+        if self._pending_rev is not None:
+            return False        # an order is already resting for the next bar
+        if cfg.exec_rev_exit != "Close" and self._rev_done:
+            return False        # spent: the two keep-it-open actions fire once per trade
+        d = self._pos_dir
+        against = bool(m1.new_bear_sos) if d > 0 else bool(m1.new_bull_sos)
+        if not against:
+            return False
+        dist = abs(self._entry - self._init_stop)
+        if dist <= 0:
+            return False
+        if self._rev_best is None:
+            return False
+        return (self._rev_best - self._entry) * d / dist >= cfg.exec_rev_arm_r
+
+    def _apply_giveback(self) -> None:
+        """Do what the guard is set to do. Called only when it is both due and unspent.
+
+        It records an INTENT and never a fill — every action here lands at the next bar's open,
+        the one-bar delay this whole file is built on.
+        """
+        act = self._cfg.exec_giveback_action
+        if act == "Close":
+            self._pending_close = ("give-back", "GIVE")
+            return
+        if act == "Bank half":
+            # Half of what is still OPEN, not half of the original size: a trade that already
+            # banked a target rung holds less than it was sold.
+            self._pending_bank = max(self._qty - self._filled_qty, 0.0) * 0.5
+        # Hand the rest to the runner trail instead of cutting it. `_stage` is the existing
+        # state that means "the trail governs this stop" — setting it is how every other path
+        # says the same thing, rather than a second flag that could disagree with it.
+        self._stage = 2
+        self._gave_back = True
+
+    def _giveback_has_work(self) -> bool:
+        """Whether the guard can still change anything on this trade.
+
+        🔴 IT GUARDS THE ELIF CHAIN, NOT JUST THE ACTION. A branch that is TAKEN and then does
+        nothing still consumes the bar — the time stop below it would never be reached again on
+        a trade whose peak stays above the arming level, which is most of them. So a spent guard
+        must not take the branch at all.
+        """
+        if self._cfg.exec_giveback_action == "Close":
+            return True   # closing is its own end state; there is no second time
+        return not self._gave_back
+
+    def _giveback_due(self, price: float) -> bool:
+        """Has this trade handed back more of its best than the guard allows?
+
+        The guard measures against the trade's OWN high-water mark (`_ext_high`/`_ext_low`,
+        the same pair that resolves `mfe_price`), never against a target: a trade that runs
+        3R and comes back is the case this exists for, and no rung of the ladder knows that
+        happened. R is priced off the FROZEN entry risk (`_entry` - `_init_stop`), the same
+        denominator every other R in this file uses, so a trade whose stop has since ratcheted
+        is still measured against what it originally risked.
+
+        ⚠ OFF IS -1 AND THAT IS NOT THE SAME AS 0. Zero would arm on every trade at its fill.
+        The config refuses 0 rather than letting it read as off.
+        """
+        cfg = self._cfg
+        arm = getattr(cfg, "exec_giveback_arm_r", -1.0)
+        if arm == -1.0 or self._pos_dir == 0:
+            return False
+        dist = abs(self._entry - self._init_stop)
+        if dist <= 0:
+            return False
+        d = self._pos_dir
+        best = self._ext_high if d > 0 else self._ext_low
+        peak_r = (best - self._entry) * d / dist
+        if peak_r < arm:
+            return False
+        held_r = (price - self._entry) * d / dist
+        return held_r <= peak_r * (1.0 - cfg.exec_giveback_pct / 100.0)
 
     def _time_stop_due(self, sig) -> bool:
         """Has this position been open longer than `exec_time_stop_hrs`, and does the mode
