@@ -1388,6 +1388,13 @@ class Execution:
         to return. MEASURED 2026-08-23: 29 of 90 re-entry orders waited over 30 minutes for that
         return and 8 waited over 12 hours, and Aaron's 2025-08-19 reclaim is one of the 8. A market
         entry buys a worse price and a wider stop in exchange for never missing the move."""
+        if (src == LVL_SRC
+                and getattr(self._cfg, "exec_lvl_confluence", "None") == "Shift confirms"):
+            # The level memory's confirmed entry is a MARKET order by design: the shift is the
+            # signal, and a limit resting back at the level would wait for a second tap the
+            # confirmation never asked for. Its `edge` is the confirming bar's close — the last
+            # price known when the order was placed — exactly as the reclaim's market mode.
+            return True
         return (src == "reclaim"
                 and getattr(self._cfg, "exec_rec_entry_mode", "Retest") == "Market")
 

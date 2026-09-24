@@ -291,11 +291,13 @@ class DualClock:
                 ex._poi_last_l, ex._poi_last_s,
             )
         if lvl_on:
-            self.lvl_mem.observe(ex.last_primary_level_l, ex.last_primary_level_s)
+            self.lvl_mem.observe(ex.last_primary_level_l, ex.last_primary_level_s,
+                                 sig=self.last_sig)
             arm = _merge_arm(arm, self.lvl_mem.update(
                 now_ms=ts, high=bar.high, low=bar.low, flat=ex.is_flat,
                 primary_resting_l=ex.primary_resting_long,
                 primary_resting_s=ex.primary_resting_short,
+                sig=self.last_sig, m1=m1, close=bar.close,
             ))
         out.arm = arm
         sig_fast = FastSig(bar.index, ts, bar.open, bar.high, bar.low, bar.close,

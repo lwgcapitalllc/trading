@@ -70,6 +70,20 @@ class _Remembered:
     closed_ms: int       # when that primary closed; the memory's clock starts here
     away: bool = False   # price has since travelled far enough away for a return to mean anything
     done: bool = False   # this level has had its one order filled
+    # "Gap still open" — the gap this level came from, as the gap engine listed it when the memory
+    # was taken: (top, bottom, born). None = no such gap was live, which spends the level under that
+    # filter rather than letting it trade unfiltered. Unused by the other filters.
+    gap: Optional[Tuple[float, float, int]] = None
+    # "Shift confirms" — price has come back to the level, the most extreme price since, and how
+    # many fill-clock bars have passed. Unused by the other filters.
+    tapped: bool = False
+    tap_ext: Optional[float] = None
+    since_tap: int = 0
+
+
+#: The legal values of the level memory's confluence setting, named once so the config's
+#: validation and this module cannot disagree about the spelling.
+CONFLUENCES = ("None", "Gap still open", "Sweep first", "Shift confirms")
 
 
 class LevelMemory:
@@ -103,16 +117,66 @@ class LevelMemory:
         self._s_seen_ms: Optional[int] = None
 
     # ── learning ────────────────────────────────────────────────────────────────────────────
-    def observe(self, last_l, last_s) -> None:
+    def observe(self, last_l, last_s, sig=None) -> None:
         """Take the execution's last-closed-primary record per side, if it is a new one.
 
         `last_*` is `(level, stop_dist, closed_ms)` or None. Compared on `closed_ms`, which is the
         only field that is certainly different between two trades on one side — two primaries CAN
         enter at the same price off the same gap. ⚠ Compared against what this side has EVER
         taken, never against what it still holds; see `_l_seen_ms`.
+
+        `sig` is the last-closed 15m signal record. Read only by the "Gap still open" filter, which
+        pins the gap this level came from AT THE MOMENT THE MEMORY IS TAKEN — the one moment the
+        gap and the level are known to belong together.
         """
+        old_l, old_s = self._l, self._s
         self._l, self._l_seen_ms = self._take(self._l, self._l_seen_ms, last_l)
         self._s, self._s_seen_ms = self._take(self._s, self._s_seen_ms, last_s)
+        if self._confluence() == "Gap still open":
+            if self._l is not None and self._l is not old_l:
+                self._l.gap = self._find_gap(self._l, +1, sig)
+            if self._s is not None and self._s is not old_s:
+                self._s.gap = self._find_gap(self._s, -1, sig)
+
+    def _confluence(self) -> str:
+        return str(getattr(self._cfg, "exec_lvl_confluence", "None"))
+
+    def _find_gap(self, rec: "_Remembered", side: int, sig) -> Optional[Tuple[float, float, int]]:
+        """The live gap of the trade's own direction whose band holds the level, or None.
+
+        ⚠ **Read off the gap engine's own live list (`sig.fvgs`), never recomputed.** That list is
+        what the primary chose its entry from, so a match here is the same gap by construction.
+        The tolerance exists because the entry edge can be snapped or deepened inside the gap
+        before it is published; it is a fraction of THIS trade's own 1R so it scales with it.
+        ⚠ A long came from a BULLISH gap below price and a short from a BEARISH one above it.
+        When two gaps qualify the NEWEST wins — it is the one the setup had just printed.
+        """
+        if sig is None:
+            return None
+        tol = float(getattr(self._cfg, "exec_lvl_gap_tol_r", 0.1)) * rec.stop_dist
+        want_bull = side > 0
+        best = None
+        for top, bottom, is_bull, born in getattr(sig, "fvgs", ()) or ():
+            if bool(is_bull) != want_bull:
+                continue
+            if bottom - tol <= rec.level <= top + tol:
+                if best is None or born > best[2]:
+                    best = (float(top), float(bottom), int(born))
+        return best
+
+    @staticmethod
+    def _gap_live(rec: "_Remembered", sig) -> bool:
+        """Is the pinned gap still on the engine's live list? Matched on all three fields.
+
+        ⚠ **"Not on the list" is two things, and this cannot tell them apart:** price closed
+        through the gap (mitigated — the signal wanted) or seven newer gaps pushed it off the end
+        (evicted — not a trading signal). So this reads *still open AND still recent*, and Run 45's
+        spec says so in advance.
+        """
+        if rec.gap is None or sig is None:
+            return False
+        return rec.gap in {(float(t), float(b), int(n))
+                           for t, b, _bull, n in (getattr(sig, "fvgs", ()) or ())}
 
     @staticmethod
     def _take(held: Optional[_Remembered], seen_ms: Optional[int], rec):
@@ -134,7 +198,8 @@ class LevelMemory:
 
     # ── arming ──────────────────────────────────────────────────────────────────────────────
     def update(self, *, now_ms: int, high: float, low: float, flat: bool,
-               primary_resting_l: bool, primary_resting_s: bool) -> SecArm:
+               primary_resting_l: bool, primary_resting_s: bool,
+               sig=None, m1=None, close: Optional[float] = None) -> SecArm:
         """One fill-clock bar. Returns what should rest, as a `SecArm`.
 
         The away latch is fed THIS bar's high and low before the arm is tested, which is the same
@@ -159,20 +224,89 @@ class LevelMemory:
             # this bar's HIGH, and the return comes back DOWN onto a buy limit.
             if not self._l.away and (high - self._l.level) >= away_r * self._l.stop_dist:
                 self._l.away = True
-            if self._armable(self._l, flat, quiet, primary_resting_l):
-                edge, sl, tp1, tp2 = self._prices(self._l, +1)
+            got = self._side(self._l, +1, high, low, close, flat, quiet, primary_resting_l,
+                             sig, m1)
+            if got is not None:
+                edge, sl, tp1, tp2 = got
                 arm = replace(arm, l_armed=True, l_edge=edge, l_sl=sl, l_tp1=tp1, l_tp2=tp2,
                               l_leg=None, l_src=SRC, l_after="level memory")
 
         if self._s is not None:
             if not self._s.away and (self._s.level - low) >= away_r * self._s.stop_dist:
                 self._s.away = True
-            if self._armable(self._s, flat, quiet, primary_resting_s):
-                edge, sl, tp1, tp2 = self._prices(self._s, -1)
+            got = self._side(self._s, -1, high, low, close, flat, quiet, primary_resting_s,
+                             sig, m1)
+            if got is not None:
+                edge, sl, tp1, tp2 = got
                 arm = replace(arm, s_armed=True, s_edge=edge, s_sl=sl, s_tp1=tp1, s_tp2=tp2,
                               s_leg=None, s_src=SRC, s_after="level memory")
 
         return arm
+
+    def _side(self, rec, side, high, low, close, flat, quiet, resting, sig, m1):
+        """One side's arm under the configured confluence: (entry, stop, tp1, tp2) or None.
+
+        "None", "Gap still open" and "Sweep first" all REST A LIMIT AT THE LEVEL and differ only in
+        whether it may rest this bar — each filter is re-read every fill-clock bar, so the order
+        is pulled the moment its reason is gone and nothing is decided on information the bar has
+        not published. "Shift confirms" is a different ENTRY, not a filter on this one.
+        """
+        mode = self._confluence()
+        if mode == "Shift confirms":
+            return self._shift_entry(rec, side, high, low, close, flat, quiet, resting, m1)
+        if not self._armable(rec, flat, quiet, resting):
+            return None
+        if mode == "Gap still open":
+            if rec.gap is None:
+                # No gap of this direction held the level when the memory was taken, so there is
+                # nothing for the filter to watch — the level is spent, not traded unfiltered.
+                rec.done = True
+                return None
+            if not self._gap_live(rec, sig):
+                return None
+        elif mode == "Sweep first":
+            # The primary's OWN sweep reading, on the trade's side: buy-side liquidity taken for a
+            # short (price ran the highs into the level), sell-side for a long. Empty = none live.
+            pool = getattr(sig, "recent_bsl" if side < 0 else "recent_ssl", "") if sig else ""
+            if not pool:
+                return None
+        return self._prices(rec, side)
+
+    def _shift_entry(self, rec, side, high, low, close, flat, quiet, resting, m1):
+        """ "Shift confirms": price taps the level, then a fast-chart shift of structure in the
+        trade's direction must print within `exec_lvl_shift_bars` bars. Market entry at the next
+        bar's open, stop at the most extreme price since the tap, target `exec_lvl_tp_r` x THAT.
+
+        ⚠ The tap bar counts as bar 0 and may itself carry the shift — a rejection that breaks
+        structure inside one 5-minute bar is still a rejection. ⚠ One attempt per level: a window
+        that closes without a shift spends the level. ⚠ Refused when the confirmed risk is wider
+        than the ORIGINAL trade's full 1R — Run 42 measured that a wider stop is the losing side.
+        """
+        if not rec.away:
+            return None
+        if not rec.tapped:
+            touched = (high >= rec.level) if side < 0 else (low <= rec.level)
+            if not touched:
+                return None
+            rec.tapped, rec.since_tap = True, 0
+            rec.tap_ext = high if side < 0 else low
+        else:
+            rec.since_tap += 1
+            rec.tap_ext = max(rec.tap_ext, high) if side < 0 else min(rec.tap_ext, low)
+        if rec.since_tap > int(getattr(self._cfg, "exec_lvl_shift_bars", 24)):
+            rec.done = True
+            return None
+        if m1 is None or close is None:
+            return None
+        shifted = bool(m1.new_bear_sos) if side < 0 else bool(m1.new_bull_sos)
+        if not shifted or not flat or (quiet and resting):
+            return None
+        risk = (rec.tap_ext - close) if side < 0 else (close - rec.tap_ext)
+        if not (0 < risk <= rec.stop_dist):
+            return None
+        tp_r = float(getattr(self._cfg, "exec_lvl_tp_r", 2.0))
+        tp1 = close - tp_r * risk if side < 0 else close + tp_r * risk
+        return float(close), float(rec.tap_ext), tp1, tp1
 
     @staticmethod
     def _age(rec: Optional[_Remembered], now_ms: int, keep_ms: float) -> Optional[_Remembered]:
