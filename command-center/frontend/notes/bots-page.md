@@ -1968,3 +1968,9 @@ and *"I don't want the account to expand, just the bots."* Picked off a mockup.
 - **The account band does NOT expand** and keeps its return, cap and "Not from these bots" line.
 - **Configure stays on the row** — the mockup folded it into "···", and the 2026-09-15 note says
   Aaron lost that control twice when it had to be found.
+- 🔴 **The spare width is shared, and Version has a 32px gutter** (same day, Aaron: *"why is P&L so
+  crammed to version and so crammed to actions?"*). With only the name track flexible, P&L and
+  Version sat at their caps against Actions and a right-aligned P&L ended 12px from the version
+  pill. Tracks are now `2fr / 1fr / 1fr / 150px`.
+- **The trade's target stays out for now** — Aaron wants it (2026-09-24), but it has to be added to
+  the heartbeat the live bots send, which is `algos/` work and a promote, so it is its own task.

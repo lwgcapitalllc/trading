@@ -334,7 +334,13 @@ function pnlCls(v: number | null | undefined): string {
 //  the name (`StatusDot`); the trade count, R per trade and the open trade's detail moved into the
 //  bot row's EXPANSION (`BotDetail`). Only BOT rows expand — the account band keeps everything.
 //  ⚠ P&L is right-aligned in tabular digits, so every figure lines up to the cent.
-const GRID = 'grid-cols-[minmax(200px,1fr)_minmax(150px,210px)_minmax(150px,200px)_150px]'
+//  🔴 **The spare width is SHARED (2026-09-24, Aaron: "why is P&L so crammed to version and to
+//  actions?")** — with only the name track flexible, P&L and Version sat at their caps packed
+//  against Actions, and a right-aligned P&L ended 12px from the version pill. Every track now takes
+//  a share, and Version carries a 32px left gutter (`VERSION_GUTTER`) so a right-aligned figure
+//  never touches it.
+const GRID = 'grid-cols-[minmax(200px,2fr)_minmax(130px,1fr)_minmax(200px,1fr)_150px]'
+const VERSION_GUTTER = 'pl-8'
 
 /** R per trade: what a bot's closed trades made on average, in units of the risk each one took.
  *  `null` when there is nothing to average — no record, or no closed trade — never 0. */
@@ -1100,7 +1106,7 @@ function ColumnHeadings() {
       >
         P&amp;L
       </span>
-      <span>Version</span>
+      <span className={VERSION_GUTTER}>Version</span>
       <span className="text-right">Actions</span>
     </div>
   )
@@ -1142,7 +1148,9 @@ function BotsPageSkeleton() {
             <Shimmer className="h-[13px] w-[96px]" />
           </span>
           <PnlCell e={undefined} asking />
-          <VersionPill version={undefined} loading />
+          <span className={VERSION_GUTTER}>
+            <VersionPill version={undefined} loading />
+          </span>
           <span className="flex gap-[4px] justify-end">
             <Shimmer className="h-[26px] w-[52px]" />
             <Shimmer className="h-[26px] w-[26px]" />
@@ -2002,7 +2010,7 @@ export function Bots() {
           <span className="flex justify-end min-w-0">
             <AccountNet e={earn} asking={asking} />
           </span>
-          <span className="min-w-0">
+          <span className={`min-w-0 ${VERSION_GUTTER}`}>
             <RiskBudget group={group} cap={cap} idle={idle} />
           </span>
           <span
@@ -2157,7 +2165,7 @@ export function Bots() {
 
                 {/* Calm when current, amber only when it needs a person — the pill's own rule, and
                  *  the same one the "needs you" line above the table counts by (`versionNeed`). */}
-                {version}
+                <span className={`min-w-0 ${VERSION_GUTTER}`}>{version}</span>
 
                 <span className="flex gap-[4px] justify-end items-center">
                   {/* 🔴 **NOTHING IS OFFERED WHILE THE STATE IS UNKNOWN (2026-09-06).** Pressing
