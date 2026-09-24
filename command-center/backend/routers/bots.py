@@ -36,6 +36,7 @@ import tempfile
 import threading
 import time as _time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from dataclasses import fields as dataclass_fields
 from datetime import date, datetime, timezone
@@ -818,7 +819,10 @@ def _fetch_vps_snapshot() -> dict[str, str]:
         " & echo ===TASKS==="
         " & schtasks /query /fo CSV /nh 2>nul"
     )
-    sections = _parse_sections(_ssh(cmd1), "procs")
+    # 🔴 **The two calls run SIDE BY SIDE (2026-09-24).** Neither reads the other's answer, and one
+    # after the other they were the whole of the page's first wait — MEASURED 5.2s + 4.0s = 9.3s.
+    # Started first so it runs while the second command is built and sent.
+    first = _SNAPSHOT_POOL.submit(_ssh, cmd1)
 
     # One `type` per registered instance's bot_state.json, plus the Telegram start marker.
     # Built from _BOT_STATE_SECTIONS so adding a bot never means editing this string —
@@ -881,8 +885,16 @@ def _fetch_vps_snapshot() -> dict[str, str]:
     parts.append(
         "echo. & echo ===TELEGRAM_START=== & type C:\\trading\\algos\\telegram_start.json 2>nul"
     )
-    sections.update(_parse_sections(_ssh(" & ".join(parts)), "state_main"))
+    state_raw = _ssh(" & ".join(parts))
+    # `.result()` re-raises the first call's own exception, so a timeout or an unreachable box
+    # reaches `get_snapshot` exactly as it did when the call ran inline.
+    sections = _parse_sections(first.result(), "procs")
+    sections.update(_parse_sections(state_raw, "state_main"))
     return sections
+
+
+# Two workers: the snapshot's two calls, and nothing else ever queues on it.
+_SNAPSHOT_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="bots-snapshot")
 
 
 # `_BOT_STATE_SECTIONS` and `_BOT_STATE_PATHS` are built with the bot list — see `_refresh_bots`.
@@ -4849,6 +4861,14 @@ def _running_code(section: str | None, started: float | None) -> BotRunningCode:
         )
 
 
+# 🔴 **At most three version reads on the box at once (2026-09-24).** Each one starts Python on
+# the box to re-hash a bot's frozen code (MEASURED ~5s of its ~9s), and the page asks for every bot
+# at the same moment. With ten bots that was ten Pythons on the machine the LIVE bots trade from,
+# and the status read queued behind them: MEASURED 3.1s alone, 26.7s beside the ten. Capped, the
+# status read gets through and the version column fills in a few at a time.
+_VERSION_READS = threading.BoundedSemaphore(3)
+
+
 @router.get("/{bot_name}/version", response_model=BotDeployedVersion)
 def get_bot_version(bot_name: str):
     """What this bot is actually running, plus how far the repo has moved past it."""
@@ -4886,7 +4906,8 @@ def get_bot_version(bot_name: str):
                 rf" {_VPS_INSTANCES}\{reg.instance_dir}\ledger\health-{month}-*.jsonl 2>nul"
             )
 
-    raw = _ssh(cmd)
+    with _VERSION_READS:
+        raw = _ssh(cmd)
     parts = _parse_sections(raw, "head")
     try:
         ahead = int(parts.get("ahead", "0").strip().splitlines()[-1])
@@ -5172,13 +5193,22 @@ def _finish_promote(
     # ⚠ **The message is its own shape, not the PROMOTED one with different words.** "v373 → v373 ·
     # deployed / Restarting it now" was true of nothing that happened, and a reader acting on it
     # would go looking for a restart that never came.
-    if ok and nothing_new:
+    # 🔴 **BUT "NOTHING NEW ON DISK" IS NOT "NOTHING NEW IN THE PROCESS" (2026-09-24).** A deploy
+    # whose build finished and whose restart never came — `fft_1`'s timed out after the build that
+    # day — leaves the new code pinned and the OLD process running. The retry then found nothing to
+    # build and, before this check, refused to restart, so no deploy could ever move the bot onto
+    # code already pinned. The process's own report decides it; see `_running_older_code`.
+    stale = _running_older_code(bot_key) if (ok and nothing_new and req.restart) else False
+    if ok and nothing_new and not stale:
         _notify_telegram(
             alert(
                 "ℹ️",
                 "NOTHING TO DEPLOY",
                 _bot_label(bot_key),
-                "It is already running this code, so nothing was deployed and it was left alone.",
+                "It is already running this code, so nothing was deployed and it was left alone."
+                if stale is False
+                else "Nothing new was deployed and it was left alone. What the running bot is on "
+                "could not be read — if its badge says a restart is pending, restart it.",
                 "Its record now names the current commit, so the page will stop asking.",
             ),
             bot_key=bot_key,
@@ -5187,7 +5217,19 @@ def _finish_promote(
         # still pending as `skipped`, which is the state that already means *this did not happen*
         # — marking them here would be a second way of saying it, able to disagree with the first.
         return BotPromoteResult(ok=True, output=out, restarted=False, nothing_new=True)
-    if ok:
+    if ok and stale:
+        root = _notify_telegram(
+            alert(
+                "🔄",
+                "RESTARTING ONTO DEPLOYED CODE",
+                _bot_label(bot_key),
+                "This code was already deployed, but the bot was still running an older version.",
+                "Restarting it now.",
+            ),
+            bot_key=bot_key,
+        )
+        _set_alert_thread(bot_key, root)
+    elif ok:
         # 🔴 SENT BEFORE THE RESTART, and the ordering is the feature rather than a detail.
         # A deploy produces THREE messages from TWO machines — this one, then the bot's own
         # STOPPED and ONLINE — and Aaron read them as three unrelated events. Threading them
@@ -5381,6 +5423,23 @@ def _is_new_process_on(state: dict, before: dict | None, deployed_hash: str) -> 
     return state.get("started") != before.get("started") and state.get(
         "last_updated"
     ) != before.get("last_updated")
+
+
+def _running_older_code(bot_key: str) -> bool | None:
+    """Is the live PROCESS running code other than what is pinned on disk?
+
+    `None` = one of the two could not be read — never read as *no*, which would leave a stale
+    process alone while saying it is current (root `CLAUDE.md` rule 1). Same comparison as
+    `_is_new_process_on`: the process reports a prefix of the pinned hash."""
+    state = _read_run_state(bot_key)
+    try:
+        pinned = _deployed_hash(_deployed_json(bot_key))
+    except Exception:
+        pinned = ""
+    running = (state or {}).get("source_hash") or ""
+    if not running or not pinned:
+        return None
+    return not pinned.startswith(running)
 
 
 def _await_new_version(bot_key: str, before: dict | None) -> bool:

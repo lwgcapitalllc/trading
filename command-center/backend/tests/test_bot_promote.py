@@ -438,3 +438,61 @@ def test_a_PREVIEW_says_up_front_that_a_deploy_would_do_nothing(vps):
     must not leave this out."""
     vps["out"] = f"{bots._NOOP_MARK}\n  dry run\n{bots._PROMOTE_OK}"
     assert bots.preview_bot_promote("fft_1", REQ).nothing_new is True
+
+
+# ── Nothing new ON DISK is not nothing new IN THE PROCESS (2026-09-24) ─────────
+#
+# 🔴 **The failure these pin.** `fft_1`'s deploy on 2026-09-24 pinned the new code and then timed
+# out before its restart. The retry found nothing new to build and, by the rule above, left the
+# bot alone — on the OLD code, with no deploy able to move it. The live process's own report
+# (`bot_state.json`) now decides whether "nothing new" really means nothing to load.
+#
+# ⚠ The box is faked at the SSH boundary only, routing each command to the file it reads, so the
+# real readers (`_read_run_state`, `_deployed_json`, `_deployed_hash`) parse what they are handed.
+
+
+def _box(vps, monkeypatch, *, running, pinned: str):
+    promote_out = f"{bots._NOOP_MARK}\n{bots._PROMOTE_OK}"
+    state_path = bots._bot_state_path("fft_1")
+    assert state_path, "fft_1 must resolve a state file or these tests prove nothing"
+
+    def ssh(cmd):
+        vps["cmds"].append(cmd)
+        if "deployed.json" in cmd:
+            return json.dumps({"strategy_source_hash": pinned})
+        if state_path in cmd:
+            return "" if running is None else json.dumps({"fft_1": {"source_hash": running}})
+        return promote_out
+
+    monkeypatch.setattr(bots, "_ssh", ssh)
+    monkeypatch.setattr(bots, "_set_alert_thread", lambda *_a, **_k: True)
+
+
+def test_NOTHING_NEW_still_restarts_a_process_running_OLDER_code(vps, sent, monkeypatch):
+    """Mutation: drop the `stale` check (always leave a nothing-new bot alone) → never killed, RED."""
+    _box(vps, monkeypatch, running="b9097e7f28bf", pinned="b9f340810c22b2b37751e0be7b0f43c3")
+    r = bots.promote_bot("fft_1", REQ)
+    assert r.ok is True and r.restarted is True and r.nothing_new is False
+    assert vps["killed"] == ["fft_1"] and vps["launched"] == ["fft_1"]
+    body = "\n".join(sent)
+    assert "RESTARTING ONTO DEPLOYED CODE" in body and "NOTHING TO DEPLOY" not in body
+
+
+def test_NOTHING_NEW_leaves_a_CURRENT_process_alone(vps, sent, monkeypatch):
+    """Mutation: invert the prefix test in `_running_older_code` → the current bot is killed, RED."""
+    _box(vps, monkeypatch, running="b9f340810c22", pinned="b9f340810c22b2b37751e0be7b0f43c3")
+    r = bots.promote_bot("fft_1", REQ)
+    assert r.restarted is False and r.nothing_new is True and vps["killed"] == []
+    assert "already running this code" in "\n".join(sent)
+
+
+def test_an_UNREADABLE_process_is_left_alone_and_the_message_says_it_could_not_tell(
+    vps, sent, monkeypatch
+):
+    """`None` is not *current* (rule 1): the bot is not restarted on a guess, and the message stops
+    claiming it is already running this code. Mutation: read `None` as current → wording RED."""
+    _box(vps, monkeypatch, running=None, pinned="b9f340810c22b2b37751e0be7b0f43c3")
+    r = bots.promote_bot("fft_1", REQ)
+    assert r.restarted is False and vps["killed"] == []
+    body = "\n".join(sent)
+    assert "could not be read" in body and "already running this code" not in body

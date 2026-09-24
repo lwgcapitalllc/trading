@@ -889,3 +889,21 @@ reason. Falling through printed *Deployed — restart it to pick it up* over a b
 that exact code, which is how one pointless deploy becomes two.
 
 **Escape hatch:** `promote.py --redeploy` rewrites the snapshot anyway.
+
+## 🔴 Nothing new ON DISK is not nothing new IN THE PROCESS (2026-09-24)
+
+`fft_1`'s deploy on 2026-09-24 built and pinned the new code, then timed out before its restart.
+A retry would have found nothing new to build and — under the rule above — left the bot alone, on
+the OLD code, with no deploy able to move it onto code already pinned. The escape hatch was a plain
+restart, which nobody is told to reach for.
+
+`_finish_promote` now asks the live PROCESS (`bot_state.json`) before leaving a nothing-new bot
+alone (`_running_older_code`, the same prefix comparison the confirm step uses):
+
+- **running older code** → restart it, with its own message: `🔄 RESTARTING ONTO DEPLOYED CODE`.
+- **running the pinned code** → left alone, as before.
+- **cannot read either side** → left alone (never restarted on a guess), and the message no longer
+  claims it is running this code: it says it could not tell, and to restart if the badge asks.
+
+TESTED: `tests/test_bot_promote.py`, three tests faking the box at the SSH boundary only; three
+mutations run, each red.
