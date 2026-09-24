@@ -1897,3 +1897,27 @@ so status and P&L land first (4.4–5.2s) and the version badges fill in after.
 
 TESTED: `tests/bots-version.spec.ts` → *no version read is sent until the status read has
 answered*; red with the gate removed (3 early reads), green restored.
+
+## A running deploy locks its bot, and a busy bot locks its account (2026-09-24)
+
+Aaron: *"if I'm updating a bot I shouldn't be able to stop and restart it."* The page's per-bot lock
+(`busyFor` / `actionOf`) read the start/stop/restart map and the stop-first wait, and nothing else,
+so mid-deploy the row and the panel offered Stop and Restart and the account panel offered every
+setting. The server refuses all of it now (backend `notes/bots-deploys.md` → *One action at a time
+per bot*); this is the page not offering what would be refused.
+
+- **A deploy is an action like start / stop / restart.** `BotAction` gained `deploy`, so the row and
+  the panel draw a **Deploying** pill where Stop was, and every change on the panel waits.
+- **One reason string, `lockOf(keys)`**, for anything reaching several bots: an account's cap,
+  shares, priority, its settings form, Add bot and Go live; the priority drag on the table; the Sync
+  drawer's write. Each control stays, disabled, with the reason on its hover — a control that
+  vanishes reads as a feature that does not exist.
+- **The Deploy button waits for a start / stop / restart / move** (`blocked` on `VersionBanner`),
+  and never for its own deploy, which it draws as progress.
+- ⚠ **Not locked:** Logs, Configure (opening the panel), the scan in the Sync drawer (a read), the
+  password-only save in the account form (it goes to the box's credential store).
+- ⚠ **The page can only lock what it knows about** — a deploy started from the trading-box tool or
+  the other clone does not show here until its job is read. The server's refusal is the backstop.
+
+TESTED: `tests/bots-version.spec.ts` → *a running deploy holds its bot and its account — no Stop, no
+Restart, no account change*; red with the deploy check removed from `index.tsx`, green restored.

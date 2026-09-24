@@ -88,6 +88,8 @@ command-center/backend/data/lab.db
 command-center/backend/data/lab.db-shm
 command-center/backend/data/lab.db-wal
 command-center/backend/data/lab_progress.json
+command-center/backend/data/promote_jobs.json
+command-center/backend/data/promote_jobs.tmp
 # Derived regime maps - a pure function of the bars and the classifier, both of which
 # are in the cache key. Rebuilt on demand; committing it would ship one machine's
 # fingerprints and go stale the first time either input moved.

@@ -553,7 +553,7 @@ def _stub_deploy(monkeypatch, *, fails=False):
 
     started: list[tuple] = []
 
-    def begin(bot_key, req):
+    def begin(bot_key, req, take_over=None):
         if fails:
             raise ValueError(f"A deploy of {bot_key} is already running — wait for it to finish.")
         started.append((bot_key, req))

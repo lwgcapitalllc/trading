@@ -28,12 +28,16 @@ export function BotSwitchEditor({
   botLabel,
   row,
   live,
+  lock = null,
 }: {
   botKey: string
   /** Name plus LIVE or demo — this is where a live bot's exits are changed. */
   botLabel: string
   row: BotParamRow
   live: boolean
+  /** Why a change must wait — the bot is mid-deploy, start, stop or move (2026-09-24). The server
+   *  refuses the write then too (`services/bot_ops.py`); this is the panel not offering it. */
+  lock?: string | null
 }) {
   const spec = row.switch
   const [confirming, setConfirming] = useState(false)
@@ -64,7 +68,8 @@ export function BotSwitchEditor({
           aria-checked={on}
           aria-label={name}
           data-testid="switch-toggle"
-          disabled={save.isPending}
+          disabled={save.isPending || !!lock}
+          title={lock ?? undefined}
           onClick={() => (on ? commit(spec.off) : setConfirming(true))}
           className={`relative w-[38px] h-[21px] rounded-full border transition-colors disabled:opacity-40 ${
             on ? 'bg-accent/30 border-accent/50' : 'bg-bg-sunken border-border-default'
@@ -113,7 +118,7 @@ export function BotSwitchEditor({
           <div className="flex items-center gap-2 mt-[10px]">
             <button
               data-testid="switch-confirm-go"
-              disabled={save.isPending}
+              disabled={save.isPending || !!lock}
               onClick={() => commit(spec.on)}
               className={`inline-flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-semibold border transition-colors disabled:opacity-50 ${
                 live

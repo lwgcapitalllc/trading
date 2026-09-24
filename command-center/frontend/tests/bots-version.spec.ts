@@ -1300,3 +1300,55 @@ test('no version read is sent until the status read has answered', async ({ page
   await expect.poll(() => versions, { timeout: 20_000 }).toBeGreaterThan(0)
   expect(earlyVersions).toBe(0)
 })
+
+test('a running deploy holds its bot and its account — no Stop, no Restart, no account change', async ({
+  page,
+}) => {
+  /**
+   * 🔴 The failure (Aaron, 2026-09-24): *"if I'm updating a bot I shouldn't be able to stop and
+   * restart it."* Mid-deploy of the LIVE SOS Fade bot the panel still offered Stop and Restart,
+   * and the account's settings stayed editable — a deploy stops and starts the bot itself, so a
+   * hand-pressed Stop raced it on a live process. The server refuses these now too.
+   *
+   * The deploy is HELD at its build step for the whole check (`holdAt`), so nothing here can pass
+   * because the deploy happened to finish first.
+   * MUTATION: drop `deployingNow` from `busyFor` / `actionOf` in `index.tsx` → red, the row and
+   * the panel offer Stop again and the account's Add bot is pressable.
+   */
+  await pinSnapshot(page, true, { status: 'RUNNING' })
+  const frames = jobFrames({ holdAt: 'build' })
+  const held = frames[frames.length - 1]
+  await page.route('**/api/bots/*/promote/job', (r) =>
+    r.fulfill({ json: r.request().url().includes('/sos_fade_demo/') ? held : null })
+  )
+  await page.route('**/api/bots/*/version', (r) =>
+    r.fulfill({ json: version(compare(), null, true) })
+  )
+
+  // The row: a Deploying pill where Stop was.
+  await page.goto('/bots')
+  const row = page.locator('[data-testid="bot-row"][data-bot="sos_fade_demo"]')
+  await expect(row.getByTestId('bot-action-pill')).toHaveAttribute('data-action', 'deploy', {
+    timeout: 20_000,
+  })
+  await expect(row.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0)
+  // Its account-mate is not held by it.
+  const mate = page.locator('[data-testid="bot-row"][data-bot="extreme_leg_demo"]')
+  await expect(mate.getByTestId('bot-action-pill')).toHaveCount(0)
+
+  // The bot's panel: no Stop, no Restart; Move is disabled.
+  await page.goto('/bots?bot=sos_fade_demo')
+  const panel = page.getByRole('complementary', { name: /settings/ })
+  await expect(panel.getByTestId('bot-action-pill')).toHaveAttribute('data-action', 'deploy', {
+    timeout: 20_000,
+  })
+  await expect(panel.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0)
+  await expect(panel.getByRole('button', { name: 'Restart', exact: true })).toHaveCount(0)
+  await expect(panel.getByTestId('move-sos_fade_demo')).toBeDisabled()
+
+  // Its account: nothing that changes what the account's bots read is pressable, and it says why.
+  await page.goto('/bots?account=34957946')
+  const add = page.getByTestId('add-bot')
+  await expect(add).toBeDisabled({ timeout: 20_000 })
+  await expect(add).toHaveAttribute('title', /deploying/)
+})

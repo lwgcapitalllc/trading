@@ -424,6 +424,7 @@ Most-cited code: `components/Drawer.tsx`, `components/FleetControls.tsx`, `pages
 - 🔴 The top-right Refresh button re-read status and P&L only, so version badges stayed "behind" after a deploy made off the page until a full reload; it now re-reads everything the page shows (2026-09-24)
 - Starting, stopping or restarting a bot locks THAT bot's buttons only, never the page — several bots can be acted on at once (2026-09-24)
 - Version reads start once the status read has answered — ten at once buried it on the two-CPU box (2026-09-24)
+- 🔴 A running deploy locks its bot (Deploying pill, no Stop / Restart), and a bot mid-action locks its account's settings — `lockOf` (2026-09-24)
 
 ### `notes/accounts-broker.md` — Accounts and broker connections
 

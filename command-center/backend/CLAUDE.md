@@ -275,6 +275,7 @@ Most-cited code: `routers/bots.py`, `services/bot_versions.py`.
 - The snapshot says whether a bot's account may TRADE (2026-09-12)
 - The snapshot carries the bot's open trade and its halt (2026-09-12)
 - The status read runs its two calls side by side, and version reads are capped at three (2026-09-24)
+- 🔴 One action at a time per bot, and an account holds still while one of its bots is mid-action — every route that changes a bot or an account goes through `services/bot_ops.py`; deploy jobs are saved to disk (2026-09-24)
 
 ### `notes/optimizer.md` — Optimizer and worthiness
 

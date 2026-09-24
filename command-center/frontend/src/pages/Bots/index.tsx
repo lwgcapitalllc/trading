@@ -96,7 +96,7 @@ import type {
   BotEarnings,
   AccountEarnings,
 } from '@/types'
-import { BotActionPill, type BotAction } from './BotStatusPill'
+import { ACTION_DOING, BotActionPill, type BotAction } from './BotStatusPill'
 import { UsersTab } from './UsersTab'
 import { BotDrawer } from './BotDrawer'
 import { AccountDrawer } from './AccountDrawer'
@@ -1117,14 +1117,33 @@ export function Bots() {
   const restartOne = useBotRestartOne()
   // A move or a removal that has to STOP the bot first, and waits on the box to say it has.
   const { stopThen, waitingFor, waitingAction } = useStopFirst()
-  /** Whether THIS bot's controls are locked: its own start/stop/restart is in flight, or a move or
-   *  removal is waiting on the box. ⚠ The second stays page-wide on purpose — `useStopFirst` holds
-   *  ONE waiting bot, so a second move started meanwhile would overwrite the first's wait. */
-  const busyFor = (key: string) => pending.has(key) || waitingFor !== null
-  /** What a bot is in the middle of: a start / stop / restart, or the part of a move or a removal
-   *  it is on — Stopping while the box catches up, Starting when a move starts it again. */
+  /** Whether THIS bot's controls are locked: its own start/stop/restart is in flight, a deploy of
+   *  it is running, or a move or removal is waiting on the box. ⚠ The last stays page-wide on
+   *  purpose — `useStopFirst` holds ONE waiting bot, so a second move started meanwhile would
+   *  overwrite the first's wait.
+   *
+   *  🔴 **A RUNNING DEPLOY LOCKS ITS BOT (2026-09-24, Aaron: *"if I'm updating a bot I shouldn't be
+   *  able to stop and restart it"*).** This read the start/stop/restart map and nothing else, so
+   *  Stop and Restart stayed pressable mid-deploy, racing the deploy's own stop/start on a live
+   *  process. The server refuses it too now (`services/bot_ops.py`); this is the page not offering
+   *  what the server would refuse. ⚠ `jobByKey` is declared below — read at call time, in render. */
+  const deployingNow = (key: string) => jobByKey.get(key)?.status === 'running'
+  const busyFor = (key: string) => pending.has(key) || waitingFor !== null || deployingNow(key)
+  /** What a bot is in the middle of: a start / stop / restart, the part of a move or a removal it
+   *  is on — Stopping while the box catches up, Starting when a move starts it again — or a deploy. */
   const actionOf = (key: string): BotAction | null =>
-    pending.get(key) ?? (waitingFor === key ? waitingAction : null)
+    pending.get(key) ??
+    (waitingFor === key ? waitingAction : null) ??
+    (deployingNow(key) ? 'deploy' : null)
+  /** Why a change reaching these bots must wait, or `null` — one of them is mid-action. For an
+   *  ACCOUNT's settings (its cap, shares, priority and registration are read by every bot on it)
+   *  and for the fleet-wide controls. The server refuses the same writes (`services/bot_ops.py`). */
+  const lockOf = (keys: readonly string[]): string | null => {
+    const k = keys.find((x) => actionOf(x) !== null)
+    if (k === undefined) return null
+    const b = botByKey.get(k)
+    return `${b ? labelOf(b) : k} is ${ACTION_DOING[actionOf(k) as BotAction]} — wait until it finishes.`
+  }
 
   const bots: BotStatus[] = snapshot?.bots ?? []
   // 🔴 The version reads are keyed off the CONFIG list as well as the snapshot (2026-09-10). A
@@ -1526,7 +1545,10 @@ export function Bots() {
     const orderUnsaved = rows.some((r) => r.cfg.priority == null)
     // One bot has nobody to go ahead of, and an unreadable config cannot be ranked — the server
     // refuses an order that is not exactly the account's bots, so it may not be offered here.
-    const canReorder = rows.length > 1 && !rows.some((r) => r.cfg.unreadable)
+    // ⚠ And not while one of its bots is mid-action (2026-09-24): the order decides which bot sizes
+    // first, and the server refuses the write then too.
+    const orderLock = lockOf(rows.map((r) => r.cfg.key))
+    const canReorder = rows.length > 1 && !rows.some((r) => r.cfg.unreadable) && orderLock === null
     const byKey = new Map(rows.map((r) => [r.cfg.key, r]))
     const rowConds = order
       .map((k) => byKey.get(k))
@@ -2049,7 +2071,8 @@ export function Bots() {
               )}
               <button
                 data-testid="priority-save"
-                disabled={savePriority.isPending}
+                disabled={savePriority.isPending || lockOf(order) !== null}
+                title={lockOf(order) ?? undefined}
                 onClick={() =>
                   savePriority.mutate({ account, order }, { onSuccess: () => setOrderEdit(null) })
                 }
@@ -2340,7 +2363,7 @@ export function Bots() {
       {/* A DRAWER, not an inline panel (Aaron, 2026-09-10: "I don't know what I'm looking at").
        *  Inline, it pushed the fleet down and read as part of whichever demo/live filter was on,
        *  when it has nothing to do with either. */}
-      <VpsSyncDrawer open={syncOpen} onClose={() => setSyncOpen(false)} />
+      <VpsSyncDrawer open={syncOpen} onClose={() => setSyncOpen(false)} lock={lockOf(fleetKeys)} />
 
       {/* "Reading the box…" went (2026-09-10): the values waiting on the box now shimmer where
        *  they will land, which says the same thing without a line of text above the page. */}
@@ -2692,6 +2715,12 @@ export function Bots() {
             onStopThen={(k, label, what, then) => stopThen(k, label, what, then)}
             actionOf={actionOf}
             busyFor={busyFor}
+            lock={lockOf(
+              (
+                groupByAccount.get(Number(selAccount)) ??
+                emptyGroup(regByAccount.get(Number(selAccount)) as BotAccountRegistration)
+              ).bots.map((b) => b.key)
+            )}
           />
         )}
 

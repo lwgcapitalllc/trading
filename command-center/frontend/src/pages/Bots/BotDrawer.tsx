@@ -48,7 +48,7 @@ import { botCondition, type Condition } from '@/lib/botCondition'
 import { StatusText, TONE_TEXT } from '@/components/BotStatus'
 import { accountName } from './AccountForm'
 import { ParamGroup, VersionBanner } from './ConfigureTab'
-import { BotActionPill, type BotAction } from './BotStatusPill'
+import { ACTION_DOING, BotActionPill, type BotAction } from './BotStatusPill'
 import { BotRiskEditor } from './BotRiskEditor'
 import { BotSwitchEditor } from './BotSwitchEditor'
 import { SectionTitle } from './drawerParts'
@@ -441,6 +441,21 @@ export function BotDrawer({
     removing || moving || checkingDest !== null || after !== null || pendingAction !== null
   // What a MOVE is doing, which the selector cannot say. ⚠ Never a removal's: its own button says
   // "Removing…" (Aaron, 2026-09-13: "I dont need the text next to the button").
+  // 🔴 ONE reason every change on this panel waits for (2026-09-24): the bot is mid-deploy, start,
+  // stop or restart. `pendingAction` carries all four from the page (`index.tsx` → `actionOf`).
+  const lock = pendingAction
+    ? `${labelOf(bot)} is ${ACTION_DOING[pendingAction]} — wait until it finishes.`
+    : null
+  // What the Deploy button waits for: the same, minus its OWN deploy (it shows that as progress),
+  // plus a move or removal this panel has under way.
+  const deployBlocked =
+    pendingAction === 'deploy'
+      ? null
+      : pendingAction
+        ? lock
+        : selectBusy
+          ? `${labelOf(bot)} is being moved or removed — wait until it finishes.`
+          : null
   const busyText =
     after === 'move' && pendingAction === 'stop'
       ? 'Stopping it first, then moving it…'
@@ -634,6 +649,7 @@ export function BotDrawer({
                   botLabel={labelOf(bot)}
                   row={r}
                   live={onLive}
+                  lock={lock}
                 />
               ) : (
                 <BotRiskEditor
@@ -648,6 +664,7 @@ export function BotDrawer({
                   group={r.name === 'exec_risk_pct' ? myGroup : undefined}
                   live={onLive}
                   onOpenAccount={onOpenAccount}
+                  lock={lock}
                 />
               )
             )
@@ -854,6 +871,7 @@ export function BotDrawer({
           live={bot.account_type === 'live'}
           liveBot={bot}
           fetchedAt={fetchedAt}
+          blocked={deployBlocked}
         />
       </section>
 

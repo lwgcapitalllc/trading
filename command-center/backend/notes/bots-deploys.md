@@ -478,7 +478,9 @@ latest job, or `null`). Built so the page can show ONE progress readout over a d
   only for the pull, *may or may not have deployed* for a build that timed out or reported nothing
   (a structured `error`, so the page never reads promote.py's prose), *IS deployed* past the build.
 - ⚠ **A second job for the same bot while one runs is a 409**, and eviction never drops a running
-  job. **In memory**: a backend restart loses the readout, never the deploy.
+  job. ~~**In memory**: a backend restart loses the readout, never the deploy.~~ 🔴 **Wrong, and
+  corrected 2026-09-24** — the deploy runs on the backend's own thread and dies with it. Jobs are
+  saved to disk now; see *One action at a time per bot* below.
 - ⚠ **The browser guard refuses the POST** — it is the same action as `/promote`.
 - ✅ `tests/test_bot_promote_job.py` (24). **15 mutations run, 15 killed.**
 
@@ -932,3 +934,53 @@ Aaron: *"the bots page takes so dam long to load."* MEASURED on the live box, on
 TESTED: `test_bot_version.py` → `test_no_more_than_three_version_reads_are_on_the_box_at_once`,
 `test_bots_snapshot_parse.py` → `test_the_snapshot_s_two_calls_run_side_by_side`; each red under
 its mutation, run in memory.
+
+## One action at a time per bot, and an account holds still — `services/bot_ops.py` (2026-09-24)
+
+Aaron: *"if I'm updating a bot I shouldn't be able to stop and restart it … do a full audit on the
+bots page and look at all processes that should be locked down while other processes are running
+at the account level and at the bot level."* The audit found every action checked only ITSELF:
+
+- **Mid-deploy, Stop / Start / Restart went straight through** on the page and the server. A deploy
+  stops and starts the bot itself, so a hand-pressed Stop raced two stop/start sequences on one LIVE
+  process.
+- **A deploy started over a start / stop / restart already in flight** — the same race the other way.
+- **An account's cap, shares, priority, registration and bots could change mid-deploy** of one of
+  its bots, and a sync or a go-live could rewrite accounts under any of them.
+- 🔴 **A backend restart mid-deploy erased the deploy without a trace.** It happened that day: a
+  `.py` edit under `backend/` restarted the server during the deploy of the LIVE SOS Fade bot to
+  v394. The job, its steps and the fact a deploy had been asked for vanished; the bot stayed on
+  v365, running and untouched, with nothing anywhere saying the deploy had not happened.
+
+**The rule now, enforced on the server and mirrored on the page:**
+
+| While a bot is… | refused on that bot | refused on its account |
+|---|---|---|
+| deploying | start, stop, restart, deploy, settings save, stress-test settings, move / remove | cap, shares, priority, registration edit, unregister, a bot joining |
+| starting / stopping / restarting | the same | the same |
+| being moved | the same (the move HANDS its claim straight to the deploy it starts — no gap) | the same |
+
+Fleet-wide writes — start / stop / restart all, VPS sync, stack settings, go-live — are refused while
+ANY bot is mid-action; the fleet start / stop / restart also hold every bot while they run.
+
+- **Refused, never queued** (409 naming what the bot is doing). A click that silently waits behind a
+  four-minute deploy looks like a hung page.
+- **Claims are in memory, per backend.** Two clones do not see each other's claims; the box has no
+  lock to offer. A restart clears them, which is right — whatever held them died with it.
+- **Deploy jobs are saved to disk** (`services/promote_jobs.py` → `data/promote_jobs.json`,
+  git-ignored). On start-up a job still marked running is closed as failed, at the step it was on,
+  with the same per-step wording a timeout gets: *"The build was cut off when the Command Center
+  restarted before it reported a result. It may or may not have deployed — check the version."*
+- ⚠ **What is NOT locked, deliberately:** Logs, the version read, the deploy preview (it stages to
+  a scratch copy and writes nothing), an account's pin, its password and its channel test (none
+  changes what a bot trades).
+- ⚠ **A move or removal waiting on a stop still locks EVERY bot's start/stop on the page** — the
+  page-wide half of `busyFor`, kept because `useStopFirst` holds one waiting bot. Not widened here.
+- ⚠ **Still open: a backend restart still KILLS a running deploy** — it is now reported, not
+  prevented. Never edit a `.py` under `backend/` while a deploy runs (`uvicorn --reload`).
+
+TESTED: `tests/test_bot_ops.py` (21 tests); seven mutations run in memory, each red — the routes
+without the lock, the deploy without its claim, the thread without its release, `hold` releasing a
+handed-over claim, the account routes without their check, the join without its destination check,
+`load` passing a running job through untouched. Browser: `bots-version.spec.ts` → *a running deploy
+holds its bot and its account*, red with the page's deploy check removed.

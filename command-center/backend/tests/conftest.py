@@ -28,6 +28,8 @@ import pytest
 # the only thing that lands early enough — a fixture runs too late for a module
 # imported at collection time.
 os.environ["CC_DISABLE_SUPERVISOR"] = "1"
+# Deploy jobs are saved to disk (`services/promote_jobs.py`); never from a test, and never read.
+os.environ["CC_PROMOTE_JOBS_FILE"] = ""
 
 
 def _arm_child_guard() -> None:
@@ -94,6 +96,18 @@ def _copy_template(template, db) -> None:
     finally:
         dst.close()
         src.close()
+
+
+@pytest.fixture(autouse=True)
+def _no_bot_claims_between_tests():
+    """Every test starts with no bot mid-action (`services/bot_ops.py`). A test that starts a
+    deploy with its thread stubbed out never releases the claim, and the next test on that worker
+    would be refused as if the bot were still deploying."""
+    from services import bot_ops
+
+    bot_ops._ops.clear()
+    yield
+    bot_ops._ops.clear()
 
 
 @pytest.fixture(autouse=True)

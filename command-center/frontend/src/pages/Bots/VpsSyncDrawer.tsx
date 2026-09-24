@@ -52,7 +52,17 @@ import { BackButton } from './drawerParts'
  * ⚠ **Nothing syncs on its own** (*"100% manually triggered by me only"*). Opening the drawer
  * reads; only the Sync button writes.
  */
-export function VpsSyncDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function VpsSyncDrawer({
+  open,
+  onClose,
+  lock = null,
+}: {
+  open: boolean
+  onClose: () => void
+  /** Why a sync may not write right now — a bot is mid-action (`index.tsx` → `lockOf`). The scan
+   *  still runs; only the write waits, and it says why in the drawer's own "can't run" state. */
+  lock?: string | null
+}) {
   // ⚠ The sync lives on this ALWAYS-MOUNTED shell, so a sync still running when the drawer is
   // closed is still running — and still reported — when it is opened again. Everything else
   // (the scan, the by-hand form) is thrown away on close, so every open is a fresh scan.
@@ -61,6 +71,7 @@ export function VpsSyncDrawer({ open, onClose }: { open: boolean; onClose: () =>
   return (
     <OpenSyncDrawer
       sync={sync}
+      lock={lock}
       onClose={() => {
         if (!sync.isPending) sync.reset()
         onClose()
@@ -78,29 +89,42 @@ type Phase =
 function phaseOf(
   sync: Sync,
   preview: ReturnType<typeof useSyncPreview>,
-  receipt: AccountSync | null
+  receipt: AccountSync | null,
+  scan = preview.data
 ): Phase {
   if (sync.isPending) return 'syncing'
   if (receipt) return 'saved'
-  const scan = preview.data
   if (!scan) return preview.isError ? 'scan-failed' : 'scanning'
   if (!scan.asked) return 'refused'
   if (scan.blocked) return 'blocked'
   return scan.changes.length > 0 ? 'review' : 'in-sync'
 }
 
-function OpenSyncDrawer({ sync, onClose }: { sync: Sync; onClose: () => void }) {
+function OpenSyncDrawer({
+  sync,
+  lock,
+  onClose,
+}: {
+  sync: Sync
+  lock: string | null
+  onClose: () => void
+}) {
   const qc = useQueryClient()
   // The by-hand form — the only way in for an account sync cannot see (a stopped terminal).
   const [manual, setManual] = useState(false)
   // ⚠ Not asked while a sync is on the wire: the sync answers with its own fresh reading, and a
   // second scan over it would ask the box the same question twice.
   const preview = useSyncPreview(!sync.isPending)
-  const scan = preview.data
+  // 🔴 A bot mid-action BLOCKS the write (2026-09-24) — a sync rewrites accounts every bot reads.
+  // Drawn through the scan's own `blocked` so it is one "can't run" state, not a second one.
+  const scan =
+    preview.data && lock && !preview.data.blocked
+      ? { ...preview.data, blocked: lock }
+      : preview.data
   const result = sync.data
   const receipt = sync.isSuccess && result && !result.plan_changed ? result : null
   const planChanged = sync.isSuccess && !!result?.plan_changed
-  const phase = phaseOf(sync, preview, receipt)
+  const phase = phaseOf(sync, preview, receipt, scan)
 
   // A re-scan is a new question: the old plan goes, so it can never be applied by a press that
   // lands while the new one is still being read.
