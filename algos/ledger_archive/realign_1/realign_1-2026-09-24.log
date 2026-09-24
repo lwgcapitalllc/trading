@@ -228,3 +228,16 @@
 2026-09-24 14:10:02,074 [INFO] Priority 3 on this account: waiting 18s for the bots above
 2026-09-24 14:15:01,880 [INFO] Priority 3 on this account: waiting 38s for the bots above
 2026-09-24 14:20:02,640 [INFO] Priority 3 on this account: waiting 17s for the bots above
+2026-09-24 14:20:20,029 [ERROR] Config changed in ways that CANNOT be applied to a running bot: exec_scale_gate: None → 'Stop improved', exec_giveback_arm_r: None → -1.0, exec_giveback_pct: None → 50.0, exec_giveback_action: None → 'Close', exec_rev_exit: None → 'Off', exec_rev_arm_r: None → 1.0, exec_rev_trigger: None → 'Structure shift', exec_rev_level_touches: None → 2, exec_entry_block_from: None → '', exec_entry_block_to: None → '', exec_lvl_memory: None → False, exec_lvl_days: None → 5.0, exec_lvl_away_r: None → 1.0, exec_lvl_stop_frac: None → 0.5, exec_lvl_tp_r: None → 2.0, exec_lvl_tp1_pct: None → 100.0, exec_lvl_tp2_r: None → -1.0, exec_lvl_risk_pct: None → 100.0, exec_lvl_max_hold_hrs: None → 72.0, exec_lvl_require_quiet: None → True, exec_lvl_be_r: None → -1.0, exec_lvl_be_keep_r: None → 0.0, exec_lvl_confluence: None → 'None', exec_lvl_gap_tol_r: None → 0.1, exec_lvl_shift_bars: None → 24. Still running the settings loaded at startup. Restart the bot to take them (the version pin and the engine warmup are re-checked on restart).
+2026-09-24 14:25:03,382 [INFO] Priority 3 on this account: waiting 17s for the bots above
+2026-09-24 14:30:02,734 [INFO] Priority 3 on this account: waiting 37s for the bots above
+2026-09-24 14:35:01,882 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-24 14:40:01,954 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-24 14:45:01,950 [INFO] Priority 3 on this account: waiting 38s for the bots above
+2026-09-24 14:50:02,031 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-24 14:55:02,473 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-24 15:00:02,214 [INFO] Priority 3 on this account: waiting 38s for the bots above
+2026-09-24 15:05:02,836 [INFO] Priority 3 on this account: waiting 17s for the bots above
+2026-09-24 15:10:01,979 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-24 15:15:01,982 [INFO] Priority 3 on this account: waiting 38s for the bots above
+2026-09-24 15:20:02,439 [INFO] Priority 3 on this account: waiting 18s for the bots above
