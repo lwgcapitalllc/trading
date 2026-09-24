@@ -220,7 +220,7 @@ def trading_block(account, terminal, symbol, symbol_name: str) -> tuple[bool | N
     return (None, None) if unknown else (True, None)
 
 
-def position_summary(positions, *, risk_ticket=None, risk_usd=None) -> dict | None:
+def position_summary(positions, *, risk_ticket=None, risk_usd=None, open_stop=None) -> dict | None:
     """What this bot holds at the BROKER, in one row's worth of facts, for the Command Center.
 
     `positions` is the broker's own answer for this bot (one magic): the trade and, on a hedging
@@ -237,6 +237,15 @@ def position_summary(positions, *, risk_ticket=None, risk_usd=None) -> dict | No
 
     ⚠ **A missing profit is `None`, never 0** — 0 is the claim "no money made or lost", and a
     position that does not carry the field has made no such claim.
+
+    ⚠ **`target` is the broker's own take-profit on the trade's ticket (2026-09-24)** — read off the
+    same position the stop is, so it is a broker FACT, never a strategy's intention. The bridge puts
+    a strategy's whole-position target there (`_sync_take_profit`); a trade that banks in steps, or
+    rides its stop, has none, and MT5's `0.0` is read as `None` — never a price of zero.
+    ⚠ **`target_r` is in PRICES only**: the distance to the target over the distance to the stop
+    the trade OPENED with (`open_stop`, the bridge's frozen 1R). Nothing crosses a unit, so no
+    contract size is read — its fallback of 1.0 would print an R off by the lot size with nothing
+    saying so (rule 15). Needs the bridge's own ticket and a known opening stop, like `r`.
     """
     if not positions:
         return None
@@ -259,6 +268,15 @@ def position_summary(positions, *, risk_ticket=None, risk_usd=None) -> dict | No
         )
     )
     risk = float(risk_usd) if own and not mixed and risk_usd and float(risk_usd) > 0 else None
+    target = float(getattr(base, "tp", 0.0) or 0.0) or None
+    target_r = None
+    stop0 = float(open_stop or 0.0)
+    if target is not None and own and not mixed and stop0 > 0:
+        opened = float(base.price_open)
+        one_r = abs(opened - stop0)
+        if one_r > 0:
+            toward = 1 if int(base.type) == 0 else -1
+            target_r = round((target - opened) * toward / one_r, 2)
     return {
         "side": "mixed" if mixed else ("long" if 1 in sides else "short"),
         "lots": round(lots, 8),
@@ -267,6 +285,8 @@ def position_summary(positions, *, risk_ticket=None, risk_usd=None) -> dict | No
         "profit_usd": round(profit, 2) if profit is not None else None,
         "risk_usd": round(risk, 2) if risk is not None else None,
         "r": round(profit / risk, 2) if risk is not None and profit is not None else None,
+        "target": target,
+        "target_r": target_r,
         "tickets": len(positions),
     }
 
@@ -3335,6 +3355,7 @@ class LiveRunner:
                 positions,
                 risk_ticket=getattr(bridge, "_pos_ticket", None),
                 risk_usd=getattr(bridge, "_pos_risk_usd", None),
+                open_stop=getattr(bridge, "_pos_stop0", None),
             )
         except Exception as e:
             self.log.warning(f"Could not summarise the open position for the heartbeat: {e}")

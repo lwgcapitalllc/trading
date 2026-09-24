@@ -29,14 +29,15 @@ from runner import position_summary  # noqa: E402
 from test_mt5_link import _Bridge, _live, _runner, _StateModule  # noqa: E402
 
 
-def _pos(ticket, *, side=1, lots=0.40, entry=3290.0, sl=3280.0, profit=84.2, swap=-1.2):
-    """One position as MT5 reports it. `type` 0 = buy, 1 = sell; `sl` 0.0 = no stop."""
+def _pos(ticket, *, side=1, lots=0.40, entry=3290.0, sl=3280.0, profit=84.2, swap=-1.2, tp=0.0):
+    """One position as MT5 reports it. `type` 0 = buy, 1 = sell; `sl` / `tp` 0.0 = none set."""
     return SimpleNamespace(
         ticket=ticket,
         type=0 if side > 0 else 1,
         volume=lots,
         price_open=entry,
         sl=sl,
+        tp=tp,
         profit=profit,
         swap=swap,
         magic=770115,
@@ -61,6 +62,8 @@ def test_one_trade_reads_its_side_size_entry_stop_and_R():
         "profit_usd": 83.0,
         "risk_usd": 70.0,
         "r": 1.19,
+        "target": None,
+        "target_r": None,
         "tickets": 1,
     }
 
@@ -146,6 +149,7 @@ def _held_runner(monkeypatch, positions):
     r.mt5 = SimpleNamespace(open_positions_strict=_read)
     r.bridge._pos_ticket = 901
     r.bridge._pos_risk_usd = 70.0
+    r.bridge._pos_stop0 = 3280.0
     return r, calls
 
 
@@ -159,6 +163,17 @@ def test_the_heartbeat_carries_the_trade_the_broker_holds(monkeypatch):
     written = _beat(_held_runner(monkeypatch, [_pos(901)])[0])
     assert written["in_trade"] is True
     assert (written["position"]["side"], written["position"]["r"]) == ("long", 1.19)
+
+
+def test_the_heartbeat_measures_the_target_off_the_bridges_OPENING_stop(monkeypatch):
+    """The wiring: `_position_reading` hands the bridge's frozen 1R (`_pos_stop0`) through.
+
+    MUTATION: pass the current stop as `open_stop` → red (it has ratcheted to 3295, so an R off it
+    reads 30 / 5 = 6.0R). MUTATION: pass nothing → red (no R at all).
+    """
+    r, _ = _held_runner(monkeypatch, [_pos(901, sl=3295.0, tp=3320.0)])
+    written = _beat(r)
+    assert (written["position"]["target"], written["position"]["target_r"]) == (3320.0, 3.0)
 
 
 def test_flat_and_could_not_ask_are_different_answers(monkeypatch):
@@ -216,3 +231,53 @@ def test_the_heartbeat_names_a_halt_and_only_a_halt(monkeypatch):
     r.bridge.halt_reason = "an old reason nobody cleared"
     written = _beat(r)
     assert (written["bridge_state"], written["halt_reason"]) == ("live", None)
+
+
+# ── the target (2026-09-24) ─────────────────────────────────────────────────
+
+
+def test_the_target_is_the_brokers_take_profit_in_R_off_the_opening_stop():
+    """Entry 3290, opening stop 3280 (1R = 10), take-profit 3320 → +3.0R. The stop has since
+    ratcheted to 3295; the target's R still reads off the stop the trade OPENED with.
+
+    MUTATION: measure off the CURRENT stop → red (30 / 5 = 6.0R).
+    MUTATION: drop the side from the sum → red on the short below.
+    """
+    got = position_summary(
+        [_pos(901, sl=3295.0, tp=3320.0)], risk_ticket=901, risk_usd=70.0, open_stop=3280.0
+    )
+    assert (got["target"], got["target_r"]) == (3320.0, 3.0)
+    short = position_summary(
+        [_pos(901, side=-1, entry=3290.0, sl=3300.0, tp=3265.0)],
+        risk_ticket=901,
+        open_stop=3300.0,
+    )
+    assert (short["target"], short["target_r"]) == (3265.0, 2.5)
+
+
+def test_no_take_profit_is_no_target_never_a_price_of_zero():
+    """MT5 reports 0.0 for a position with no take-profit — what live SOS Fade's ordinary trade
+    has, since it banks nothing at a price and rides its stop. That is "no target", not 0.00.
+
+    MUTATION: pass 0.0 through → red.
+    """
+    got = position_summary([_pos(901, tp=0.0)], risk_ticket=901, open_stop=3280.0)
+    assert (got["target"], got["target_r"]) == (None, None)
+
+
+def test_a_target_with_no_known_opening_stop_has_a_price_and_no_R():
+    """A trade picked back up from an older record has no frozen 1R — the price is still a broker
+    fact, the R is unknown (rule 1), never one off a stop that has moved.
+
+    MUTATION: fall back to the current stop → red.
+    """
+    for stop0 in (None, 0.0):
+        got = position_summary([_pos(901, tp=3320.0)], risk_ticket=901, open_stop=stop0)
+        assert (got["target"], got["target_r"]) == (3320.0, None)
+
+
+def test_the_targets_R_needs_the_bridges_own_ticket():
+    """The opening stop belongs to ONE trade; a position the bridge does not know as its own gets
+    the broker's price and no R. MUTATION: drop the `own` test → red."""
+    got = position_summary([_pos(777, tp=3320.0)], risk_ticket=901, open_stop=3280.0)
+    assert (got["target"], got["target_r"]) == (3320.0, None)
