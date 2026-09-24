@@ -193,3 +193,18 @@
 2026-09-24 03:51:31,599 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-09 16:20:00+00:00 → 2026-09-24 03:45:00+00:00).
 2026-09-24 03:51:31,662 [INFO] Equity re-anchored to the account after warm-up: 13,295.93 → 14,862.76
 2026-09-24 03:51:33,303 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-24 04:44:18,981 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-24 04:44:18,981 [INFO] Stop requested — shutting down.
+2026-09-24 04:44:18,981 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-24 04:44:19,866 [INFO] MT5 disconnected.
+2026-09-24 04:44:34,537 [INFO] SOS Fade | SosFadeStrategy v394 | hash d7c263cef2dd | commit 124e0969 | frozen | LIVE
+2026-09-24 04:44:35,178 [INFO] Connected | #700152905 | $14,862.76 | PUPrime-Demo
+2026-09-24 04:44:35,178 [INFO] MT5 connection lock released
+2026-09-24 04:44:35,465 [INFO] Sizing against account balance $14,862.76
+2026-09-24 04:44:35,475 [INFO] Re-entry fill clock: M5 — a second bar stream beside M15.
+2026-09-24 04:44:35,475 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-24 04:44:35,475 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared signals channel
+2026-09-24 04:44:37,928 [INFO] Warmed 5000 bars (2026-07-09 17:00:00+00:00 → 2026-09-24 04:15:00+00:00) in 2.3s
+2026-09-24 04:44:41,116 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-09 17:10:00+00:00 → 2026-09-24 04:35:00+00:00).
+2026-09-24 04:44:41,116 [INFO] Equity re-anchored to the account after warm-up: 15,671.11 → 14,862.76
+2026-09-24 04:44:42,382 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
