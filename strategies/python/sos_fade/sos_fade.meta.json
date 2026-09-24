@@ -707,6 +707,101 @@
       ]
     },
     {
+      "name": "exec_giveback_arm_r",
+      "group": "Exit ladder",
+      "label": "Give-back guard: arm at (R)",
+      "short": "Give-back guard",
+      "desc": "Watches how much of its best price a trade hands back. -1 switches it off and nothing changes. Any other number is how far in front the trade must have been, in R, before the guard starts watching. It reads the trade's own best price, not a target, so a trade that never gets that far is managed exactly as it is today.",
+      "step": 0.5,
+      "guide": [
+        "Low — protects small winners, and costs the big ones far more than it saves",
+        "Off at -1, or high — only the trades that were well in front are watched"
+      ]
+    },
+    {
+      "name": "exec_giveback_pct",
+      "group": "Exit ladder",
+      "label": "How much of the best it may hand back (%)",
+      "short": "Give-back allowed",
+      "desc": "Read only when the guard is armed. 50 means the guard fires once the trade has given back more than half of its best. MEASURED: tighter is worse, not better — a quarter and a third both score below half, because a trade that cannot breathe is stopped out of the move it was right about.",
+      "step": 5,
+      "show_if": {
+        "exec_giveback_arm_r": {
+          "gt": 0
+        }
+      },
+      "guide": [
+        "Tight — fires often, and cuts trades that were only pausing",
+        "Loose — fires almost never"
+      ]
+    },
+    {
+      "name": "exec_giveback_action",
+      "group": "Exit ladder",
+      "label": "What it does when it fires",
+      "short": "Give-back action",
+      "desc": "Read only when the guard is armed. Close flattens the trade at the next bar's open. Tighten the stop leaves it open and puts it straight on the runner trail. Bank half sells half of what is still open and puts the rest on that trail, and fires once per trade. MEASURED over 2020-2026: tightening kept 11R more than closing for the same drawdown.",
+      "choices": ["Close", "Hand to the trail", "Bank half"],
+      "show_if": {
+        "exec_giveback_arm_r": {
+          "gt": 0
+        }
+      },
+      "guide": [
+        "Close — takes the money and gives up the rest of the move",
+        "Hand to the trail — keeps the runner, gives back a little more"
+      ]
+    },
+    {
+      "name": "exec_rev_exit",
+      "group": "Exit ladder",
+      "label": "Reversal exit: what it does",
+      "short": "Reversal exit",
+      "desc": "Watches for a shift of structure against an open trade on the FASTER chart — the same 5-minute stream the re-entry fills on — and acts on it. Off changes nothing. This is a SIGNAL rather than a percentage: the give-back guard above fires off the trade's own profit curve, which says nothing about whether the market turned, while this fires off what the market actually did. It reads the faster chart because a 15-minute reversal is confirmed long after the turn, by which time the profit is already gone. It only ever touches the first trade of a setup, never a re-entry.",
+      "choices": ["Off", "Bank half", "Tighten to the trail", "Close"],
+      "guide": [
+        "Off — the trailing stop is the only thing protecting an open profit",
+        "On — a turn on the faster chart can bank or protect what the trade showed"
+      ]
+    },
+    {
+      "name": "exec_rev_arm_r",
+      "group": "Exit ladder",
+      "label": "Arm once the best has reached (R)",
+      "short": "Reversal exit arms at",
+      "desc": "Read only when the reversal exit is on. How far in front the trade must have been, in R, before a turn against it can close anything. Without it this would be a second stop loss: a trade that has never been in profit already has a stop, and the stop is the faster of the two. The guard exists for the trade that showed real money and handed it back.",
+      "step": 0.5,
+      "show_if": {
+        "exec_rev_exit": ["Bank half", "Tighten to the trail", "Close"]
+      },
+      "guide": [
+        "Low — watches almost every trade, including ones only pausing",
+        "High — only the trades that were well in front are watched"
+      ]
+    },
+    {
+      "name": "exec_rev_trigger",
+      "group": "Exit ladder",
+      "label": "What counts as a reversal",
+      "short": "Reversal trigger",
+      "desc": "Read only when the reversal exit is on. Structure shift: structure turns against the trade on the 5-minute chart (measured: lost on every setting). Level rejected: price reaches the same major level ahead of the trade — a weekly, daily or 4-hour high or low — and fails to close through it on separate visits. Support holding behind the trade never counts. Measured: this one lost on every setting too.",
+      "choices": ["Structure shift", "Level rejected"],
+      "show_if": {
+        "exec_rev_exit": ["Bank half", "Tighten to the trail", "Close"]
+      }
+    },
+    {
+      "name": "exec_rev_level_touches",
+      "group": "Exit ladder",
+      "label": "Rejections of the same level before it acts",
+      "short": "Level rejections",
+      "desc": "Read only when the trigger is Level rejected. 2 means it acts on the second failed visit. Bars pressing against the level one after another count as one visit.",
+      "step": 1,
+      "show_if": {
+        "exec_rev_trigger": "Level rejected"
+      }
+    },
+    {
       "name": "exec_time_stop_mode",
       "group": "Exit ladder",
       "label": "Time stop",
@@ -1717,101 +1812,6 @@
       "desc": "Skip a setup when the market is barely moving. Measured as the average 15-minute range as a percent of price. 0 turns it off. This is NOT the minimum stop distance above: that one asks whether the stop is far enough away to size against, this one asks whether the market is moving at all. A wide stop in a dead market clears that floor and is still refused here. Higher refuses more setups.",
       "step": 0.01,
       "guide": ["Nothing is refused", "Refuses real trades, not just dead ones"]
-    },
-    {
-      "name": "exec_giveback_arm_r",
-      "group": "Exit ladder",
-      "label": "Give-back guard: arm at (R)",
-      "short": "Give-back guard",
-      "desc": "Watches how much of its best price a trade hands back. -1 switches it off and nothing changes. Any other number is how far in front the trade must have been, in R, before the guard starts watching. It reads the trade's own best price, not a target, so a trade that never gets that far is managed exactly as it is today.",
-      "step": 0.5,
-      "guide": [
-        "Low — protects small winners, and costs the big ones far more than it saves",
-        "Off at -1, or high — only the trades that were well in front are watched"
-      ]
-    },
-    {
-      "name": "exec_giveback_pct",
-      "group": "Exit ladder",
-      "label": "How much of the best it may hand back (%)",
-      "short": "Give-back allowed",
-      "desc": "Read only when the guard is armed. 50 means the guard fires once the trade has given back more than half of its best. MEASURED: tighter is worse, not better — a quarter and a third both score below half, because a trade that cannot breathe is stopped out of the move it was right about.",
-      "step": 5,
-      "show_if": {
-        "exec_giveback_arm_r": {
-          "gt": 0
-        }
-      },
-      "guide": [
-        "Tight — fires often, and cuts trades that were only pausing",
-        "Loose — fires almost never"
-      ]
-    },
-    {
-      "name": "exec_giveback_action",
-      "group": "Exit ladder",
-      "label": "What it does when it fires",
-      "short": "Give-back action",
-      "desc": "Read only when the guard is armed. Close flattens the trade at the next bar's open. Tighten the stop leaves it open and puts it straight on the runner trail. Bank half sells half of what is still open and puts the rest on that trail, and fires once per trade. MEASURED over 2020-2026: tightening kept 11R more than closing for the same drawdown.",
-      "choices": ["Close", "Hand to the trail", "Bank half"],
-      "show_if": {
-        "exec_giveback_arm_r": {
-          "gt": 0
-        }
-      },
-      "guide": [
-        "Close — takes the money and gives up the rest of the move",
-        "Hand to the trail — keeps the runner, gives back a little more"
-      ]
-    },
-    {
-      "name": "exec_rev_exit",
-      "group": "Exit ladder",
-      "label": "Reversal exit: what it does",
-      "short": "Reversal exit",
-      "desc": "Watches for a shift of structure against an open trade on the FASTER chart — the same 5-minute stream the re-entry fills on — and acts on it. Off changes nothing. This is a SIGNAL rather than a percentage: the give-back guard above fires off the trade's own profit curve, which says nothing about whether the market turned, while this fires off what the market actually did. It reads the faster chart because a 15-minute reversal is confirmed long after the turn, by which time the profit is already gone. It only ever touches the first trade of a setup, never a re-entry.",
-      "choices": ["Off", "Bank half", "Tighten to the trail", "Close"],
-      "guide": [
-        "Off — the trailing stop is the only thing protecting an open profit",
-        "On — a turn on the faster chart can bank or protect what the trade showed"
-      ]
-    },
-    {
-      "name": "exec_rev_arm_r",
-      "group": "Exit ladder",
-      "label": "Arm once the best has reached (R)",
-      "short": "Reversal exit arms at",
-      "desc": "Read only when the reversal exit is on. How far in front the trade must have been, in R, before a turn against it can close anything. Without it this would be a second stop loss: a trade that has never been in profit already has a stop, and the stop is the faster of the two. The guard exists for the trade that showed real money and handed it back.",
-      "step": 0.5,
-      "show_if": {
-        "exec_rev_exit": ["Bank half", "Tighten to the trail", "Close"]
-      },
-      "guide": [
-        "Low — watches almost every trade, including ones only pausing",
-        "High — only the trades that were well in front are watched"
-      ]
-    },
-    {
-      "name": "exec_rev_trigger",
-      "group": "Exit ladder",
-      "label": "What counts as a reversal",
-      "short": "Reversal trigger",
-      "desc": "Read only when the reversal exit is on. Structure shift: structure turns against the trade on the 5-minute chart (measured: lost on every setting). Level rejected: price reaches the same major level ahead of the trade — a weekly, daily or 4-hour high or low — and fails to close through it on separate visits. Support holding behind the trade never counts. Measured: this one lost on every setting too.",
-      "choices": ["Structure shift", "Level rejected"],
-      "show_if": {
-        "exec_rev_exit": ["Bank half", "Tighten to the trail", "Close"]
-      }
-    },
-    {
-      "name": "exec_rev_level_touches",
-      "group": "Exit ladder",
-      "label": "Rejections of the same level before it acts",
-      "short": "Level rejections",
-      "desc": "Read only when the trigger is Level rejected. 2 means it acts on the second failed visit. Bars pressing against the level one after another count as one visit.",
-      "step": 1,
-      "show_if": {
-        "exec_rev_trigger": "Level rejected"
-      }
     }
   ]
 }

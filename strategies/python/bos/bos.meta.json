@@ -472,6 +472,36 @@
       "desc": "Covers the early closes and market holidays too — Christmas Eve, New Year's Eve, the Thursday before Good Friday and Thanksgiving. Read only when Flat before the close is on."
     },
     {
+      "name": "exec_sec_poi_fallback",
+      "group": "↳ FVG / Structure shift only",
+      "label": "Re-entry when the gap is gone",
+      "short": "Gap gone",
+      "choices": ["Off", "Primary entry"],
+      "show_if": {
+        "exec_secondary": true
+      },
+      "disable_if": {
+        "exec_sec_trigger": ["Structure shift", "Reclaim Entry"]
+      },
+      "disable_note": "No effect unless the gap trigger is in play — the other two rest on a fast-feed move and on the deep edge, neither of which reads a gap.",
+      "desc": "What a re-entry rests on once the gap itself has been used up. Off (default, and what the bot trades today) means no gap, no re-entry: the first trade consumed the gap, so there is no longer a price to rest at. Primary entry rests the limit back at the price this setup already entered at. It only reaches setups the first trade actually took and that then passed the re-entry's own precondition, so it is NOT the no-gap pool measured in September 2026, where the first trade never traded at all and every entry rule tried on it lost. UNMEASURED as of 22 September 2026 — leave it Off until it has a run behind it. Lab only; no TradingView equivalent, so the parity check can never see it."
+    },
+    {
+      "name": "exec_scale_gate",
+      "group": "Exit ladder",
+      "label": "When it may add again",
+      "short": "When it may add again",
+      "choices": ["Stop improved", "Past the last add"],
+      "show_if": {
+        "exec_scale_in": true
+      },
+      "desc": "Inherited from SOS Fade and does nothing on this bot: it never adds to a winner, so there is never a second add to allow. Leave it at Stop improved.",
+      "guide": [
+        "Stop improved — more adds, and one can be bought over a lot that is still losing",
+        "Past the last add — fewer adds, each bought only over lots that are working"
+      ]
+    },
+    {
       "name": "exec_giveback_arm_r",
       "group": "Exit ladder",
       "label": "Give-back guard: arm at (R)",

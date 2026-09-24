@@ -140,6 +140,21 @@
       "desc": "Covers the early closes and market holidays too — Christmas Eve, New Year's Eve, the Thursday before Good Friday and Thanksgiving. Read only when Flat before the close is on."
     },
     {
+      "name": "exec_scale_gate",
+      "group": "Exit ladder",
+      "label": "When it may add again",
+      "short": "When it may add again",
+      "choices": ["Stop improved", "Past the last add"],
+      "show_if": {
+        "exec_scale_in": true
+      },
+      "desc": "Inherited from SOS Fade and does nothing on this bot: it never adds to a winner, so there is never a second add to allow. Leave it at Stop improved.",
+      "guide": [
+        "Stop improved — more adds, and one can be bought over a lot that is still losing",
+        "Past the last add — fewer adds, each bought only over lots that are working"
+      ]
+    },
+    {
       "name": "exec_giveback_arm_r",
       "group": "Exit ladder",
       "label": "Give-back guard: arm at (R)",

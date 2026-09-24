@@ -232,53 +232,34 @@
       ]
     },
     {
-      "name": "exec_time_stop_mode",
-      "group": "Exit ladder",
-      "label": "Time stop",
-      "desc": "Closes a trade that has been open longer than the hours set below. Before TP1 only cuts trades that never reached the first target.",
-      "choices": ["Off", "Before TP1 only", "Always"],
-      "guide": ["Off — the clock never closes a trade", "Always — the clock closes winners too"]
-    },
-    {
-      "name": "exec_time_stop_hrs",
-      "group": "Exit ladder",
-      "label": "Time stop (hours)",
-      "desc": "How long a trade may stay open, in hours, weekends included.",
-      "step": 0.25,
+      "name": "exec_sec_poi_fallback",
+      "group": "↳ FVG / Structure shift only",
+      "label": "Re-entry when the gap is gone",
+      "short": "Gap gone",
+      "choices": ["Off", "Primary entry"],
       "show_if": {
-        "exec_time_stop_mode": ["Before TP1 only", "Always"]
+        "exec_secondary": true
       },
-      "guide": ["Cuts winners as well as losers", "Fires on almost nothing"]
+      "disable_if": {
+        "exec_sec_trigger": ["Structure shift", "Reclaim Entry"]
+      },
+      "disable_note": "No effect unless the gap trigger is in play — the other two rest on a fast-feed move and on the deep edge, neither of which reads a gap.",
+      "desc": "What a re-entry rests on once the gap itself has been used up. Off (default, and what the bot trades today) means no gap, no re-entry: the first trade consumed the gap, so there is no longer a price to rest at. Primary entry rests the limit back at the price this setup already entered at. It only reaches setups the first trade actually took and that then passed the re-entry's own precondition, so it is NOT the no-gap pool measured in September 2026, where the first trade never traded at all and every entry rule tried on it lost. UNMEASURED as of 22 September 2026 — leave it Off until it has a run behind it. Lab only; no TradingView equivalent, so the parity check can never see it."
     },
     {
-      "name": "exec_aplus",
-      "group": "Setup",
-      "widget": "toggle",
-      "label": "SOS Fade has priority (stand the B-leg down)",
-      "options": {
-        "off": "Every B leg trades",
-        "on": "SOS Fade stands the B leg down"
+      "name": "exec_scale_gate",
+      "group": "Exit ladder",
+      "label": "When it may add again",
+      "short": "When it may add again",
+      "choices": ["Stop improved", "Past the last add"],
+      "show_if": {
+        "exec_scale_in": true
       },
-      "desc": "On = stand down on any side where the main reversal setup would have armed, which keeps results comparable with the parent. Off = every setup trades on its own."
-    },
-    {
-      "name": "flat_mode",
-      "group": "Sessions & time",
-      "widget": "switch",
-      "label": "Flat before the close",
-      "choices": ["Off", "Friday only", "Every day"],
-      "desc": "Closes any open trade shortly before the market shuts, so nothing is held through a break. Friday only covers the weekend and the holiday closes of the same shape; Every day also closes overnight. Off by default."
-    },
-    {
-      "name": "flat_holidays",
-      "group": "Sessions & time",
-      "widget": "toggle",
-      "label": "↳ Also flatten before holiday closes",
-      "options": {
-        "off": "No",
-        "on": "Yes"
-      },
-      "desc": "Covers the early closes and market holidays too — Christmas Eve, New Year's Eve, the Thursday before Good Friday and Thanksgiving. Read only when Flat before the close is on."
+      "desc": "Inherited from SOS Fade and does nothing on this bot: it never adds to a winner, so there is never a second add to allow. Leave it at Stop improved.",
+      "guide": [
+        "Stop improved — more adds, and one can be bought over a lot that is still losing",
+        "Past the last add — fewer adds, each bought only over lots that are working"
+      ]
     },
     {
       "name": "exec_giveback_arm_r",
@@ -374,6 +355,55 @@
       "show_if": {
         "exec_rev_trigger": "Level rejected"
       }
+    },
+    {
+      "name": "exec_time_stop_mode",
+      "group": "Exit ladder",
+      "label": "Time stop",
+      "desc": "Closes a trade that has been open longer than the hours set below. Before TP1 only cuts trades that never reached the first target.",
+      "choices": ["Off", "Before TP1 only", "Always"],
+      "guide": ["Off — the clock never closes a trade", "Always — the clock closes winners too"]
+    },
+    {
+      "name": "exec_time_stop_hrs",
+      "group": "Exit ladder",
+      "label": "Time stop (hours)",
+      "desc": "How long a trade may stay open, in hours, weekends included.",
+      "step": 0.25,
+      "show_if": {
+        "exec_time_stop_mode": ["Before TP1 only", "Always"]
+      },
+      "guide": ["Cuts winners as well as losers", "Fires on almost nothing"]
+    },
+    {
+      "name": "exec_aplus",
+      "group": "Setup",
+      "widget": "toggle",
+      "label": "SOS Fade has priority (stand the B-leg down)",
+      "options": {
+        "off": "Every B leg trades",
+        "on": "SOS Fade stands the B leg down"
+      },
+      "desc": "On = stand down on any side where the main reversal setup would have armed, which keeps results comparable with the parent. Off = every setup trades on its own."
+    },
+    {
+      "name": "flat_mode",
+      "group": "Sessions & time",
+      "widget": "switch",
+      "label": "Flat before the close",
+      "choices": ["Off", "Friday only", "Every day"],
+      "desc": "Closes any open trade shortly before the market shuts, so nothing is held through a break. Friday only covers the weekend and the holiday closes of the same shape; Every day also closes overnight. Off by default."
+    },
+    {
+      "name": "flat_holidays",
+      "group": "Sessions & time",
+      "widget": "toggle",
+      "label": "↳ Also flatten before holiday closes",
+      "options": {
+        "off": "No",
+        "on": "Yes"
+      },
+      "desc": "Covers the early closes and market holidays too — Christmas Eve, New Year's Eve, the Thursday before Good Friday and Thanksgiving. Read only when Flat before the close is on."
     }
   ]
 }
