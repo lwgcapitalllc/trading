@@ -39,6 +39,7 @@ from zoneinfo import ZoneInfo
 
 from .level_memory import SRC as LVL_SRC
 from .level_memory import LevelMemory
+from .entry_window import in_window as in_entry_window
 from .secondary import SecArm, SecondaryArm, Structure1m
 
 _NY = ZoneInfo("America/New_York")
@@ -299,6 +300,15 @@ class DualClock:
                 primary_resting_s=ex.primary_resting_short,
                 sig=self.last_sig, m1=m1, close=bar.close,
             ))
+        # The New York no-entry window, asked of the SAME module the first entry asks, at the
+        # time an order decided now would be live (this fast bar's close). An empty arm is what
+        # "nothing armed" already looks like, so the order path drops any resting order exactly
+        # as it does when nothing qualifies — no second refusal mechanism. It covers the level
+        # memory too, because that shares this order path.
+        if cfg.exec_entry_block_from and in_entry_window(
+                cfg.exec_entry_block_from, cfg.exec_entry_block_to,
+                ts + fast_tf_minutes(cfg) * 60_000):
+            arm = SecArm()
         out.arm = arm
         sig_fast = FastSig(bar.index, ts, bar.open, bar.high, bar.low, bar.close,
                            self.last_sig.last_conf_high, self.last_sig.last_conf_low)

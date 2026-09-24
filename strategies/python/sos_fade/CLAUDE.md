@@ -539,3 +539,7 @@ Most-cited code: `compare_strategy.py`, `sos_fade.meta.json`, `sos_fade_strategy
 ### `notes/level_memory.md` — Level memory — re-trading a level after its setup died (measured, OFF)
 
 **Read before touching:** `level_memory.py`, the level-memory settings in `config.py`, or the fast-clock merge in `dual_clock.py`.
+
+### `notes/entry_window.md` — The no-entry window (New York hours), measured, OFF
+
+**Read before touching:** `entry_window.py` or the no-entry window settings. Every window tried lost R; the drawdown cut was one 2022 stretch.

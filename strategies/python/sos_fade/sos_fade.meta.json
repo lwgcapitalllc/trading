@@ -1343,6 +1343,20 @@
       "hidden": true
     },
     {
+      "name": "exec_entry_block_from",
+      "group": "Sessions & time",
+      "label": "No new entries from (New York, HH:MM)",
+      "short": "No-entry window from",
+      "desc": "A part of the New York day in which no new trade may start — first entries and re-entries alike. 24-hour time, e.g. 11:30. Leave both times empty for off. It checks when the order would actually be live, so an order decided just before the window cannot fill inside it. Measured before it was built: 11:30-15:30 was 45 trades for +6.8R, so it is not a losing block to begin with."
+    },
+    {
+      "name": "exec_entry_block_to",
+      "group": "Sessions & time",
+      "label": "...until (New York, HH:MM)",
+      "short": "No-entry window until",
+      "desc": "The end of the no-entry window, 24-hour time. The window may run past midnight (22:00 to 02:00). Must be set together with the start."
+    },
+    {
       "name": "flat_mode",
       "group": "Sessions & time",
       "widget": "switch",

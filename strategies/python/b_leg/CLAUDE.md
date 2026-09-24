@@ -331,9 +331,9 @@ Most-cited code: `config.py`, `strategies/tradingview/b_leg_strategy.pine`, `b_l
 - The 6.5-year measurement — 2026-08-04 — 🔴 **SUPERSEDED, AND KEPT AS THE RECORD OF WHY**
 - The exit-ladder re-default — 2026-08-06
 
-## Two inherited exit rules, both OFF — never measured on this bot (2026-09-23)
+## Inherited exit rules and no-entry window, all OFF — unmeasured here (2026-09-23)
 
-⚠ The give-back guard and the reversal exit arrive from SOS Fade's config and default OFF, so
-nothing here moved. 🔴 **Neither was measured on this bot**; on SOS Fade's book the reversal exit
+⚠ The give-back guard, reversal exit and no-entry window arrive from SOS Fade's config and default OFF, so
+nothing here moved. 🔴 **None was measured on this bot**; on SOS Fade's book the reversal exit
 lost on all six settings. Switching one on here is a new experiment, and neither has a Pine side.
 Evidence: `strategies/python/sos_fade/notes/exit_ladder_history.md`.

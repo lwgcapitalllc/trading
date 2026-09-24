@@ -879,6 +879,20 @@ class SosFadeConfig:
     #   deviation. **The case for this lever is the DRAWDOWN — 7.99R → 5.62R at 36h (30%), 5.38R
     #   at 30h — bought for R that is indistinguishable from noise, and resting on 6 trades in
     #   6.5 years.** It is not a profit lever.
+    exec_entry_block_from: str = ""    # "No new entries from (New York, HH:MM)"
+    exec_entry_block_to: str = ""      # "↳ ...until (New York, HH:MM)"
+    #   A window of the New York day in which NO new entry may fill — first entries AND
+    #   re-entries — half-open [from, to), 24-hour "HH:MM". Both empty = off, which is the default.
+    #   Aaron, 2026-09-23: refuse entries 11:30-15:30 New York.
+    #   🔴 THE WINDOW WAS PICKED OFF A TABLE, AFTER LOOKING AT IT. On the 244-trade replay the
+    #   11:30-15:30 slots were 45 trades for +6.8R — NOT a losing block — and +15.4R of the
+    #   first-entry half is a single trade. A boundary chosen by reading the data it is then
+    #   tested on is the shape of an artefact; the short-hold variant's 10:00-12:00 window below
+    #   carries the same warning. So it is only believed if it survives both halves of the history
+    #   and the neighbouring windows, not just the one that was read off the table.
+    #   ⚠ It tests when the order would be LIVE (the deciding bar's close), not the bar's open —
+    #   see `entry_window.py`, the one place both entry paths ask.
+    #   ⚠ No Pine counterpart, so the parity gate is structurally blind to it.
     exec_no_late_day: bool = True      # "No entries in final hour (16:00-17:00 NY)"
     exec_conf_sz: bool = False         # "Allow Sniper Zone as entry confirmation" (Pine execConfSZ)
     #   Added to `sos_fade_strategy.pine` 2026-07-21. NOT PORTED YET — the field exists so the toggle is
@@ -2044,6 +2058,21 @@ class SosFadeConfig:
             raise ValueError(
                 f"exec_tp1_r must be -1 (use the frozen 15m fib TP1) or a positive R multiple, "
                 f"got {self.exec_tp1_r!r}. Zero would put the first target ON the entry.")
+        from .entry_window import parse_hhmm
+        try:
+            _eb = (parse_hhmm(self.exec_entry_block_from), parse_hhmm(self.exec_entry_block_to))
+        except ValueError as e:
+            raise ValueError(f"exec_entry_block_from / _to: {e}. Use 24-hour HH:MM, "
+                             "or leave both empty for off.") from None
+        if (_eb[0] is None) != (_eb[1] is None):
+            raise ValueError(
+                "exec_entry_block_from and exec_entry_block_to must be set together. Refusing a "
+                "HALF-set window rather than reading the set half — one time filled in is a "
+                "window nobody asked for.")
+        if _eb[0] is not None and _eb[0] == _eb[1]:
+            raise ValueError(
+                "exec_entry_block_from equals exec_entry_block_to — an empty window that reads "
+                "as a rule switched on. Leave both empty to mean off.")
         if self.exec_rev_exit not in (
                 "Off", "Bank half", "Tighten to the trail", "Close"):
             raise ValueError(

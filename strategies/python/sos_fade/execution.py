@@ -50,6 +50,7 @@ from backtest.setups import DEAD, FILLED, RESTING, WATCHING, Confluence, SetupSn
 from engines.fibonacci.geometry import fib_level
 
 from .config import _TP_LEVELS
+from .entry_window import in_window as in_entry_window
 from .level_memory import SRC as LVL_SRC
 from .signals import POI_SOURCE_OB_NO_FVG, poi_rank_is_fvg, pois_for, sos_aware_veto
 
@@ -86,6 +87,7 @@ def _nearest(shallow, deep, deep_dist, shallow_dist):
 _PULL_VETO = "Divergence / extreme-RSI veto"
 _PULL_LATE = "Final hour (16:00-18:00 New York)"
 _PULL_SH_HOURS = "Short-hold hour window"
+_PULL_ENTRY_WINDOW = "No-entry window (New York)"
 _PULL_HTF = "HTF breakout / bias filter"
 _PULL_FLAT = "Flat-by-close window"
 _PULL_TIGHT = "Stop too tight for your minimum"
@@ -285,6 +287,8 @@ _BLOCK_LABEL = {
     # refused live entries while booking nothing anywhere — no block record, no miss code, no
     # Telegram message. It was the only shipped rule that could skip a trade and leave no trace.
     10: "Market too quiet",
+    # 11 has no Pine counterpart: the New York no-entry window (`entry_window.py`).
+    11: "No-entry window",
 }
 # The hover text, word-for-word from Pine `f_blkWhy` so the chart and TradingView agree.
 _BLOCK_REASON = {
@@ -298,6 +302,8 @@ _BLOCK_REASON = {
     7: "Minimum stop distance — the stop sits closer to the entry than your floor, so this "
        "position would be oversized and noise-sensitive.",
     8: "Short-hold time block — this hour is inside the window the short-hold variant refuses.",
+    11: "No-entry window — the order would have been live inside the New York window you set "
+        "for no new entries.",
     9: "Entry too deep — the limit would rest deeper into the retrace than the short-hold "
        "variant allows, and a deep entry measured negative on every pool tested.",
     10: "Minimum market volatility — the 15m ATR is under your floor as a share of price, so "
@@ -309,7 +315,7 @@ _BLOCK_REASON = {
 def _block_codes(dir_off: bool, arm_off: bool, late: bool, veto: bool,
                  htf_brk: bool, htf_bias: bool, tight: bool = False,
                  sh_hours: bool = False, sh_deep: bool = False,
-                 quiet: bool = False) -> List[int]:
+                 quiet: bool = False, entry_window: bool = False) -> List[int]:
     """Every rule refusing this side, in the Pine's `f_blkCode` precedence order.
     Empty = nothing is blocking; `[0]` is what `f_blkCode` itself would have returned.
 
@@ -328,7 +334,8 @@ def _block_codes(dir_off: bool, arm_off: bool, late: bool, veto: bool,
     IS SHIPPED AND ON** (`exec_min_atr_pct` 0.08 on the live bot), so unlike its two neighbours
     it changes what a real run reports the day it lands."""
     return [c for c, on in enumerate(
-        (dir_off, arm_off, late, veto, htf_brk, htf_bias, tight, sh_hours, sh_deep, quiet),
+        (dir_off, arm_off, late, veto, htf_brk, htf_bias, tight, sh_hours, sh_deep, quiet,
+         entry_window),
         start=1) if on]
 
 
@@ -785,6 +792,10 @@ class Execution:
         # reader. The give-back guard above CAN read them because it runs on the 15m path, where
         # `_manage_open` has just widened them on this same bar.
         self._rev_best: Optional[float] = None
+        # The no-entry window's clock: the last bar time seen and the smallest bar spacing, so the
+        # window can be tested at the time an order would be LIVE. Not position state.
+        self._ew_last_ms: Optional[int] = None
+        self._ew_step_ms: Optional[int] = None
         # A close a PERSON asked for, holding the reason to book it under, or None for the
         # only state this has in the lab and in every parity run: nobody has asked. Nothing in
         # `backtest/`, in the Pine, or in `compare_strategy.py` can reach `request_close`, so
@@ -1637,7 +1648,7 @@ class Execution:
         # The variant's window refuses an ENTRY exactly the way the final hour does, so it is
         # ANDed in beside it rather than given its own branch — one place decides what "the clock
         # refuses this bar" means, and the marker below reads the same booleans.
-        late_any = late or sh_hours
+        late_any = late or sh_hours or self._entry_window_block(sig)
 
         # arm-source filter (Pine 4349-4355)
         use_swp_l = cfg.exec_arm_sweep and seq.sos_l_swp
@@ -1678,6 +1689,31 @@ class Execution:
         htf_l, htf_s = self._htf_exhaustion_block(sig)
         bias_l, bias_s = self._htf_bias_block(sig)
         return late, htf_l, htf_s, bias_l, bias_s
+
+    def _entry_window_block(self, sig) -> bool:
+        """Is this bar's order inside the New York no-entry window? Reporting AND refusing.
+
+        The time tested is when the order would be LIVE — this bar's CLOSE, i.e. its open plus
+        the bar spacing — because an order decided here can only fill from the next bar on. The
+        spacing is the SMALLEST gap seen between bars, the same reading the parity gate uses for
+        the chart's timeframe, so a weekend gap cannot inflate it. Before a second bar has been
+        seen the spacing is unknown and the open is used, which can only refuse LESS.
+
+        A separate method rather than a widened `late`, for the reason `_sh_hour_block` gives:
+        `late` is what the marker renders as the 16:00 final-hour rule.
+        """
+        cfg = self._cfg
+        if not cfg.exec_entry_block_from:
+            return False
+        t = int(sig.time_ms)
+        last = self._ew_last_ms
+        if last is not None and t > last:
+            gap = t - last
+            self._ew_step_ms = gap if self._ew_step_ms is None else min(self._ew_step_ms, gap)
+        if last is None or t > last:
+            self._ew_last_ms = t
+        return in_entry_window(cfg.exec_entry_block_from, cfg.exec_entry_block_to,
+                               t + (self._ew_step_ms or 0))
 
     def _sh_hour_block(self, sig) -> bool:
         """The short-hold variant's own New York hour window, half-open [from, to).
@@ -1732,7 +1768,7 @@ class Execution:
         # The miss watch asks only "did a clock rule refuse this bar", so the two windows fold
         # together HERE rather than in `_bar_gates` — see `_sh_hour_block` for why that method
         # exists at all.
-        late = late or self._sh_hour_block(sig)
+        late = late or self._sh_hour_block(sig) or self._entry_window_block(sig)
 
         # Which arm sources COUNT — the live flags already filtered through the enable-toggles,
         # exactly as `_armed` reads them, so "armed" means the same thing in both places.
@@ -2265,10 +2301,12 @@ class Execution:
         codes = (
             _block_codes(not cfg.exec_longs, not arm_ok_l, late,
                          dec.long_veto and cfg.exec_respect_veto, htf_l, bias_l, tight_l,
-                         sh_hours, self._too_deep(sig, long_edge, True), quiet_l),
+                         sh_hours, self._too_deep(sig, long_edge, True), quiet_l,
+                         self._entry_window_block(sig)),
             _block_codes(not cfg.exec_shorts, not arm_ok_s, late,
                          dec.short_veto and cfg.exec_respect_veto, htf_s, bias_s, tight_s,
-                         sh_hours, self._too_deep(sig, short_edge, False), quiet_s),
+                         sh_hours, self._too_deep(sig, short_edge, False), quiet_s,
+                         self._entry_window_block(sig)),
         )
         for slot, (is_long, ok, cs, edge, sos_bar) in enumerate((
             (True, ready[0], codes[0], long_edge, seq.l_sos_bar),
@@ -2475,6 +2513,8 @@ class Execution:
             out.append(_PULL_LATE)
         if self._sh_hour_block(sig):
             out.append(_PULL_SH_HOURS)
+        if self._entry_window_block(sig):
+            out.append(_PULL_ENTRY_WINDOW)
         if (htf_l or bias_l) if is_long else (htf_s or bias_s):
             out.append(_PULL_HTF)
         if flat_window:
