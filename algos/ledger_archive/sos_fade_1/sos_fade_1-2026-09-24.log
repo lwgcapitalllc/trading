@@ -209,3 +209,18 @@
 2026-09-24 04:44:41,116 [INFO] Equity re-anchored to the account after warm-up: 15,671.11 → 14,862.76
 2026-09-24 04:44:42,382 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
 2026-09-24 18:33:26,343 [ERROR] Config changed in ways that CANNOT be applied to a running bot: exec_scale_gate: None → 'Stop improved', exec_giveback_arm_r: None → -1.0, exec_giveback_pct: None → 50.0, exec_giveback_action: None → 'Close', exec_rev_exit: None → 'Off', exec_rev_arm_r: None → 1.0, exec_rev_trigger: None → 'Structure shift', exec_rev_level_touches: None → 2, exec_entry_block_from: None → '', exec_entry_block_to: None → '', exec_lvl_memory: None → False, exec_lvl_days: None → 5.0, exec_lvl_away_r: None → 1.0, exec_lvl_stop_frac: None → 0.5, exec_lvl_tp_r: None → 2.0, exec_lvl_tp1_pct: None → 100.0, exec_lvl_tp2_r: None → -1.0, exec_lvl_risk_pct: None → 100.0, exec_lvl_max_hold_hrs: None → 72.0, exec_lvl_require_quiet: None → True, exec_lvl_be_r: None → -1.0, exec_lvl_be_keep_r: None → 0.0, exec_lvl_confluence: None → 'None', exec_lvl_gap_tol_r: None → 0.1, exec_lvl_shift_bars: None → 24. Still running the settings loaded at startup. Restart the bot to take them (the version pin and the engine warmup are re-checked on restart).
+2026-09-24 20:29:43,662 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-24 20:29:43,662 [INFO] Stop requested — shutting down.
+2026-09-24 20:29:43,662 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-24 20:29:44,234 [INFO] MT5 disconnected.
+2026-09-24 20:29:52,345 [INFO] SOS Fade | SosFadeStrategy v394 | hash d7c263cef2dd | commit 0a4a5798 | frozen | LIVE
+2026-09-24 20:29:52,878 [INFO] Connected | #700152905 | $14,862.76 | PUPrime-Demo
+2026-09-24 20:29:52,878 [INFO] MT5 connection lock released
+2026-09-24 20:29:53,095 [INFO] Sizing against account balance $14,862.76
+2026-09-24 20:29:53,095 [INFO] Re-entry fill clock: M5 — a second bar stream beside M15.
+2026-09-24 20:29:53,095 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-24 20:29:53,111 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared signals channel
+2026-09-24 20:29:55,284 [INFO] Warmed 5000 bars (2026-07-10 09:45:00+00:00 → 2026-09-24 20:00:00+00:00) in 2.1s
+2026-09-24 20:29:59,487 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-10 09:55:00+00:00 → 2026-09-24 20:20:00+00:00).
+2026-09-24 20:29:59,518 [INFO] Equity re-anchored to the account after warm-up: 15,671.11 → 14,862.76
+2026-09-24 20:30:00,612 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
