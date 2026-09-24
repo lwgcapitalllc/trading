@@ -60,3 +60,42 @@
 2026-09-23 14:45:07,757 [INFO] Priority 2 on this account: waiting 12s for the bots above
 2026-09-23 15:00:07,755 [INFO] Priority 2 on this account: waiting 12s for the bots above
 2026-09-23 15:15:07,174 [INFO] Priority 2 on this account: waiting 13s for the bots above
+2026-09-23 15:30:06,478 [INFO] Priority 2 on this account: waiting 14s for the bots above
+2026-09-23 15:45:07,276 [INFO] Priority 2 on this account: waiting 13s for the bots above
+2026-09-23 16:00:06,730 [INFO] Priority 2 on this account: waiting 13s for the bots above
+2026-09-23 16:15:05,698 [INFO] Priority 2 on this account: waiting 14s for the bots above
+2026-09-23 16:30:04,846 [INFO] Priority 2 on this account: waiting 15s for the bots above
+2026-09-23 16:45:05,241 [INFO] Priority 2 on this account: waiting 15s for the bots above
+2026-09-23 17:00:07,097 [INFO] Priority 2 on this account: waiting 13s for the bots above
+2026-09-23 17:15:07,348 [INFO] Priority 2 on this account: waiting 13s for the bots above
+2026-09-23 17:30:06,301 [INFO] Priority 2 on this account: waiting 14s for the bots above
+2026-09-23 17:45:06,035 [INFO] Priority 2 on this account: waiting 14s for the bots above
+2026-09-23 17:50:02,348 [INFO] MIRRORING ENTRY | the strategy opened LONG at 4290.68 SL 4273.8404543369315; sending it to the broker at market
+2026-09-23 17:50:02,348 [INFO] place bullish primary MARKET 0.32L SL 4273.8404543369315 TP 4330.915
+2026-09-23 17:50:02,675 [INFO] ORDER FILLED | ticket=366380390 | bullish 0.32L @ 0.00 | SL=4273.84 TP=4330.91
+2026-09-23 17:50:02,675 [INFO] MARKET ENTRY FILLED | T366380390 bullish 0.32L @ 0.0 | SL=4273.8404543369315
+2026-09-23 17:50:02,675 [INFO] POSITION OPENED | T366380390 LONG 0.32L @ 4291.05 | SL=4273.84
+2026-09-23 18:00:00,327 [INFO] Priority 2 on this account: waiting 20s for the bots above
+2026-09-23 18:15:05,212 [INFO] Priority 2 on this account: waiting 15s for the bots above
+2026-09-23 18:30:05,640 [INFO] Priority 2 on this account: waiting 14s for the bots above
+2026-09-23 18:45:05,093 [INFO] Priority 2 on this account: waiting 15s for the bots above
+2026-09-23 19:00:04,801 [INFO] Priority 2 on this account: waiting 15s for the bots above
+2026-09-23 19:15:05,866 [INFO] Priority 2 on this account: waiting 14s for the bots above
+2026-09-23 19:30:04,368 [INFO] Priority 2 on this account: waiting 16s for the bots above
+2026-09-23 19:45:05,162 [INFO] Priority 2 on this account: waiting 15s for the bots above
+2026-09-23 20:00:05,515 [INFO] Priority 2 on this account: waiting 14s for the bots above
+2026-09-23 20:15:03,384 [INFO] Priority 2 on this account: waiting 17s for the bots above
+2026-09-23 20:30:02,328 [INFO] Priority 2 on this account: waiting 18s for the bots above
+2026-09-23 20:45:02,053 [INFO] Priority 2 on this account: waiting 18s for the bots above
+2026-09-23 22:05:06,970 [WARNING] 13 bars missed — re-warming the engines rather than resuming with a hole in the stream.
+2026-09-23 22:05:06,978 [INFO] Sizing against account balance $10,914.40
+2026-09-23 22:05:14,275 [INFO] Warmed 15000 bars (2026-07-09 10:35:00+00:00 → 2026-09-23 22:00:00+00:00) in 6.9s
+2026-09-23 22:05:14,291 [INFO] Equity re-anchored to the account after warm-up: 10,701.90 → 10,914.40
+2026-09-23 22:05:14,291 [INFO] Restored position T366380390 — LONG 0.32 lots @ 4291.05, stop 4273.84, stage ?, opened by the primary. It will be managed from the next bar.
+2026-09-23 22:15:05,717 [INFO] Priority 2 on this account: waiting 14s for the bots above
+2026-09-23 22:30:02,485 [INFO] Priority 2 on this account: waiting 18s for the bots above
+2026-09-23 22:45:02,159 [INFO] Priority 2 on this account: waiting 18s for the bots above
+2026-09-23 23:00:01,935 [INFO] Priority 2 on this account: waiting 18s for the bots above
+2026-09-23 23:15:02,053 [INFO] Priority 2 on this account: waiting 18s for the bots above
+2026-09-23 23:30:02,635 [INFO] Priority 2 on this account: waiting 17s for the bots above
+2026-09-23 23:45:02,361 [INFO] Priority 2 on this account: waiting 18s for the bots above
