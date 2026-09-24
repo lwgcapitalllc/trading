@@ -105,3 +105,45 @@ def test_the_tool_refuses_a_secondary_config_it_cannot_replay():
     assert "raise SystemExit(" in src.split('if not hasattr(strat, "run_dual"):')[1][:400]
     # and the primary-only path must be the ELSE of the secondary branch, never a default
     assert "strat.run_dual(df, df1m, warmup=args.warmup)" in src
+
+
+@dataclass(frozen=True)
+class _CfgLvl:
+    """A config whose LEVEL MEMORY needs the fast feed, independently of the re-entry."""
+
+    exec_secondary: bool = True
+    exec_lvl_memory: bool = False
+
+
+def test_the_level_memory_alone_still_asks_for_the_fast_path():
+    """🔴 WATCHED RED against HEAD: it returned `False` and the run booked no level-memory trade.
+
+    The fast feed is not the re-entry's private property. A run with the level memory on and the
+    re-entry off took the 15m-only path, where that feature cannot fire at all — the config said
+    it was on, the replay could not reach it, and nothing in the report said so.
+    """
+    cfg, wants, note = _choose_replay(
+        _CfgLvl(exec_secondary=False, exec_lvl_memory=True), no_secondary=False
+    )
+    assert wants is True
+    assert note == ""
+
+
+def test_no_secondary_switches_off_the_reentry_and_keeps_the_fast_path():
+    """WATCHED RED against HEAD: `wants` came back False, so the switch silently did nothing."""
+    cfg, wants, note = _choose_replay(
+        _CfgLvl(exec_secondary=True, exec_lvl_memory=True), no_secondary=True
+    )
+    assert cfg.exec_secondary is False
+    assert wants is True
+    assert "level memory" in note
+
+
+def test_no_secondary_without_the_level_memory_is_unchanged():
+    """The shipped meaning of the flag, pinned so the branch above cannot widen it."""
+    cfg, wants, note = _choose_replay(
+        _CfgLvl(exec_secondary=True, exec_lvl_memory=False), no_secondary=True
+    )
+    assert cfg.exec_secondary is False
+    assert wants is False
+    assert "15m-only" in note

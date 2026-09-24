@@ -39,6 +39,7 @@ Standing rules for anything recorded here:
 | 20 | 2026-08-17 | 🟢 **WHERE a scale-in adds** — 15 locations (retest, fib 23.6/38.2/50/61.8/78.6%, FVG, order block, fib∩gap, fib∪gap, ATR pullbacks, momentum, market), then per-year, per-half and a budget grid on the finalists | **`BOS retest` at 4 adds / cap 2.0x SHIPPED as the mode default** (toggle still OFF, so no figure here moves). The sweep's own winner (fib 23.6%, 302R) was **80% one year** — 2020-free it falls BELOW the shipped market rule. **Deeper is worse, monotonically**, and 61.8%/78.6% lose money outright. Two harness bugs caught. | 🔴 **VOID — broken fill model, superseded by Run 21** |
 | 21 | 2026-08-18 | 🔴 **The scale-in grid RE-RUN on a corrected fill** — Run 20 priced every add at its TRIGGER, not where Pine buys it. 32 cells (2 modes × 1-4 adds × 4 caps) + a ladder-shape test, XAUUSD 15m 2018-09-13 → 2026-08-14, PU Prime ECN costs | **`Trail` 3 adds × 0.5x cap SHIPPED** — 194.15R vs 128.26R not scaling, drawdown 6.03 → 7.24, and the only cell better than baseline on **both** axes over the full book. **`BOS retest` LOSES money outside 2020 at every budget above one add.** The CAP is the drawdown lever, not the add count. Ladder shape (big-first vs flat vs small-first) is inside the 15.06R jitter. ⚠ No cell beats baseline ret/DD ex-2020. | **SHIPPED (mode + adds + cap) — PARITY GREEN** |
 | 22 | 2026-08-19 | 🔴 **WHERE THE SCALE-IN ADDS TAKE PROFIT** — the adds had no exit of their own, so this asked whether banking them beats riding. Two independent target families: a flat multiple of base risk (1R…8R, the control) and real structure (prev day/week H/L, H4, session H/L, and combinations). 16 configurations, XAUUSD 15m 2018-09-13 → 2026-08-14, PU Prime ECN costs, on `Trail` 3 × 0.5x | **EVERY TARGET LOSES TO RIDING**, and they lose in order of how OFTEN the target fires — Ride 194.15R (0 banks), prev week 168.51R (16), prev day 157.57R (25), H4 146.09R (47). The flat-risk control produced the same monotonic curve independently, and banking at 1R (126.76R) came out **below never scaling at all**. 🔴 **The first structural table was VOID and these are RE-MEASURED** — the harness resolved its target from the LIVE bar, so `Prev day`/`H4` banked ZERO times in 8 years while resolving 1,804 and 2,438 valid targets; day/H4 levels die on a WICK and the engine steps first, so the level was gone on the exact bar it would have filled. **Weekly dies on a CLOSE through and was immune, hiding it on the only mode being watched.** ⚠ Worst trade is −2.06R in every configuration — the affordability rule already prevents the giveback a target was asked for. ⚠ **Strip the top 20 trades and banking WINS on risk-adjusted return** (prev day 14.49, H4 14.60 vs Ride 11.99): it smooths the ordinary book and pays for it out of the tail. | **`exec_scale_tp_mode` SHIPPED defaulting to `"Prev week H/L"` — Aaron's call, AGAINST the measurement.** 🔴 **DEFAULT UNDER REVIEW** — he chose it on a 4.38R gap said to be inside the 15.06R jitter; the true gap is **25.64R, outside it**. 🔴 **NOT PARITY-GATED YET** |
+| 44 | 2026-09-23 | 🔴 **THE LEVEL MEMORY REPLAYED INSIDE THE BOT** — rest a limit again at the price a primary already entered at, once the setup is dead and price has travelled 1R away; half-width stop, 2R target, 3-day hold. Four replays, XAUUSD.p 15m+5m 2020-01-01 → 2026-09-21, PU Prime ECN costs | **Run 42's +16.35R screen did not survive the position slot.** The 65 trades it adds are worth **+0.85R in 6.5 years** (+0.80R without their best one) and 2025 carries all of it; one collision on 2023-01-12 cost a **+22.31R** primary. Replayed **215.7R vs 227.5R** with the re-entry on and **150.7R vs 168.1R** primary-only. Two defects found by RUNNING it: the memory resurrected itself (141 trades), and the report tool could not reach the fast clock with the re-entry off. | **MEASURED NEGATIVE — `exec_lvl_memory` ships Off and stays Off** |
 | 23 | 2026-08-19 | **THE SECONDARY (1m re-entry), END TO END** — 7 levers, 26 replays: the entry gates (swept-stop re-entry, zone depth) and then the exit ladder (depth cap, 1m direction filter, where breakeven fires, banking at TP1). | **The entry gates are already right and the exit ladder was not.** Every loosened door is worse, monotonically. Depth 2/3/5/unlimited are byte-identical (n=1 in 6.6 years). Banking part of a re-entry at TP1 is the first change in 26 replays that works — win/loss 1/1 → 4/1 — and it costs the tail. | measured, **nothing adopted** |
 | 24 | 2026-08-19 | 🔴 **THE LOSS-RECOVERY LEG** — nine stop placements and six exit ladders on the 25%-size counter-trade taken after every SOS Fade loss (`strategies/python/loss_recovery/`). Not a sweep of this bot's params; its population is SOS Fade's 62 real stop-outs. | **Nothing beat the shipped rule, and its best-looking challenger was five trades.** A stop on the CHoCH bar's own extreme scores +24.4R against +16.2R on a 7x tighter stop with lower drawdown — and **−7.4R once its best five are deleted**, where the shipped stop survives at +2.3R. `soft_stop_r=-0.3` is the one free change: same net R, avg loss −1.01R → −0.30R, win 58% → 37%. Everything else lost. | measured, **nothing adopted; `loss_recovery` still ships `enabled=False`** |
 
@@ -5081,3 +5082,91 @@ precedent is expensive: the no-gap entry screened positive and replayed at **−
 setup's own traded entry stays armed for N days after it closes, with a stop a fraction of the
 original width — and replay it inside the bot with one slot and `puprime_ecn` charged, the same
 shape as Run 41. That replay decides it. Nothing ships before it.
+
+---
+
+## Run 44 — 2026-09-23: the LEVEL MEMORY replayed inside the bot — 🔴 the screen did not survive the slot
+
+**What this settles.** Run 42 screened the returns to a level the primary had already traded and
+found +16.35R over 39 trades at a 2R target on a half-width stop. Its own verdict was that a screen
+prices no position-slot contention and that nothing ships before a replay. **This is that replay,
+and it says no.**
+
+### What was built
+
+`strategies/python/sos_fade/level_memory.py`, plus `exec_lvl_*` in `config.py`, the `src` branches
+in `execution.py` and the merge in `dual_clock.py`. Mechanics and design notes:
+`strategies/python/sos_fade/notes/level_memory.md`. **Every setting defaults OFF**, so no stored
+figure moves, and the primary path is untouched — 159 primaries, identical entries, in every run
+below.
+
+It rests a limit at the price a PRIMARY actually entered at, armed from that trade's close for
+`exec_lvl_days`, once price has first travelled a full 1R away, with a stop half the original
+width, a 2R target and a three-day maximum hold. It emits the re-entry's own arming record rather
+than a second contract, so sizing, the stop floor, the budget fit, the fill and the ladder are all
+the existing path.
+
+### Method
+
+`backtest/tools/run_report.py --server PUPrime_Demo --symbol XAUUSD_p --cost-profile puprime_ecn
+--start 2020-01-01 --end 2026-09-21 --no-regime`, four runs, with and without
+`--set exec_lvl_memory=True`, and again with `--no-secondary`. XAUUSD.p, 158,926 M15 bars against
+476,761 M5 (the shipped fill clock), PU Prime ECN charged — the same bars-and-costs pairing as
+Runs 41 and 42. ⚠ The working tree also carried another in-flight change (the give-back guard and
+the reversal exit); both default OFF and are inert in all four runs.
+
+| | Trades | Total R | vs its baseline |
+|---|---|---|---|
+| shipped (re-entry on, memory off) | 249 | **+227.5** | — |
+| re-entry on, memory ON | 311 | **+215.7** | **−11.8** |
+| primary only, memory off | 159 | **+168.1** | — |
+| primary only, memory ON | 224 | **+150.7** | **−17.4** |
+
+### Why, and it is Run 12's rule again
+
+🔴 **THE 65 TRADES IT ADDS ARE WORTH +0.85R IN SIX AND A HALF YEARS. DROP THE SINGLE BEST AND THEY
+ARE WORTH +0.80R.** That is 0.013R a trade — not a small edge, no edge. By year they are +2.67,
+−3.30, +0.49, −0.49, **+7.56**, −2.08 and −0.01: **2025 carries the whole thing**, which is exactly
+the concentration Run 42 flagged as its main caveat.
+
+🔴 **AND THEY DISPLACE. One trade pays for the entire loss:** on 2023-01-12 a level-memory order
+filled at 13:30 and held the slot, so the primary that entered there in the shipped book — **+22.31R**
+— never happened. The same setup got in 75 minutes later for +4.03R. **An added setup does not add
+to the book, it queues in front of it.**
+
+✅ **No primary was displaced anywhere else.** Both primary counts are 159 and the entries are
+identical apart from that one day, so this is one collision rather than a book quietly rearranged.
+
+### What Run 42 measured that the bot cannot reach
+
+The screen's 39 trades required the bot to be flat with **no armed setup at all**. The closest thing
+the bot can act on in real time is *no primary limit resting on that side*, which is a looser door:
+65 trades rather than 39, and the extra ones are the ones with no edge in them. **The screen was not
+wrong about its own population — the population is not one the bot can select for.**
+
+### Verdict
+
+**No edge demonstrated. `exec_lvl_memory` ships Off and stays Off.** It is kept, tested and
+documented so the question is answered rather than re-asked. The shipped book does not change.
+
+🔴 **THIS IS THE SECOND TIME A POSITIVE SCREEN HAS REPLAYED NEGATIVE IN THIS FILE.** The no-gap
+entry screened positive and replayed at −15.3R (Runs 28→29); this screened at +16.35R and replayed
+at −17.4R. **A screen ranks candidates. It has never once decided one.**
+
+### Two defects this build produced, both found by running it rather than reading it
+
+🔴 **THE MEMORY RESURRECTED ITSELF.** The execution keeps its last-closed-primary record standing
+for days and the new class polls it, so a level retired by a fill dropped to nothing and was rebuilt
+from the same record on the next bar, for ever. **MEASURED on the first replay: 141 added trades
+where the screen found 39 returns it could take at all, and +227.5R → +205.4R.** Fixed with a
+per-side *last close time this side has ever taken* marker. ⚠ **Its first test passed against the
+bug** — the test's bars could not re-latch the away gate — which is rule 12 from the inside.
+
+🔴 **`run_report.py` COULD NOT SEE THE FEATURE WITH THE RE-ENTRY OFF.** Its replay-path chooser
+asked only about `exec_secondary`, so a run with the level memory on and the re-entry off took the
+15m-only path and booked none of its trades: the config said on, the replay could not reach it, and
+the report said nothing. That is the exact defect that function's docstring exists to prevent,
+arriving through a second door. **Anything that needs the fast feed has to be asked about there.**
+
+⚠ **No parity gate covers any of this** — the Pine has no fast clock and no level memory, so
+`compare_strategy.py` has never entered this branch and never will. Lab finding only.

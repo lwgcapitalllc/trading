@@ -1775,6 +1775,84 @@ class SosFadeConfig:
     #   that predates the data; this one does not. **Set it deliberately or leave it alone.**
     #   ⚠ Read ONLY when exec_short_hold is on.
 
+    # ── Level memory — trade a level this bot ALREADY traded, after the setup died ──────────
+    #
+    # Aaron, 2026-09-22, off a live trade: the Monday short filled at the gap edge, closed at a
+    # profit stop for nothing, and ~20 hours later price came all the way back to that price and
+    # sold off with nothing placed. *"We did not have any logic to take that trade. Why?"*
+    #
+    # The bot had nothing for two independent reasons, both read out of its own decision record:
+    # the setup DIED when structure re-broke (the entry price is discarded with it — see
+    # `_sync_gap_latch`), and no shift of structure printed that evening, so nothing armed.
+    #
+    # 🔴 **THIS IS NOT `exec_sec_poi_fallback` AND MUST NOT BE READ AS IT.** That one rests the
+    # re-entry at the primary's own entry price WHILE THE SETUP IS STILL ALIVE. This one is the
+    # opposite case: the setup is gone, nothing is watching, and the level is remembered anyway.
+    #
+    # MEASURED 2026-09-23 as a SCREEN (`backtest/tools/level_memory_audit.py`, Run 42): 88 of 158
+    # primaries saw price come back to the entry within 5 days after travelling at least 1R away,
+    # and 39 of those had the bot flat with nothing armed. At the ORIGINAL stop width those are
+    # worth +4.91R/+11.67R/+11.80R at 1R/2R/3R; at HALF that width, +10.63R/+16.35R/+19.35R.
+    # ⚠ A screen prices no position-slot contention, which is why every one of these ships OFF.
+    exec_lvl_memory: bool = False      # "Trade a level we already traded"
+    #   The master switch. Off = the memory is never read and nothing can rest on it, so no stored
+    #   figure moves. On, the fill clock watches the last level a PRIMARY actually entered at on
+    #   each side and rests a limit there again under the four gates below.
+
+    exec_lvl_days: float = 5.0         # "↳ Remember the level for (days)"
+    #   How long after the primary CLOSES the level stays armed. The screen's window; beyond it the
+    #   memory is dropped and the side goes quiet. ⚠ Read only when exec_lvl_memory is on.
+
+    exec_lvl_away_r: float = 1.0       # "↳ Price must first travel away (R)"
+    #   🔴 **IT IS THE POPULATION, NOT A KNOB, AND LEAVING IT OUT PRODUCES NONSENSE.** A breakeven
+    #   or profit stop exits AT the entry price, so "price came back to the level" is trivially
+    #   true within minutes of the close. In the audit a fourteen-minute window — which should
+    #   return nothing at all — still reported 82 returns and a spurious -38R. Price must travel
+    #   this multiple of the ORIGINAL trade's own 1R away from the level, in that trade's own
+    #   direction, before a return counts. ⚠ Read only when exec_lvl_memory is on.
+
+    exec_lvl_stop_frac: float = 0.5    # "↳ Stop, as a fraction of the original trade's"
+    #   🔴 **THE ENTRY IS NOT THE VARIABLE — THIS IS.** Same trades, same fills, same targets: at
+    #   1.0 (the original width) the screen makes +11.67R at a 2R target and at 0.5 it makes
+    #   +16.35R. Median best excursion before the stop is 2.14R, so the primary's width is paying
+    #   for room these returns never use. ⚠ Read only when exec_lvl_memory is on.
+
+    exec_lvl_tp_r: float = 2.0         # "↳ Target, in R"
+    #   Priced off this trade's OWN risk, which is already the narrowed stop above — so 2R here is
+    #   2R of the narrowed risk, exactly as the screen graded it. ⚠ Read only when exec_lvl_memory
+    #   is on.
+
+    exec_lvl_tp1_pct: float = 100.0    # "↳ How much comes off at that target"
+    #   100 = the whole position, no runner, which is what the screen measured. Below 100 hands the
+    #   remainder to the existing runner machinery. ⚠ Read only when exec_lvl_memory is on.
+
+    exec_lvl_tp2_r: float = -1.0       # "↳ Second target, in R"
+    #   -1 puts the second rung on the first one's price, which is inert while the bank above is
+    #   100. ⚠ Read only when exec_lvl_memory is on.
+
+    exec_lvl_risk_pct: float = 100.0   # "↳ Risk (% of the primary's)"
+    #   Scales the LOT and nothing else, the same meaning `exec_sec_risk_pct` has for the re-entry.
+    #   ⚠ Read only when exec_lvl_memory is on.
+
+    exec_lvl_max_hold_hrs: float = 72.0   # "↳ Give up after (hours)"
+    #   The screen's three-day maximum hold. The close goes through `request_close`, so it is
+    #   booked, recorded and alerted on exactly like the ordinary time stop rather than through a
+    #   second exit path. ⚠ Read only when exec_lvl_memory is on.
+
+    exec_lvl_require_quiet: bool = True   # "↳ Only when nothing else is resting"
+    #   🔴 **MEASURED, AND IT IS THE HALF OF THE POPULATION THAT IS WORTH NOTHING.** Of the 88
+    #   returns, the 44 where the bot already had an armed setup on that side are worth -0.02R at a
+    #   1R target and are negative at 2R and 3R. On top of that there is ONE position slot, so a
+    #   level-memory limit resting beside a primary's own limit is a second order competing for it.
+    #   Off = rest it anyway. ⚠ Read only when exec_lvl_memory is on.
+
+    exec_lvl_be_r: float = -1.0        # "↳ Move the stop after (R)"
+    exec_lvl_be_keep_r: float = 0.0    # "↳ ...leaving this much risk (R)"
+    #   This entry method's OWN pre-rung stop rule, the same pair every other method carries (see
+    #   `Execution._PROTECT_RULES`). -1 means never move the stop, which is a VALUE of the rule
+    #   rather than the rule being absent, and is what the screen graded.
+    #   ⚠ Read only when exec_lvl_memory is on.
+
     def __post_init__(self) -> None:
         """Refuse a Custom SL ratio outside (0, 1.0], and a time stop of 0 hours — LOUDLY,
         at construction.
@@ -2196,6 +2274,59 @@ class SosFadeConfig:
                 raise ValueError(
                     f"exec_be_cost_conflict must be one of {conflicts}, got "
                     f"{self.exec_be_cost_conflict!r}.")
+
+        # ── Level memory ────────────────────────────────────────────────────────────────
+        # Every one of these REFUSES rather than clamps, for the reason the rest of this method
+        # gives: a silently corrected number replays a whole book against settings nobody chose.
+        # ⚠ Guarded by the switch, so a stored config that never turns the feature on cannot be
+        # refused by a field it does not use.
+        if self.exec_lvl_memory:
+            if self.exec_lvl_days <= 0:
+                raise ValueError(
+                    f"exec_lvl_days must be a positive number of days, got "
+                    f"{self.exec_lvl_days!r}. At 0 the level is forgotten on the bar the primary "
+                    f"closes, which reads as the feature being on and does nothing.")
+            if self.exec_lvl_away_r <= 0:
+                raise ValueError(
+                    f"exec_lvl_away_r must be positive, got {self.exec_lvl_away_r!r}. At 0 a "
+                    f"breakeven stop — which exits AT the entry price — counts as a return the "
+                    f"moment it fills, and the feature trades its own exit. See the note on the "
+                    f"field; a fourteen-minute window without this reported 82 returns.")
+            if not 0.0 < self.exec_lvl_stop_frac <= 1.0:
+                raise ValueError(
+                    f"exec_lvl_stop_frac must sit in (0, 1], got {self.exec_lvl_stop_frac!r}. "
+                    f"Above 1 the stop is WIDER than the trade the level came from, which the "
+                    f"measurement says is the losing direction, and 0 has no stop at all.")
+            if self.exec_lvl_tp_r <= 0:
+                raise ValueError(
+                    f"exec_lvl_tp_r must be a positive R multiple, got {self.exec_lvl_tp_r!r}. "
+                    f"There is no frozen fib ladder behind this entry to fall back to — the "
+                    f"setup it came from is gone — so a target in R is the only rung it has.")
+            if self.exec_lvl_tp2_r != -1.0 and self.exec_lvl_tp2_r <= 0:
+                raise ValueError(
+                    f"exec_lvl_tp2_r is -1 (put the second rung on the first) or a positive R "
+                    f"multiple, got {self.exec_lvl_tp2_r!r}.")
+            if not 0.0 < self.exec_lvl_tp1_pct <= 100.0:
+                raise ValueError(
+                    f"exec_lvl_tp1_pct must sit in (0, 100], got {self.exec_lvl_tp1_pct!r}.")
+            if self.exec_lvl_risk_pct <= 0:
+                raise ValueError(
+                    f"exec_lvl_risk_pct must be positive, got {self.exec_lvl_risk_pct!r}. Zero "
+                    f"sizes every order at nothing, which is the feature switched off wearing "
+                    f"the label of it being on.")
+            if self.exec_lvl_max_hold_hrs <= 0:
+                raise ValueError(
+                    f"exec_lvl_max_hold_hrs must be a positive number of hours, got "
+                    f"{self.exec_lvl_max_hold_hrs!r}. At 0 the trade is closed on the bar it "
+                    f"opens.")
+            if not (self.exec_lvl_be_r == -1.0 or self.exec_lvl_be_r > 0):
+                raise ValueError(
+                    f"exec_lvl_be_r is -1 (never move the stop) or a positive R, got "
+                    f"{self.exec_lvl_be_r!r}. Zero would protect a trade that has not moved.")
+            if not 0.0 <= self.exec_lvl_be_keep_r < 1.0:
+                raise ValueError(
+                    f"exec_lvl_be_keep_r must sit in [0, 1), got {self.exec_lvl_be_keep_r!r}. At "
+                    f"1.0 the 'protected' stop IS the original stop.")
 
         if self.exec_sl_level != "Custom":
             return

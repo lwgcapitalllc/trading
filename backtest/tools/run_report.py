@@ -210,16 +210,32 @@ def _choose_replay(cfg, no_secondary: bool):
     a run whose stored config says True while the 15m-only path executed is a run that lies about
     itself — and that is precisely the state every `run_report.py` run was in before 2026-08-16.
     """
-    wants = bool(getattr(cfg, "exec_secondary", False))
-    if not (wants and no_secondary):
-        return cfg, wants, ""
     import dataclasses
 
-    return (
-        dataclasses.replace(cfg, exec_secondary=False),
-        False,
-        "--no-secondary: exec_secondary forced False (the 15m-only path is what runs)",
+    sec = bool(getattr(cfg, "exec_secondary", False))
+    # 🔴 **THE FAST CLOCK IS NOT THE RE-ENTRY'S PRIVATE PROPERTY, AND ASSUMING IT WAS HID A WHOLE
+    # FEATURE.** The level memory (`exec_lvl_memory`) also fills on the faster feed, through the
+    # same `DualClock`. While this function asked only about `exec_secondary`, a run with the
+    # level memory on and the re-entry off took the 15m-only path and silently booked NONE of its
+    # trades — the config said the feature was on, the replay could not reach it, and the report
+    # said nothing. That is the exact defect the docstring above exists to prevent, arriving
+    # through a second door. Anything that needs the fast feed must be asked about HERE.
+    fast = sec or bool(getattr(cfg, "exec_lvl_memory", False))
+    if not (sec and no_secondary):
+        return cfg, fast, ""
+    cfg = dataclasses.replace(cfg, exec_secondary=False)
+    # ⚠ `--no-secondary` switches off the RE-ENTRY, not the fast clock. With the level memory on
+    # the dual path still runs, and the note says so rather than implying the 15m-only path.
+    still_fast = bool(getattr(cfg, "exec_lvl_memory", False))
+    note = (
+        (
+            "--no-secondary: exec_secondary forced False (the level memory still needs the fast "
+            "feed, so the dual path is what runs)"
+        )
+        if still_fast
+        else ("--no-secondary: exec_secondary forced False (the 15m-only path is what runs)")
     )
+    return cfg, still_fast, note
 
 
 def _assert_timeframe(df, tf: str) -> None:

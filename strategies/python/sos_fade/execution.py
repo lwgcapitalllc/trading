@@ -50,6 +50,7 @@ from backtest.setups import DEAD, FILLED, RESTING, WATCHING, Confluence, SetupSn
 from engines.fibonacci.geometry import fib_level
 
 from .config import _TP_LEVELS
+from .level_memory import SRC as LVL_SRC
 from .signals import POI_SOURCE_OB_NO_FVG, poi_rank_is_fvg, pois_for, sos_aware_veto
 
 
@@ -915,6 +916,17 @@ class Execution:
         # already published, remembered. Nothing reads it unless the fallback is switched on.
         self._poi_last_l: Optional[float] = None
         self._poi_last_s: Optional[float] = None
+        # The last level a PRIMARY on this side actually TRADED, as (entry price, that
+        # trade's own stop distance, the ms it closed at) — the level memory's whole input.
+        # 🔴 It is NOT `_poi_last_*` above and the two must not be merged. That one is the
+        # price the setup PUBLISHED, rewritten every bar and cleared when the setup dies.
+        # This one is a price the bot FILLED at, and its entire point is that it outlives the
+        # setup: `_sync_gap_latch` deliberately does not touch it.
+        # ⚠ Written unconditionally at finalise — the config is read by the ARM, not here —
+        # so switching the feature on mid-run cannot find a half-filled memory, and the OFF
+        # path never looks. Last-per-side rather than a list, so nothing accumulates.
+        self._lvl_last_l: Optional[Tuple[float, float, int]] = None
+        self._lvl_last_s: Optional[Tuple[float, float, int]] = None
         # A primary a PERSON closed before it reached TP1, as (sos bar, that trade's own first
         # target) — see `_finalise_trade`. While the setup lives, price reaching that level
         # opens the re-entry's breakeven door exactly as holding the trade would have. Per
@@ -1007,6 +1019,17 @@ class Execution:
     @property
     def entry_kind(self) -> str:
         return self._entry_kind
+
+    @property
+    def entry_src(self) -> Optional[str]:
+        """Which trigger armed the OPEN trade — the string frozen on its order, or None.
+
+        🔴 **IT IS NOT DERIVABLE FROM `entry_kind`, AND THAT IS WHY IT IS PUBLIC.** Several
+        sources now share the re-entry's order path and all of them book as `secondary`; the
+        driver has to know which state machine to retire on a fill, and asking the config
+        would answer *which triggers are enabled* rather than *which one produced this trade*.
+        """
+        return self._entry_src
 
     # ── position snapshot / restore (for the LIVE bot only) ───────────────────────
     #
@@ -1245,6 +1268,50 @@ class Execution:
         return self._sec_stop_dir
 
     # ── secondary (fast-feed sniper) path — driven by the fill-clock stream, never a 15m bar ────────
+    @property
+    def last_primary_level_l(self) -> Optional[Tuple[float, float, int]]:
+        """(entry, that trade's stop distance, close ms) of the last LONG primary, or None."""
+        return self._lvl_last_l
+
+    @property
+    def last_primary_level_s(self) -> Optional[Tuple[float, float, int]]:
+        """(entry, that trade's stop distance, close ms) of the last SHORT primary, or None."""
+        return self._lvl_last_s
+
+    @property
+    def primary_resting_long(self) -> bool:
+        """Is a PRIMARY buy limit resting right now?
+
+        Read by the level memory's quiet gate. It is the operational reading of *the bot had
+        something armed* — an order on the book is what makes a second order a second claim on
+        the one position slot, which a setup merely watching is not.
+        """
+        return self._pend_long is not None
+
+    @property
+    def primary_resting_short(self) -> bool:
+        """Is a PRIMARY sell limit resting right now? See `primary_resting_long`."""
+        return self._pend_short is not None
+
+    def level_memory_overdue(self, now_ms: int) -> bool:
+        """Has an open LEVEL-MEMORY trade been held past `exec_lvl_max_hold_hrs`?
+
+        ⚠ **It answers the question and closes nothing.** `step_secondary` turns a True into
+        the same `_pending_close` slot the 15m side uses, so the exit is decided at a bar's
+        close and filled at the next bar's OPEN — one exit path, one fill model, one record.
+
+        🔴 **THE ORDINARY TIME STOP CANNOT REACH THIS TRADE, WHICH IS WHY THIS EXISTS.**
+        `_time_stop_due` is read in the 15m `step`, inside the branch that skips a secondary
+        position outright (`_entry_kind != "secondary"`). Reusing the mode would have looked
+        right in the config and done nothing at all.
+        """
+        if self._pos_dir == 0 or self._entry_src != LVL_SRC:
+            return False
+        hrs = float(getattr(self._cfg, "exec_lvl_max_hold_hrs", 72.0))
+        if hrs <= 0:
+            return False
+        return (int(now_ms) - self._entry_ms) >= hrs * 3_600_000
+
     def step_secondary(self, sig1m, arm) -> Optional[int]:
         """Advance the SECONDARY on one 1m bar. Same calc-on-close/one-bar-delay + intrabar-path
         rules as the primary, but on 1m bars, and only ever touching a secondary position:
@@ -1305,6 +1372,10 @@ class Execution:
             # (see the fill-bar note in `step`): the sniper also enters on a resting limit, so
             # its fill bar's extreme is the approach to that limit, not the trade's own move.
             self._advance_stage(sig1m)
+            # LEVEL MEMORY's maximum hold. Decided here, at the bar's close, and filled at the
+            # next bar's open by Phase A above. Off for every other trade on this path.
+            if self._pending_close is None and self.level_memory_overdue(sig1m.time_ms):
+                self._pending_close = ("level-memory max hold", "TIME")
 
         return filled_dir
 
@@ -2963,7 +3034,11 @@ class Execution:
             src=pend.src, fib_tp1=pend.tp1,
         )
         self._tp2 = pend.tp2
-        if kind == "secondary":
+        # ⚠ **`src` and not just `kind`.** The two overrides below are the RE-ENTRY's, named
+        # `exec_sec_*`, and a level-memory trade only carries `kind="secondary"` because it
+        # borrows that order path. Letting them reach it would re-price a rung Run 42 graded,
+        # off settings that describe a different trade.
+        if kind == "secondary" and pend.src != LVL_SRC:
             # `exec_sec_tp2_x` — REPLACE the second rung with a multiple of the FIRST one's
             # distance, so a re-entry's two targets are in order by construction. Off by default.
             # ⚠ Unlike the floor below, this overrides the fib in BOTH directions: it pulls IN a
@@ -3490,7 +3565,12 @@ class Execution:
         # A secondary that closes at stage 0 never reached TP1 — it hit its initial stop ("didn't
         # hold"). Flag its direction so the driver kills that 15m leg (a stopped re-entry ends the
         # cascade). A secondary that reached breakeven-or-better (stage >= 1) does NOT flag.
-        if self._entry_kind == "secondary" and self._stage == 0:
+        # ⚠ **A LEVEL-MEMORY TRADE IS NOT ON A 15m LEG, SO IT MAY NOT KILL ONE.** It carries
+        # `kind="secondary"` because it uses the re-entry's order path, and without this
+        # guard its stop-out would retire a re-entry leg it has nothing to do with — the two
+        # features are only ever on together by choice, and that is when it would bite.
+        if (self._entry_kind == "secondary" and self._stage == 0
+                and self._entry_src != LVL_SRC):
             self._sec_stop_dir = self._pos_dir
         # The PRIMARY's own record on this leg, for the looser `exec_sec_require` gates. `_stage`
         # is still the trade's final stage here (it is reset a few lines below), so stage 0 means
@@ -3505,6 +3585,17 @@ class Execution:
         # is true and is what the looser "Any close" door reads.
         by_request = str(self._exit_reason or "").endswith("-CMD")
         if self._entry_kind == "primary":
+            # The level memory's input: what this trade entered at, what it risked, and when
+            # it ended. Recorded for EVERY primary whatever it did — Run 42 graded the
+            # returns by outcome and winners, scratches and stop-outs all came back positive,
+            # so filtering on the outcome here would be a filter nothing measured.
+            _lvl_dist = abs(self._entry - self._init_stop)
+            if _lvl_dist > 0:
+                _lvl_rec = (float(self._entry), float(_lvl_dist), int(self._exit_ms))
+                if d > 0:
+                    self._lvl_last_l = _lvl_rec
+                else:
+                    self._lvl_last_s = _lvl_rec
             if d > 0:
                 self._prim_closed_sos_l = self._sos_bar_open
                 if self._stage == 0 and not by_request:
@@ -4139,6 +4230,12 @@ class Execution:
                 # stand-in that fell back to a stale number would price the rung differently from
                 # every shipped run while looking correct.
                 tp_r = getattr(self._cfg, "exec_rec_tp_r", 3.25)
+            elif src == LVL_SRC:
+                # LEVEL MEMORY reads its own rung for the same reason the reclaim does, and a
+                # harder one: the setup this level came from is GONE, so there is no frozen
+                # 15m fib behind the trade to fall back to. A target in R is the only rung it
+                # has, which is why its config refuses anything but a positive multiple.
+                tp_r = getattr(self._cfg, "exec_lvl_tp_r", -1.0)
             else:
                 tp_r = getattr(self._cfg, "exec_sec_tp_r", -1.0)
             if tp_r > 0 and dist > 0:
@@ -4162,6 +4259,10 @@ class Execution:
             # runner), which is the configuration that measured 6,740x.
             if src == "reclaim":
                 own = getattr(self._cfg, "exec_rec_tp1_pct", 100.0)
+            elif src == LVL_SRC:
+                # 100 by default — the whole position off at its R target with no runner
+                # behind it, which is the ladder Run 42 graded.
+                own = getattr(self._cfg, "exec_lvl_tp1_pct", 100.0)
             else:
                 own = getattr(self._cfg, "exec_sec_tp1_pct", -1.0)
             if own != -1.0:
@@ -4375,6 +4476,7 @@ class Execution:
         "reclaim": ("exec_rec_be_r", "exec_rec_be_keep_r"),
         "gap": ("exec_gap_be_r", "exec_gap_be_keep_r"),
         "Structure shift": ("exec_shift_be_r", "exec_shift_be_keep_r"),
+        LVL_SRC: ("exec_lvl_be_r", "exec_lvl_be_keep_r"),
     }
 
     def _protect_rule(self) -> Tuple[float, float]:

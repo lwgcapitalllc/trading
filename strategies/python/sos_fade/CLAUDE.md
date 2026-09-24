@@ -535,3 +535,7 @@ Most-cited code: `compare_strategy.py`, `compare_bleg.py`.
 
 **Read before touching:** the strategy meta file, a setting label, or a description shown on a lab page.
 Most-cited code: `compare_strategy.py`, `sos_fade.meta.json`, `sos_fade_strategy.pine`, `compare_bleg.py`, `config.py`, `sequence.py`.
+
+### `notes/level_memory.md` — Level memory — re-trading a level after its setup died (measured, OFF)
+
+**Read before touching:** `level_memory.py`, the level-memory settings in `config.py`, or the fast-clock merge in `dual_clock.py`.
