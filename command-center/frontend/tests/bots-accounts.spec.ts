@@ -1159,7 +1159,12 @@ test('a RUNNING bot’s Remove says it is stopped first, and the first click sen
   await mock(page, [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] })], [reg()])
   const log = await stopsWhenAsked(page, 'sos_fade')
   await openBot(page, 'sos_fade') // the snapshot mock has sos_fade RUNNING
-  await expect(page.getByTestId('bot-account')).toContainText('stops it first')
+  // On the section heading's hover since the 2026-09-16 panel redesign — "what a move does went
+  // to the heading's hover" (notes/bots-page.md) — so it is read off the title, not the text.
+  await expect(page.getByTestId('bot-account').locator('p[title]').first()).toHaveAttribute(
+    'title',
+    /stops it first/
+  )
   // The account's NICKNAME since 2026-09-13 — `reg()` carries one, so the broker is not printed.
   await expect(page.getByTestId('bot-account-name')).toHaveText('PU Prime ECN demo')
   const remove = page.getByTestId('remove-sos_fade')
@@ -2941,15 +2946,16 @@ test('the bot panel says only what its row does not — won/lost, and how far th
 }) => {
   // Aaron, 2026-09-10: *"we don't need to be redundant on data anywhere on this page."* The panel
   // led with the dollars, the % of the account, the trade count and the R — all on the row beside it.
-  // MUTATION: put the dollar figure back in the panel → red on "not the row's $1,500".
-  // MUTATION: drop the won/lost split → red.
+  // ⚠ The 2026-09-16 redesign (commit 1d4651ee) deliberately made the record four tiles — trades,
+  // won · lost, net dollars, net R — so the dollars are back by decision; the % of the account is not.
+  // MUTATION: drop the won/lost tile → red. MUTATION: print the % of the account again → red.
   await mockBothSides(page, SCORED)
   await page.goto('/bots?bot=sos_fade')
   const panel = page.getByRole('complementary', { name: 'SOS Fade settings' })
   const record = panel.getByTestId('bot-record')
-  await expect(record).toContainText('2 won · 0 lost')
+  await expect(record).toContainText('Won · lost')
+  await expect(record).toContainText('2 · 0')
   await expect(record).toContainText('2026-09-01 → 2026-09-10')
-  await expect(panel).not.toContainText('$1,500.00')
   await expect(panel).not.toContainText('of the account')
 
   // A bot with a record and no closed trade says so, never "0 won · 0 lost" (2026-09-12).
@@ -4263,7 +4269,9 @@ test('the bot panel says each thing once — the risk in its box, Save only once
   // redundancy"*. Under a heading reading Risk per trade sat the setting's own name, the value in
   // large type, "Change to" and the same value again in a box, a Save nothing could press yet, and
   // under Version a paragraph saying the same two sentences on every open.
-  // MUTATION: print the setting's own name with only one setting → red on it inside the editor.
+  // ⚠ The 2026-09-16 redesign (commit 1d4651ee) retired the section heading and made each setting
+  // a row with its name on the left — so the name now appears exactly ONCE, on its row.
+  // MUTATION: bring back a heading reading Risk per trade above the row → red on the count.
   // MUTATION: show Save before anything changed → red on its count.
   // MUTATION: drop "was" once the value changes → red on it.
   await mock(page, [FULL], [reg()])
@@ -4276,7 +4284,7 @@ test('the bot panel says each thing once — the risk in its box, Save only once
   await openBot(page, 'b_leg')
   const risk = page.getByTestId('bot-risk')
   await expect(page.getByTestId('risk-input')).toHaveValue('5')
-  await expect(risk).not.toContainText('Risk per trade')
+  await expect(risk.getByText(/Risk.*per trade/i)).toHaveCount(1)
   await expect(risk).not.toContainText('Change to')
   await expect(page.getByTestId('risk-save')).toHaveCount(0)
   await expect(page.getByText('Deploying copies the code')).toHaveCount(0)

@@ -821,8 +821,11 @@ export function AccountDrawer({
                       {/* ⚠ Withheld while the box has not answered, and while it HOLDS A TRADE;
                        *  a RUNNING bot is stopped first (`stopFirst.ts`). Hidden while a
                        *  start / stop / restart is under way — its pill is the row's ONLY
-                       *  control then, the same one-button rule as a take-off (2026-09-16). */}
-                      {action === null && (
+                       *  control then, the same one-button rule as a take-off (2026-09-16).
+                       *  ⚠ Except when the take-off itself is what started that stop: then THIS
+                       *  button is the one control and reads "Removing…" — hiding it too left
+                       *  the row with no control at all (2026-09-23). */}
+                      {(action === null || off !== 'idle') && (
                         <TakeOffButton
                           testId={`take-off-${b.key}`}
                           compact

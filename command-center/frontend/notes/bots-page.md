@@ -1861,3 +1861,21 @@ Check: `tests/bots-accounts.spec.ts` → *starting one bot leaves the OTHER bot 
 start at the same time*, watched RED with the page-wide lock put back. ⚠ Six other checks in that
 file and in `overview.spec.ts` were already failing before this change (same result with the old
 page restored); they are not this change's.
+
+## Removing a running bot from the ACCOUNT panel left the row with no control (2026-09-23)
+
+**Before:** on the account panel, the second click on Remove started the stop, and the row hid the
+Remove button the moment any start / stop / restart was under way (2026-09-16, "its pill is the
+row's ONLY control"). The take-off's own stop counted too, so the row showed neither a pill nor a
+button, and never read "Removing…".
+
+**Now:** the button stays while a take-off is what is under way, and reads "Removing…". A start,
+stop or restart started any other way still shows only its pill.
+
+Check: `tests/bots-accounts.spec.ts` → *a RUNNING bot on the account panel: ONE button from Remove
+to Removing…*, which was red on the old condition.
+
+⚠ **Three more checks in that file were stale, not broken**, and were brought in line with the
+2026-09-16 panel redesign (1d4651ee): the "stops it first" line is on the heading's hover, the
+record is four tiles including net dollars, and each setting row carries its own name once. All
+152 checks in the file pass.
