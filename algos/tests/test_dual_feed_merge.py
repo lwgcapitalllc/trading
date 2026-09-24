@@ -105,11 +105,19 @@ def _stub_strategy(secondary=False):
     state machine in and test something else.
     """
     cfg = SimpleNamespace(exec_secondary=secondary)
+    # The reversal exit runs on EVERY fast bar whatever the secondary says, and reads the major
+    # levels off the last 15m signal — so the stub carries both, inert: no levels, no exit.
+    no_levels = dict.fromkeys(
+        ("liq_w_high", "liq_w_low", "liq_d_high", "liq_d_low", "liq_h4_high", "liq_h4_low")
+    )
     return SimpleNamespace(
         config=cfg,
-        signals=SimpleNamespace(update=lambda s: SimpleNamespace(bar=s.bar)),
+        signals=SimpleNamespace(update=lambda s: SimpleNamespace(bar=s.bar, **no_levels)),
         sequence=SimpleNamespace(update=lambda s: SimpleNamespace()),
-        execution=SimpleNamespace(step=lambda sig, seq: SimpleNamespace()),
+        execution=SimpleNamespace(
+            step=lambda sig, seq: SimpleNamespace(),
+            step_reversal=lambda sig_fast, m1, levels=(): None,
+        ),
     )
 
 
