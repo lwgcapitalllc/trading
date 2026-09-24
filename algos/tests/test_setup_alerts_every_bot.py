@@ -115,3 +115,39 @@ def test_the_extreme_leg_bot_gets_setup_messages_ON_by_default(tmp_path):
     assert any("Setup alerts: ON" in m for _, m in r.log.lines)
     # The key scheme reaches the alert layer, so a later key change is detected across a promote.
     assert r.setup_alerts._key_scheme == "xleg-time-v1"
+
+
+def test_every_bot_with_an_ACCOUNT_reports_its_setups():
+    """🔴 **The standing rule, enforced where a new bot is REGISTERED rather than where it is found
+    silent (2026-09-24).** FFT and realign both reached the demo account without setup messages and
+    the only sign was a health-room line after the deploy. A bot folder with an account assigned is
+    a bot that will run, so its strategy must answer the setup contract — built exactly as the
+    runner builds it, from the folder's own settings. A benched bot (no account) is exempt until it
+    is assigned.
+
+    ⚠ Read from the folders, never a hand list, so a bot added next year is covered with no edit.
+    Watched RED 2026-09-24 with FFT's `live_setups` removed; realign was red before its own
+    `setups.py` existed."""
+    import importlib
+    import json
+
+    folders = sorted((_ROOT / "algos" / "markets" / "fx" / "instances").glob("*/config.json"))
+    checked, silent = [], []
+    for path in folders:
+        cfg = json.loads(path.read_text())
+        if cfg.get("account") is None:
+            continue
+        lab = importlib.import_module(cfg["strategy_package"]).LAB_STRATEGY
+        params = dict(cfg["strategy_params"])
+        params.setdefault("symbol", cfg["symbol"])
+        strategy = lab["strategy"](lab["config"](**params), initial_capital=10_000.0)
+        checked.append(cfg["bot_key"])
+        if not implements_contract(getattr(strategy, "execution", strategy)):
+            silent.append(f"{cfg['bot_key']} ({cfg['strategy_class']})")
+    assert checked, "no bot folder has an account — this test would pass on an empty registry"
+    assert not silent, (
+        "these bots have an account but their strategy cannot report setups, so the signals room "
+        "would stay silent for them: "
+        + ", ".join(silent)
+        + ". Give the strategy a setups.py (see strategies/python/fft/setups.py) before assigning it."
+    )

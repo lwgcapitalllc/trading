@@ -55,7 +55,8 @@ resolving through an empty registry and answering confidently — root `CLAUDE.m
 implementation is a fact worth reporting, not a default worth guessing.
 
 ⚠ **The implementation is per strategy and is written by whoever knows that strategy.** Done:
-`sos_fade`, `extreme_leg` (2026-09-16) and `fft` (2026-09-24, `strategies/python/fft/notes/setup_alerts.md`).
+`sos_fade`, `extreme_leg` (2026-09-16), `fft` and `realign` (2026-09-24, each package's
+`notes/setup_alerts.md`). Measure a new one with `algos/tools/setup_alert_rate.py <bot key>`.
 `b_leg` and `bos` get theirs when they are actually run. Do not stub them: a stub is exactly the empty
 registry above.
 

@@ -113,6 +113,10 @@ watched — while two comments claimed the lists agreed. **A list stated twice i
   set with no wiring and no config key. Aaron: *"if I create a bot, I shouldn't have to go say, hey,
   create telegram messages for it. It should be part of how we do work."* Detail and the throttle:
   `notes/telegram-and-notifications.md`.
+- 🔴 **Setup messages are per STRATEGY and cannot be inherited — so they are ENFORCED (2026-09-24).**
+  Only a strategy knows its own setup. A bot folder with an account whose strategy cannot report
+  setups fails `tests/test_setup_alerts_every_bot.py` by name. Build its `setups.py` and measure it
+  with `tools/setup_alert_rate.py <bot key>` before assigning it an account.
 
 ## Documentation Rules — Non-Negotiable
 

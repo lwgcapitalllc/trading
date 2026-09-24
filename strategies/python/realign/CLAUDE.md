@@ -42,6 +42,7 @@ measured on the old 5m trail (`realign_optimization.md` Run 14). Earlier: 2026-0
 5-minute-only arm researched, measured negative and parked off main (last section). 2026-09-10 — swing length and adding to winners pinned to the Pine;
 the book re-measured and reproduced exactly. 2026-08-13 — first commit.
 
+## Setups: notes/setup_alerts.md
 
 ## Flat before the close — one field now, spelled as this fork's Pine spells it
 

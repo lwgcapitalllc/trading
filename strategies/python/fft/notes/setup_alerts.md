@@ -21,7 +21,7 @@ first touch or second. Its thread:
 - ⚠ **A run past TP3 is NOT a withdrawal** — it is the fib extending, and the limit is re-placed at
   the new 61.8. Reported as a pull, it posted a WITHDRAWN and a MOVED for every extension.
 
-## MEASURED — `tools/setup_alert_rate.py`, fft_1's settings, raw PU Prime M1
+## MEASURED — `algos/tools/setup_alert_rate.py fft_1`, raw PU Prime M1
 
 2020-01-01 → 2026-09-18, 2,378,595 one-minute bars, 80.5 months:
 
@@ -41,7 +41,9 @@ channel is ~11 roots a month at 26%; the extreme leg's 6.8 at 23%.
 
 Trades and every spent leg, sha256, with the watch on and off, same bars: **187 trades, 5,118
 spent legs, sha `0159f9aeedd95aab` both ways** (HEAD `b16f8945` against the working tree).
-`tools/setup_alert_rate.py` repeats the check on every run and exits 1 if they differ.
+`algos/tools/setup_alert_rate.py fft_1` repeats the trade half of that check on every run and
+exits 1 if the trades differ or a trade goes unannounced. (It was an FFT-only tool for a day; one
+tool now serves every bot.)
 
 Tests: `tests/test_setup_watch.py` (5, real bars, the real strategy — no stand-in). Each named
 mutation was run and went red.

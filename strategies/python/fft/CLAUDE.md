@@ -58,7 +58,7 @@ Sends setup messages to the signals room since 2026-09-24 — `notes/setup_alert
   followed by a shut day.
 - **Setup messages are REPORTING ONLY** (`setups.py`, 2026-09-24). A thread opens the first minute
   a limit rests, never on a touch no rule passed. Keyed on the leg's anchor TIME. After any entry
-  change, re-run `tools/setup_alert_rate.py`: it exits 1 if the watch moves a trade or a trade is
+  change, re-run `algos/tools/setup_alert_rate.py fft_1`: it exits 1 if the watch moves a trade or a trade is
   unannounced. Measured and explained in `notes/setup_alerts.md`.
 
 ## How it is proven — there is no Pine twin, by decision

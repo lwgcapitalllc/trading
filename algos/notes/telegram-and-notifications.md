@@ -693,13 +693,22 @@ channel is SOS-Fade-specific. The live extreme-leg bot logged "Setup alerts: OFF
 - **Fixed for the bot:** the extreme-leg strategy implements the contract
   (`strategies/python/extreme_leg/setups.py`; detail in that package's
   `notes/setup_alerts.md`). One thread per armed sweep, announced on the 5m shift.
-- **Still without setup messages:** `b_leg`, `bos`, `realign`. Each subclasses the SOS Fade
+- **Fixed for FFT and realign (2026-09-24):** each package's `setups.py` and
+  `notes/setup_alerts.md`. Both were on the demo account sending the health message above.
+- **Still without setup messages:** `b_leg`, `bos` — both benched. Each subclasses the SOS Fade
   execution layer with the setup watch switched off, so the inherited contract answers nothing
   and is deliberately reported as unsupported. Each needs its own description of what its setup
-  IS (its own confluences, key and end reasons) plus an `alert_rate.py` volume check — real work
-  per strategy, not a flag. Until then, any of them started live sends the health message above.
+  IS (its own confluences, key and end reasons) plus a volume check — real work per strategy, not
+  a flag.
+- 🔴 **Enforced at registration since 2026-09-24:** `test_every_bot_with_an_ACCOUNT_reports_its_setups`
+  builds every bot folder that has an account, from its own settings, and fails naming any whose
+  strategy cannot report setups. A new bot cannot reach an account silently any more.
+- **Measuring a bot's channel:** `algos/tools/setup_alert_rate.py <bot key>` — builds the strategy
+  as the runner does, feeds the real alert layer, and exits 1 if the setup watch moves a trade or a
+  trade goes unannounced. Works for any bot whose watch is a `setup_watch` (FFT, realign); the
+  older `backtest/tools/alert_rate.py` covers SOS Fade and the extreme leg.
 
-Tests: `algos/tests/test_setup_alerts_every_bot.py` (2, both watched RED at HEAD).
+Tests: `algos/tests/test_setup_alerts_every_bot.py` (3, each watched RED).
 
 ---
 
