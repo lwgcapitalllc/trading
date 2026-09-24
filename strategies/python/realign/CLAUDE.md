@@ -603,7 +603,7 @@ This strategy builds on the SOS Fade config, so it inherits three new exit-ladde
 
 ## Inherited exit rules and no-entry window, all OFF — unmeasured here (2026-09-23)
 
-⚠ The give-back guard, reversal exit and no-entry window arrive from SOS Fade's config and default OFF, so
+⚠ The give-back guard, reversal exit (both triggers) and no-entry window arrive from SOS Fade's config and default OFF, so
 nothing here moved. 🔴 **None was measured on this bot**; on SOS Fade's book the reversal exit
 lost on all six settings. Switching one on here is a new experiment, and neither has a Pine side.
 Evidence: `strategies/python/sos_fade/notes/exit_ladder_history.md`.

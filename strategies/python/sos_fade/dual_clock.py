@@ -265,7 +265,12 @@ class DualClock:
         ex_rev = self._st.execution
         sig_rev = FastSig(bar.index, ts, bar.open, bar.high, bar.low, bar.close,
                           self.struct_fast.conf_high, self.struct_fast.conf_low)
-        ex_rev.step_reversal(sig_rev, m1)
+        # The major levels the last CLOSED 15m bar published — weekly, daily and 4-hour highs and
+        # lows, each None once taken. Read by the reversal exit's "Level rejected" trigger only.
+        ls = self.last_sig
+        rev_levels = () if ls is None else (ls.liq_w_high, ls.liq_w_low, ls.liq_d_high,
+                                            ls.liq_d_low, ls.liq_h4_high, ls.liq_h4_low)
+        ex_rev.step_reversal(sig_rev, m1, rev_levels)
 
         cfg = self._st.config
         sec_on = bool(cfg.exec_secondary)

@@ -1775,6 +1775,28 @@
         "Low — watches almost every trade, including ones only pausing",
         "High — only the trades that were well in front are watched"
       ]
+    },
+    {
+      "name": "exec_rev_trigger",
+      "group": "Exit ladder",
+      "label": "What counts as a reversal",
+      "short": "Reversal trigger",
+      "desc": "Read only when the reversal exit is on. Structure shift: structure turns against the trade on the 5-minute chart (measured: lost on every setting). Level rejected: price reaches the same major level ahead of the trade — a weekly, daily or 4-hour high or low — and fails to close through it on separate visits. Support holding behind the trade never counts. Measured: this one lost on every setting too.",
+      "choices": ["Structure shift", "Level rejected"],
+      "show_if": {
+        "exec_rev_exit": ["Bank half", "Tighten to the trail", "Close"]
+      }
+    },
+    {
+      "name": "exec_rev_level_touches",
+      "group": "Exit ladder",
+      "label": "Rejections of the same level before it acts",
+      "short": "Level rejections",
+      "desc": "Read only when the trigger is Level rejected. 2 means it acts on the second failed visit. Bars pressing against the level one after another count as one visit.",
+      "step": 1,
+      "show_if": {
+        "exec_rev_trigger": "Level rejected"
+      }
     }
   ]
 }

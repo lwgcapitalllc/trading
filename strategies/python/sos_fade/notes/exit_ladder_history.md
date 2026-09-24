@@ -1043,3 +1043,50 @@ measured here: it needs `engines/liquidity/`, which this bot does not currently 
 re-walk had it firing on 117 of 129 trades, which is an early exit with a story rather than a
 signal. That is the next thing to build if this line is pursued, and it starts from a worse prior
 than this one did.
+
+## The level-rejection trigger — the other half of the definition, measured, not adopted (2026-09-23)
+
+Aaron asked for it by name on 2026-09-23 ("test 1 and 3"). **What was built:** a second answer to
+"↳ What counts as a reversal" — "Level rejected". It watches only the major levels AHEAD of the
+trade (weekly, daily and 4-hour highs and lows, already handed to this bot by the liquidity engine)
+and fires when price reaches the same one and closes back off it on "↳ Rejections of the same
+level before it acts" separate visits, on the 5-minute frame. Touching bars in a row count as one
+visit; a close through the level ends its count. Support holding BEHIND the trade never counts —
+that is the difference from the re-walk's screen, which fired on 117 of 129 trades. Unit tests:
+`tests/test_reversal_levels.py`.
+
+**MEASURED.** Same basis as the table above (run `ea46142df097`'s params, 2020-01-01 → 2026-09-20,
+`puprime_ecn` charged, consistent sizing, 100-lot ceiling). Pinned on every row: scale gate "Stop
+improved", give-back guard off, level memory off, no-entry window empty. The re-run of "off" on
+today's code (`9fa0f5d9bcaf`) reproduces `e805a5d503a8` exactly.
+
+| action | arm | visits | run | trades | total R | worst DD | R / DD | 2020–22 R | 2023–26 R |
+|---|---|---|---|---|---|---|---|---|---|
+| **off** | — | — | `e805a5d503a8` | 244 | **234.5** | 7.39 | 31.7 | 68.3 | 166.2 |
+| tighten | 1R | 2 | `f291344a0cfb` | 243 | 233.6 | 5.89 | 39.7 | 71.8 | 161.8 |
+| tighten | 2R | 2 | `c651c8140b4b` | 243 | 230.1 | 5.89 | 39.1 | 70.5 | 159.6 |
+| tighten | 1R | 3 | `4735e6f4d317` | 243 | 229.2 | 7.39 | 31.0 | 69.1 | 160.1 |
+| tighten | 1R | 1 | `043969a892ef` | 241 | 157.2 | 5.89 | 26.7 | 38.1 | 119.2 |
+| bank half | 1R | 2 | `b23cae3f6ccf` | 243 | 181.6 | 5.89 | 30.8 | 57.2 | 124.4 |
+| close | 1R | 2 | `0a8302fb7d3d` | 243 | 111.0 | 5.89 | 18.8 | 33.3 | 77.8 |
+| close | 2R | 2 | `77db1c3bb749` | 243 | 117.3 | 5.89 | 19.9 | 34.4 | 82.9 |
+
+- 🔴 **NO SETTING BEATS OFF ON TOTAL R.** Closing and banking half lose 53–123R: they fired 41 times
+  and cut the long runners this book is paid by.
+- 🔴 **THE BEST ROW'S DRAWDOWN CUT IS THE SAME ONE 2022 TRADE THE GIVE-BACK GUARD CAUGHT.** The
+  2022-06-09 trade goes −0.23R → +1.74R and the worst drawdown falls 7.39R → 5.89R. With three
+  visits it does not fire on that trade and the drawdown is back to 7.39R. One trade, not a
+  property of the rule.
+- 🔴 **EVERY TIGHTEN ROW LOSES THE SAME +7.05R TRADE.** Tightening the 2023-03-27 trade ends it
+  days early, and the 2023-04-03 re-entry that paid +7.05R never happens. At 1R / 2 visits the
+  other 16 changed trades are +6.18R, so the net is −0.9R: the sign rests on two trades.
+- 🔴 **ONE VISIT IS AN EARLY EXIT, NOT A SIGNAL.** It cuts the 2020-06-18 trade from +28.9R to +2.5R
+  and the 2025-10-21 trade from +24.9R to +0.9R: −77R.
+- **Neighbours all fall away from the best row**, both halves of the history included, so there is
+  no plateau to stand on.
+
+**Verdict: not adopted.** "What counts as a reversal" stays on "Structure shift", and the reversal
+exit stays Off. Both halves of Aaron's definition are now measured, and both lose to holding. The
+honest reading is that on this book the trailing stop's give-back is the price of the long
+runners, and every exit tried so far that trims give-back also trims them. Parity GREEN with it in
+the tree (19,668 bars, warm-up 468); it has no Pine side.

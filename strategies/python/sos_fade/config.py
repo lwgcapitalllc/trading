@@ -848,6 +848,26 @@ class SosFadeConfig:
     #   been in profit does not need a reversal exit — it has a stop, and the stop is the faster
     #   of the two. The guard exists for the trade that showed real money and gave it back.
     #   Must be positive; 0 would arm at the fill.
+    exec_rev_trigger: str = "Structure shift"   # "↳ What counts as a reversal"
+    #   ∈ {"Structure shift", "Level rejected"}. Read only when the reversal exit is on.
+    #   "Structure shift" (default) is the rule measured 2026-09-23 — it lost on every setting.
+    #   "Level rejected" is the other half of Aaron's definition, 2026-09-22: *"if we're hitting
+    #   that level over and over and over ... that's time to get out."* It watches the major
+    #   levels AHEAD of the trade — the weekly, daily and 4-hour highs and lows the liquidity
+    #   engine already hands this bot — and fires when price reaches the same one and closes back
+    #   off it on `exec_rev_level_touches` SEPARATE visits (consecutive touching bars are one
+    #   visit), on the fast frame. A close through the level ends its count: that is the level
+    #   being taken, the opposite of a rejection.
+    #   🔴 DELIBERATELY NOT THE RULE THE RE-WALK SCREENED. `exit_study.py`'s `level2` counted ANY
+    #   level touched and closed off — including support holding UNDER a long, which is the trade
+    #   working, not reversing — and fired on 117 of 129 trades. This one only reads levels ahead
+    #   of price, which is what "can't get through it" means. So the screen's number does not
+    #   describe it in either direction; only the replay does.
+    #   ⚠ Session highs and lows are NOT included. The signal deliberately carries only these six
+    #   levels (Run 22 had session levels worst of every family as a target), and adding them is
+    #   a Pine change as well as a Python one.
+    exec_rev_level_touches: int = 2    # "↳ Rejections of the same level before it acts"
+    #   Read only when the trigger is "Level rejected". 2 = the second failed visit.
     exec_time_stop_hrs: float = 36.0   # "Time stop (hours)"
     #   Calendar hours since the FILL, weekends included — the same clock a swap is charged on, and
     #   the one a reader can check against a chart. Read only when the mode is not "Off".
@@ -2080,6 +2100,14 @@ class SosFadeConfig:
                 f"Got {self.exec_rev_exit!r}. A typed value that is not a mode must never fall "
                 "through to a default — that replays a whole book against a rule nobody chose."
             )
+        if self.exec_rev_trigger not in ("Structure shift", "Level rejected"):
+            raise ValueError(
+                "exec_rev_trigger is 'Structure shift' or 'Level rejected'. "
+                f"Got {self.exec_rev_trigger!r}. A typed value that is not a trigger must never "
+                "fall through to a default.")
+        if self.exec_rev_level_touches < 1:
+            raise ValueError(
+                f"exec_rev_level_touches must be at least 1, got {self.exec_rev_level_touches}.")
         if self.exec_rev_exit != "Off" and self.exec_rev_arm_r <= 0:
             raise ValueError(
                 "exec_rev_arm_r must be a positive number of R — at 0 the reversal exit arms on "

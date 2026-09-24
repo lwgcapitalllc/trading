@@ -333,7 +333,7 @@ Most-cited code: `config.py`, `strategies/tradingview/b_leg_strategy.pine`, `b_l
 
 ## Inherited exit rules and no-entry window, all OFF — unmeasured here (2026-09-23)
 
-⚠ The give-back guard, reversal exit and no-entry window arrive from SOS Fade's config and default OFF, so
+⚠ The give-back guard, reversal exit (both triggers, level rejection included) and no-entry window arrive from SOS Fade's config and default OFF, so
 nothing here moved. 🔴 **None was measured on this bot**; on SOS Fade's book the reversal exit
 lost on all six settings. Switching one on here is a new experiment, and neither has a Pine side.
 Evidence: `strategies/python/sos_fade/notes/exit_ladder_history.md`.

@@ -792,6 +792,12 @@ class Execution:
         # reader. The give-back guard above CAN read them because it runs on the 15m path, where
         # `_manage_open` has just widened them on this same bar.
         self._rev_best: Optional[float] = None
+        # The level trigger's memory for THIS trade: one [price, visits, touched_last_bar] row per
+        # major level seen AHEAD of price while it was open. A LIST of lists, not a dict keyed by
+        # price, because it goes through the JSON position record and a float key comes back a
+        # string. `_rev_level_fired` is this bar's answer only and is never carried.
+        self._rev_levels: List[List[float]] = []
+        self._rev_level_fired: bool = False
         # The no-entry window's clock: the last bar time seen and the smallest bar spacing, so the
         # window can be tested at the time an order would be LIVE. Not position state.
         self._ew_last_ms: Optional[int] = None
@@ -1072,7 +1078,7 @@ class Execution:
         "_rec_be_armed", "_exc_be_armed",
         "_trail_swing_hi", "_trail_swing_lo", "_ext_high", "_ext_low", "_legs",
         "_pending_close", "_pending_bank", "_gave_back",
-        "_pending_rev", "_rev_done", "_rev_best",
+        "_pending_rev", "_rev_done", "_rev_best", "_rev_levels",
         # Scale-in lots, and they belong here for the reason the warning above gives: a
         # restored position that dropped them would carry the base's stop while the adds it
         # actually holds went unpriced and unclosed. `_add_stop` is the stop the last add was
@@ -3127,6 +3133,7 @@ class Execution:
         self._rev_done = False
         self._pending_rev = None
         self._rev_best = None
+        self._rev_levels = []
         self._filled_qty = 0.0
         # Snapshot the OPENING size and clear the add ledger. Every add sizes off `_base_qty`
         # rather than the live position: sizing off the live one would compound, so add #2
@@ -3684,6 +3691,7 @@ class Execution:
         self._rev_done = False
         self._pending_rev = None
         self._rev_best = None
+        self._rev_levels = []
         self._adds = []
         self._add_lots = []
         self._add_stop = None
@@ -4784,7 +4792,7 @@ class Execution:
             self._flat_rule_bar_min = bar_min
         return self._flat_rule.due(sig.time_ms)
 
-    def step_reversal(self, sig_fast, m1) -> None:
+    def step_reversal(self, sig_fast, m1, levels=()) -> None:
         """Advance the REVERSAL EXIT on one fast bar. Primary positions only.
 
         Two phases, the same shape every other exit on this engine has:
@@ -4843,8 +4851,54 @@ class Execution:
             if self._rev_best is None:
                 self._rev_best = self._entry
             self._rev_best = max(self._rev_best, here) if d > 0 else min(self._rev_best, here)
+            if self._cfg.exec_rev_trigger == "Level rejected":
+                self._rev_track_levels(sig_fast, levels)
         if self._reversal_due(m1):
             self._pending_rev = self._cfg.exec_rev_exit
+
+    def _rev_track_levels(self, bar, levels) -> None:
+        """Count failed visits to each major level AHEAD of price; set this bar's answer.
+
+        A long's level is overhead, a short's is underneath. That needs no separate filter: a
+        level price already sits beyond is dropped as TAKEN on the bar it is first seen, and the
+        rejection test is directional, so support holding under a long can never count — it is
+        the trade working. (A separate "ahead of price" filter was written first and removed: a
+        mutation showed no test could tell it was there.) The touch band is a quarter of the
+        bar's own range, the value the re-walk declared before any result.
+
+          reached   the bar's extreme came within the band of the level
+          rejected  reached, and the close stayed more than a band short of it
+          taken     the close went more than a band THROUGH it -> the row is dropped, because a
+                    level price has closed through is no longer one it cannot get past
+
+        Consecutive rejecting bars are ONE visit: two fast bars in a row pressed against the same
+        price is one push, not "over and over". A visit starts again once a bar does not touch.
+        """
+        d = self._pos_dir
+        rng = bar.high - bar.low
+        band = rng * 0.25
+        for lv in levels:
+            if lv is None:
+                continue
+            lv = float(lv)
+            if not any(abs(r[0] - lv) < 1e-9 for r in self._rev_levels):
+                self._rev_levels.append([lv, 0, False])
+        fired = False
+        keep = []
+        need = self._cfg.exec_rev_level_touches
+        ext = bar.high if d > 0 else bar.low
+        for lv, n, was in self._rev_levels:
+            if (bar.close - (lv + band * d)) * d > 0:
+                continue                      # taken — closed through it
+            reached = (ext - (lv - band * d)) * d >= 0
+            rejected = band > 0 and reached and ((lv - band * d) - bar.close) * d > 0
+            if rejected and not was:
+                n += 1
+                if n >= need:
+                    fired = True
+            keep.append([lv, n, rejected])
+        self._rev_levels = keep
+        self._rev_level_fired = fired
 
     def _reversal_due(self, m1) -> bool:
         """Has the fast frame just shifted structure AGAINST an armed primary?
@@ -4863,7 +4917,10 @@ class Execution:
         if cfg.exec_rev_exit != "Close" and self._rev_done:
             return False        # spent: the two keep-it-open actions fire once per trade
         d = self._pos_dir
-        against = bool(m1.new_bear_sos) if d > 0 else bool(m1.new_bull_sos)
+        if cfg.exec_rev_trigger == "Level rejected":
+            against = self._rev_level_fired
+        else:
+            against = bool(m1.new_bear_sos) if d > 0 else bool(m1.new_bull_sos)
         if not against:
             return False
         dist = abs(self._entry - self._init_stop)
