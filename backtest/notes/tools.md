@@ -1740,6 +1740,8 @@ Runs one config on two instruments with costs ON and OFF, and prints the four-wa
 for Run 37 (`strategies/python/sos_fade/sos_fade_optimization.md`) and kept so that result can be
 re-run rather than believed.
 
+⚠ **It is a script, not a test, despite the name.** Run it with `python backtest/tools/gbpjpy_travel_test.py` (same for the GBPUSD twin). Since 2026-09-24 the root `conftest.py` stops pytest collecting anything under `backtest/tools/` — before that, both files ran six-year replays at collection time and put 24 errors in `scripts/run_all_tests.sh`.
+
 🔴 **The two controls are the point, and a run without them answers nothing.**
 
 1. **The same untuned config on the ORIGINAL instrument.** Without it, a loss on the new pair is

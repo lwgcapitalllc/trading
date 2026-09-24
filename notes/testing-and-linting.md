@@ -298,3 +298,9 @@ bot executes, with no promote and no restart.
 
 ⚠ **Ruff's version is PINNED**, or two machines reformat the same file differently and each undoes
 the other on every commit.
+
+## `backtest/tools/` is never collected as tests (2026-09-24)
+
+- The root `conftest.py` ignores every file under `backtest/tools/`. That folder holds study scripts, and two named `*_test.py` were being collected and replaying six years of bars against the trading box's data agent — 24 errors in `scripts/run_all_tests.sh`.
+- The whole folder is ignored, not the two files, so the next script named after what it studies cannot do it again. A tool's real tests go in `backtest/tests/`.
+- ⚠ Naming one of those files directly on the pytest command line still collects it — that is pytest's own behaviour and not a gap in this rule.
