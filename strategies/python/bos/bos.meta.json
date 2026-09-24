@@ -595,6 +595,146 @@
       "show_if": {
         "exec_rev_trigger": "Level rejected"
       }
+    },
+    {
+      "name": "exec_lvl_memory",
+      "group": "Level memory",
+      "label": "Trade a level we already traded",
+      "short": "Level memory",
+      "options": {
+        "off": "Off",
+        "on": "On"
+      },
+      "desc": "Inherited from SOS Fade and never built or measured for BOS. Leave level memory Off on this bot.",
+      "hidden": true
+    },
+    {
+      "name": "exec_lvl_days",
+      "group": "Level memory",
+      "label": "Remember the level for (days)",
+      "short": "Remember for",
+      "unit": "days",
+      "desc": "Inherited from SOS Fade and never built or measured for BOS. Leave level memory Off on this bot.",
+      "hidden": true
+    },
+    {
+      "name": "exec_lvl_away_r",
+      "group": "Level memory",
+      "label": "Price must first travel away (R)",
+      "short": "Travel away",
+      "unit": "R",
+      "desc": "Inherited from SOS Fade and never built or measured for BOS. Leave level memory Off on this bot.",
+      "hidden": true
+    },
+    {
+      "name": "exec_lvl_stop_frac",
+      "group": "Level memory",
+      "label": "Stop, as a fraction of the original trade's",
+      "short": "Stop width",
+      "desc": "Inherited from SOS Fade and never built or measured for BOS. Leave level memory Off on this bot.",
+      "hidden": true
+    },
+    {
+      "name": "exec_lvl_tp_r",
+      "group": "Level memory",
+      "label": "Target, in R",
+      "short": "Target",
+      "unit": "R",
+      "desc": "Inherited from SOS Fade and never built or measured for BOS. Leave level memory Off on this bot.",
+      "hidden": true
+    },
+    {
+      "name": "exec_lvl_tp1_pct",
+      "group": "Level memory",
+      "label": "How much comes off at that target",
+      "short": "Bank at target",
+      "unit": "%",
+      "desc": "Inherited from SOS Fade and never built or measured for BOS. Leave level memory Off on this bot.",
+      "hidden": true
+    },
+    {
+      "name": "exec_lvl_tp2_r",
+      "group": "Level memory",
+      "label": "Second target, in R",
+      "short": "Second target",
+      "unit": "R",
+      "desc": "Inherited from SOS Fade and never built or measured for BOS. Leave level memory Off on this bot.",
+      "hidden": true
+    },
+    {
+      "name": "exec_lvl_risk_pct",
+      "group": "Level memory",
+      "label": "Risk (% of the primary's)",
+      "short": "Risk",
+      "unit": "%",
+      "desc": "Inherited from SOS Fade and never built or measured for BOS. Leave level memory Off on this bot.",
+      "hidden": true
+    },
+    {
+      "name": "exec_lvl_max_hold_hrs",
+      "group": "Level memory",
+      "label": "Give up after (hours)",
+      "short": "Give up after",
+      "unit": "hours",
+      "desc": "Inherited from SOS Fade and never built or measured for BOS. Leave level memory Off on this bot.",
+      "hidden": true
+    },
+    {
+      "name": "exec_lvl_require_quiet",
+      "group": "Level memory",
+      "label": "Only when nothing else is resting",
+      "short": "Only when quiet",
+      "options": {
+        "off": "Rest it anyway",
+        "on": "Only when quiet"
+      },
+      "desc": "Inherited from SOS Fade and never built or measured for BOS. Leave level memory Off on this bot.",
+      "hidden": true
+    },
+    {
+      "name": "exec_lvl_be_r",
+      "group": "Level memory",
+      "label": "Move the stop after (R)",
+      "short": "Move stop after",
+      "unit": "R",
+      "desc": "Inherited from SOS Fade and never built or measured for BOS. Leave level memory Off on this bot.",
+      "hidden": true
+    },
+    {
+      "name": "exec_lvl_be_keep_r",
+      "group": "Level memory",
+      "label": "...leaving this much risk (R)",
+      "short": "Risk left",
+      "unit": "R",
+      "desc": "Inherited from SOS Fade and never built or measured for BOS. Leave level memory Off on this bot.",
+      "hidden": true
+    },
+    {
+      "name": "exec_lvl_confluence",
+      "group": "Level memory",
+      "label": "Extra condition before it trades",
+      "short": "Extra condition",
+      "choices": ["None", "Gap still open", "Sweep first", "Shift confirms"],
+      "desc": "Inherited from SOS Fade and never built or measured for BOS. Leave level memory Off on this bot.",
+      "hidden": true
+    },
+    {
+      "name": "exec_lvl_gap_tol_r",
+      "group": "Level memory",
+      "label": "Gap match tolerance (R)",
+      "short": "Gap tolerance",
+      "unit": "R",
+      "desc": "Inherited from SOS Fade and never built or measured for BOS. Leave level memory Off on this bot.",
+      "hidden": true
+    },
+    {
+      "name": "exec_lvl_shift_bars",
+      "group": "Level memory",
+      "label": "Wait for the shift for (fast bars)",
+      "short": "Wait for shift",
+      "unit": "bars",
+      "desc": "Inherited from SOS Fade and never built or measured for BOS. Leave level memory Off on this bot.",
+      "hidden": true
     }
   ]
 }

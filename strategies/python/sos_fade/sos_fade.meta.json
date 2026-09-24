@@ -1345,6 +1345,182 @@
       "desc": "How deep the re-entry waits before its order fills. 0 enters straight away on the signal. The stop sits in the same place either way, so entering earlier means a wider stop, a smaller position and less room to the targets. Lab only."
     },
     {
+      "name": "exec_lvl_memory",
+      "group": "Level memory",
+      "label": "Trade a level we already traded",
+      "short": "Level memory",
+      "options": {
+        "off": "Off",
+        "on": "On"
+      },
+      "desc": "After a trade closes and its setup has died, remember the price it entered at and rest a limit there again if price comes back. Off (default) never does this. MEASURED over 6.7 years: 65 trades worth +0.85R in total, and they pushed out one +22.31R trade, so the book fell 168.1R to 150.7R. It stays Off. Python only — the TradingView strategy does not have it.",
+      "guide": [
+        "Off — the bot forgets a level once its setup dies",
+        "On — measured to cost money; leave it Off"
+      ]
+    },
+    {
+      "name": "exec_lvl_days",
+      "group": "Level memory",
+      "label": "Remember the level for (days)",
+      "short": "Remember for",
+      "unit": "days",
+      "show_if": {
+        "exec_lvl_memory": true
+      },
+      "desc": "How long after the first trade closes the level stays armed. After this the level is forgotten.",
+      "guide": ["Shorter — fewer returns, fresher levels", "Longer — more returns, staler levels"]
+    },
+    {
+      "name": "exec_lvl_away_r",
+      "group": "Level memory",
+      "label": "Price must first travel away (R)",
+      "short": "Travel away",
+      "unit": "R",
+      "show_if": {
+        "exec_lvl_memory": true
+      },
+      "desc": "How far price must move away from the level, in the first trade's own R, before a return counts. Without it a trade that closed at breakeven would count as a return minutes later.",
+      "guide": ["Smaller — more returns, many of them noise", "Larger — fewer, cleaner returns"]
+    },
+    {
+      "name": "exec_lvl_stop_frac",
+      "group": "Level memory",
+      "label": "Stop, as a fraction of the original trade's",
+      "short": "Stop width",
+      "show_if": {
+        "exec_lvl_memory": true
+      },
+      "desc": "How wide the stop is, as a fraction of the first trade's stop. 0.5 (default) is half as wide. The returns rarely use the full room, so a tighter stop paid better in the study.",
+      "guide": ["Tighter — bigger size, stopped more often", "Wider — the original trade's room"]
+    },
+    {
+      "name": "exec_lvl_tp_r",
+      "group": "Level memory",
+      "label": "Target, in R",
+      "short": "Target",
+      "unit": "R",
+      "show_if": {
+        "exec_lvl_memory": true
+      },
+      "desc": "Where the target sits, in multiples of this trade's own risk — which is already the narrower stop above."
+    },
+    {
+      "name": "exec_lvl_tp1_pct",
+      "group": "Level memory",
+      "label": "How much comes off at that target",
+      "short": "Bank at target",
+      "unit": "%",
+      "show_if": {
+        "exec_lvl_memory": true
+      },
+      "desc": "How much of the position closes at the target. 100 (default) closes it all. Below 100 leaves the rest on the normal trailing stop."
+    },
+    {
+      "name": "exec_lvl_tp2_r",
+      "group": "Level memory",
+      "label": "Second target, in R",
+      "short": "Second target",
+      "unit": "R",
+      "show_if": {
+        "exec_lvl_memory": true
+      },
+      "desc": "A second target for whatever the first one leaves. -1 (default) puts it on the first target, which does nothing while the first target closes everything."
+    },
+    {
+      "name": "exec_lvl_risk_pct",
+      "group": "Level memory",
+      "label": "Risk (% of the primary's)",
+      "short": "Risk",
+      "unit": "%",
+      "show_if": {
+        "exec_lvl_memory": true
+      },
+      "desc": "How much this trade risks, as a percentage of what a first trade risks. 100 (default) is the same. It changes the size only."
+    },
+    {
+      "name": "exec_lvl_max_hold_hrs",
+      "group": "Level memory",
+      "label": "Give up after (hours)",
+      "short": "Give up after",
+      "unit": "hours",
+      "show_if": {
+        "exec_lvl_memory": true
+      },
+      "desc": "Closes the trade if it is still open after this many hours. 72 (default) is three days."
+    },
+    {
+      "name": "exec_lvl_require_quiet",
+      "group": "Level memory",
+      "label": "Only when nothing else is resting",
+      "short": "Only when quiet",
+      "options": {
+        "off": "Rest it anyway",
+        "on": "Only when quiet"
+      },
+      "show_if": {
+        "exec_lvl_memory": true
+      },
+      "desc": "On (default) rests the limit only when the bot has no other setup armed on that side. MEASURED: the returns that came while another setup was armed were worth nothing, and there is only one position slot to share."
+    },
+    {
+      "name": "exec_lvl_be_r",
+      "group": "Level memory",
+      "label": "Move the stop after (R)",
+      "short": "Move stop after",
+      "unit": "R",
+      "show_if": {
+        "exec_lvl_memory": true
+      },
+      "desc": "Once the trade is this many R in profit, pull the stop in. -1 (default) never moves it."
+    },
+    {
+      "name": "exec_lvl_be_keep_r",
+      "group": "Level memory",
+      "label": "...leaving this much risk (R)",
+      "short": "Risk left",
+      "unit": "R",
+      "show_if": {
+        "exec_lvl_memory": true
+      },
+      "desc": "Where the stop moves to when the rule above fires, as R still at risk. 0 (default) is breakeven."
+    },
+    {
+      "name": "exec_lvl_confluence",
+      "group": "Level memory",
+      "label": "Extra condition before it trades",
+      "short": "Extra condition",
+      "choices": ["None", "Gap still open", "Sweep first", "Shift confirms"],
+      "show_if": {
+        "exec_lvl_memory": true
+      },
+      "desc": "One more thing that must be true before it trades. Gap still open: the original gap must still be live. Sweep first: a liquidity sweep must be live on the trade's side. Shift confirms: no resting order — wait for a shift of structure on the fast chart after the tap, then enter at market. MEASURED: all three lost against None."
+    },
+    {
+      "name": "exec_lvl_gap_tol_r",
+      "group": "Level memory",
+      "label": "Gap match tolerance (R)",
+      "short": "Gap tolerance",
+      "unit": "R",
+      "show_if": {
+        "exec_lvl_memory": true,
+        "exec_lvl_confluence": "Gap still open"
+      },
+      "desc": "How far outside a gap the level may sit and still count as that gap's, in the first trade's R."
+    },
+    {
+      "name": "exec_lvl_shift_bars",
+      "group": "Level memory",
+      "label": "Wait for the shift for (fast bars)",
+      "short": "Wait for shift",
+      "unit": "bars",
+      "show_if": {
+        "exec_lvl_memory": true,
+        "exec_lvl_confluence": "Shift confirms"
+      },
+      "desc": "How long after the tap a shift of structure may still confirm, in fast-chart bars. 24 (default) is two hours on the 5-minute feed."
+    },
+    {
       "name": "show_div",
       "group": "Divergence veto",
       "widget": "toggle",
