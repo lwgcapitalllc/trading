@@ -121,6 +121,14 @@ def _state(**kw):
     return st
 
 
+def _ts(index: int) -> int:
+    """The bar time that goes with a bar number, on 5-minute bars, counted from `_state`'s entry.
+
+    ⚠ The exits are gated on bar TIME (see `resolve`), so a test must hand them a time that
+    agrees with its bar number — a real feed cannot produce one that does not."""
+    return 1_600_000_000_000 + (index - 10) * 300_000
+
+
 def _exec(**cfg):
     return ExtremeLegExecution(ExtremeLegConfig(**cfg), initial_capital=10_000.0)
 
@@ -153,9 +161,9 @@ def test_the_entry_bar_cannot_stop_out_or_take_profit():
     they opened, most often on exactly the fast bars this strategy enters on."""
     ex = _exec()
     ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0))
-    ex.resolve(10, 1, high=110.0, low=90.0, open_=100.0)   # the entry bar itself
+    ex.resolve(10, _ts(10), high=110.0, low=90.0, open_=100.0)   # the entry bar itself
     assert ex.pos is not None and not ex.trades
-    ex.resolve(11, 2, high=110.0, low=99.5, open_=100.0)   # the next bar takes the target
+    ex.resolve(11, _ts(11), high=110.0, low=99.5, open_=100.0)   # the next bar takes the target
     assert ex.pos is None and ex.trades[-1].exit_reason == "target"
 
 
@@ -164,7 +172,7 @@ def test_a_bar_that_touches_both_ends_books_the_stop():
     result and one that does not. RED by swapping the `if hit_stop` / `elif hit_tp` order."""
     ex = _exec()
     ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0))
-    ex.resolve(11, 2, high=105.0, low=97.0, open_=100.0)
+    ex.resolve(11, _ts(11), high=105.0, low=97.0, open_=100.0)
     assert ex.trades[-1].exit_reason == "stop"
 
 
@@ -173,7 +181,7 @@ def test_a_gap_through_the_stop_fills_at_the_open_not_at_the_stop():
     `min(pos.stop, open_)` — the backtest then books a loss the account could not have taken."""
     ex = _exec()
     ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0))
-    ex.resolve(11, 2, high=96.0, low=90.0, open_=95.0)
+    ex.resolve(11, _ts(11), high=96.0, low=90.0, open_=95.0)
     assert ex.trades[-1].exit_price == pytest.approx(95.0)
 
 
@@ -183,9 +191,9 @@ def test_breakeven_cannot_arm_on_the_entry_bar():
     then arms and scratches the trade on the bar it opened."""
     ex = _exec(use_breakeven=True, be_arm_frac=0.5)
     ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0))
-    ex.arm_breakeven(10, high=104.0, low=100.0)
+    ex.arm_breakeven(10, _ts(10), high=104.0, low=100.0)
     assert ex.pos.stop == pytest.approx(98.0) and ex.pos.be_armed is False
-    ex.arm_breakeven(11, high=104.0, low=100.0)
+    ex.arm_breakeven(11, _ts(11), high=104.0, low=100.0)
     assert ex.pos.stop == pytest.approx(100.0) and ex.pos.be_armed is True
 
 
@@ -194,7 +202,7 @@ def test_breakeven_is_off_unless_it_is_switched_on():
     off is worse than no toggle, because the page still claims it."""
     ex = _exec(use_breakeven=False, be_arm_frac=0.5)
     ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0))
-    ex.arm_breakeven(11, high=104.0, low=100.0)
+    ex.arm_breakeven(11, _ts(11), high=104.0, low=100.0)
     assert ex.pos.stop == pytest.approx(98.0)
 
 
@@ -204,8 +212,8 @@ def test_r_is_measured_against_the_stop_the_trade_was_sized_to():
     divides by zero or reports a fabricated multiple."""
     ex = _exec(use_breakeven=True, be_arm_frac=0.5)
     ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0))
-    ex.arm_breakeven(11, high=104.0, low=100.0)
-    ex.resolve(12, 3, high=101.0, low=99.0, open_=100.5)
+    ex.arm_breakeven(11, _ts(11), high=104.0, low=100.0)
+    ex.resolve(12, _ts(12), high=101.0, low=99.0, open_=100.5)
     t = ex.trades[-1]
     assert t.exit_reason == "stop"
     assert t.stop_distance == pytest.approx(2.0)
@@ -226,8 +234,8 @@ def test_every_closed_trade_carries_the_four_things_a_chart_annotates():
     in `_close`."""
     ex = _exec()
     ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0))
-    ex.resolve(11, 2, high=101.0, low=99.0, open_=100.0)
-    ex.resolve(12, 3, high=105.0, low=100.0, open_=100.5)
+    ex.resolve(11, _ts(11), high=101.0, low=99.0, open_=100.0)
+    ex.resolve(12, _ts(12), high=105.0, low=100.0, open_=100.5)
     t = ex.trades[-1]
     assert t.entry_price == pytest.approx(100.0)
     assert t.mae_price == pytest.approx(99.0)          # DD
@@ -246,7 +254,7 @@ def test_the_deepest_price_is_never_beyond_the_stop_that_closed_the_trade():
     stop that closed it at 98.0."""
     ex = _exec()
     ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0))
-    ex.resolve(11, 2, high=101.0, low=95.0, open_=100.0)
+    ex.resolve(11, _ts(11), high=101.0, low=95.0, open_=100.0)
     t = ex.trades[-1]
     assert t.exit_reason == "stop"
     assert t.exit_price == pytest.approx(98.0)
@@ -263,7 +271,7 @@ def test_the_best_price_is_never_beyond_the_target_that_closed_the_trade():
     position that was flat from 104.0."""
     ex = _exec()
     ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0))
-    ex.resolve(11, 2, high=108.0, low=99.5, open_=100.0)
+    ex.resolve(11, _ts(11), high=108.0, low=99.5, open_=100.0)
     t = ex.trades[-1]
     assert t.exit_reason == "target"
     assert t.mfe_price == pytest.approx(104.0)
@@ -292,11 +300,11 @@ def test_a_drawdown_taken_before_breakeven_armed_survives_the_stop_moving():
     collapses from 98.5 to 100.0 and the trade reads as though it never went against us at all."""
     ex = _exec(use_breakeven=True, be_arm_frac=0.5)
     ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0))
-    ex.resolve(11, 2, high=100.5, low=98.5, open_=100.0)      # deep, but not stopped
-    ex.resolve(12, 3, high=102.5, low=100.0, open_=100.5)
-    ex.arm_breakeven(12, high=102.5, low=100.0)               # stop moves to 100.0
+    ex.resolve(11, _ts(11), high=100.5, low=98.5, open_=100.0)      # deep, but not stopped
+    ex.resolve(12, _ts(12), high=102.5, low=100.0, open_=100.5)
+    ex.arm_breakeven(12, _ts(12), high=102.5, low=100.0)               # stop moves to 100.0
     assert ex.pos.stop == pytest.approx(100.0)
-    ex.resolve(13, 4, high=101.0, low=99.0, open_=100.5)      # scratched at breakeven
+    ex.resolve(13, _ts(13), high=101.0, low=99.0, open_=100.5)      # scratched at breakeven
     t = ex.trades[-1]
     assert t.exit_price == pytest.approx(100.0)
     assert t.mae_price == pytest.approx(98.5)
@@ -308,8 +316,8 @@ def test_best_and_worst_are_resolved_by_DIRECTION_and_not_by_which_number_is_lar
     price as its drawdown, and both chips sit on the wrong side of the entry."""
     ex = _exec()
     ex.enter(_state(index=10, go_short=True, stop_short=102.0, tp_short=96.0))
-    ex.resolve(11, 2, high=101.0, low=97.0, open_=100.0)
-    ex.resolve(12, 3, high=98.0, low=95.0, open_=97.0)
+    ex.resolve(11, _ts(11), high=101.0, low=97.0, open_=100.0)
+    ex.resolve(12, _ts(12), high=98.0, low=95.0, open_=97.0)
     t = ex.trades[-1]
     assert t.exit_reason == "target"
     assert t.mfe_price == pytest.approx(96.0)     # best for a short is the low
@@ -329,10 +337,10 @@ def test_the_exit_is_recorded_as_a_FILL_and_the_target_is_reported_as_banking_al
     ex = _exec()
     ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0))
     qty = ex.pos.qty
-    ex.resolve(11, 2, high=105.0, low=99.5, open_=100.0)
+    ex.resolve(11, _ts(11), high=105.0, low=99.5, open_=100.0)
     t = ex.trades[-1]
     assert len(t.legs) == 1
-    assert t.legs[0] == {"reason": "target", "price": 104.0, "ms": 2, "qty": qty}
+    assert t.legs[0] == {"reason": "target", "price": 104.0, "ms": _ts(11), "qty": qty}
     assert t.tp_rungs == ((104.0, 100.0),)
 
 
@@ -767,7 +775,7 @@ def test_a_solo_leg_still_owns_its_own_balance():
     ex = _exec()
     assert ex.equity == 10_000.0
     ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0))
-    ex.resolve(11, 2, high=105.0, low=99.0, open_=100.0)
+    ex.resolve(11, _ts(11), high=105.0, low=99.0, open_=100.0)
     assert ex.trades[-1].exit_reason == "target"
     assert ex.equity > 10_000.0
 
@@ -829,7 +837,7 @@ def test_breakeven_hands_the_room_back_to_the_shared_account():
     ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0))
     # Reserved = size x distance to the stop, so it is the risk itself whatever the setting is.
     assert acct.reserved() == pytest.approx(_wanted_qty(10_000.0, 2.00) * 2.00)
-    ex.arm_breakeven(11, high=103.0, low=100.0)   # span 4, arms at 70% = 102.8
+    ex.arm_breakeven(11, _ts(11), high=103.0, low=100.0)   # span 4, arms at 70% = 102.8
     assert ex.pos.stop == pytest.approx(100.0)
     assert acct.reserved() == pytest.approx(0.0), "the stop is at entry — nothing is at risk"
 
@@ -841,7 +849,7 @@ def test_closing_books_the_pnl_and_frees_the_reservation():
     acct = _acct()
     ex = _shared(acct)
     ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0))
-    ex.resolve(11, 2, high=105.0, low=99.0, open_=100.0)
+    ex.resolve(11, _ts(11), high=105.0, low=99.0, open_=100.0)
     assert ex.trades[-1].exit_reason == "target"
     # 4.00 of price move on the size the account granted. The MONEY is what this half asserts.
     assert acct.balance == pytest.approx(10_000.0 + 4.00 * _wanted_qty(10_000.0, 2.00))

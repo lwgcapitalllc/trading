@@ -286,6 +286,12 @@ class LivePositionMixin:
 
     ⚠ **Restore must be called AFTER the warm-up, never before.** A warm-up replay afterwards
     overwrites the restored book with whatever it imagined.
+
+    🔴 **A restored bar NUMBER is from another count — never gate a decision on it.** Every live
+    re-warm and restart numbers bars from the start of its own window, so a restored entry number
+    can sit ABOVE every bar that follows. Gate on the entry bar's TIME instead. On 2026-09-24 a
+    number gate stopped both extreme-leg bots testing their stop, and the broker closed a trade the
+    strategy still held.
     """
 
     #: Adopters override. Empty here so a class that forgets is caught by `verify_live_ready`

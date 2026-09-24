@@ -311,7 +311,10 @@ class FftExecution(LivePositionMixin):
     ) -> Optional[Fill]:
         """This bar's prices against the position placed earlier, or else the resting order."""
         if self.pos is not None:
-            if self.pos.entry_index < index:
+            # 🔴 BY TIME, NEVER BY BAR NUMBER — a live re-warm renumbers bars, so a restored
+            # trade's number is from another count and can sit above every bar after it (the
+            # 2026-09-24 extreme-leg halt). In a replay the two orders are identical.
+            if self.pos.entry_ms < ts_ms:
                 self._exits(self.pos, index, ts_ms, open_, high, low)
             self.pend, self._pend_ctx = None, None
             return None

@@ -35,6 +35,9 @@ never promoted, never run against a broker.
   `_fit_to_budget` reasoning). Sized only at the fill, a live order already resting full-size at the
   broker would be refused or shrunk in the emulator alone, and the bridge halts. No room = the touch
   is refused as `room`. Inert with no budget stated, so no backtest moves.
+- 🔴 **An exit is gated on bar TIME, never bar NUMBER.** Every live re-warm and restart renumbers
+  bars, so a restored trade's number can sit above every bar after it and its stop is never tested.
+  That halted both extreme-leg bots on 2026-09-24; this bot had the same gate.
 - **No order rests into a weekend or an early-close holiday break** (`_next_minute_shut`). ⚠ The
   shared calendar marks Thanksgiving Day closed; PU Prime trades it until ~13:00 New York. So a plain
   "tomorrow is a holiday" is NOT refused here — only a weekend-length break, or an early close

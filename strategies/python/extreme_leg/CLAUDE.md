@@ -112,6 +112,8 @@ moving those numbers.
 - ⚠ **Or read the green run of 2026-09-02 as covering the 6.6-year figures.** It compared 3.5 months
   and 7 entries; every headline number here was measured on bars it never saw. The gate proves the
   PORT, not the numbers, and those are different claims.
+- Compare a stored bar NUMBER with a live one. Every re-warm and restart renumbers bars; compare bar
+  times. See `notes/chart_and_live.md` → the 2026-09-24 halt.
 - Allow a second concurrent position. Every result this strategy has was measured with one slot,
   and the reason a filter pays here is that refusing a setup genuinely buys the next one.
 - Fork `engines/liquidity/` or `engines/sessions/` to make this side agree with a Pine. When they
@@ -267,6 +269,7 @@ Most-cited code: `extreme_leg_strategy`.
 
 - What the CHART draws: entry, DD, best, exit (2026-09-02)
 - It can be a LIVE bot now — the seams, and why they cost the replay nothing (2026-09-03)
+- 🔴 The exits are gated on bar TIME, never bar NUMBER — a re-warm renumbers bars (the 2026-09-24 halt)
 
 ### `notes/lab_settings_history.md` — A lab setting that was probed but never read
 

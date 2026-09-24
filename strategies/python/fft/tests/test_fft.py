@@ -328,3 +328,21 @@ def test_three_months_of_real_bars_reproduce_the_same_nine_trades():
         ("2025-11-07 11:32:00", 1, "target"),
         ("2025-11-26 15:30:00", -1, "target"),
     ]
+
+
+def test_a_restored_position_still_stops_out_after_the_bar_count_restarts():
+    """🔴 **The 2026-09-24 halt on the extreme-leg bots, which share this gate.** Every live
+    re-warm numbers bars from the start of its own window again, so a trade carried across one
+    comes back with an entry bar number HIGHER than every live bar after it. Gated on that
+    number, the stop is never tested and the broker closes a trade the strategy still holds.
+    RED against the old `self.pos.entry_index < index` gate in `resolve`.
+    """
+    old = _ex()
+    _rest_buy(old)
+    old.resolve(9_000, T0, 101.0, 102.0, 99.5)          # filled, in the old process's count
+    assert old.pos is not None
+    new = _ex()
+    new.restore_position(old.snapshot_position())
+    new.resolve(500, T0 + 60 * M, 100.0, 100.5, 89.0)  # an hour later, renumbered: far below the stop
+    assert new.pos is None, "the strategy ignored its own stop on a restored trade"
+    assert new.trades[-1].exit_reason == "stop"

@@ -123,3 +123,12 @@ drops the replayed copy instead of waiting it out. SOS Fade (and so b_leg and re
 subclass it) always had it; the extreme leg now exposes it as a property off its open position.
 A strategy that cannot answer is refused at startup; an answer of 0 means "unknown" and keeps the
 old wait.
+
+## A restored bar NUMBER is never a gate — compare bar TIME (2026-09-24)
+
+Every live re-warm and restart numbers bars from the start of its own window, so a position
+restored across one carries an entry bar number from another count — it can sit ABOVE every bar
+that follows. The extreme leg gated its stop and breakeven on that number, never tested its stop
+after the daily-break re-warm, and both its bots halted when the broker's stop closed a trade the
+strategy still held. Any gate on the open trade's age compares the entry bar's TIME. Stated in
+`LivePositionMixin`'s docstring; the story is in `python/extreme_leg/notes/chart_and_live.md`.
