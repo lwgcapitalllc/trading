@@ -4,6 +4,15 @@ import { offlineTest } from './offline'
 const { test } = offlineTest('bots-page', { clockFactor: 10 })
 
 /**
+ * The bot panel's files check (`useBotFilesCheck`, 2026-09-24) — every panel open asks it. A
+ * standing "the files match", so no check here reads a tamper warning it did not set up; a check
+ * about the warning routes its own answer, which wins (registered later).
+ */
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/bots/*/version/files', (r) => r.fulfill({ json: { snapshot_ok: true } }))
+})
+
+/**
  * The Bots page's Accounts tab — which bots share a balance, and the ceiling over it.
  *
  * ⚠ **Mocked whole, so this needs no VPS.** The real `/bots/snapshot` SSHes to the live trading
@@ -311,7 +320,6 @@ async function mock(page: Page, groups: unknown[], registry: unknown[] = []) {
           params: {},
           repo_commit: 'dead',
           commits_ahead: 0,
-          snapshot_ok: true,
           running_hash: 'abc',
           params_drift: [],
           compare:

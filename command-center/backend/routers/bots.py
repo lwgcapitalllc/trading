@@ -76,6 +76,7 @@ from models import (
     BotChannelTestResult,
     BotCloneResult,
     BotDeployedVersion,
+    BotFilesCheck,
     BotParamsView,
     BotPromoteJob,
     BotPromoteRequest,
@@ -4951,12 +4952,38 @@ def _running_code(section: str | None, started: float | None) -> BotRunningCode:
         )
 
 
-# 🔴 **At most three version reads on the box at once (2026-09-24).** Each one starts Python on
-# the box to re-hash a bot's frozen code (MEASURED ~5s of its ~9s), and the page asks for every bot
-# at the same moment. With ten bots that was ten Pythons on the machine the LIVE bots trade from,
-# and the status read queued behind them: MEASURED 3.1s alone, 26.7s beside the ten. Capped, the
-# status read gets through and the version column fills in a few at a time.
+# 🔴 **At most three files checks on the box at once (2026-09-24).** Each starts Python on the box
+# to re-hash a bot's frozen code (MEASURED ~5s). It rode on every VERSION read until the same day,
+# and the page asked for every bot's version at once: ten Pythons on the two-CPU machine the LIVE
+# bots trade from, with the status read queued behind them (3.1s alone, 26.7s beside the ten).
+# The version read no longer runs it at all (`get_bot_files_check`); the cap stays on the check.
 _VERSION_READS = threading.BoundedSemaphore(3)
+
+_MODIFIED = "SNAPSHOT MODIFIED"
+_MATCHES = "matches"
+
+
+def _files_verdict(show: str) -> bool | None:
+    """`promote.py --show`'s own words → match, modified, or `None` when it said neither — an
+    empty answer is a check that did not run, never a pass."""
+    if _MODIFIED in show:
+        return False
+    if _MATCHES in show:
+        return True
+    return None
+
+
+@router.get("/{bot_name}/version/files", response_model=BotFilesCheck)
+def get_bot_files_check(bot_name: str):
+    """Do this bot's deployed files still match their record? Read by the bot PANEL only — it is
+    the expensive half of what the version read used to do, see `BotFilesCheck`."""
+    _, bot_key = _resolve_bot(bot_name)
+    with _VERSION_READS:
+        try:
+            out = _ssh(f"{_PYTHON_EXE} {_PROMOTE_PY} --bot {bot_key} --show 2>nul")
+        except Exception:
+            return BotFilesCheck(snapshot_ok=None)
+    return BotFilesCheck(snapshot_ok=_files_verdict(out))
 
 
 @router.get("/{bot_name}/version", response_model=BotDeployedVersion)
@@ -4965,8 +4992,9 @@ def get_bot_version(bot_name: str):
     _, bot_key = _resolve_bot(bot_name)
     rec = _deployed_json(bot_key)
 
-    # ONE round trip for every fact on this card. `--show` re-hashes the snapshot on disk,
-    # which is the tamper check: the record can only be trusted if the files still match it.
+    # ONE round trip for every fact on this card. ⚠ The tamper check (`--show`, which re-hashes
+    # the snapshot on disk) is NOT one of them since 2026-09-24 — it was ~5s of this read's ~9s on
+    # every row of the page, and only the panel shows it: `get_bot_files_check`.
     #
     # The bot's own `bot_state.json` rides along on the same connection. It used to come
     # from a second `_fetch_vps_snapshot()` — a two-command fleet-wide fetch (every python
@@ -4977,7 +5005,6 @@ def get_bot_version(bot_name: str):
     cmd = (
         f"cd {_VPS_REPO} & git rev-parse --short HEAD"
         f" & echo. & echo ===AHEAD=== & git rev-list --count {rec.get('promoted_commit') or 'HEAD'}..HEAD"
-        f" & echo. & echo ===SHOW=== & {_PYTHON_EXE} {_PROMOTE_PY} --bot {bot_key} --show 2>nul"
     )
     if state_path:
         # `echo.` before the marker for the reason `_fetch_vps_snapshot` documents: `type`
@@ -4996,8 +5023,7 @@ def get_bot_version(bot_name: str):
                 rf" {_VPS_INSTANCES}\{reg.instance_dir}\ledger\health-{month}-*.jsonl 2>nul"
             )
 
-    with _VERSION_READS:
-        raw = _ssh(cmd)
+    raw = _ssh(cmd)
     parts = _parse_sections(raw, "head")
     try:
         ahead = int(parts.get("ahead", "0").strip().splitlines()[-1])
@@ -5087,7 +5113,6 @@ def get_bot_version(bot_name: str):
         params=deployed_params,
         repo_commit=parts.get("head", "").strip().splitlines()[0] if parts.get("head") else "",
         commits_ahead=ahead,
-        snapshot_ok="SNAPSHOT MODIFIED" not in parts.get("show", ""),
         running_hash=running_hash,
         params_drift=drift,
         compare=comparison,

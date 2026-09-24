@@ -12,7 +12,7 @@ import {
   Upload,
   WifiOff,
 } from 'lucide-react'
-import { useBotVersion, useStartPromoteJob } from '@/hooks/useBots'
+import { useBotFilesCheck, useBotVersion, useStartPromoteJob } from '@/hooks/useBots'
 import {
   deployableVersion,
   deployWouldAdvance,
@@ -22,7 +22,13 @@ import {
 } from '@/lib/botVersion'
 import { Shimmer } from '@/components/Shimmer'
 import { StepProgress, type Step } from '@/components/StepProgress'
-import type { BotDeployedVersion, BotParamRow, BotPromoteJob, BotPromoteStage } from '@/types'
+import type {
+  BotDeployedVersion,
+  BotFilesCheck,
+  BotParamRow,
+  BotPromoteJob,
+  BotPromoteStage,
+} from '@/types'
 
 /**
  * The bot panel's money-path pieces: `VersionBanner` (deploy) and `ParamGroup` (the read-only
@@ -88,10 +94,15 @@ type VersionFlags = {
   anyWarn: boolean
 }
 
-export function versionFlags(v: BotDeployedVersion | undefined): VersionFlags | null {
+export function versionFlags(
+  v: BotDeployedVersion | undefined,
+  /** The tamper check — its own read since 2026-09-24 (`useBotFilesCheck`). Only a definite
+   *  `false` warns: not asked yet, or not answered, is not "modified". */
+  files?: BotFilesCheck
+): VersionFlags | null {
   if (!v) return null
   const notFrozen = !v.frozen
-  const snapshotModified = v.frozen && !v.snapshot_ok
+  const snapshotModified = v.frozen && files?.snapshot_ok === false
   // 🔴 The predicate lives in `lib/botVersion`, not here, because `useBotVersion` reads it too —
   // it is what decides whether this record is still settling and worth re-reading. A copy here
   // would let the badge and the poll disagree about the one state this page exists to report.
@@ -200,6 +211,7 @@ export function VersionBanner({
   fetchedAt?: string
 }) {
   const { data: v, isLoading, error, refetch, isFetching } = useBotVersion(botKey)
+  const { data: files } = useBotFilesCheck(botKey)
   const start = useStartPromoteJob()
   // The job this panel is showing. A deploy that is RUNNING is always shown; a finished one only
   // if this panel started it or watched it run — a result from hours ago is not news.
@@ -570,7 +582,7 @@ export function VersionBanner({
           answer to *is this bot's version claim false*, and its own note says three places
           counting it three ways is three answers that can disagree. */}
       {(() => {
-        const f = versionFlags(v)
+        const f = versionFlags(v, files)
         if (!f) return null
         return (
           <>

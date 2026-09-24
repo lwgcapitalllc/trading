@@ -927,9 +927,9 @@ Aaron: *"the bots page takes so dam long to load."* MEASURED on the live box, on
   the live bots. Ten at once buried the status read. Only the read that starts Python is capped;
   the plain `type` of the deploy record is not.
 - **The page asks for versions only once status has answered** — see frontend `notes/bots-page.md`.
-- ⚠ **The version column is still ~29s to fill, and this app cannot fix that.** The cost is the
-  tamper check in `algos/tools/promote.py --show`, re-hashing 223 files per bot. A cheaper check
-  lives in `algos/`, which this app may not touch.
+- ~~⚠ **The version column is still ~29s to fill, and this app cannot fix that.**~~ **Fixed the
+  same day — see *The files check is its own read* below.** The claim was wrong: the cost was ours
+  to move, because only the bot panel ever showed the result.
 
 TESTED: `test_bot_version.py` → `test_no_more_than_three_version_reads_are_on_the_box_at_once`,
 `test_bots_snapshot_parse.py` → `test_the_snapshot_s_two_calls_run_side_by_side`; each red under
@@ -984,3 +984,30 @@ without the lock, the deploy without its claim, the thread without its release, 
 handed-over claim, the account routes without their check, the join without its destination check,
 `load` passing a running job through untouched. Browser: `bots-version.spec.ts` → *a running deploy
 holds its bot and its account*, red with the page's deploy check removed.
+
+## The files check is its own read, and the rows never ask for it (2026-09-24)
+
+The version read ran `promote.py --show` for every bot on every page load — the tamper check that
+re-hashes ~220 frozen files on the box, ~5s of the read's ~9s. Its ONE output, whether the files
+still match their record, is shown in ONE place: the bot panel's *Snapshot modified* warning. The
+row badge never used it. So it moved to `GET /bots/{bot}/version/files` (`BotFilesCheck`), which
+only the panel asks for, and the three-at-once cap moved with it.
+
+| MEASURED on the live box | before | after |
+|---|---|---|
+| status | 4.4–5.2s | 3.0s |
+| every version badge filled | ~29s | 11.4s |
+| the panel's files check | (inside each version read) | 2.7s |
+
+- 🔴 **An unanswered check is now `None`, never a pass.** The old parse was `"SNAPSHOT MODIFIED"
+  not in <output>`, so an EMPTY answer — the box dropping the call, Python failing to start — read
+  as "the files match". It now needs promote.py's own `matches` to say yes.
+- ⚠ **`snapshot_ok` is gone from the version model**, not left defaulting: a field that is always
+  `None` there would be a declared-not-assigned value (root rule 10). The trading-box tool never
+  read it.
+- ⚠ The page keys the check UNDER the bot's version key, so a finished deploy and the Refresh
+  button re-read it with no second list.
+
+TESTED: `test_bot_version.py` — the files check's three answers, the box down, the version read
+sending no `--show`, the cap on the check. Mutations: old verdict (red), cap removed (red), `--show`
+put back on the version read (red, on a scratch copy — the live server reloads on a source edit).

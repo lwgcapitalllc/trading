@@ -1921,3 +1921,18 @@ per bot*); this is the page not offering what would be refused.
 
 TESTED: `tests/bots-version.spec.ts` → *a running deploy holds its bot and its account — no Stop, no
 Restart, no account change*; red with the deploy check removed from `index.tsx`, green restored.
+
+## The rows never ask for the files check; the panel does (2026-09-24)
+
+The files (tamper) check re-hashes ~220 files on the two-CPU box and rode on every row's version
+read, while only the bot panel's *Snapshot modified* warning uses it. `useBotFilesCheck` now asks
+`/version/files` from the panel alone; the whole page fills in 11.4s instead of ~29s (MEASURED).
+
+- ⚠ **Only a definite `false` warns.** `versionFlags` read `!snapshot_ok`, which would warn on a
+  check not yet asked or not answered — `=== false` now.
+- ⚠ **Keyed under `['bots', 'version', name]`**, so a finished deploy and Refresh re-read it too.
+- ⚠ **Both bots specs answer it by default** (`test.beforeEach`) — the offline harness refuses any
+  read nobody answers, and every panel open asks this one.
+
+TESTED: `bots-version.spec.ts` → *the rows never ask for the files check; the panel does, and only
+a definite no warns*; red with the rows asking, red with the old `!snapshot_ok`.

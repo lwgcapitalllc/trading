@@ -33,6 +33,15 @@ import { offlineTest } from './offline'
 const { test, recorded } = offlineTest('bots-page', { clockFactor: 10 })
 
 /**
+ * The bot panel's files check (`useBotFilesCheck`, 2026-09-24) — every panel open asks it. A
+ * standing "the files match", so no check here reads a tamper warning it did not set up; a check
+ * about the warning routes its own answer, which wins (registered later).
+ */
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/bots/*/version/files', (r) => r.fulfill({ json: { snapshot_ok: true } }))
+})
+
+/**
  * The bot snapshot, with `sos_fade_demo` on the account type THIS check needs.
  *
  * ⚠ Stated, never inherited: the recording holds whatever the box said the day it was taken — on
@@ -110,7 +119,6 @@ function version(
     params: {},
     repo_commit: 'a9bf348',
     commits_ahead: 71,
-    snapshot_ok: true,
     running_hash: 'fbf3b94bebf0b96e1d9f238b982dcb9c',
     params_drift: [],
     compare: cmp,
@@ -1351,4 +1359,43 @@ test('a running deploy holds its bot and its account — no Stop, no Restart, no
   const add = page.getByTestId('add-bot')
   await expect(add).toBeDisabled({ timeout: 20_000 })
   await expect(add).toHaveAttribute('title', /deploying/)
+})
+
+test('the rows never ask for the files check; the panel does, and only a definite no warns', async ({
+  page,
+}) => {
+  /**
+   * 🔴 (2026-09-24, Aaron: *"the bots page takes so dam long to load"*.) The files check re-hashes
+   * ~220 files on a two-CPU box and rode on every row's version read, while only the panel shows
+   * it. MUTATION: call `useBotFilesCheck` from `useBotVersions` → the first assert reddens.
+   * MUTATION: `versionFlags` back to `!snapshot_ok` → the unanswered case warns, and reddens.
+   */
+  let filesAsked = 0
+  let answer: { snapshot_ok: boolean | null } = { snapshot_ok: null }
+  await pinSnapshot(page, false)
+  await page.route('**/api/bots/*/version', (r) =>
+    r.fulfill({ json: version(compare(), null, true) })
+  )
+  await page.route('**/api/bots/*/version/files', (r) => {
+    filesAsked += 1
+    return r.fulfill({ json: answer })
+  })
+  await page.route('**/api/bots/*/promote/job', (r) => r.fulfill({ json: null }))
+
+  await page.goto('/bots')
+  // The pill is drawn only once its version has ANSWERED (a shimmer until then).
+  await expect(rowPill(page)).toBeVisible({ timeout: 20_000 })
+  expect(filesAsked).toBe(0)
+
+  // Opened: asked, and an unanswered check is NOT "modified".
+  await openConfigure(page)
+  await expect.poll(() => filesAsked, { timeout: 20_000 }).toBeGreaterThan(0)
+  await expect(banner(page).getByTestId('banner-snapshot-modified')).toHaveCount(0)
+
+  // A definite no warns.
+  answer = { snapshot_ok: false }
+  await page.reload()
+  await expect(banner(page).getByTestId('banner-snapshot-modified')).toBeVisible({
+    timeout: 20_000,
+  })
 })

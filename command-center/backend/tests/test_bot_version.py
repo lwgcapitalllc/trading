@@ -74,13 +74,17 @@ def vps(monkeypatch):
 
     def _ssh(cmd: str) -> str:
         state.setdefault("cmds", []).append(cmd)
+        # The files check is its own read since 2026-09-24 (`get_bot_files_check`), and it
+        # answers with `promote.py --show`'s words alone.
+        if "--show" in cmd:
+            return state["show"]
         if "deployed.json" in cmd:
             return json.dumps(state["deployed"]) if state["deployed"] else ""
         # One command carries every remaining fact, `bot_state.json` included — see
         # test_the_running_hash_costs_no_extra_round_trip below. The state section is
         # answered only when the command actually asked for it, so a bot with no registered
         # state file gets what the real VPS would give it: nothing.
-        out = f"{state['head']}\n===AHEAD===\n{state['ahead']}\n===SHOW===\n{state['show']}"
+        out = f"{state['head']}\n===AHEAD===\n{state['ahead']}"
         if "bot_state.json" in cmd:
             mine = {"source_hash": state["running_hash"]}
             if state["started"] is not None:
@@ -161,8 +165,35 @@ def test_a_repo_that_has_moved_past_the_deployment_is_visible(vps):
 def test_a_snapshot_edited_in_place_is_flagged(vps):
     """Editing the deployed files directly goes around promote, so the record no longer
     describes them. `--show` re-hashes the disk, which is what catches it."""
-    vps["show"] = "  on disk  : 11111111 SNAPSHOT MODIFIED"
-    assert bots.get_bot_version("sos_fade_demo").snapshot_ok is False
+    vps["show"] = "  on disk  : 11111111 ✗ SNAPSHOT MODIFIED"
+    assert bots.get_bot_files_check("sos_fade_demo").snapshot_ok is False
+    vps["show"] = "  on disk  : e42a95c9 ✓ matches"
+    assert bots.get_bot_files_check("sos_fade_demo").snapshot_ok is True
+
+
+@pytest.mark.parametrize("answer", ["", "Traceback (most recent call last): ..."])
+def test_a_files_check_that_said_neither_is_UNKNOWN_never_a_pass(vps, answer):
+    """🔴 The version read reported `True` for an EMPTY answer — `"SNAPSHOT MODIFIED" not in ""` —
+    so a check that never ran read as the files matching. MUTATION: `_files_verdict` back to
+    "not modified means fine" — both cases redden (killed 2026-09-24)."""
+    vps["show"] = answer
+    assert bots.get_bot_files_check("sos_fade_demo").snapshot_ok is None
+
+
+def test_a_files_check_the_box_could_not_answer_is_UNKNOWN(vps, monkeypatch):
+    def down(cmd):
+        raise bots.VpsUnreachable("no route")
+
+    monkeypatch.setattr(bots, "_ssh", down)
+    assert bots.get_bot_files_check("sos_fade_demo").snapshot_ok is None
+
+
+def test_the_version_read_never_re_hashes_the_files(vps):
+    """The point of the split (2026-09-24): the version read is on every ROW of the Bots page, and
+    the re-hash was ~5s of its ~9s on a two-CPU box. MUTATION: put `--show` back on the version
+    command — this reddens (killed 2026-09-24)."""
+    bots.get_bot_version("sos_fade_demo")
+    assert vps["cmds"] and not any("--show" in c for c in vps["cmds"])
 
 
 def test_a_promote_not_yet_restarted_into_is_visible(vps):
@@ -355,7 +386,7 @@ def test_only_a_START_is_read_out_of_the_section():
     assert bots._latest_startup(None) is None
 
 
-def test_no_more_than_three_version_reads_are_on_the_box_at_once(vps, monkeypatch):
+def test_no_more_than_three_files_checks_are_on_the_box_at_once(vps, monkeypatch):
     """The page asks for every bot at once, and each read starts Python on a two-CPU box that
     the live bots trade from — ten at once buried the status read (3.1s alone, 26.7s beside
     them, MEASURED 2026-09-24). MUTATION: drop the `with _VERSION_READS` — the peak reaches six
@@ -382,5 +413,5 @@ def test_no_more_than_three_version_reads_are_on_the_box_at_once(vps, monkeypatc
 
     monkeypatch.setattr(bots, "_ssh", slow)
     with ThreadPoolExecutor(6) as ex:
-        list(ex.map(lambda _: bots.get_bot_version("sos_fade_demo"), range(6)))
+        list(ex.map(lambda _: bots.get_bot_files_check("sos_fade_demo"), range(6)))
     assert live["peak"] == 3
