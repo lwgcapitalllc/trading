@@ -411,5 +411,5 @@ check disabled); a copy with no runner is never called rehearsed.
 - Five settings groups landed 2026-09-23 (giveback exit, reversal exit, entry time block, scale-in gate, level memory — 25 settings) and the "every bot pins every setting" test went red on five bots.
 - `b_leg_demo` (benched) and `realign_1` (demo, unpromoted) were pinned at their dataclass defaults. Every default is off or only acts when another setting is on, so neither bot trades differently.
 - 🔴 **`sos_fade_demo` was NOT pinned and must not be until its next promote.** Its frozen code (built from e0b07884, 2026-09-22) does not declare those settings, and the runner refuses to start on a setting its code does not know. Pinning them would leave the live bot unable to restart.
-- `sos_fade_1` and `sos_fade_2` were left for the same decision. They are unpromoted, so they could be pinned safely today.
+- `sos_fade_1` and `sos_fade_2` (unpromoted, so they run the repo's code) were pinned at the same defaults later the same day, Aaron's call. That leaves `sos_fade_demo` as the test's only failure until its next promote.
 - ⚠ **The test reads the REPO's dataclass for every bot, including frozen ones**, so for a promoted bot it can demand a key the running code would refuse. The pin belongs in the same change as the promote that ships the setting.
