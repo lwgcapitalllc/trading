@@ -2374,6 +2374,9 @@ test('a bot in a trade and a HALTED bot each say so on their row, and no other b
   await expect(open).toContainText('Long 0.40 lots')
   await expect(open).toContainText('3,280.00')
   await expect(open).toContainText('+$83.00 · +1.19R')
+  // A runner that predates the target field (this fixture has none): "not reported", never "none".
+  await expect(open.getByTestId('trade-target')).toHaveAttribute('data-state', 'unreported')
+  await expect(open.getByTestId('trade-target')).toHaveText('not reported')
   await expect(trade).toHaveAttribute(
     'title',
     /\+\$83\.00: \+1\.19R of the \$70\.00 risked at entry/
@@ -2382,6 +2385,51 @@ test('a bot in a trade and a HALTED bot each say so on their row, and no other b
   await expect(halted).toHaveCount(1)
   await expect(halted).toHaveAttribute('data-tone', 'bad')
   await expect(halted).toHaveAttribute('title', /MT5 holds none/)
+})
+
+test("an open trade's target reads as a price, as none, or as not reported — three answers", async ({
+  page,
+}) => {
+  // 🔴 Rule 1: a runner that said nothing and a broker holding no take-profit are different
+  // answers. Live SOS Fade's normal trade has no target; an old runner has not reported one.
+  // MUTATION: read `target == null` as "none" without checking `target_reported` → red on the
+  // "not reported" case, which is pinned in the trade test just above (its fixture has no field).
+  // MUTATION: drop the R beside the price → red on "3,320.00 · +3.00R".
+  const pos = {
+    side: 'long',
+    lots: 0.4,
+    entry: 3290,
+    stop: 3280,
+    profit_usd: 83,
+    risk_usd: 70,
+    r: 1.19,
+    tickets: 1,
+  }
+  await mockBothSides(
+    page,
+    SCORED,
+    [],
+    false,
+    {},
+    {
+      sos_live: {
+        bridge_state: 'live',
+        in_trade: true,
+        position: { ...pos, target: 3320, target_r: 3, target_reported: true },
+      },
+      sos_fade: {
+        bridge_state: 'live',
+        in_trade: true,
+        position: { ...pos, target: null, target_r: null, target_reported: true },
+      },
+    }
+  )
+  const set = (await expandBot(page, 'sos_live')).getByTestId('trade-target')
+  await expect(set).toHaveAttribute('data-state', 'set')
+  await expect(set).toHaveText('3,320.00 · +3.00R')
+  const none = (await expandBot(page, 'sos_fade')).getByTestId('trade-target')
+  await expect(none).toHaveAttribute('data-state', 'none')
+  await expect(none).toHaveText('none — rides its stop')
 })
 
 test('a row says ONE thing — its worst problem — and counts the rest in the colour of the worst', async ({
@@ -2704,8 +2752,8 @@ test('the best bot on R per trade holds the one trophy, with its sample beside i
 }) => {
   // MUTATION: rank bots by dollars → red (SOS Fade's $1,500 is the most money).
   // MUTATION: rank bots by total R → red (SOS Fade live's 2.95R is the most R).
-  // MUTATION: drop the Trades column → red. On one trade a lead is not a verdict, and the count
-  // beside the score is the only thing on the row that says so.
+  // MUTATION: drop the won count → red. On one trade a lead is not a verdict, and the count
+  // beside the score is the only thing in the detail that says so.
   await mockBothSides(page, SCORED)
   // The R and the trophy are in each row's detail since 2026-09-24 — open every bot.
   for (const key of ['sos_fade', 'ext_leg', 'sos_live', 'ext_live']) await expandBot(page, key)
@@ -2715,7 +2763,8 @@ test('the best bot on R per trade holds the one trophy, with its sample beside i
   const extDetail = ext.locator('xpath=following-sibling::*[1]')
   await expect(extDetail.locator('[data-top="true"]')).toHaveCount(1)
   await expect(extDetail.getByTestId('per-trade')).toHaveText('+2.10R')
-  await expect(extDetail.getByTestId('trades')).toHaveText('1')
+  await expect(extDetail.getByTestId('trades')).toHaveAttribute('data-count', '1')
+  await expect(extDetail.getByTestId('wins')).toHaveText('1')
 })
 
 test("a bot's row carries only its P&L — its trades and R are one click away", async ({ page }) => {
@@ -2732,7 +2781,14 @@ test("a bot's row carries only its P&L — its trades and R are one click away",
   await expect(ext.getByTestId('trades')).toHaveCount(0)
   await expect(ext.getByTestId('per-trade')).toHaveCount(0)
   const detail = await expandBot(page, 'ext_leg')
-  await expect(detail.getByTestId('trades')).toHaveText('1')
+  // Won in green, lost in red — no separate total (Aaron, 2026-09-24: "I don't need that").
+  // MUTATION: colour a zero count → red on the grey "0 lost".
+  await expect(detail.getByTestId('trades')).toHaveAttribute('data-count', '1')
+  await expect(detail.getByTestId('wins')).toHaveText('1')
+  await expect(detail.getByTestId('wins')).toHaveClass(/text-pos-text/)
+  await expect(detail.getByTestId('losses')).toHaveText('0')
+  await expect(detail.getByTestId('losses')).toHaveClass(/text-text-tertiary/)
+  await expect(detail).not.toContainText('Record')
   await expect(detail.getByTestId('per-trade')).toHaveText('+2.10R')
   // A record that was read and holds no closed trade: a measured nothing — a dash on the row with
   // its reason on hover, and a 0 in the detail. Never "no record", which is a different answer.
@@ -2752,19 +2808,33 @@ test('every value sits under its own heading — on a 1280px screen too', async 
   await mockBothSides(page, SCORED)
   // The headings are the FLEET TABLE's since 2026-09-15, drawn once above every account.
   const table = page.getByTestId('fleet-table')
-  // P&L is right-aligned since 2026-09-24, so it is the RIGHT edges that must meet.
-  const right = (l: ReturnType<Page['getByTestId']>) =>
-    l.evaluate((e) => e.getBoundingClientRect().right)
-  const head = await right(table.getByTestId('column-headings').getByText('P&L', { exact: true }))
-  const cell = await right(
-    table
-      .getByTestId('account-detail')
-      .filter({ hasText: String(ACCOUNT) })
-      .getByTestId('bot-row')
-      .first()
-      .getByTestId('performance')
-  )
-  expect(Math.abs(head - cell)).toBeLessThan(2)
+  // 🔴 Every column is LEFT-aligned since 2026-09-24 (Aaron: "either all my headers are left
+  // aligned or they're right aligned"), so each value must START where its heading starts.
+  // MUTATION: right-align P&L again → red on P&L. MUTATION: justify the buttons to the end → red
+  // on Actions.
+  const left = (l: ReturnType<Page['getByTestId']>) =>
+    l.evaluate((e) => e.getBoundingClientRect().left)
+  const headings = table.getByTestId('column-headings')
+  const row = table
+    .getByTestId('account-detail')
+    .filter({ hasText: String(ACCOUNT) })
+    .getByTestId('bot-row')
+    .first()
+  const pairs: [string, ReturnType<Page['getByTestId']>][] = [
+    ['P&L', row.getByTestId('performance').locator(':scope > *').first()],
+    ['Version', row.getByTestId('version-pill').first()],
+    ['Actions', row.getByTestId('configure-bot').locator('xpath=..').locator(':scope > *').first()],
+  ]
+  for (const [word, cell] of pairs) {
+    const head = await left(headings.getByText(word, { exact: true }))
+    expect(Math.abs(head - (await left(cell))), word).toBeLessThan(2)
+  }
+  // The detail's last figure — Return — starts under the Version heading (Aaron, 2026-09-24).
+  // MUTATION: lay the six figures out evenly again → red, Return lands left of Version.
+  const detail = await expandBot(page, 'sos_fade')
+  const ret = detail.getByText('Return', { exact: true })
+  const version = await left(headings.getByText('Version', { exact: true }))
+  expect(Math.abs(version - (await left(ret)))).toBeLessThan(2)
 })
 
 test('no trophy is awarded until there is a contest', async ({ page }) => {

@@ -1962,7 +1962,7 @@ and *"I don't want the account to expand, just the bots."* Picked off a mockup.
 - **The expansion (`BotDetail`)** holds what a glance does not need: the problems spelled out, the
   open trade, and the record — trades (won/lost), R per trade with the TROPHY (it stays beside the
   R it is judged on, never beside dollars), total R, return on the account, the recorded span.
-  ⚠ **No target price**: the heartbeat never sends one, so the detail cannot show it.
+  The target price arrived later the same day — see the target bullet below.
 - **A record with no closed trade reads "—" on the row**, its reason on hover, and `0` in the
   detail. "no record yet" is still its own words — a different answer (rule 1).
 - **The account band does NOT expand** and keeps its return, cap and "Not from these bots" line.
@@ -1971,9 +1971,38 @@ and *"I don't want the account to expand, just the bots."* Picked off a mockup.
 - 🔴 **The spare width is shared, and Version has a 32px gutter** (same day, Aaron: *"why is P&L so
   crammed to version and so crammed to actions?"*). With only the name track flexible, P&L and
   Version sat at their caps against Actions and a right-aligned P&L ended 12px from the version
-  pill. Tracks are now `2fr / 1fr / 1fr / 150px`.
-- **The trade's target stays out for now — DECIDED 2026-09-24: it rides the NEXT live promote,
-  never one of its own.** It has to be added to the heartbeat the live bots send (`algos/` work,
+  pill. Tracks are now `2fr / 1fr / 1fr / 150px`. *(The gutter half of this was replaced by left
+  alignment the same day — next bullets.)*
+- 🔴 **EVERY heading and value is LEFT-aligned** (same day, after two gutter passes on a
+  right-aligned P&L both still read *"way too close to version"*; Aaron: *"either all my headers
+  are left aligned or they're right aligned"*). Each value starts where its heading starts —
+  P&L, Version, the buttons under Actions, and the account band's figures. The P&L track's own
+  width is now the space before Version, and both gutters are gone. ⚠ The cost, accepted: dollar
+  figures of different lengths no longer end on one digit edge. The heading test compares LEFT
+  edges on all three columns, and was watched going red with P&L right-aligned again.
+- 🔴 **The expansion was redesigned the same day** (Aaron: *"everything kind of just to the left …
+  use the row appropriately"*, *"the word record there, what was the point"*, then *"space it out
+  up until the end of the version column"*). It sits on the row's own grid and spans Bot → Version,
+  leaving nothing under the buttons. No group titles — the label over each figure says what it is.
+  Six fixed columns, read left to right: the open trade (what, entry, stop, target, risked, how it
+  is doing) on the line above the record (since when, won, lost, R per trade, total R, return) —
+  same columns, one above the other. ⚠ **The last figure of each line sits under the Version
+  heading** (Aaron: *"make return in the details line up with version header"*): the detail is a
+  SUBGRID of the row's columns, with the first five figures across Bot and P&L. **No total trade count**: won in green, lost in red; a zero
+  stays grey (colour means money up or down).
+- 🔴 **An AMBER version tag on a row is a button** (same day, Aaron: *"if I click the version tag
+  when it is behind it takes me right to the deploy and restart"*). It opens the bot's panel
+  scrolled to its deploy section (`?bot=<key>&focus=deploy`). Only an amber tag is clickable — the
+  same rule that colours it (`versionNeed`) — and never mid-deploy. Any other way of opening the
+  panel drops the focus. Tested by the panel's own scroll, not by visibility: a visibility check
+  passed with the scroll deleted.
+- **The trade's target is on the open-trade line since 2026-09-24** (`TradeTarget`), in THREE
+  states: the price with its R off the opening stop; "none — rides its stop" (the broker holds no
+  take-profit — live SOS Fade's normal trade); or "not reported" (the runner predates the field).
+  ⚠ Every live bot reads "not reported" until its next promote ships the runner that sends it.
+- *Superseded — kept for the decision:* **The trade's target stays out for now — DECIDED
+  2026-09-24: it rides the NEXT live promote, never one of its own.** It has to be added to the
+  heartbeat the live bots send (`algos/` work,
   `/live-safety`), and a restart is the cost: it has cancelled a resting order before. The value is
   a check, not a trigger — seeing that a bot's exit sits where the backtest puts it — so it does not
   earn a restart by itself. Show it as distance in R ("+1.2R now · target 3R"), not a bare price.

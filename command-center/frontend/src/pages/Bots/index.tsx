@@ -50,7 +50,7 @@
  * anywhere on this page"*).** A section heading names the kind, so no card repeats it; the net figure
  * carries the account's sign, so no edge colour repeats it.
  */
-import { Fragment, useState, useEffect, useRef, type ReactNode } from 'react'
+import { Children, Fragment, useState, useEffect, useRef, type ReactNode } from 'react'
 import { useIsFetching, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import {
@@ -333,14 +333,12 @@ function pnlCls(v: number | null | undefined): string {
 //  and the version, *"I need to see that to know if we're behind"*. The state became a dot before
 //  the name (`StatusDot`); the trade count, R per trade and the open trade's detail moved into the
 //  bot row's EXPANSION (`BotDetail`). Only BOT rows expand — the account band keeps everything.
-//  ⚠ P&L is right-aligned in tabular digits, so every figure lines up to the cent.
-//  🔴 **The spare width is SHARED (2026-09-24, Aaron: "why is P&L so crammed to version and to
-//  actions?")** — with only the name track flexible, P&L and Version sat at their caps packed
-//  against Actions, and a right-aligned P&L ended 12px from the version pill. Every track now takes
-//  a share, and Version carries a 32px left gutter (`VERSION_GUTTER`) so a right-aligned figure
-//  never touches it.
+//  🔴 **EVERY heading and value is LEFT-aligned since 2026-09-24** (Aaron: *"either all my headers
+//  are left aligned or they're right aligned"*). P&L was right-aligned for its digits, which ended
+//  it hard against Version however much gutter it was given (two gutter passes the same day both
+//  still read "too close"). Left-aligned, each value starts where its heading starts, and the width
+//  of the P&L track is the space before Version. Buttons start at the Actions heading too.
 const GRID = 'grid-cols-[minmax(200px,2fr)_minmax(130px,1fr)_minmax(200px,1fr)_150px]'
-const VERSION_GUTTER = 'pl-8'
 
 /** R per trade: what a bot's closed trades made on average, in units of the risk each one took.
  *  `null` when there is nothing to average — no record, or no closed trade — never 0. */
@@ -431,37 +429,63 @@ function PnlCell({ e, asking }: { e: BotEarnings | undefined; asking: boolean })
     return <Contribution e={e} asking={asking} />
   })()
   return (
-    <span data-testid="performance" className="flex justify-end min-w-0 whitespace-nowrap">
+    <span data-testid="performance" className="flex justify-start min-w-0 whitespace-nowrap">
       {body}
     </span>
   )
 }
 
-/** One labelled figure in an expanded row. */
+/** One labelled figure in an expanded row — the label small over the value, as on the account band. */
 function Fact({
   label,
   children,
   testId,
+  title,
 }: {
   label: string
   children: ReactNode
   testId?: string
+  title?: string
 }) {
   return (
-    <div data-testid={testId} className="flex flex-col gap-[3px] min-w-0">
+    <div data-testid={testId} title={title} className="flex flex-col gap-[4px] min-w-0">
       <span className="text-[9.5px] font-semibold uppercase tracking-[0.7px] text-text-tertiary">
         {label}
       </span>
-      <span className="text-[12.5px] font-mono tabular-nums text-text-primary">{children}</span>
+      <span className="text-[13px] font-mono tabular-nums text-text-primary truncate">
+        {children}
+      </span>
     </div>
   )
 }
 
-function FactGroup({ title, children }: { title: string; children: ReactNode }) {
+/** One line of figures on the ROW's own columns (a subgrid of `GRID`): the first five share Bot
+ *  and P&L, and the last sits under the Version heading (Aaron, 2026-09-24: *"make return in the
+ *  details line up with version header"*). Both detail lines use it, so their columns match. */
+function FactRow({
+  children,
+  testId,
+  count,
+  divided,
+}: {
+  children: ReactNode
+  testId?: string
+  count?: number
+  divided?: boolean
+}) {
+  const facts = Children.toArray(children)
+  const lead = facts.slice(0, -1)
+  const last = facts[facts.length - 1]
   return (
-    <div className="flex flex-col gap-[8px]">
-      <span className="text-[11px] font-semibold text-text-secondary">{title}</span>
-      <div className="flex flex-wrap gap-x-[32px] gap-y-[10px]">{children}</div>
+    <div
+      data-testid={testId}
+      data-count={count}
+      className={`col-span-3 grid grid-cols-subgrid ${
+        divided ? 'pb-[12px] border-b border-border-subtle' : ''
+      }`}
+    >
+      <div className="col-span-2 grid grid-cols-5 gap-x-6 pl-[46px] min-w-0">{lead}</div>
+      {last}
     </div>
   )
 }
@@ -469,17 +493,73 @@ function FactGroup({ title, children }: { title: string; children: ReactNode }) 
 const fmtPrice = (v: number) =>
   v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 5 })
 
+/** A count of won or lost trades — coloured only when it is more than nothing. */
+function Tally({ n, tone, testId }: { n: number; tone: 'pos' | 'neg'; testId: string }) {
+  const cls = n === 0 ? 'text-text-tertiary' : tone === 'pos' ? 'text-pos-text' : 'text-neg-text'
+  return (
+    <span data-testid={testId} className={`font-semibold ${cls}`}>
+      {n}
+    </span>
+  )
+}
+
+/**
+ * The trade's take-profit at the broker — THREE answers, never two (rule 1, 2026-09-24):
+ * a runner that predates the field said nothing ("not reported", fixed by a promote); a runner that
+ * reported and the broker holds none ("none — rides its stop", live SOS Fade's normal trade); or
+ * the price, with its distance in R off the OPENING stop when that is known.
+ */
+function TradeTarget({ position }: { position: BotPosition }) {
+  if (!position.target_reported)
+    return (
+      <span
+        data-testid="trade-target"
+        data-state="unreported"
+        title="This bot's running code predates the target field — it arrives with its next promote. Not the same as having no target."
+        className="text-text-tertiary"
+      >
+        not reported
+      </span>
+    )
+  if (position.target == null)
+    return (
+      <span
+        data-testid="trade-target"
+        data-state="none"
+        title="The broker holds no take-profit on this trade — it banks nothing at a price and exits on its stop."
+        className="text-text-tertiary"
+      >
+        none — rides its stop
+      </span>
+    )
+  return (
+    <span data-testid="trade-target" data-state="set">
+      {fmtPrice(position.target)}
+      {position.target_r != null && (
+        <span className="text-text-secondary"> · {fmtR(position.target_r)}</span>
+      )}
+    </span>
+  )
+}
+
 /**
  * Everything about a bot that is NOT needed at a glance, behind the row's arrow (2026-09-24,
  * Aaron: *"I want the expand row to give the details I don't necessarily need to care about when
  * I glance at the bot page"*).
  *
+ * 🔴 **Redesigned the same day** (Aaron: *"everything kind of just to the left … use the row
+ * appropriately"*, *"the word record there, what was the point"*). The figures are spread across
+ * the full row width on six fixed columns, and there are no group titles — the labels over each
+ * figure already say what it is. The open trade, when there is one, is the line above the record,
+ * on the same columns. ⚠ **No total trade count**: won in green and lost in red say it (Aaron: *"I
+ * don't need that"*). A zero stays grey — colour means money up or down, and nothing is neither.
+ *
  * ⚠ **Every figure here is one the page already had** — nothing is worked out new. The open
  * trade is the broker's reading off the heartbeat (`BotPosition`), the record is `BotEarnings`.
- * ⚠ **The trade's TARGET is not here because nothing sends it** — the heartbeat reports side,
- * lots, entry, stop, open profit and the risk at entry, and no more.
- * ⚠ **The trophy lives here now, beside the R it is judged on** — never beside dollars, which
- * would crown the demo by default (see `PerTrade`).
+ * ⚠ **The trade's TARGET arrived 2026-09-24** (`TradeTarget`) — a bot shows it only once a promote
+ * ships the runner that reports it; until then it reads "not reported".
+ * ⚠ **The trophy lives here, beside the R it is judged on** — never beside dollars, which would
+ * crown the demo by default (see `PerTrade`).
  */
 function BotDetail({
   cond,
@@ -498,11 +578,13 @@ function BotDetail({
   return (
     <div
       data-testid="bot-detail"
-      className="flex flex-col gap-[14px] pl-[46px] pr-3 pt-[10px] pb-[14px] border-t border-border-subtle bg-bg-sunken/40"
+      className={`grid ${GRID} gap-3 pr-3 pt-[12px] pb-[14px] border-t border-border-subtle bg-bg-sunken/40`}
     >
-      {cond.issues.length > 0 && (
-        <FactGroup title="Needs a look">
-          <ul className="flex flex-col gap-[4px] text-[12px] leading-[1.5]">
+      {/* Spans Bot → Version and stops there — nothing sits under the buttons (Aaron, 2026-09-24:
+       *  "space it out up until the end of the version column"). */}
+      <div className="col-span-3 grid grid-cols-subgrid gap-y-[12px] min-w-0">
+        {cond.issues.length > 0 && (
+          <ul className="col-span-3 pl-[46px] flex flex-col gap-[4px] text-[12px] leading-[1.5]">
             {cond.issues.map((i) => (
               <li key={i.key}>
                 <span className={`font-medium ${TONE_TEXT[i.tone]}`}>{i.word}</span>
@@ -510,18 +592,16 @@ function BotDetail({
               </li>
             ))}
           </ul>
-        </FactGroup>
-      )}
+        )}
 
-      {cond.trade && (
-        <FactGroup title="Open trade">
-          {position ? (
-            <>
-              <Fact label="Position">{cond.trade.head}</Fact>
+        {cond.trade &&
+          (position ? (
+            <FactRow testId="bot-detail-trade" divided>
+              <Fact label="Open trade">{cond.trade.head}</Fact>
               <Fact label="Entry">
                 {position.entry != null ? fmtPrice(position.entry) : '—'}
                 {position.tickets > 1 && (
-                  <span className="text-text-tertiary"> avg · {position.tickets} tickets</span>
+                  <span className="text-text-tertiary"> avg · {position.tickets}</span>
                 )}
               </Fact>
               <Fact label="Stop">
@@ -531,6 +611,12 @@ function BotDetail({
                   <span className="text-neg-text">none at the broker</span>
                 )}
               </Fact>
+              <Fact label="Target">
+                <TradeTarget position={position} />
+              </Fact>
+              <Fact label="Risked at entry">
+                {position.risk_usd != null ? money(position.risk_usd, false) : '—'}
+              </Fact>
               <Fact label="Open P&L">
                 <span className={pnlCls(position.profit_usd)}>
                   {position.profit_usd != null ? money(position.profit_usd) : '—'}
@@ -539,43 +625,40 @@ function BotDetail({
                   <span className="text-text-secondary"> · {fmtR(position.r)}</span>
                 )}
               </Fact>
-              <Fact label="Risked at entry">
-                {position.risk_usd != null ? money(position.risk_usd, false) : '—'}
-              </Fact>
-            </>
+            </FactRow>
           ) : (
-            <span className="text-[12px] text-text-tertiary">
+            <span className="col-span-3 pl-[46px] text-[12px] text-text-tertiary pb-[12px] border-b border-border-subtle">
               It holds a position at the broker; its details could not be read.
             </span>
-          )}
-        </FactGroup>
-      )}
+          ))}
 
-      <FactGroup title="Record">
         {!e && asking ? (
-          <Shimmer className="h-[28px] w-[260px]" />
+          <span className="col-span-3 pl-[46px]">
+            <Shimmer className="h-[34px] w-full" />
+          </span>
         ) : !e || !e.traded ? (
-          <span className="text-[12px] text-text-tertiary">
+          <span className="col-span-3 pl-[46px] text-[12px] text-text-tertiary">
             {e?.reason ?? 'No record has been read for this bot.'}
           </span>
         ) : (
-          <>
-            <Fact label="Trades">
-              <span data-testid="trades" data-count={n}>
-                {n}
-              </span>
-              {n > 0 && (
-                <span className="text-text-tertiary">
-                  {' '}
-                  · {e.wins ?? 0} won, {e.losses ?? 0} lost
-                </span>
-              )}
+          <FactRow testId="trades" count={n}>
+            <Fact label="Since" title={`Its record runs ${e.records_from} → ${e.records_to}`}>
+              <span className="text-text-secondary">{e.records_from}</span>
+            </Fact>
+            <Fact label="Won">
+              <Tally n={e.wins ?? 0} tone="pos" testId="wins" />
+            </Fact>
+            <Fact label="Lost">
+              <Tally n={e.losses ?? 0} tone="neg" testId="losses" />
             </Fact>
             <Fact label="R per trade">
               <PerTrade e={e} asking={asking} top={top} />
             </Fact>
             <Fact label="Total R">{n > 0 && e.realised_r != null ? fmtR(e.realised_r) : '—'}</Fact>
-            <Fact label="Return on account">
+            <Fact
+              label="Return"
+              title="What its closed trades made, as a share of the account it trades"
+            >
               {e.pct_of_opening != null && n > 0 ? (
                 <span className={pnlCls(e.pct_of_opening)}>
                   {e.pct_of_opening > 0 ? '+' : ''}
@@ -585,14 +668,9 @@ function BotDetail({
                 '—'
               )}
             </Fact>
-            <Fact label="Recorded">
-              <span className="text-text-secondary">
-                {e.records_from} → {e.records_to}
-              </span>
-            </Fact>
-          </>
+          </FactRow>
         )}
-      </FactGroup>
+      </div>
     </div>
   )
 }
@@ -1100,14 +1178,11 @@ function ColumnHeadings() {
       >
         Bot
       </span>
-      <span
-        className="text-right"
-        title="What this bot's own closed trades came to. Open a bot's row for its trades, R per trade and open trade."
-      >
+      <span title="What this bot's own closed trades came to. Open a bot's row for its trades, R per trade and open trade.">
         P&amp;L
       </span>
-      <span className={VERSION_GUTTER}>Version</span>
-      <span className="text-right">Actions</span>
+      <span>Version</span>
+      <span>Actions</span>
     </div>
   )
 }
@@ -1148,10 +1223,10 @@ function BotsPageSkeleton() {
             <Shimmer className="h-[13px] w-[96px]" />
           </span>
           <PnlCell e={undefined} asking />
-          <span className={VERSION_GUTTER}>
+          <span>
             <VersionPill version={undefined} loading />
           </span>
-          <span className="flex gap-[4px] justify-end">
+          <span className="flex gap-[4px] justify-start">
             <Shimmer className="h-[26px] w-[52px]" />
             <Shimmer className="h-[26px] w-[26px]" />
             <Shimmer className="h-[26px] w-[26px]" />
@@ -1373,9 +1448,20 @@ export function Bots() {
     else next.set(k, v)
     // Only one drawer at a time — opening a bot closes an account and the reverse.
     if (k === 'bot' && v !== null) next.delete('account')
+    // A panel opened at its deploy section is an ORDINARY panel the next time it opens.
+    if (k === 'bot') next.delete('focus')
     if (k === 'account' && v !== null) next.delete('bot')
     // "Add a bot" opens the account's panel with its picker already out; closing the panel ends it.
     if (k === 'account') next.delete('add')
+    setParams(next, { replace: true })
+  }
+  /** Open a bot's panel scrolled to its deploy section — the row's amber version tag. */
+  const openDeploy = (key: string) => {
+    const next = new URLSearchParams(params)
+    next.set('bot', key)
+    next.set('focus', 'deploy')
+    next.delete('account')
+    next.delete('add')
     setParams(next, { replace: true })
   }
   /** Open an account's panel straight into its bot picker — the card's "Add a bot". */
@@ -2003,19 +2089,19 @@ export function Bots() {
           </span>
 
           {/* 🔴 The band sits on the bots' own grid (Aaron, 2026-09-16), so each figure lines up
-           *  with a column on every account: the return under P&L — right-aligned, so its dollars
-           *  end where the bots' dollars end — the cap under Version, the equity under Actions.
+           *  with a column on every account: the return under P&L — left-aligned like the bots'
+           *  dollars — the cap under Version, the equity under Actions.
            *  ⚠ The band does NOT expand (Aaron, 2026-09-24: "I don't want the account to expand
            *  just the bots"), so everything it had stays on it. */}
-          <span className="flex justify-end min-w-0">
+          <span className="flex justify-start min-w-0">
             <AccountNet e={earn} asking={asking} />
           </span>
-          <span className={`min-w-0 ${VERSION_GUTTER}`}>
+          <span className="min-w-0">
             <RiskBudget group={group} cap={cap} idle={idle} />
           </span>
           <span
             data-testid="account-equity"
-            className="flex justify-end text-[16px] font-mono tabular-nums font-semibold"
+            className="flex justify-start text-[16px] font-mono tabular-nums font-semibold"
           >
             {balance == null && asking ? (
               <Shimmer>$00,000.00</Shimmer>
@@ -2060,15 +2146,37 @@ export function Bots() {
           const acting = actionOf(cfg.key)
           const rowId = `bot:${account}:${cfg.key}`
           const open = openRows.has(rowId)
-          const version = (
+          const ver = versionByKey.get(cfg.key)?.data
+          const restart = restartReason(ver, live, snapshot?.fetched_at)
+          const deploying = jobByKey.get(cfg.key)?.status === 'running'
+          const pill = (
             <VersionPill
-              version={versionByKey.get(cfg.key)?.data}
+              version={ver}
               loading={versionByKey.get(cfg.key)?.isPending}
-              deploying={jobByKey.get(cfg.key)?.status === 'running'}
+              deploying={deploying}
               error={versionByKey.get(cfg.key)?.error}
-              restart={restartReason(versionByKey.get(cfg.key)?.data, live, snapshot?.fetched_at)}
+              restart={restart}
             />
           )
+          // 🔴 An AMBER tag is a way in (Aaron, 2026-09-24): it opens the bot's panel at its deploy
+          // section — the one place a deploy or a restart is done. A calm tag stays a label. Uses
+          // the pill's own rule (`versionNeed`), so what is clickable is exactly what is amber.
+          const version =
+            !deploying && versionNeed(ver, restart) ? (
+              <button
+                data-testid="version-open-deploy"
+                onClick={(ev) => {
+                  ev.stopPropagation()
+                  openDeploy(cfg.key)
+                }}
+                title="Open this bot's deploy and restart"
+                className="rounded-pill hover:brightness-125 [&_*]:cursor-pointer"
+              >
+                {pill}
+              </button>
+            ) : (
+              pill
+            )
           return (
             <Fragment key={cfg.key}>
               <div
@@ -2165,9 +2273,9 @@ export function Bots() {
 
                 {/* Calm when current, amber only when it needs a person — the pill's own rule, and
                  *  the same one the "needs you" line above the table counts by (`versionNeed`). */}
-                <span className={`min-w-0 ${VERSION_GUTTER}`}>{version}</span>
+                <span className="min-w-0">{version}</span>
 
-                <span className="flex gap-[4px] justify-end items-center">
+                <span className="flex gap-[4px] justify-start items-center">
                   {/* 🔴 **NOTHING IS OFFERED WHILE THE STATE IS UNKNOWN (2026-09-06).** Pressing
                    *  Start on a bot that is already trading is the one mistake this row can make
                    *  that costs money, and an unanswered box is a reason to ask again, never to act. */}
@@ -2309,7 +2417,7 @@ export function Bots() {
             <span className="col-span-2 flex items-center pl-4 text-[12.5px] text-text-tertiary">
               No bot is on this account now
             </span>
-            <span className="flex justify-end">
+            <span className="flex justify-start">
               {reg && (
                 <button
                   data-testid="add-bot-here"
@@ -2891,6 +2999,7 @@ export function Bots() {
           // that is on one.
           configAccount={accountGroups === undefined ? undefined : accountOfBot(selBot.key)}
           onClose={() => set('bot', null)}
+          focus={params.get('focus') === 'deploy' ? 'deploy' : undefined}
           onLogs={() => setLogBot(selBot.key)}
           onStart={() => act(selBot.key, 'start', () => startOne.mutateAsync(selBot.key))}
           onStop={() => act(selBot.key, 'stop', () => stopOne.mutateAsync(selBot.key))}

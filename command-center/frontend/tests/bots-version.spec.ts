@@ -437,6 +437,52 @@ test('an up-to-date bot offers no prominent deploy, only a quiet re-deploy', asy
   await expect(banner(page).getByRole('button', { name: /Re-deploy/ })).toBeVisible()
 })
 
+test("a BEHIND bot's version tag opens its panel at the deploy section", async ({ page }) => {
+  // Aaron, 2026-09-24: *"if I click the version tag when it is behind it takes me right to the
+  // deploy and restart under configure"*.
+  // MUTATION: drop the button round the amber pill → red, nothing to click.
+  // MUTATION: open the panel without `focus` → red, the deploy section is below the fold.
+  await mockBot(page, compare())
+  await page.setViewportSize({ width: 1280, height: 700 })
+  await page.goto('/bots')
+  const open = page.locator(
+    '[data-testid="bot-row"][data-bot="sos_fade_demo"] [data-testid="version-open-deploy"]'
+  )
+  await open.click()
+  await expect(page).toHaveURL(/bot=sos_fade_demo/)
+  await expect(page).toHaveURL(/focus=deploy/)
+  // The panel SCROLLED to it. Checked by the panel's own scroll, not by visibility — on a tall
+  // window the section is visible either way, and a visibility check passed with the scroll
+  // deleted. (It cannot always reach the very top: the panel stops scrolling at its end.)
+  const deploy = page.getByTestId('bot-deploy')
+  await expect(deploy).toBeInViewport()
+  await expect
+    .poll(() =>
+      deploy.evaluate((el) => {
+        let box = el.parentElement
+        while (box && box.scrollHeight <= box.clientHeight) box = box.parentElement
+        return box ? box.scrollTop : -1
+      })
+    )
+    .toBeGreaterThan(0)
+  await expect(banner(page).getByRole('button', { name: /Deploy & restart/ })).toBeVisible()
+})
+
+test('an up-to-date version tag is a label, not a way in', async ({ page }) => {
+  // MUTATION: make every pill clickable → red. Only what is amber asks for a person.
+  await mockBot(
+    page,
+    compare({ versions_behind: 0, deployed_version: 121, changes: [], setting_changes: [] })
+  )
+  await page.goto('/bots')
+  await expect(rowPill(page)).toBeVisible({ timeout: 20_000 })
+  await expect(
+    page.locator(
+      '[data-testid="bot-row"][data-bot="sos_fade_demo"] [data-testid="version-open-deploy"]'
+    )
+  ).toHaveCount(0)
+})
+
 // ── never deployed — the one unanswerable version that is a PROBLEM (2026-09-16) ─
 //
 // 🔴 Two bots traded the trading box's own working tree for a day and every screen was calm about

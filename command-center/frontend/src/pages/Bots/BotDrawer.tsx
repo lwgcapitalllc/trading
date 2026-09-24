@@ -24,7 +24,7 @@
  * ⚠ **Nothing is deleted, it is folded.** The parameter list is how you check the bot is the bot
  * that was backtested, and the risk note is the measured reasoning behind a live number.
  */
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowRightLeft, ChevronRight, FileText, Play, RotateCcw, Square } from 'lucide-react'
 import {
   useBotAccounts,
@@ -262,8 +262,13 @@ export function BotDrawer({
   configAccount,
   onOpenAccount,
   fetchedAt,
+  focus,
 }: {
   bot: BotStatus
+  /** Open scrolled to one section — `deploy` when the row's amber version tag was clicked
+   *  (Aaron, 2026-09-24: *"if I click the version tag when it is behind it takes me right to the
+   *  deploy and restart"*). */
+  focus?: 'deploy'
   /** When the trading box took the reading `bot` came from. The version banner measures whether a
    *  restart is still owed off it, the way the row does — one clock, one answer. */
   fetchedAt?: string
@@ -299,6 +304,11 @@ export function BotDrawer({
   /** Open the account this bot is on, in its own panel. */
   onOpenAccount?: (account: number) => void
 }) {
+  const deployRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (focus === 'deploy')
+      deployRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  }, [focus, bot.key])
   const { data, isLoading, error } = useBotParams(bot.key)
   const { data: groups } = useBotAccounts()
   const { data: registry } = useRegisteredAccounts()
@@ -857,7 +867,11 @@ export function BotDrawer({
       </section>
 
       {/* ── version, and the only Deploy control ────────────────────────────── */}
-      <section className="py-[16px] border-b border-border-subtle">
+      <section
+        ref={deployRef}
+        data-testid="bot-deploy"
+        className="py-[16px] border-b border-border-subtle scroll-mt-2"
+      >
         {/* 🔴 IT SAYS "DEPLOY" IN THE HEADING (2026-09-06) — *Version* names the noun; the reader is
          *  looking for the verb. What a deploy does moved to the heading's hover (2026-09-12): a
          *  paragraph under it said the same two sentences on every open. */}
