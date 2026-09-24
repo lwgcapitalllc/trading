@@ -56,10 +56,18 @@ _STRATEGIES = {
     "b_leg": "strategies.python.b_leg",
     "bos": "strategies.python.bos",
     "extreme_leg": "strategies.python.extreme_leg",
+    # Added 2026-09-23. ⚠ This dict is HAND-MAINTAINED and had gone stale: `fft`, `realign` and
+    # `smc_session_sweep` are all lab-registered and none of them was here, so a stack could not
+    # ask for them and said "unknown strategy" as though they did not exist (rule 8). Only `fft` is
+    # added, because it is the only one measured through this tool — adding the other two untested
+    # would be a registry that answers confidently about a leg nobody has run.
+    "fft": "strategies.python.fft",
 }
 
 
-def _spec(key: str, df, symbol: str, risk_pct: float | None = None) -> LegSpec:
+def _spec(
+    key: str, df, symbol: str, risk_pct: float | None = None, fill_profile: str = ""
+) -> LegSpec:
     mod = importlib.import_module(_STRATEGIES[key])
     lab = mod.LAB_STRATEGY
     ConfigCls = lab["config"]
@@ -68,7 +76,13 @@ def _spec(key: str, df, symbol: str, risk_pct: float | None = None) -> LegSpec:
     # fills with no switch). Passing every field unconditionally is a TypeError three lines into
     # the run; passing them conditionally by name is what `overlap_audit.py` already does, and
     # keeping the two tools the same shape is the point of the note on `_STRATEGIES`.
-    wanted = {"fill_model": "bar", "symbol": symbol}
+    # 🔴 `fill_profile` is NOT cosmetic and is NOT the same field as `fill_model`. A leg that rests
+    # a LIMIT (fft) needs the broker's side of the book named, or its buy limits fill on the bid
+    # while a real broker fills on the ask — the exact mismatch that would halt the live bot on
+    # 23 of 76 buys. Left "" the leg replays on an optimistic fill basis that no lab run used, so
+    # its stacked number would not be comparable to its own solo run. Only fft declares it; the
+    # other four filter it out, so their behaviour is unchanged.
+    wanted = {"fill_model": "bar", "symbol": symbol, "fill_profile": fill_profile}
     have = getattr(ConfigCls, "__dataclass_fields__", {})
     cfg = ConfigCls(**{k: v for k, v in wanted.items() if k in have})
     # 🔴 PER-TRADE RISK IS A BASIS FIELD AND IT WAS INVISIBLE HERE UNTIL 2026-09-02.
@@ -149,6 +163,12 @@ def main(argv=None) -> int:
         "lot — the table prints what was used.",
     )
     ap.add_argument(
+        "--fill-profile",
+        default="",
+        help="broker fill profile for legs that declare one (e.g. puprime_ecn). A resting-limit "
+        "leg needs it or it fills on the wrong side of the book; legs without the field ignore it",
+    )
+    ap.add_argument(
         "--entry-floor",
         type=float,
         default=0.0,
@@ -216,7 +236,7 @@ def main(argv=None) -> int:
         print(f"  {len(d):,} bars  {d.index[0]} -> {d.index[-1]}", flush=True)
         dfs[tf] = d
 
-    specs = [_spec(k, dfs[tf_of[k]], args.symbol, args.risk_pct) for k in keys]
+    specs = [_spec(k, dfs[tf_of[k]], args.symbol, args.risk_pct, args.fill_profile) for k in keys]
     print(f"replaying {len(specs)} legs shared + {len(specs)} solo controls ...", flush=True)
     run = run_stack(
         specs,

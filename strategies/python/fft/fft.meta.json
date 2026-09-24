@@ -71,6 +71,15 @@
       "show_if": { "size_mode": "Fixed contracts" }
     },
     {
+      "name": "sweep_risk_x",
+      "group": "Sizing",
+      "core": true,
+      "unit": "x",
+      "step": 0.1,
+      "label": "Sweep setup size",
+      "desc": "A sweep setup (the pullback takes a previous day, session or 4-hour level before the fill) trades at this many times the normal size. 1.5 by default: it gave the most profit per unit of drawdown in testing, ahead of 1x and 2x, but that was measured on the same history the sweep edge was found on. 1 turns it off; above 2 is refused. On a shared account the bigger size also needs more free room."
+    },
+    {
       "name": "max_bos",
       "group": "The setup",
       "core": true,
@@ -90,6 +99,13 @@
       "label": "Skip after 4+ 15m BOS",
       "widget": "toggle",
       "desc": "Skip a setup when the 15-minute trend behind it has already broken structure 4 or more times since it turned. Off by default: these trades looked weaker in testing, but not by enough to prove it."
+    },
+    {
+      "name": "only_sweep",
+      "group": "The setup",
+      "label": "Only sweep setups",
+      "widget": "toggle",
+      "desc": "Only trade a setup whose pullback takes a previous day, session or 4-hour level on its way to the 61.8. Off by default: these setups did better in testing, but that was found on the same history, so it is a lead, not a proven rule."
     },
     {
       "name": "req_1m_against",

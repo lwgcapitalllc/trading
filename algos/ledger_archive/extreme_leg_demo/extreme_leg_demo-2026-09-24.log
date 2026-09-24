@@ -1,0 +1,36 @@
+2026-09-24 00:00:02,980 [INFO] Priority 2 on this account: waiting 17s for the bots above
+2026-09-24 00:15:03,793 [INFO] Priority 2 on this account: waiting 16s for the bots above
+2026-09-24 00:30:03,979 [INFO] Priority 2 on this account: waiting 16s for the bots above
+2026-09-24 00:45:03,939 [INFO] Priority 2 on this account: waiting 16s for the bots above
+2026-09-24 01:00:03,957 [INFO] Priority 2 on this account: waiting 16s for the bots above
+2026-09-24 01:15:05,153 [INFO] Priority 2 on this account: waiting 15s for the bots above
+2026-09-24 01:30:04,494 [INFO] Priority 2 on this account: waiting 16s for the bots above
+2026-09-24 01:45:05,641 [INFO] Priority 2 on this account: waiting 14s for the bots above
+2026-09-24 02:00:04,783 [INFO] Priority 2 on this account: waiting 15s for the bots above
+2026-09-24 02:10:03,443 [INFO] POSITION CLOSED | T366380390 LONG @ 4273.84 | P&L $-627.66 (-1.14R)
+2026-09-24 02:10:04,430 [ERROR] HALTED: The strategy believes it is in a position but MT5 has none. Its resting limit filled in the emulator and not at the broker (or the position was closed outside the bot). Every later decision would be computed against a trade that does not exist.
+Not booked as a hand close because the broker closed it (its stop) and the strategy did not.
+2026-09-24 02:10:05,164 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-24 02:10:05,164 [INFO] Equity re-anchored to the account flat between trades: 10,914.40 → 10,287.06
+2026-09-24 02:15:06,460 [INFO] Priority 2 on this account: waiting 14s for the bots above
+2026-09-24 02:15:20,012 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-24 02:20:01,827 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-24 02:25:02,931 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-24 02:30:04,394 [INFO] Priority 2 on this account: waiting 16s for the bots above
+2026-09-24 02:30:20,025 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-24 02:35:01,843 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-24 02:40:02,870 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-24 02:45:04,328 [INFO] Priority 2 on this account: waiting 16s for the bots above
+2026-09-24 02:45:20,010 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-24 02:50:01,154 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-24 02:55:02,368 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-24 03:00:03,382 [INFO] Priority 2 on this account: waiting 17s for the bots above
+2026-09-24 03:00:20,009 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-24 03:05:01,241 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-24 03:10:02,423 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-24 03:15:03,733 [INFO] Priority 2 on this account: waiting 16s for the bots above
+2026-09-24 03:15:20,003 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-24 03:20:01,146 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-24 03:20:01,146 [INFO] Stop requested — shutting down.
+2026-09-24 03:20:01,146 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-24 03:20:02,022 [INFO] MT5 disconnected.

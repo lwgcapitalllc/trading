@@ -53,6 +53,19 @@ class FftConfig:
     # skip +1.3R / −0.1R, p 0.08 — not past the luck bar. Here so it can be switched on and so the
     # forward log grades it either way (`tools/forward_log.py`). The 4 is the only cut measured.
     skip_15m_overextended: bool = False
+    # Trade ONLY a setup whose pullback takes a day / session / H4 level on its own side before the
+    # fill — the A+ sweep label as a filter (the user, 2026-09-22). OFF: the label's lead (2020-25
+    # 45/157 trades +0.37R vs +0.07R, p .01; last year 8/34) was found on the same bars it would be
+    # judged on. Decided at PLACEMENT from what is already known: a level taken since the extreme,
+    # or a live level between price and the 61.8 that the fill itself must take.
+    only_sweep: bool = False
+    # A sweep setup trades at this multiple of the normal size (the user, 2026-09-22: "love it").
+    # 1.5 because it measured best for profit per drawdown: 2020-26, ECN, 5%, every setup taken —
+    # 1x +27.7R / DD 4.1R (6.7), 1.5x +36.3R / 5.0R (7.2), 2x +44.9R / 6.4R (7.0), sweep-only
+    # 17.2R / 3.2R (5.4). ⚠ In-sample: the sweep lead was found on those bars. 1.0 = off; above
+    # 2.0 is refused, past anything measured. ⚠ On a shared account the half-size floor is half of
+    # THIS size, so a crowded account refuses a sweep setup below 3.75% of room, not 2.5%.
+    sweep_risk_x: float = 1.5
     req_1m_against: bool = True
     skip_closure_legs: bool = True
 
@@ -100,3 +113,8 @@ class FftConfig:
             )
         if self.size_mode == "Risk % of equity" and self.exec_risk_pct <= 0:
             raise ValueError(f"risk per trade is {self.exec_risk_pct}%; it must be above zero")
+        if not 1.0 <= self.sweep_risk_x <= 2.0:
+            raise ValueError(
+                f"sweep setup size is {self.sweep_risk_x}x; it must be 1.0 (off) to 2.0 — sizing a "
+                f"setup DOWN is not what it is for, and nothing past 2x was measured"
+            )

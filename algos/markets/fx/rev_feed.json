@@ -1,0 +1,15 @@
+{
+  "_README": "The REV SETUP student feed: which bot's records are published, and to which Telegram channel. Read by algos/tools/rev_setup_feed.py, which runs on the box as its own scheduled task. Nothing else reads this file.",
+  "_WHAT_IT_PUBLISHES": "Prices, levels, stages, rule names and R - a setup forming, where the entry would be, the limit going on, each stop move, and how the trade ended. NEVER a number derived from an account: no lot size, no dollar risk, no P&L, no balance, no ticket. That is enforced by a per-event WHITELIST in the tool, not by stripping text, so a field added to a record tomorrow is left out rather than published.",
+  "_WHY_NOT_THE_BOTS_OWN_MESSAGES": "Because those carry the lot size and the dollar risk, so forwarding them into a class publishes one owner's position sizing and his balance by arithmetic. This renders its own lines from the bot's decision records instead - which also means it needs no promote, since it reads files the bot already writes.",
+  "enabled": false,
+  "bot": "sos_fade_1",
+  "chat": "-1004314325555",
+  "label": "REV SETUP",
+  "min_stop_move": 1.0,
+  "_min_stop_move": "A stop move smaller than this, in the instrument's own price units, is not published. MEASURED on one real day (sos_fade_1, 2026-09-22): the seven stop moves were 21.95, 11.77, 1.17, 0.09, 0.01, 0.07 and 0.13, so $1 on gold publishes the three that changed the trade and drops four that would have told a class the stop moved by a cent. Set it to 0 to publish every move.",
+  "_bot": "sos_fade_1 is the rev-setup bot on the PU Prime ECN demo account. Chosen over the live copy deliberately: the rules and the prices are the same, and nothing published can be traced to a live account. Switch it to sos_fade_demo only with the owner of 34957946's say.",
+  "_chat": "MPC Signals - the channel the user's students read (renamed from his own signals room on 2026-09-23). Tested from the box the same day: python algos/tools/verify_channel.py --chat-id -1004314325555 --kind signal.",
+  "_enabled": "false until the user has read the rendered lines and said go. The tool still advances its cursor while off, so switching it on publishes what happens NEXT rather than a backlog.",
+  "_STAGE_1_IS_NOT_PUBLISHED": "Stage 1 is a liquidity sweep and happens constantly; a channel that pings all day is one students mute before the day it matters. Stages 2, 3 and 4 are published - see STAGES in the tool."
+}
