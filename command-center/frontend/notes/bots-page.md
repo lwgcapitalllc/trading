@@ -1972,5 +1972,8 @@ and *"I don't want the account to expand, just the bots."* Picked off a mockup.
   crammed to version and so crammed to actions?"*). With only the name track flexible, P&L and
   Version sat at their caps against Actions and a right-aligned P&L ended 12px from the version
   pill. Tracks are now `2fr / 1fr / 1fr / 150px`.
-- **The trade's target stays out for now** — Aaron wants it (2026-09-24), but it has to be added to
-  the heartbeat the live bots send, which is `algos/` work and a promote, so it is its own task.
+- **The trade's target stays out for now — DECIDED 2026-09-24: it rides the NEXT live promote,
+  never one of its own.** It has to be added to the heartbeat the live bots send (`algos/` work,
+  `/live-safety`), and a restart is the cost: it has cancelled a resting order before. The value is
+  a check, not a trigger — seeing that a bot's exit sits where the backtest puts it — so it does not
+  earn a restart by itself. Show it as distance in R ("+1.2R now · target 3R"), not a bare price.
