@@ -50,6 +50,7 @@ from time_flat import NY, HolidayCalendar  # noqa: E402
 from .config import LEVEL_KEY, OVEREXTENDED_15M_BOS, FftConfig  # noqa: E402
 from .execution import FftExecution, Setup  # noqa: E402
 from .frames import Candle, ClockFrame  # noqa: E402
+from .setups import FftSetupWatch  # noqa: E402
 
 # A gap between two 1-minute bars longer than this is the market being SHUT — a weekend or a
 # holiday — never a quiet minute. The study's own threshold, so the two agree on what a closure is.
@@ -76,6 +77,7 @@ WHY = {
     "second_off": "second touch — switched off",
     "unsized": "no size — the stop distance is zero",
     "room": "the account's risk cap has no room — other bots hold the budget",
+    "no_sweep": "setting — only sweep setups, and this pullback took no level",
 }
 
 
@@ -187,6 +189,9 @@ class FftStrategy:
         self._carry_setup: Optional[Setup] = None
 
         self.touches: List[Setup] = []
+        # The signals room's setups (`setups.py`). REPORTING ONLY — fed after each decision.
+        self.setup_watch = FftSetupWatch(self.config, WHY)
+        self.execution.setup_key_scheme = FftSetupWatch.key_scheme
         self.record_bars = record_bars
         self.bars: List[tuple] = []
 
@@ -331,6 +336,7 @@ class FftStrategy:
                 self._carry = self._carry_setup = None
 
         # 3. Touch bookkeeping against the 5m picture this minute was traded on.
+        n_touches = len(self.touches)
         self._touch(i, ts, bar.high, bar.low, decided, fill)
 
         # 4. The 1m structure, already stepped on this bar by the platform's stack.
@@ -349,6 +355,9 @@ class FftStrategy:
         # 6. The order for the next minute.
         self._decision = self._decide(i, ts)
         self.execution.set_pending(self._decision.get("order") if self._decision else None)
+
+        # 7. The signals room, told what was decided. Reporting only — reads, never writes back.
+        self.setup_watch.observe(self, self.touches[n_touches:], fill, self._decision)
 
         if self.record_bars:
             r = self.row5
