@@ -451,3 +451,25 @@ def test_a_MISSING_snapshot_directory_is_never_nothing_new(tmp_path):
     staging = tmp_path / "staging"
     _tree(staging / "fft", {"strategy.py": "RISK = 5\n"})
     assert promote_tool.nothing_new(_Cfg(tmp_path / "gone"), WAS, staging, TREES, PARAMS) is False
+
+
+def test_the_reported_hashes_are_BOTH_taken_over_the_same_roots(tmp_path):
+    """🔴 The `code changes: A -> B` line compared the RECORDED hash with the STAGED one, and
+    those are taken over different root sets — so it announced a code change on every promote,
+    including ones that changed nothing. That is what made the message read as a fact the tool
+    knew and ignored; it never knew it.
+
+    MUTATION: hash the deployed side over `cfg.source_roots` again → red, the two sides differ on
+    byte-identical trees.
+    """
+    staging, cfg = _pair(tmp_path, "RISK = 5\n", "RISK = 5\n")
+    staged, live = promote_tool.snapshot_hashes(cfg, staging, TREES)
+    assert staged is not None and staged == live
+
+
+def test_an_UNREADABLE_snapshot_reports_neither_a_change_nor_a_match(tmp_path):
+    """Rule 1 on the reporting side. Absent must not render as *unchanged* — that reads as
+    nothing to do over the exact state a deploy exists to repair."""
+    staging = tmp_path / "staging"
+    _tree(staging / "fft", {"strategy.py": "RISK = 5\n"})
+    assert promote_tool.snapshot_hashes(_Cfg(tmp_path / "gone"), staging, TREES) == (None, None)

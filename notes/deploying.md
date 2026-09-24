@@ -150,7 +150,10 @@ the tool copies (**11 roots** for `fft_1` — the strategy's whole dependency cl
 the running deployment` line this tool has printed since it was written has never once been true.**
 
 **It now compares the STAGED tree against the DEPLOYED tree**, same relative destinations, same
-root names, same hash function. Like for like. That also subsumes the *snapshot edited in place*
+root names, same hash function. Like for like — and **the `code changes: A -> B` line the tool
+prints is taken off that same pair**, so it no longer announces a change on a promote that changes
+nothing. An unreadable snapshot prints neither a change nor a match, because absent read as
+*unchanged* is *nothing to do* over the exact state a deploy exists to repair. That also subsumes the *snapshot edited in place*
 case for free, because it hashes what is actually there rather than what a record claims.
 
 ⚠ **The first tests passed anyway, because they stubbed `deployment_hash`** — a double more
