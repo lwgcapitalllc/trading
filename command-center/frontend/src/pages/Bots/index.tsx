@@ -1049,8 +1049,13 @@ export function Bots() {
 
   const [logBot, setLogBot] = useState<string | null>(null)
   const [syncOpen, setSyncOpen] = useState(false)
-  // Which bot is mid start/stop/restart, and WHICH of the three — the pill names the action.
-  const [pending, setPending] = useState<{ key: string; action: BotAction } | null>(null)
+  // Which bots are mid start/stop/restart, and WHICH of the three — the pill names the action.
+  // 🔴 **PER BOT, NOT ONE FOR THE PAGE (2026-09-24).** This was a single slot, and one flag off it
+  // greyed out every bot's buttons on every account until that one action finished — so two bots
+  // could only be restarted one after the other, with a wait for each. Nothing needed that: the
+  // server refuses nothing, and two bots on ONE account already take turns at the broker login on
+  // the box (`algos/shared/mt5_lock.py`). Now only the bot being acted on is locked.
+  const [pending, setPending] = useState<ReadonlyMap<string, BotAction>>(() => new Map())
 
   /**
    * Which accounts show their bot table — the OPEN set, matching this app's `openLegs` idiom
@@ -1112,15 +1117,14 @@ export function Bots() {
   const restartOne = useBotRestartOne()
   // A move or a removal that has to STOP the bot first, and waits on the box to say it has.
   const { stopThen, waitingFor, waitingAction } = useStopFirst()
-  const busy =
-    startOne.isPending || stopOne.isPending || restartOne.isPending || waitingFor !== null
-  useEffect(() => {
-    if (!busy) setPending(null)
-  }, [busy])
+  /** Whether THIS bot's controls are locked: its own start/stop/restart is in flight, or a move or
+   *  removal is waiting on the box. ⚠ The second stays page-wide on purpose — `useStopFirst` holds
+   *  ONE waiting bot, so a second move started meanwhile would overwrite the first's wait. */
+  const busyFor = (key: string) => pending.has(key) || waitingFor !== null
   /** What a bot is in the middle of: a start / stop / restart, or the part of a move or a removal
    *  it is on — Stopping while the box catches up, Starting when a move starts it again. */
   const actionOf = (key: string): BotAction | null =>
-    pending?.key === key ? pending.action : waitingFor === key ? waitingAction : null
+    pending.get(key) ?? (waitingFor === key ? waitingAction : null)
 
   const bots: BotStatus[] = snapshot?.bots ?? []
   // 🔴 The version reads are keyed off the CONFIG list as well as the snapshot (2026-09-10). A
@@ -1458,9 +1462,22 @@ export function Bots() {
   // wanted again, sum per ACCOUNT and leave an unmeasured one OUT rather than folding it in as
   // zero; that is the part that was hard to get right.
 
-  function act(key: string, action: BotAction, fn: () => void) {
-    setPending({ key, action })
+  /** Run one bot's start/stop/restart, locking that bot alone until ITS call settles.
+   *  ⚠ `mutateAsync`, never `mutate` with per-call callbacks: those fire only for the LATEST call
+   *  on a mutation, so with two bots in flight the first one's lock would never clear. The hook's
+   *  own `onError` still raises the toast; the rejection is caught here only so it is not
+   *  reported twice. */
+  function act(key: string, action: BotAction, fn: () => Promise<unknown>) {
+    setPending((m) => new Map(m).set(key, action))
     fn()
+      .catch(() => undefined)
+      .finally(() =>
+        setPending((m) => {
+          const next = new Map(m)
+          next.delete(key)
+          return next
+        })
+      )
   }
 
   /**
@@ -1938,15 +1955,15 @@ export function Bots() {
                   <PrimaryBtn
                     label="Stop"
                     tone="neg"
-                    disabled={busy}
-                    onClick={() => act(cfg.key, 'stop', () => stopOne.mutate(cfg.key))}
+                    disabled={busyFor(cfg.key)}
+                    onClick={() => act(cfg.key, 'stop', () => stopOne.mutateAsync(cfg.key))}
                   />
                 ) : (
                   <PrimaryBtn
                     label="Start"
                     tone="pos"
-                    disabled={busy}
-                    onClick={() => act(cfg.key, 'start', () => startOne.mutate(cfg.key))}
+                    disabled={busyFor(cfg.key)}
+                    onClick={() => act(cfg.key, 'start', () => startOne.mutateAsync(cfg.key))}
                   />
                 )}
                 {/* ⚠ **Configure STAYS on the row, not in the "···" (2026-09-15).** Aaron lost this
@@ -1973,9 +1990,9 @@ export function Bots() {
                               label: 'Restart',
                               icon: RotateCcw,
                               testId: 'bot-restart',
-                              disabled: busy,
+                              disabled: busyFor(cfg.key),
                               onSelect: () =>
-                                act(cfg.key, 'restart', () => restartOne.mutate(cfg.key)),
+                                act(cfg.key, 'restart', () => restartOne.mutateAsync(cfg.key)),
                             },
                           ]
                         : []),
@@ -2620,7 +2637,7 @@ export function Bots() {
           earnings={earnOf(accountOfBot(selBot.key) ?? selBot.account, selBot.key)}
           fetchedAt={snapshot?.fetched_at}
           job={jobByKey.get(selBot.key)}
-          busy={busy}
+          busy={busyFor(selBot.key)}
           pendingAction={actionOf(selBot.key)}
           // Its promise tells the panel when the whole thing is over — a removal closes it then.
           onStopThen={(what, then, opts) => stopThen(selBot.key, labelOf(selBot), what, then, opts)}
@@ -2630,9 +2647,9 @@ export function Bots() {
           configAccount={accountGroups === undefined ? undefined : accountOfBot(selBot.key)}
           onClose={() => set('bot', null)}
           onLogs={() => setLogBot(selBot.key)}
-          onStart={() => act(selBot.key, 'start', () => startOne.mutate(selBot.key))}
-          onStop={() => act(selBot.key, 'stop', () => stopOne.mutate(selBot.key))}
-          onRestart={() => act(selBot.key, 'restart', () => restartOne.mutate(selBot.key))}
+          onStart={() => act(selBot.key, 'start', () => startOne.mutateAsync(selBot.key))}
+          onStop={() => act(selBot.key, 'stop', () => stopOne.mutateAsync(selBot.key))}
+          onRestart={() => act(selBot.key, 'restart', () => restartOne.mutateAsync(selBot.key))}
           onOpenAccount={(a) => set('account', String(a))}
         />
       )}
@@ -2662,12 +2679,11 @@ export function Bots() {
             onClose={() => set('account', null)}
             // A bot's name on the account panel opens that bot's panel (and closes this one).
             onOpenBot={(k) => set('bot', k)}
-            onStart={(k) => act(k, 'start', () => startOne.mutate(k))}
-            onStop={(k) => act(k, 'stop', () => stopOne.mutate(k))}
+            onStart={(k) => act(k, 'start', () => startOne.mutateAsync(k))}
+            onStop={(k) => act(k, 'stop', () => stopOne.mutateAsync(k))}
             onStopThen={(k, label, what, then) => stopThen(k, label, what, then)}
-            pendingKey={pending?.key ?? waitingFor}
-            pendingAction={pending?.action ?? waitingAction}
-            busy={busy}
+            actionOf={actionOf}
+            busyFor={busyFor}
           />
         )}
 

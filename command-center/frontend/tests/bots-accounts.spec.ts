@@ -5001,3 +5001,52 @@ test('a switch row is NOT drawn as a number box, and the risk row still is', asy
   await expect(page.getByTestId('risk-input')).toHaveCount(1)
   await expect(page.getByTestId('bot-risk')).toHaveCount(1)
 })
+
+// ── One bot's start/stop locks THAT bot, never the page (2026-09-24) ───────────────────────────
+//
+// Aaron: *"why can I only restart one bot at a time on an account?"* One flag for the whole page
+// greyed out every bot's buttons until the one in flight came back. Nothing needed it — the server
+// refuses nothing, and two bots on one account already take turns at the broker login on the box.
+
+test('starting one bot leaves the OTHER bot on the account free to start at the same time', async ({
+  page,
+}) => {
+  // 🔴 B-LEG's start is held open, so it is mid-flight for the whole check. SOS Fade must still be
+  // startable, and pressing it must SEND.
+  // MUTATION: put back the page-wide lock (`busyFor = () => pending.size > 0 || …`) → SOS Fade's
+  // Start is disabled while B-LEG's is in flight and this goes red. Watched RED 2026-09-24.
+  await mock(page, STACKED)
+  await page.route('**/api/bots/snapshot', (route) =>
+    route.fulfill({
+      json: {
+        fetched_at: new Date().toISOString(),
+        bots: [
+          { key: 'sos_fade', name: 'SOS Fade', status: 'STOPPED', account_type: 'demo' },
+          { key: 'b_leg', name: 'B-LEG', status: 'STOPPED', account_type: 'demo' },
+        ],
+        scheduled_jobs: [],
+        telegram: { name: 'Telegram', status: 'RUNNING' },
+      },
+    })
+  )
+  let release = () => {}
+  const held = new Promise<void>((r) => (release = r))
+  const started: string[] = []
+  await page.route('**/api/bots/b_leg/start', async (route) => {
+    started.push('b_leg')
+    await held
+    return route.fulfill({ json: { status: 'ok', output: '' } })
+  })
+  await page.route('**/api/bots/sos_fade/start', (route) => {
+    started.push('sos_fade')
+    return route.fulfill({ json: { status: 'ok', output: '' } })
+  })
+  await openAccount(page)
+  await page.getByTestId('start-b_leg').click()
+  await expect.poll(() => started).toEqual(['b_leg'])
+  const other = page.getByTestId('start-sos_fade')
+  await expect(other).toBeEnabled()
+  await other.click()
+  await expect.poll(() => started).toEqual(['b_leg', 'sos_fade'])
+  release()
+})

@@ -173,9 +173,8 @@ export function AccountDrawer({
   onStart,
   onStop,
   onStopThen,
-  pendingKey = null,
-  pendingAction = null,
-  busy = false,
+  actionOf = () => null,
+  busyFor = () => false,
 }: {
   group: BotAccountGroup
   reg: BotAccountRegistration | undefined
@@ -213,10 +212,11 @@ export function AccountDrawer({
     what: string,
     then: () => Promise<boolean> | void
   ) => Promise<void> | void
-  /** A start/stop still in flight — the same pill the page's row shows. */
-  pendingKey?: string | null
-  pendingAction?: BotAction | null
-  busy?: boolean
+  /** The start/stop a bot has in flight — the same pill the page's row shows. PER BOT: the page
+   *  can have several in flight at once (2026-09-24). */
+  actionOf?: (key: string) => BotAction | null
+  /** Whether THIS bot's start/stop is locked — never another bot's. */
+  busyFor?: (key: string) => boolean
 }) {
   const navigate = useNavigate()
   const unregister = useUnregisterAccount()
@@ -729,7 +729,7 @@ export function AccountDrawer({
                 const known = st !== undefined
                 // A trade it holds would be left with nothing managing it (the bot panel's rule).
                 const holding = running && botByKey?.get(b.key)?.in_trade === true
-                const action = pendingKey === b.key ? pendingAction : null
+                const action = actionOf(b.key)
                 const off = takeOff.stateOf(b.key)
                 const share = shareOf(b)
                 const edited = share !== b.risk_pct
@@ -795,7 +795,7 @@ export function AccountDrawer({
                           <button
                             data-testid={`stop-${b.key}`}
                             onClick={() => onStop(b.key)}
-                            disabled={busy}
+                            disabled={busyFor(b.key)}
                             title={`Stop ${b.display}`}
                             aria-label={`Stop ${b.display}`}
                             className="w-[26px] h-[26px] grid place-items-center rounded-md border border-border-default text-text-secondary hover:text-neg-text hover:border-neg/40 transition-colors disabled:opacity-40"
@@ -809,7 +809,7 @@ export function AccountDrawer({
                           <button
                             data-testid={`start-${b.key}`}
                             onClick={() => onStart(b.key)}
-                            disabled={busy}
+                            disabled={busyFor(b.key)}
                             title={`Start ${b.display}`}
                             aria-label={`Start ${b.display}`}
                             className="w-[26px] h-[26px] grid place-items-center rounded-md border border-border-default text-text-secondary hover:text-pos-text hover:border-pos/40 transition-colors disabled:opacity-40"

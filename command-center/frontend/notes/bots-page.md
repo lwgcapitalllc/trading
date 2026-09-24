@@ -1838,3 +1838,26 @@ a list is a second statement of what the page reads, stale the day somebody adds
 A label on a button is a claim about code somewhere else (rule 7). *Refresh* claimed the screen and
 delivered one of its queries. Check: `tests/bots-version.spec.ts` → *the Refresh button re-reads
 the VERSION badges*, red when pointed back at the snapshot alone.
+
+## One bot's start / stop / restart locks THAT bot, never the page (2026-09-24)
+
+Aaron: *"why can I only restart one bot at a time on an account?"* It was not the account. The page
+held ONE in-flight slot, and one flag off it greyed out every bot's Start, Stop and Restart on
+every account until that single action came back — so two bots could only be restarted one after
+the other.
+
+Nothing needed that. **The server refuses nothing** — the per-bot routes run side by side. **The
+only real limit is on the box**: two bots on one account take turns at the broker login
+(`algos/shared/mt5_lock.py`, up to 90s each), which is the right place for it.
+
+**Now** the page tracks each bot's action separately, and only the bot being acted on is locked.
+
+- ⚠ **`mutateAsync`, never `mutate` with per-call callbacks.** A mutation's per-call callbacks fire
+  only for its LATEST call, so with two bots in flight the first one's lock would never clear.
+- ⚠ **A move or a removal is still page-wide, on purpose.** The stop-first flow (`stopFirst.ts`)
+  holds ONE waiting bot; a second move started meanwhile would overwrite the first one's wait.
+
+Check: `tests/bots-accounts.spec.ts` → *starting one bot leaves the OTHER bot on the account free to
+start at the same time*, watched RED with the page-wide lock put back. ⚠ Six other checks in that
+file and in `overview.spec.ts` were already failing before this change (same result with the old
+page restored); they are not this change's.
