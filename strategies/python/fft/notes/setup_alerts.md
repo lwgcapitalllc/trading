@@ -34,7 +34,8 @@ first touch or second. Its thread:
 | all messages | 2,889 — 35.9 a month |
 
 Most of the extra messages are the limit being pulled and replaced as the 1m trend flips (679
-withdrawals, 597 moves). They are real broker cancels and re-places, so they stay. SOS Fade's
+withdrawals, 597 moves). They are real broker cancels and re-places, so they stay. **Aaron's call,
+2026-09-24: keep every one for now** — revisit if the thread reads as noise once it runs live. SOS Fade's
 channel is ~11 roots a month at 26%; the extreme leg's 6.8 at 23%.
 
 ## Proven reporting-only
