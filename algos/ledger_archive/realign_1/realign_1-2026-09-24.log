@@ -55,3 +55,43 @@
 2026-09-24 03:10:01,641 [INFO] Priority 3 on this account: waiting 18s for the bots above
 2026-09-24 03:15:01,378 [INFO] Priority 3 on this account: waiting 39s for the bots above
 2026-09-24 03:20:01,553 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-24 03:25:01,327 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-24 03:28:21,020 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-24 03:28:21,020 [INFO] Stop requested — shutting down.
+2026-09-24 03:28:21,020 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-24 03:28:21,782 [INFO] MT5 disconnected.
+2026-09-24 03:28:34,868 [INFO] Realign | RealignStrategy v399 | hash 47b544f6c189 | commit 4908949b | frozen | LIVE
+2026-09-24 03:28:35,417 [INFO] Connected | #700152905 | $14,862.76 | PUPrime-Demo
+2026-09-24 03:28:35,417 [INFO] MT5 connection lock released
+2026-09-24 03:28:35,902 [INFO] Sizing against account balance $14,862.76
+2026-09-24 03:28:35,918 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 2.5% per trade).
+2026-09-24 03:28:35,918 [WARNING] Setup alerts: OFF — RealignStrategy does not report its setups yet. It is not that there are no setups; it cannot report any. See docs/LIVE_SETUP_ALERTS.md.
+2026-09-24 03:28:44,965 [INFO] Warmed 15000 bars (2026-07-09 15:55:00+00:00 → 2026-09-24 03:20:00+00:00) in 7.6s
+2026-09-24 03:28:44,965 [INFO] Equity re-anchored to the account after warm-up: 14,808.95 → 14,862.76
+2026-09-24 03:28:45,968 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
+2026-09-24 03:30:06,429 [INFO] Priority 3 on this account: waiting 34s for the bots above
+2026-09-24 03:35:00,959 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-24 03:40:01,105 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-24 03:43:50,828 [ERROR] TRADING OFF: the broker has switched trading off for this account — it is read-only. Every order this bot sends will be refused.
+2026-09-24 03:44:01,711 [INFO] Trading is allowed on this account again.
+2026-09-24 03:45:02,697 [INFO] Priority 3 on this account: waiting 37s for the bots above
+2026-09-24 03:50:01,084 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-24 03:51:10,271 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-24 03:51:10,271 [INFO] Stop requested — shutting down.
+2026-09-24 03:51:10,273 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-24 03:51:10,976 [INFO] MT5 disconnected.
+2026-09-24 03:51:25,346 [INFO] Realign | RealignStrategy v399 | hash 47b544f6c189 | commit 4908949b | frozen | LIVE
+2026-09-24 03:51:25,909 [INFO] Connected | #700152905 | $14,862.76 | PUPrime-Demo
+2026-09-24 03:51:25,909 [INFO] MT5 connection lock released
+2026-09-24 03:51:26,237 [INFO] Sizing against account balance $14,862.76
+2026-09-24 03:51:26,237 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 2.5% per trade).
+2026-09-24 03:51:26,237 [WARNING] Setup alerts: OFF — RealignStrategy does not report its setups yet. It is not that there are no setups; it cannot report any. See docs/LIVE_SETUP_ALERTS.md.
+2026-09-24 03:51:38,866 [INFO] Warmed 15000 bars (2026-07-09 16:20:00+00:00 → 2026-09-24 03:45:00+00:00) in 11.5s
+2026-09-24 03:51:38,913 [INFO] Equity re-anchored to the account after warm-up: 14,808.95 → 14,862.76
+2026-09-24 03:51:39,913 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
+2026-09-24 03:55:00,879 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-24 04:00:00,850 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-24 04:05:01,307 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-24 04:10:01,325 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-24 04:15:00,996 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-24 04:20:01,139 [INFO] Priority 3 on this account: waiting 19s for the bots above

@@ -37,3 +37,33 @@ Not booked as a hand close because the broker closed it (its stop) and the strat
 2026-09-24 02:46:32,659 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
 2026-09-24 03:00:06,453 [INFO] Priority 2 on this account: waiting 14s for the bots above
 2026-09-24 03:15:05,015 [INFO] Priority 2 on this account: waiting 15s for the bots above
+2026-09-24 03:27:03,421 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-24 03:27:03,421 [INFO] Stop requested — shutting down.
+2026-09-24 03:27:03,421 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-24 03:27:04,195 [INFO] MT5 disconnected.
+2026-09-24 03:27:19,537 [INFO] Extreme Leg | ExtremeLegStrategy v391 | hash 47fd1b297a50 | commit 16569a05 | frozen | LIVE
+2026-09-24 03:27:20,078 [INFO] Connected | #700152905 | $14,862.76 | PUPrime-Demo
+2026-09-24 03:27:20,084 [INFO] MT5 connection lock released
+2026-09-24 03:27:20,601 [INFO] Sizing against account balance $14,862.76
+2026-09-24 03:27:20,601 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-24 03:27:20,601 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared signals channel
+2026-09-24 03:27:26,007 [INFO] Warmed 15000 bars (2026-07-09 15:55:00+00:00 → 2026-09-24 03:20:00+00:00) in 5.0s
+2026-09-24 03:27:26,007 [INFO] Equity re-anchored to the account after warm-up: 13,844.72 → 14,862.76
+2026-09-24 03:27:26,931 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
+2026-09-24 03:30:07,665 [INFO] Priority 2 on this account: waiting 12s for the bots above
+2026-09-24 03:45:03,350 [INFO] Priority 2 on this account: waiting 17s for the bots above
+2026-09-24 03:51:11,511 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-24 03:51:11,511 [INFO] Stop requested — shutting down.
+2026-09-24 03:51:11,511 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-24 03:51:12,152 [INFO] MT5 disconnected.
+2026-09-24 03:51:35,647 [INFO] Extreme Leg | ExtremeLegStrategy v391 | hash 47fd1b297a50 | commit 16569a05 | frozen | LIVE
+2026-09-24 03:51:36,304 [INFO] Connected | #700152905 | $14,862.76 | PUPrime-Demo
+2026-09-24 03:51:36,304 [INFO] MT5 connection lock released
+2026-09-24 03:51:36,726 [INFO] Sizing against account balance $14,862.76
+2026-09-24 03:51:36,726 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-24 03:51:36,726 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared signals channel
+2026-09-24 03:51:42,835 [INFO] Warmed 15000 bars (2026-07-09 16:20:00+00:00 → 2026-09-24 03:45:00+00:00) in 5.6s
+2026-09-24 03:51:42,851 [INFO] Equity re-anchored to the account after warm-up: 13,844.72 → 14,862.76
+2026-09-24 03:51:43,570 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
+2026-09-24 04:00:05,305 [INFO] Priority 2 on this account: waiting 15s for the bots above
+2026-09-24 04:15:03,839 [INFO] Priority 2 on this account: waiting 16s for the bots above
