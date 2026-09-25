@@ -99,3 +99,5 @@
 2026-09-25 20:15:02,762 [INFO] Priority 2 on this account: waiting 17s for the bots above
 2026-09-25 20:30:02,604 [INFO] Priority 2 on this account: waiting 17s for the bots above
 2026-09-25 20:45:02,274 [INFO] Priority 2 on this account: waiting 18s for the bots above
+2026-09-25 21:28:03,920 [ERROR] TRADING OFF: the broker has switched trading off for this account — it is read-only. Every order this bot sends will be refused.
+2026-09-25 21:30:14,491 [INFO] Trading is allowed on this account again.
