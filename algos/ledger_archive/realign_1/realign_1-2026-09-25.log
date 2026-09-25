@@ -15,3 +15,17 @@
 2026-09-25 01:10:01,250 [INFO] Priority 3 on this account: waiting 19s for the bots above
 2026-09-25 01:15:01,545 [INFO] Priority 3 on this account: waiting 38s for the bots above
 2026-09-25 01:20:01,226 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-25 01:25:01,417 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-25 01:30:01,443 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-25 01:35:01,646 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-25 01:40:01,593 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-25 01:45:01,288 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-25 01:50:01,383 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-25 01:53:51,361 [ERROR] TRADING OFF: the broker has switched trading off for this account — it is read-only. Every order this bot sends will be refused.
+2026-09-25 01:54:41,769 [INFO] Trading is allowed on this account again.
+2026-09-25 01:55:03,334 [INFO] Priority 3 on this account: waiting 17s for the bots above
+2026-09-25 02:00:01,447 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-25 02:05:01,559 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-25 02:10:01,538 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-25 02:15:01,450 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-25 02:20:00,899 [INFO] Priority 3 on this account: waiting 19s for the bots above

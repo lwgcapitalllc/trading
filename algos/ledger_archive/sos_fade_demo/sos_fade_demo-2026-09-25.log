@@ -1,0 +1,17 @@
+2026-09-25 01:52:01,562 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-25 01:52:01,562 [INFO] Stop requested — shutting down.
+2026-09-25 01:52:01,562 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-25 01:52:02,682 [INFO] MT5 disconnected.
+2026-09-25 01:52:14,680 [INFO] SOS Fade | SosFadeStrategy v397 | hash 0b20222f4ce1 | commit e0509da3 | frozen | LIVE
+2026-09-25 01:52:15,263 [INFO] Connected | #34957946 | $10,287.06 | PUPrime-Live
+2026-09-25 01:52:15,263 [INFO] MT5 connection lock released
+2026-09-25 01:52:15,696 [INFO] Sizing against account balance $10,287.06
+2026-09-25 01:52:15,711 [INFO] Re-entry fill clock: M5 — a second bar stream beside M15.
+2026-09-25 01:52:15,711 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-25 01:52:15,711 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → account 34957946's own signals channel -1003332727688
+2026-09-25 01:52:18,884 [INFO] Warmed 5000 bars (2026-07-10 14:15:00+00:00 → 2026-09-25 01:30:00+00:00) in 3.0s
+2026-09-25 01:52:23,427 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-10 14:20:00+00:00 → 2026-09-25 01:45:00+00:00).
+2026-09-25 01:52:23,427 [INFO] Equity re-anchored to the account after warm-up: 10,846.55 → 10,287.06
+2026-09-25 01:52:24,521 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-25 01:53:44,847 [ERROR] TRADING OFF: the broker has switched trading off for this account — it is read-only. Every order this bot sends will be refused.
+2026-09-25 01:54:41,960 [INFO] Trading is allowed on this account again.
