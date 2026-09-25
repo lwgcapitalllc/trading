@@ -611,3 +611,48 @@ record written before 2026-09-22 has already moved. Rule 1.
 ⚠ **Three new icons in this room** — 🛡 breakeven, 🪜 trail, 🔒 tighten — plus 💰 for size banked
 and ➕ for size added. They answer WHAT the message is about, which is this room's question; the
 health room's four severity icons are a separate, closed set and are not touched.
+
+
+---
+
+## Follower mode — the trades room states no sizes and no dollars (2026-09-24)
+
+**Kelly's call:** *"I don't want the lot size to be shared, just details to follow the bot how it
+trades."* The trades room is read by people following the bot, so it now carries prices, stop moves
+and R, and nothing that states the account's size.
+
+**One switch: `alerts.SHOW_SIZE`** (default **False**). The formatters each take `show_size`
+EXPLICITLY and default it True, so the existing tests keep covering both renderings rather than only
+whichever is current; the bridge passes the constant at its four call sites.
+
+| message | before | after |
+|---|---|---|
+| ENTRY | `Size 0.25 lots · Risking $250.00 (5%)` | the line is dropped whole |
+| PART BANKED | `Took 0.12 of 0.37 lots off · 0.25 still running` | `Took part of the position off · the rest is still running` |
+| WIN / LOSS | `Made $712.50 · +2.85R` | `+2.85R` |
+| CLOSED BY YOU | `Lost $50.00` | the money line is dropped; the R already leads |
+| ADDED TO POSITION | a message per add | **nothing — the bridge skips the call** |
+
+**Why the add message could go.** Its docstring called it "not a nicety" because an add makes the
+entry's stated size and risk stale. With no size stated there is nothing to correct, so the reason it
+existed is gone rather than overruled.
+
+**Why the size line is dropped WHOLE.** A bucketed "small / medium / large" still leaks the account,
+and an approximate dollar figure is a number nobody measured (rule 4). **R stays** — it is the result
+in units of the trade's own risk, so it says how well the bot traded without saying what the account
+stands to make.
+
+🔴 **THE SIGNALS ROOM STILL PRINTS LOTS, AND THAT IS AN OPEN DECISION, NOT AN OVERSIGHT.**
+`format_entry_zone`'s header carries `0.25 lots · BUY LIMIT RESTING`, and `format_order_moved` carries
+a lots line. Both now accept `show_size` and **neither caller passes it**, because those lots exist at
+AARON's explicit request — the code quotes him (*"how many lots are going to be traded"*) and
+`test_setup_alert_size.py` asserts them in three tests. **Two owners want opposite things about the
+same message.** Flipping it is one argument at each call site in `setup_alerts.py`; it needs their
+agreement first, and those three tests then assert the opposite of what they assert today.
+
+⚠ **Wording reaches a phone only through a PROMOTE.** A live bot imports from a frozen `deployed/`
+snapshot, so a pushed commit changes nothing until each bot is promoted — and a promote ships
+everything else that landed since that bot's last one, not just this.
+
+**Proof:** `algos/tests/test_follower_mode.py`, 8 tests. The behaviour shipped with the change so
+there was no red state to watch; it is proven by MUTATION instead — `test_mutation_turning_sizes_back_on_reintroduces_the_leak` flips `show_size` True and asserts every leak reappears (rule 12).

@@ -28,6 +28,15 @@ out. They are there so the eye can find a message in a scroll, not for decoratio
 
 from __future__ import annotations
 
+# 🔴 **FOLLOWER MODE — the trades room is READ BY PEOPLE FOLLOWING THE BOT** (Kelly, 2026-09-24).
+# It states prices, stop moves and R, and NEVER the account's lot sizes or dollar amounts. One
+# switch so the policy lives beside the wording it governs; the formatters still take `show_size`
+# explicitly, so the tests keep covering BOTH renderings rather than only whichever is current.
+# ⚠ **An add to a position posts NOTHING while this is False.** The scale-in message exists to keep
+# a stated size current, and with no size stated there is nothing for it to correct — so the
+# bridge skips it rather than sending a message with its only content removed.
+SHOW_SIZE = False
+
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -176,7 +185,9 @@ def format_watching(snap, digits: int = 2, display: str = "") -> str:
     return alert("👀", "SETUP FORMING", snap.direction, *lines)
 
 
-def format_entry_zone(snap, digits: int = 2, lots: Optional[float] = None) -> str:
+def format_entry_zone(
+    snap, digits: int = 2, lots: Optional[float] = None, show_size: bool = True
+) -> str:
     """A limit order is RESTING at a price, unfilled. Replies to `format_watching`.
 
     Sent ONCE per setup. Later changes to the order go out as `format_order_moved` — reversed
@@ -230,7 +241,13 @@ def format_entry_zone(snap, digits: int = 2, lots: Optional[float] = None) -> st
     # thing in three lines and buried it among two that were fine.
     lines.append(_outstanding(snap))
     side = "BUY" if snap.side > 0 else "SELL"
-    size = f"{lots:.2f} lots · " if lots is not None else ""
+    # ⚠ **`show_size=False` is available but NOT wired on, and that is deliberate.** The lots in
+    # this header exist because AARON ASKED FOR THEM (see the `lots` note above: *"how many lots
+    # are going to be traded"*), and `test_setup_alert_size.py` asserts them. Kelly asked on
+    # 2026-09-24 for no sizes in the rooms people follow. Those are two owners wanting opposite
+    # things about the SAME message, so the parameter is here and the caller still passes nothing
+    # until they settle it. The trades room is already size-free — see `SHOW_SIZE`.
+    size = f"{lots:.2f} lots · " if (lots is not None and show_size) else ""
     return alert("🎯", f"{size}{side} LIMIT RESTING", "", *lines)
 
 
@@ -255,7 +272,7 @@ def _moved(old: Optional[float], new: Optional[float], fmt) -> str:
     return f"{fmt(old)} → {fmt(new)}"
 
 
-def format_order_moved(snap, digits: int = 2, now=None, before=None) -> str:
+def format_order_moved(snap, digits: int = 2, now=None, before=None, show_size: bool = True) -> str:
     """The resting order CHANGED — price, stop or size. Replies to the root.
 
     🔴 **Why this exists (Aaron, 2026-09-16):** the order is re-placed as the retrace levels move,
@@ -272,7 +289,7 @@ def format_order_moved(snap, digits: int = 2, now=None, before=None) -> str:
     old_sl = before.stop if before else None
     order = [f"Limit {_moved(old_px, new_px, p)}", f"stop {_moved(old_sl, new_sl, p)}"]
     lines = [" · ".join(x for x in order if not x.endswith(" "))]
-    if now is not None:
+    if now is not None and show_size:
         lots = _moved(before.lots if before else None, now.lots, lambda v: f"{v:.2f}")
         lines.insert(0, f"{lots} lots")
     lines.append(_outstanding(snap))
@@ -375,8 +392,15 @@ def format_entry(
     risk_usd: Optional[float] = None,
     risk_pct: Optional[float] = None,
     when: Optional[datetime] = None,
+    show_size: bool = True,
 ) -> str:
     """The message that opens a trade's thread.
+
+    `show_size=False` is FOLLOWER mode (Kelly, 2026-09-24): a reader following how the bot trades
+    needs the prices and the management, and nothing that states the account's size. The size and
+    risk line is dropped whole rather than rounded or bucketed — a "small / medium / large" would
+    still leak the account, and an approximate dollar figure is a number nobody measured (rule 4).
+    ⚠ **Default True, so nothing already running changes wording until a caller asks.**
 
     Three groups, in the order the questions get asked: what it is and which way, the two prices
     that define it, then how big it is and what it costs to be wrong.
@@ -391,10 +415,12 @@ def format_entry(
     is_long = direction.upper().startswith("L")
     side = "LONG" if is_long else "SHORT"
 
-    size = f"Size {lots:g} lots"
-    if risk_usd is not None:
-        pct = f" ({risk_pct:g}%)" if risk_pct is not None else ""
-        size += f" · Risking ${risk_usd:,.2f}{pct}"
+    size = ""
+    if show_size:
+        size = f"Size {lots:g} lots"
+        if risk_usd is not None:
+            pct = f" ({risk_pct:g}%)" if risk_pct is not None else ""
+            size += f" · Risking ${risk_usd:,.2f}{pct}"
 
     return alert(
         "📈" if is_long else "📉",
@@ -535,8 +561,12 @@ def format_partial_banked(
     lots_after: float,
     symbol: str = "",
     threaded: bool = True,
+    show_size: bool = True,
 ) -> str:
     """Size taken off at a rung. Replies to the entry.
+
+    `show_size=False` says THAT a rung banked without saying how much — a follower needs to know
+    the bot took profit and left the rest running; the lot counts are the account's business.
 
     ⚠ **It names WHERE the fill happened and does not pretend to a price.** The bridge banks at
     MARKET on a closed bar, never at the rung the backtest fills at (`bridge._sync_partials`), so
@@ -548,7 +578,11 @@ def format_partial_banked(
         "💰",
         "PART BANKED",
         symbol if not threaded else "",
-        f"Took {lots_banked:.2f} of {lots_before:.2f} lots off · {lots_after:.2f} still running",
+        (
+            f"Took {lots_banked:.2f} of {lots_before:.2f} lots off · {lots_after:.2f} still running"
+            if show_size
+            else "Took part of the position off · the rest is still running"
+        ),
         "Banked at market on the bar's close, not at the rung's own price.",
     )
 
@@ -602,8 +636,14 @@ def format_exit(
     threaded: bool = True,
     exit_reason: str = "",
     when: Optional[datetime] = None,
+    show_size: bool = True,
 ) -> str:
     """The reply that closes a trade's thread.
+
+    `show_size=False` drops the dollars and keeps the R. R is the honest thing to publish: it is
+    the result in units of the trade's own risk, so it says how well the bot traded without saying
+    what the account stands to make. ⚠ **With no R available there is nothing left to state**, so
+    the outcome word and the exit price carry the message alone rather than inventing a figure.
 
     Outcome, money, price — and nothing about what was risked, because this message hangs under
     the entry that already said so.
@@ -620,13 +660,18 @@ def format_exit(
     verb = {WIN: "Made", LOSE: "Lost", BREAKEVEN: "Lost"}[v]
     if v == BREAKEVEN and pnl_usd > 0:
         verb = "Made"
-    amount = f"{verb} ${abs(pnl_usd):,.2f}"
-    r = f" · {r_multiple:+.2f}R" if r_multiple is not None else ""
     price = f"Exit {_price(exit_price, digits)}"
     if exit_reason:
         price += f" ({exit_reason})"
 
-    return alert(_VERDICT_MARK[v], _VERDICT_LABEL[v], "" if threaded else symbol, amount + r, price)
+    if show_size:
+        amount = f"{verb} ${abs(pnl_usd):,.2f}"
+        r = f" · {r_multiple:+.2f}R" if r_multiple is not None else ""
+        body = [amount + r, price]
+    else:
+        body = [f"{r_multiple:+.2f}R", price] if r_multiple is not None else [price]
+
+    return alert(_VERDICT_MARK[v], _VERDICT_LABEL[v], "" if threaded else symbol, *body)
 
 
 def format_manual_close(
@@ -637,6 +682,7 @@ def format_manual_close(
     r_multiple: Optional[float] = None,
     digits: int = 2,
     threaded: bool = True,
+    show_size: bool = True,
 ) -> str:
     """The reply when the OWNER closed the trade by hand (2026-09-17).
 
@@ -648,11 +694,12 @@ def format_manual_close(
     if not threaded:
         head = f"{head} · {symbol}" if head else symbol
     verb = "Made" if pnl_usd >= 0 else "Lost"
+    money = [f"{verb} ${abs(pnl_usd):,.2f}"] if show_size else []
     return alert(
         "✋",
         "CLOSED BY YOU",
         head,
-        f"{verb} ${abs(pnl_usd):,.2f}",
+        *money,
         f"Exit {_price(exit_price, digits)}",
         "The bot has flattened its own record and keeps trading.",
     )

@@ -1802,6 +1802,7 @@ class OrderBridge:
         elif manual:
             self._notify(
                 alerts.format_manual_close(
+                    show_size=alerts.SHOW_SIZE,
                     symbol=self._mt5.symbol,
                     exit_price=price,
                     pnl_usd=pnl,
@@ -1936,6 +1937,7 @@ class OrderBridge:
     def _notify_exit(self, price, pnl, r, reason, sig) -> None:
         self._notify(
             alerts.format_exit(
+                show_size=alerts.SHOW_SIZE,
                 strategy=self._message_name(),
                 symbol=self._mt5.symbol,
                 exit_price=price,
@@ -2340,7 +2342,9 @@ class OrderBridge:
         # answers `[]` for both, and this path only runs with a base position already adopted —
         # so a zero read means the book could not be read, and the difference would then report
         # the WHOLE position as size just added. Rule 1, arriving through a subtraction.
-        if gained > 1e-9 and held_before > 0:
+        # ⚠ An add posts nothing in follower mode — see `alerts.SHOW_SIZE`. The message's whole job
+        # is keeping a stated size current, and no size is stated, so there is nothing to correct.
+        if gained > 1e-9 and held_before > 0 and alerts.SHOW_SIZE:
             self._notify_scaled_in(
                 added=gained,
                 now=self._our_lots(positions),
@@ -2518,6 +2522,7 @@ class OrderBridge:
         )
         self._pos_alert_id = self._notify(
             alerts.format_entry(
+                show_size=alerts.SHOW_SIZE,
                 strategy=self._message_name(),
                 symbol=self._mt5.symbol,
                 direction=side,
@@ -4247,6 +4252,7 @@ class OrderBridge:
         try:
             self._notify(
                 alerts.format_partial_banked(
+                    show_size=alerts.SHOW_SIZE,
                     lots_banked=banked,
                     lots_before=before,
                     lots_after=after,
