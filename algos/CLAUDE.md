@@ -243,6 +243,7 @@ drift this repo has already paid for three times.
 - The live runner's SECOND bar feed — G18 stage 1 (2026-09-01). Stages 2-4 still open
 - 🔴 The fill clock halted both SOS Fade bots on their OWN limit; the fix, re-adopt by replay, and the daily-break alert (2026-09-17)
 - ✋ A hand close of the bot's own trade is booked as yours and the bot keeps trading; what a hand-moved stop does (2026-09-17)
+- 🔴 A trade that closed while the bot was away is now BOOKED off the broker's deals when a restart drops it — it used to vanish from the bot's record (2026-09-24)
 - ✋ A stop you tighten at the broker is kept, a looser one halts; a trade vanishing beside another halts (2026-09-17)
 - 🔴 A broker rejection is alerted once, and a temporary one (no connection, requote …) is re-sent within seconds rather than a bar later (2026-09-16)
 

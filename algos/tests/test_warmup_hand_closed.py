@@ -248,3 +248,72 @@ def test_no_closed_row_and_the_ticket_is_still_open_at_the_broker_still_waits(tm
         positions=[_Pos(364105022, 1, 4316.98, 0.14, 4352.44)],
     )
     assert ex.close_requested is None and not _dropped(tmp_path)
+
+
+# ── ...and the trade's RESULT is booked off the broker's deals (2026-09-24) ─────
+#
+# The drop above proved the trade over and wrote down nothing it made, so its profit left the
+# bot's record and the Bots page filed it under "Not from these bots". Live: sos_fade_demo's
+# hand-closed short of 2026-09-21, +$181.56.
+#
+# RED before: `_closed_rows` was empty in the first test — the copy dropped, no `closed` row.
+# MUTATION: book when `deals` is 0 -> the unreadable case goes red (a fabricated scratch);
+# skip the ordinary `closed` lookup on a second restart -> the booked-twice case goes red.
+
+_BREAKDOWN = {
+    "close_price": 4362.365,
+    "gross_usd": 181.56,
+    "swap_usd": 0.0,
+    "commission_usd": 0.0,
+    "net_usd": 181.56,
+    "deals": 2,
+}
+
+
+def _closed_rows(tmp_path) -> list[dict]:
+    rows = []
+    for p in (tmp_path / "ledger").glob("decisions-*.jsonl"):
+        for line in p.read_text().splitlines():
+            r = json.loads(line)
+            if r.get("kind") == "trade" and r.get("event") == "closed":
+                rows.append(r)
+    return rows
+
+
+def _restart_booking(tmp_path, breakdown, rows=None):
+    ex = _replay_holding()
+    opened = {**_BOX_OPENED, "risk_usd": 526.8}
+    b, ops, _ledger, _n = _bridge(ex, ledger=_box_ledger(tmp_path, rows or [opened]))
+    ops.origin = {"opened": 0.14, "closed": {0: 0.14}}
+    ops.positions = []
+    ops.get_deal_breakdown = lambda ticket: breakdown
+    b.state = live_bridge.BridgeState.LIVE
+    b.begin_live()
+    return b, ex
+
+
+def test_a_trade_closed_while_the_bot_was_away_is_booked_with_what_it_made(tmp_path):
+    _b, ex = _restart_booking(tmp_path, _BREAKDOWN)
+    assert _dropped(tmp_path) and ex.close_requested == live_bridge.MANUAL_CLOSE_REASON
+    [row] = _closed_rows(tmp_path)
+    assert row["ticket"] == 364105022
+    assert row["pnl_usd"] == 181.56
+    assert row["r"] == pytest.approx(181.56 / 526.8)
+    assert row["reason"] == live_bridge.MANUAL_CLOSE_REASON
+    assert row["dir"] == "SHORT" and row["lots"] == 0.14 and row["price"] == 4362.365
+
+
+def test_unreadable_deals_book_nothing_rather_than_a_zero(tmp_path):
+    empty = {**_BREAKDOWN, "net_usd": 0.0, "gross_usd": 0.0, "deals": 0}
+    _restart_booking(tmp_path, empty)
+    assert _dropped(tmp_path), "the copy is still dropped — the broker proved it closed"
+    assert _closed_rows(tmp_path) == []
+
+
+def test_a_second_restart_finds_the_booked_row_and_books_nothing_more(tmp_path):
+    _restart_booking(tmp_path, _BREAKDOWN)
+    [booked] = _closed_rows(tmp_path)
+    again = tmp_path / "again"
+    again.mkdir()
+    _restart_booking(again, _BREAKDOWN, rows=[{**_BOX_OPENED, "risk_usd": 526.8}, booked])
+    assert len(_closed_rows(again)) == 1, "booked once, never twice"
