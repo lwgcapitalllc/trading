@@ -16,3 +16,21 @@
 2026-09-25 02:54:47,795 [INFO] Trading is allowed on this account again.
 2026-09-25 03:00:09,974 [INFO] Priority 2 on this account: waiting 10s for the bots above
 2026-09-25 03:15:14,073 [INFO] Priority 2 on this account: waiting 6s for the bots above
+2026-09-25 03:30:03,296 [INFO] Priority 2 on this account: waiting 17s for the bots above
+2026-09-25 03:45:03,239 [INFO] Priority 2 on this account: waiting 17s for the bots above
+2026-09-25 04:00:03,707 [INFO] Priority 2 on this account: waiting 16s for the bots above
+2026-09-25 04:08:42,000 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-25 04:08:42,000 [INFO] Stop requested — shutting down.
+2026-09-25 04:08:42,000 [WARNING] Could not clear stop.request: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\trading\\algos\\markets\\fx\\instances\\extreme_leg_1\\stop.request'
+2026-09-25 04:08:43,047 [INFO] MT5 disconnected.
+2026-09-25 04:08:52,267 [INFO] Extreme Leg | ExtremeLegStrategy v402 | hash 26000332e3c6 | commit 45ca034d | frozen | LIVE
+2026-09-25 04:08:52,298 [INFO] Waiting for MT5 lock (held by realign_1_700152905, 0s)...
+2026-09-25 04:08:55,827 [INFO] Connected | #700152905 | $14,862.76 | PUPrime-Demo
+2026-09-25 04:08:55,827 [INFO] MT5 connection lock released
+2026-09-25 04:08:56,124 [INFO] Sizing against account balance $14,862.76
+2026-09-25 04:08:56,139 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-25 04:08:56,139 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared signals channel
+2026-09-25 04:09:01,577 [INFO] Warmed 15000 bars (2026-07-10 16:35:00+00:00 → 2026-09-25 04:00:00+00:00) in 5.2s
+2026-09-25 04:09:01,655 [INFO] Equity re-anchored to the account after warm-up: 13,844.72 → 14,862.76
+2026-09-25 04:09:03,203 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
+2026-09-25 04:15:04,385 [INFO] Priority 2 on this account: waiting 16s for the bots above

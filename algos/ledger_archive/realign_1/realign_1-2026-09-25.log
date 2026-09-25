@@ -43,3 +43,28 @@
 2026-09-25 03:10:01,260 [INFO] Priority 3 on this account: waiting 19s for the bots above
 2026-09-25 03:15:11,336 [INFO] Priority 3 on this account: waiting 29s for the bots above
 2026-09-25 03:20:01,233 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-25 03:25:00,965 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-25 03:30:01,209 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-25 03:35:01,053 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-25 03:40:01,101 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-25 03:45:01,276 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-25 03:50:01,348 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-25 03:55:00,993 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-25 04:00:01,035 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-25 04:05:01,089 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-25 04:08:40,788 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-25 04:08:40,788 [INFO] Stop requested — shutting down.
+2026-09-25 04:08:40,788 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-25 04:08:41,624 [INFO] MT5 disconnected.
+2026-09-25 04:08:52,204 [INFO] Realign | RealignStrategy v414 | hash e01aa8d92c1c | commit 45ca034d | frozen | LIVE
+2026-09-25 04:08:52,744 [INFO] Connected | #700152905 | $14,862.76 | PUPrime-Demo
+2026-09-25 04:08:52,744 [INFO] MT5 connection lock released
+2026-09-25 04:08:53,213 [INFO] Sizing against account balance $14,862.76
+2026-09-25 04:08:53,213 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 2.5% per trade).
+2026-09-25 04:08:53,213 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared signals channel
+2026-09-25 04:09:02,452 [INFO] Warmed 15000 bars (2026-07-10 16:35:00+00:00 → 2026-09-25 04:00:00+00:00) in 8.9s
+2026-09-25 04:09:02,593 [INFO] Equity re-anchored to the account after warm-up: 14,808.95 → 14,862.76
+2026-09-25 04:09:03,266 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
+2026-09-25 04:10:03,481 [INFO] Priority 3 on this account: waiting 17s for the bots above
+2026-09-25 04:15:01,054 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-25 04:20:01,011 [INFO] Priority 3 on this account: waiting 19s for the bots above

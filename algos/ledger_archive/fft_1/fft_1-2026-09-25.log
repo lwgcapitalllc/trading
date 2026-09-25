@@ -43,3 +43,28 @@
 2026-09-25 03:10:00,924 [INFO] Priority 4 on this account: waiting 39s for the bots above
 2026-09-25 03:15:11,288 [INFO] Priority 4 on this account: waiting 49s for the bots above
 2026-09-25 03:20:00,942 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-25 03:25:00,965 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-25 03:30:01,241 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-25 03:35:01,036 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-25 03:40:01,069 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-25 03:45:00,920 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-25 03:50:01,380 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-25 03:55:00,821 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-25 04:00:00,878 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-25 04:05:01,152 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-25 04:08:10,690 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-25 04:08:10,690 [INFO] Stop requested — shutting down.
+2026-09-25 04:08:10,690 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-25 04:08:11,460 [INFO] MT5 disconnected.
+2026-09-25 04:08:22,198 [INFO] FFT | FftStrategy v404 | hash d53b22839a3e | commit 777933cc | frozen | LIVE
+2026-09-25 04:08:29,809 [INFO] Connected | #700152905 | $14,862.76 | PUPrime-Demo
+2026-09-25 04:08:29,809 [INFO] MT5 connection lock released
+2026-09-25 04:08:30,418 [INFO] Sizing against account balance $14,862.76
+2026-09-25 04:08:30,418 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-25 04:08:30,434 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared signals channel
+2026-09-25 04:08:47,282 [INFO] Warmed 45000 bars (2026-08-11 09:28:00+00:00 → 2026-09-25 04:07:00+00:00) in 15.8s
+2026-09-25 04:08:47,282 [INFO] Equity re-anchored to the account after warm-up: 17,465.32 → 14,862.76
+2026-09-25 04:08:48,160 [INFO] Watching for closed M1 bars (poll 10s). Ctrl-C to stop.
+2026-09-25 04:10:03,260 [INFO] Priority 4 on this account: waiting 37s for the bots above
+2026-09-25 04:15:01,067 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-25 04:20:01,121 [INFO] Priority 4 on this account: waiting 39s for the bots above
