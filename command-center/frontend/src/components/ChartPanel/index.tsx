@@ -2918,9 +2918,13 @@ export default function ChartPanel({
       chart.createOverlay({
         name: TRADE,
         lock: true,
+        // Points 3.. are the scale-in lots, one per add, in `tr.adds` order. They are here only so
+        // the library converts each add's TIME to an x — the overlay draws an add from the bar it
+        // was bought on, not from the trade's entry. `lock` keeps them undraggable like the rest.
         points: [
           { timestamp: tr.entryTime, value: tr.entryPrice },
           { timestamp: tr.exitTime, value: tr.exitPrice },
+          ...(tr.adds ?? []).map((a) => ({ timestamp: a.ms, value: a.price })),
         ],
         extendData: {
           dir: tr.dir,

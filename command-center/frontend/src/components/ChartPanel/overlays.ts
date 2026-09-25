@@ -835,15 +835,51 @@ export function registerChartOverlays(): void {
       // chips on the same pixel row.
       // …unless the `Scale-in detail` layer is on, in which case every lot is already drawn as a
       // full box with its own `Entry` label at exactly this price, and these would double it.
-      const addRows = new Map<number, number>()
-      for (const a of d.addsDetailed ? [] : (d.adds ?? [])) {
-        if (typeof a?.price !== 'number') continue
-        addRows.set(a.price, (addRows.get(a.price) ?? 0) + 1)
-      }
+      //
+      // 🔴 EACH ADD IS DRAWN FROM THE BAR IT WAS BOUGHT ON (2026-09-24). Every add used to put its
+      // dot at the trade's ENTRY column with its line across the whole box, so an add bought hours
+      // in looked as if it had been there from the open — and on a short whose first add filled
+      // just above the second target, it read as an add taken before the target that allowed it
+      // (Aaron, run e2295f909180, 2026-06-17). The x comes from the overlay's own points 3..,
+      // which the panel passes in `adds` order; an add whose time the chart cannot place falls
+      // back to the old entry-column drawing rather than vanishing. The side LABEL stays in the
+      // left column with the others, so the de-collision still sees every chip.
       const addColor = d.addColor ?? entryColor
-      for (const [price, count] of addRows) {
-        crossLine(price, withAlpha(addColor, 0.55))
-        dot(price, addColor)
+      const addXs = coordinates.slice(2)
+      const addRows = new Map<number, { count: number; x: number }>()
+      ;(d.addsDetailed ? [] : (d.adds ?? [])).forEach((a, i) => {
+        if (typeof a?.price !== 'number') return
+        const ax = addXs[i]?.x
+        const x =
+          typeof ax === 'number' && Number.isFinite(ax) ? Math.min(Math.max(ax, x0), x1) : x0
+        const row = addRows.get(a.price)
+        addRows.set(a.price, { count: (row?.count ?? 0) + 1, x: Math.min(row?.x ?? x, x) })
+      })
+      for (const [price, { count, x }] of addRows) {
+        const y = yOf(price)
+        if (y == null) continue
+        figures.push({
+          type: 'line',
+          attrs: {
+            coordinates: [
+              { x, y },
+              { x: x1, y },
+            ],
+          },
+          styles: {
+            color: withAlpha(addColor, 0.55),
+            size: 1,
+            style: 'dashed',
+            dashedValue: [2, 3],
+          },
+          ignoreEvent: true,
+        })
+        figures.push({
+          type: 'circle',
+          attrs: { x, y, r: 3.5 },
+          styles: { style: 'fill', color: addColor },
+          ignoreEvent: true,
+        })
         addLabel(price, count > 1 ? `Add ×${count}` : 'Add', addColor)
       }
 

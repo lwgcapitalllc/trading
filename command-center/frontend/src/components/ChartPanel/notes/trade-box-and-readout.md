@@ -133,3 +133,22 @@ driving the real page: hover a bar mid-chart, scroll back, take the pointer off,
 numbers off the screenshot against the candles under them. **Re-do that by hand after touching
 either file** — a unit test here would be asserting on the resolver, which is not the half that
 broke.
+
+## 🔴 An add is drawn from the bar it was BOUGHT on, not from the entry (2026-09-24)
+
+Every `Add` used to put its dot on the trade's ENTRY column and its dotted line across the whole
+box, so an add bought hours into a trade looked as if it had been held from the open. On run
+e2295f909180, 2026-06-17 short, the first add filled at 4221.90 — a wick through TP2 at 4219.12
+closed back above it, and the market add bought the next open — and drawn from the entry it read
+as an add taken BEFORE the target that allowed it (Aaron, 2026-09-24).
+
+- **The add's time reaches the overlay as extra overlay POINTS** (points 3.., in `adds` order),
+  so the chart library converts each time to an x the same way it does the entry and exit. No
+  second time→pixel mapping.
+- **The dot and the line start at that x; the `Add` chip stays in the left label column** so the
+  de-collision still sees every chip.
+- ⚠ **An add the chart cannot place falls back to the entry column** rather than vanishing.
+- ⚠ **The `Scale-in detail` layer was already right** — each lot's own box runs from its own fill
+  time. Only the default drawing was wrong.
+- ⚠ **No automated check**, same as the rest of this canvas: checked by driving the real page to
+  that trade and reading the screenshot.
