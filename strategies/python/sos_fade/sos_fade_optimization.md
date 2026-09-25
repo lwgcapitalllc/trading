@@ -5405,3 +5405,30 @@ Same dual-clock replay as above, 251 trades: **1m break 185.7R (+18.3 over no ad
 (1.23 today, 1.46 no adds), longest time below a high 453 days (828 today, 417 no adds), fit to a
 straight line R² 0.890 (0.868 today, 0.902 no adds).
 
+
+### 🔴 Negative, same day: a 15m / 5m / 1m trend gate on either add rule
+
+Aaron: test the 15m, 5m and 1m trend — alone and in every combination — as a filter to keep
+adding. Scratch replay (not shipped), same basis as above: each timeframe's trend is the canonical
+structure engine's external direction as of the last bar CLOSED at the decision, 15m and 5m
+precomputed, 1m the live fast feed. Trail gated at its 15m-close placement; "1m break" gated at each
+1m break. Sanity: the ungated arms and "1m break + 1m" reproduce the numbers above exactly.
+
+| Rule + gate | R | +R | worst drop | worse | better | scratched | adds | mo Sharpe | under water | R² |
+|---|---|---|---|---|---|---|---|---|---|---|
+| no adds | 167.4 | — | 7.49 | — | — | — | 0 | 1.46 | 417 d | 0.902 |
+| Trail, no gate / 15m | 223.1 | 55.7 | 8.92 | 46 | 25 | 5 | 131 | 1.23 | 828 d | 0.868 |
+| Trail + 5m | 219.2 | 51.8 | 9.17 | 45 | 24 | 7 | 129 | 1.21 | 828 d | 0.869 |
+| Trail + 1m | 215.4 | 48.0 | 9.00 | 44 | 24 | 8 | 128 | 1.20 | 828 d | 0.867 |
+| Trail + 5m+1m (= all three) | 214.3 | 46.9 | 9.00 | 43 | 23 | 8 | 126 | 1.19 | 828 d | 0.867 |
+| 1m break, no gate / 15m | 194.2 | 26.8 | 7.86 | 16 | 12 | 0 | 45 | 1.25 | 453 d | 0.897 |
+| 1m break + 5m | 190.3 | 22.8 | 7.86 | 12 | 10 | 0 | 37 | 1.28 | 453 d | 0.898 |
+| **1m break + 1m (shipped)** | 185.7 | 18.3 | 7.86 | 8 | 7 | 0 | 23 | 1.32 | 453 d | 0.890 |
+| 1m break + 5m+1m (= all three) | 182.2 | 14.8 | 7.86 | 8 | 6 | 0 | 21 | 1.34 | 453 d | 0.892 |
+
+- **The 15m trend never blocks an add** on either rule — by the second target the 15m structure
+  already points the trade's way, so any combination with 15m equals the same set without it.
+- **No gate rescues Trail.** Its damage is WHERE it buys (on the push), not trend direction; gating
+  removes 5 adds and makes every column worse, scratched winners 5 → 8.
+- **Adding 5m on top of the shipped 1m gate buys nothing** — the same 8 trades made worse, 2 adds
+  and 3.5R fewer, Sharpe 1.32 → 1.34 is noise. Not worth a third feed. The shipped rule stays.
