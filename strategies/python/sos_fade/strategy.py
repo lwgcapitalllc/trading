@@ -181,6 +181,13 @@ class SosFadeStrategy:
         parity harnesses — the engines need history before their output is real)."""
         from backtest.replay import EngineStack, iter_bars
 
+        cfg = self.config
+        if getattr(cfg, "exec_scale_in", False) and getattr(cfg, "exec_scale_mode", "") == "1m break":
+            # One frame has no 1-minute breaks to read, so this mode would never add — a run
+            # that reads as "never adds" when it means "could not see its feed". Refuse.
+            raise ValueError("exec_scale_mode='1m break' needs the 1-minute fast feed — "
+                             "replay it with run_dual(df15, df1m), not run().")
+
         # Tick mode resolves each bar against [bar_open, bar_open + duration), so it needs the
         # timeframe. Inferred from the frame rather than configured: the data IS the source of
         # truth here, and a hand-set duration that disagreed with it would silently read the

@@ -1267,6 +1267,105 @@ def test_a_trade_that_never_added_carries_an_empty_add_ledger():
     assert ex.trades[0].adds == []
 
 
+# ── "1m break" scale-in (2026-09-25) ─────────────────────────────────────────────────────
+# Same trade as the fixtures below: bar 1 fills the long @103.82, bar 2 clears TP2 (stage 2,
+# floor 105) and SEEDS the best price at its high of 107. Bar 3 makes no new high, so the fast
+# breaks delivered inside bar 3's time are the ones that bar reads. The dual clock is not
+# built here — the breaks are handed over exactly as it would hand them.
+_Q = 900_000
+
+
+def _brk_cfg(**kw):
+    return _cfg(exec_scale_in=True, exec_scale_mode="1m break", exec_scale_max_adds=3,
+                exec_secondary=True, exec_sec_fill_tf_min=1, **kw)
+
+
+def _brk_to_bar2(**kw):
+    ex = Execution(_brk_cfg(**kw))
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())
+    ex.step(_sig(2, 104.0, 107.0, 103.9, 106.5), _seq_flat())
+    assert ex._stage == 2 and ex._add_pending is None, "fixture did not reach the trail"
+    return ex
+
+
+def _breaks(ex, bar, *events):
+    """Deliver fast breaks one minute apart, all inside 15m bar `bar`."""
+    for i, (d, kind) in enumerate(events):
+        ex.observe_fast_breaks(bar * _Q + (i + 1) * 60_000, ((d, kind),))
+
+
+def test_a_1m_break_add_needs_a_bounce_and_then_the_SECOND_break_back():
+    """The rule as measured: a break AGAINST the trade is the bounce, and only the second break
+    back in the trade's direction adds. One break back is not enough — watched RED with the
+    count lowered to one, which is the mutation that turns this into an add on every wiggle."""
+    ex = _brk_to_bar2()
+    _breaks(ex, 3, (-1, "bos"), (1, "sos"))
+    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.5), _seq_flat())
+    assert ex._add_pending is None, "one break back after a bounce must not add"
+
+    ex = _brk_to_bar2()
+    _breaks(ex, 3, (-1, "bos"), (1, "sos"), (1, "bos"))
+    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.5), _seq_flat())
+    assert ex._add_pending is not None and ex._add_pend_stop == ex._current_stop()
+    ex.step(_sig(4, 106.5, 106.9, 106.2, 106.6), _seq_flat())
+    assert len(ex._adds) == 1 and abs(ex._adds[0][0] - 106.5) < 1e-9, "fills at the next open"
+
+
+def test_a_1m_break_add_without_a_bounce_does_not_fire():
+    """Breaks in the trade's direction with no bounce before them are the push itself, not the
+    end of a retracement — adding there is the shipped rule this mode replaces."""
+    ex = _brk_to_bar2()
+    _breaks(ex, 3, (1, "sos"), (1, "bos"), (1, "bos"))
+    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.5), _seq_flat())
+    assert ex._add_pending is None
+
+
+def test_a_1m_break_add_is_once_per_push_and_a_new_high_rearms_it():
+    """One add per push. A second bounce-and-break on the SAME push is refused; a new best price
+    starts a new push and the next one adds. Watched RED with the per-push latch removed."""
+    ex = _brk_to_bar2()
+    _breaks(ex, 3, (-1, "bos"), (1, "sos"), (1, "bos"))
+    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.5), _seq_flat())
+    ex.step(_sig(4, 106.5, 106.9, 106.2, 106.6), _seq_flat())      # fills; no new high (107)
+    assert len(ex._adds) == 1
+    _breaks(ex, 5, (-1, "bos"), (1, "sos"), (1, "bos"))
+    ex.step(_sig(5, 106.6, 106.9, 106.3, 106.7), _seq_flat())
+    assert ex._add_pending is None, "a second add on the same push"
+
+    _breaks(ex, 6, (-1, "bos"), (1, "sos"), (1, "bos"))
+    ex.step(_sig(6, 106.7, 107.5, 106.5, 107.2), _seq_flat())      # new high re-arms
+    assert ex._add_pending is not None
+
+
+def test_a_1m_break_from_an_earlier_bar_is_not_read_by_a_later_one():
+    """Breaks buffered inside a bar this rule never read are DROPPED, never carried into the
+    next — otherwise a bounce seen before the trail existed would arm an add after it."""
+    ex = _brk_to_bar2()
+    _breaks(ex, 1, (-1, "bos"), (1, "sos"), (1, "bos"))            # inside bar 1, stale by bar 3
+    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.5), _seq_flat())
+    assert ex._add_pending is None
+
+
+def test_the_1m_break_mode_refuses_a_run_that_cannot_see_1_minute_bars():
+    """Without the 1-minute fast feed no break ever arrives, and the run would read as "this
+    mode never adds". Refused at the config and at a one-frame replay, never degraded."""
+    import pytest
+    with pytest.raises(ValueError, match="1m break"):
+        _cfg(exec_scale_in=True, exec_scale_mode="1m break", exec_secondary=True,
+             exec_sec_fill_tf_min=5)
+    with pytest.raises(ValueError, match="1m break"):
+        _cfg(exec_scale_in=True, exec_scale_mode="1m break", exec_secondary=False,
+             exec_sec_fill_tf_min=1)
+    from sos_fade import SosFadeStrategy
+    import pandas as pd
+    st = SosFadeStrategy(_brk_cfg())
+    df = pd.DataFrame({"open": [1.0], "high": [1.0], "low": [1.0], "close": [1.0]},
+                      index=pd.DatetimeIndex(["2026-01-01"]))
+    with pytest.raises(ValueError, match="run_dual"):
+        st.run(df)
+
+
 # ── scale-in TAKE PROFIT (`exec_scale_tp_mode`, 2026-08-19) ──────────────────────────────
 # Fixture shape shared by all of these, and it is the one the add tests above establish:
 #   bar 0 places, bar 1 fills the base @103.82, bar 2 clears TP1 (105) and TP2 (106.18) so the

@@ -631,14 +631,15 @@
       "group": "Exit ladder",
       "label": "Where it adds",
       "short": "Where it adds",
-      "choices": ["Trail", "BOS retest"],
+      "choices": ["Trail", "BOS retest", "1m break"],
       "show_if": {
         "exec_scale_in": true
       },
-      "desc": "Where it adds. Trail buys at market the moment the trailing stop moves up; BOS retest waits for the next break of structure and rests an order at the level that broke.",
+      "desc": "Where it adds. Trail buys at market the moment the trailing stop moves up; BOS retest waits for the next break of structure and rests an order at the level that broke. 1m break waits for a bounce against the trade, then adds on the second 1-minute break of structure back in the trade's direction, sharing the trailing stop and sized so a stop-out after costs ends at zero. MEASURED 2020 to 2026-09-24 against Trail: 16 trades made worse instead of 46, no winner turned into a scratch instead of 5, and a smaller worst drawdown, for about half the extra R. 1m break needs Secondary re-entries on with the Fill clock at 1 minute, and runs in Python only: the TradingView strategy cannot check it.",
       "guide": [
-        "Trail — the measured choice; adds most often and makes the money",
-        "BOS retest — waits for a pullback that often never comes; loses money outside 2020"
+        "Trail — adds most often and makes the most money",
+        "BOS retest — waits for a pullback that often never comes; loses money outside 2020",
+        "1m break — protects winners best; about half the extra R of Trail"
       ]
     },
     {

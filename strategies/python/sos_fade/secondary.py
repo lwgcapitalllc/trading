@@ -21,7 +21,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Tuple, Optional
 
 # engines/ on path so `market_structure` imports by bare name (same shim as backtest/replay/stack.py).
 _ENGINES = Path(__file__).resolve().parents[3] / "engines"
@@ -56,6 +56,9 @@ class M1State:
     # None until the fill-clock engine has confirmed one, which refuses the arm rather than guessing.
     conf_high: Optional[float] = None
     conf_low: Optional[float] = None
+    # INTERNAL breaks that fired on THIS fast bar, in the engine's own order: (+1/-1, "sos"/"bos").
+    # Read only by the "1m break" scale-in. Additive — nothing that existed before reads it.
+    internal_breaks: Tuple[Tuple[int, str], ...] = ()
 
 
 class Structure1m:
@@ -101,12 +104,19 @@ class Structure1m:
             self.bear_leg_hi = ext.bear_bos_high
             self.bear_leg_lo = ext.bear_bos_low
 
+        it = st.internal
+        breaks = []
+        if it.bull_sos: breaks.append((1, "sos"))
+        if it.bull_bos: breaks.append((1, "bos"))
+        if it.bear_sos: breaks.append((-1, "sos"))
+        if it.bear_bos: breaks.append((-1, "bos"))
         return M1State(
             bull_sos_bar=self.bull_sos_bar, bear_sos_bar=self.bear_sos_bar,
             bull_leg_hi=self.bull_leg_hi, bull_leg_lo=self.bull_leg_lo,
             bear_leg_hi=self.bear_leg_hi, bear_leg_lo=self.bear_leg_lo,
             direction=self._engine.dir, new_bull_sos=new_bull, new_bear_sos=new_bear,
             conf_high=self.conf_high, conf_low=self.conf_low,
+            internal_breaks=tuple(breaks),
         )
 
 

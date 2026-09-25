@@ -595,8 +595,14 @@ class SosFadeConfig:
     #   Dropping the affordability test and adding a flat 1x instead cost 11 extra LOSING
     #   trades — that difference is what the `locked / per_unit` line buys.
     exec_scale_mode: str = "Trail"     # "↳ Where it adds" (Pine execScaleMode)
-    #   ∈ {"Trail", "BOS retest"}. WHERE the add happens. The SIZE rule above is unchanged by
-    #   this — only the moment and the price move.
+    #   ∈ {"Trail", "BOS retest", "1m break"}. WHERE the add happens. The SIZE rule above is
+    #   unchanged by the first two — only the moment and the price move.
+    #   "1m break" (2026-09-25, PYTHON ONLY — no Pine twin, so the parity gate cannot see it):
+    #   from the second target, after a bounce against the trade, the SECOND 1-minute internal
+    #   break back in its direction adds at market; every lot shares the trailing stop and is
+    #   sized net of costs. Needs `exec_secondary` on with `exec_sec_fill_tf_min = 1`, because
+    #   the re-entry's fast feed is the only 1-minute stream the lab and the live runner load.
+    #   Chosen to PROTECT WINNERS, not for R — see `execution._place_break_add`.
     #   "Trail" adds at MARKET on the bar the trail ratchets. "BOS retest" waits for the next
     #   confirmed break of structure our way and RESTS A LIMIT at the level that break cleared.
     #
@@ -2079,6 +2085,16 @@ class SosFadeConfig:
                 f"{self.exec_nogap_arm!r}. It gates the no-FVG fallback entry and is read only "
                 "when exec_req_fvg is False."
             )
+        if self.exec_scale_in and self.exec_scale_mode == "1m break" and (
+                not self.exec_secondary or int(self.exec_sec_fill_tf_min) != 1):
+            # Refused, never quietly degraded: without a 1-minute fast feed no break ever
+            # arrives, and the run would read as "this mode never adds" rather than "this run
+            # could not see the feed it needs" — rule 1.
+            raise ValueError(
+                "exec_scale_mode='1m break' reads 1-minute structure, and the only 1-minute "
+                "stream the lab and the live runner load is the re-entry's fast feed. Turn "
+                "exec_secondary on and set exec_sec_fill_tf_min to 1 (got exec_secondary="
+                f"{self.exec_secondary!r}, exec_sec_fill_tf_min={self.exec_sec_fill_tf_min!r}).")
         if self.exec_scale_in and self.exec_scale_gate not in (
                 "Stop improved", "Past the last add"):
             raise ValueError(

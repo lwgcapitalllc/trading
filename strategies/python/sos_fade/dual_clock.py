@@ -255,6 +255,10 @@ class DualClock:
         # machine, so skipping a bar because the secondary is switched off would leave it
         # computing over a history that never happened the moment it was switched on.
         m1 = self.struct_fast.update(bar.index, bar.open, bar.high, bar.low, bar.close)
+        # The "1m break" scale-in reads the fast feed's INTERNAL breaks. Handed over every bar,
+        # before any early return below, for the reason the reversal exit gives: it is not a
+        # re-entry feature and must not switch off with one. A no-op unless that mode is on.
+        self._st.execution.observe_fast_breaks(ts, m1.internal_breaks)
 
         # The REVERSAL EXIT runs here, BEFORE the re-entry's early return, and the order matters
         # twice over. It reads the fast structure feed rather than the arm state, so it must not

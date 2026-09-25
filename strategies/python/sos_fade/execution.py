@@ -881,6 +881,18 @@ class Execution:
         # confidently and does nothing. Weekly hid it: that one needs a CLOSE through, so a
         # bar can spike past it and leave it standing.
         self._add_tp_level = None
+        # "1m break" scale-in. `_fast_breaks` is a BUFFER, not position state: each fast bar's
+        # internal breaks as (fast bar open ms, +1/-1, "sos"/"bos"), consumed by the 15m bar they
+        # fell inside. The `_brk_*` fields are the trade's own leg bookkeeping, in the DIRECTION
+        # frame: the best price since the second target, whether a bounce against the trade has
+        # been seen, how many breaks back since, whether this push has already added, and how
+        # many adds had filled when last looked. See `_place_break_add`.
+        self._fast_breaks: List[Tuple[int, int, str]] = []
+        self._brk_ext: Optional[float] = None
+        self._brk_bounce = False
+        self._brk_count = 0
+        self._brk_used = False
+        self._brk_nadds = 0
         self._sos_bar_open: Optional[int] = None
         self._entry_equity: Optional[float] = None   # equity snapshot at open, for R
 
@@ -1086,6 +1098,10 @@ class Execution:
         # profit, which is exactly the over-spend the ratchet check exists to stop.
         "_adds", "_add_lots", "_add_stop", "_base_qty", "_add_limit", "_add_armed",
         "_add_pending", "_add_pend_stop", "_add_last_px", "_add_tp_level",
+        # The "1m break" leg bookkeeping — without it a restored trade re-seeds its best price
+        # and can add twice on one push. ⚠ New 2026-09-25: a record saved by an older version
+        # lacks these, and `restore_position` refuses it; migrate it at promote.
+        "_brk_ext", "_brk_bounce", "_brk_count", "_brk_used", "_brk_nadds",
         # Which re-entry trigger armed the open secondary. It DECIDES the exit ladder — the
         # reclaim half carries its own first target and its own bank percentage — so a restored
         # trade that lost it would manage against the other half's rungs, silently.
@@ -3149,6 +3165,11 @@ class Execution:
         self._add_pend_stop = None
         self._add_last_px = None
         self._add_tp_level = None
+        self._brk_ext = None
+        self._brk_bounce = False
+        self._brk_count = 0
+        self._brk_used = False
+        self._brk_nadds = 0
         self._sos_bar_open = pend.sos_bar
         self._risk_usd = abs(granted) * abs(fill_price - pend.sl) * self._pv()
         self._entry_equity = self._equity_realized      # R yardstick baseline
@@ -3702,6 +3723,11 @@ class Execution:
         self._add_pend_stop = None
         self._add_last_px = None
         self._add_tp_level = None
+        self._brk_ext = None
+        self._brk_bounce = False
+        self._brk_count = 0
+        self._brk_used = False
+        self._brk_nadds = 0
         self._entry_equity = None
 
     def _equity_at_entry_delta(self) -> float:
@@ -4000,6 +4026,101 @@ class Execution:
                 locked += (stop - px) * d * qty * pv
         return locked
 
+    def observe_fast_breaks(self, ts_ms: int, breaks) -> None:
+        """Buffer one fast bar's INTERNAL breaks for the "1m break" scale-in. Called by the dual
+        clock on EVERY fast bar; a no-op unless that mode is on and a position is open."""
+        cfg = self._cfg
+        if (not breaks or self._pos_dir == 0 or not getattr(cfg, "exec_scale_in", False)
+                or getattr(cfg, "exec_scale_mode", "Trail") != "1m break"):
+            return
+        for d, kind in breaks:
+            self._fast_breaks.append((int(ts_ms), int(d), kind))
+
+    def _place_break_add(self, sig) -> None:
+        """PLACE a "1m break" add: after a bounce against the trade, the SECOND 1-minute internal
+        break back in its direction. Market, sized at this 15m close, filled at the next open.
+
+        The rule, in the direction frame (a short's prices negated), from the second target on:
+
+        * the best price since the second target is tracked; a NEW best starts a new push and
+          re-arms — one add per push;
+        * a 1m internal break AGAINST the trade marks a bounce and resets the count;
+        * after a bounce, the second 1m internal break (either kind) BACK in the trade's
+          direction adds.
+
+        🔴 **EVERY LOT SHARES THE TRADE'S ONE TRAILING STOP.** Aaron, 2026-09-24: per-add stops
+        behind the bounce are "bad because price could come back and hit those easily" — and
+        the measurement agreed (3 in 4 stopped).
+
+        Sized like every add — worst case at the shared stop is flat — and **NET OF COSTS**: what
+        the trade has paid, the exit side still owed on every open lot, and this add's own round
+        trip. Without that, "flat at the stop" was flat before costs (5 trades since 2020 closed
+        just under zero on exactly their costs under the shipped rule).
+
+        MEASURED 2026-09-24 before it was built (scratch replay, 2020-01-01 → 2026-09-24, PU
+        Prime ECN costs, 3 adds x 0.5x, adds decided at the 15m close): against the shipped
+        "Trail", 14 trades made worse instead of 42, NO winner turned into a scratch instead of
+        5, worst drop 6.45R instead of 7.27R — for +24.1R over no adds instead of +43.3R. The
+        goal it was chosen for is protecting winners, not the most R.
+
+        ⚠ **PYTHON ONLY.** The Pine has no 1-minute feed, so the parity gate can never see it.
+        ⚠ **It needs the dual clock's fast feed at ONE minute** — config refuses otherwise.
+        """
+        cfg, d = self._cfg, self._pos_dir
+        # The breaks of the fast bars INSIDE this 15m bar. The dual clock steps a 15m bar only
+        # once a fast bar opening at or after its CLOSE arrives, and before that fast bar is fed
+        # to the structure engine — so everything buffered at or after this bar's open fell
+        # inside it. Earlier ones belong to a bar this method was not called on (flat, or the
+        # fill bar) and are dropped, never carried forward.
+        # ⚠ Not keyed on `self.bar_ms`: that defaults to five minutes and only the lab sets it.
+        events = [(dd, k) for (ms, dd, k) in self._fast_breaks if ms >= sig.time_ms]
+        self._fast_breaks = []
+        if self._stage < 2:
+            return
+        hi = sig.high if d > 0 else -sig.low
+        if len(self._adds) > self._brk_nadds:        # an add filled since the last bar
+            self._brk_nadds = len(self._adds)
+            self._brk_used = True
+        if self._brk_ext is None or hi > self._brk_ext:
+            self._brk_ext = hi
+            self._brk_bounce, self._brk_count, self._brk_used = False, 0, False
+        if len(self._adds) >= cfg.exec_scale_max_adds or self._brk_used:
+            return
+        fire = False
+        for dd, _kind in events:
+            if dd == -d:
+                self._brk_bounce, self._brk_count = True, 0
+            elif self._brk_bounce:
+                self._brk_count += 1
+                if self._brk_count >= 2:
+                    fire = True
+                    break
+        if not fire:
+            return
+        self._brk_used = True                       # this push is spent, placed or refused
+        pv, stop, level = self._pv(), self._current_stop(), sig.close
+        if (level - stop) * d <= 0:
+            return
+        reserve, cost_unit = 0.0, 0.0
+        if self._profile is not None:
+            sp = 0.0 if getattr(self._profile, "bid_ask_fills", False) else self._spread()
+            open_qty = (self._qty - self._filled_qty) + sum(lot[1] for lot in self._adds)
+            reserve = (-self._costs_usd + self._profile.commission(open_qty)
+                       + sp / 2.0 * open_qty * pv)
+            # Commission is linear in size on every measured profile (a flat rate per unit).
+            cost_unit = 2.0 * self._profile.commission(1.0) + sp * pv
+        budget = self._locked_at_stop(stop) - reserve
+        per_unit = (level - stop) * d * pv + cost_unit
+        if budget <= 0 or per_unit <= 0:
+            return
+        add_qty = min(budget / per_unit, self._base_qty * cfg.exec_scale_cap_x)
+        if add_qty <= 1e-9:
+            return
+        self._add_limit = level
+        self._add_pending = add_qty
+        self._add_pend_stop = stop
+        self._add_armed = True
+
     def _maybe_scale_in(self, sig) -> None:
         """PLACE an add order on a runner the trail is already protecting (Pine `execScaleIn`).
 
@@ -4043,6 +4164,8 @@ class Execution:
         cfg = self._cfg
         if not getattr(cfg, "exec_scale_in", False) or self._pos_dir == 0:
             return
+        if getattr(cfg, "exec_scale_mode", "Trail") == "1m break":
+            return self._place_break_add(sig)
         # A RESTING order does NOT consume a slot: Pine's `lAddN` increments when the order
         # FILLS, and re-placing while one rests re-uses the same entry id, which replaces it.
         if self._stage < 2 or len(self._adds) >= cfg.exec_scale_max_adds:
@@ -4146,7 +4269,7 @@ class Execution:
             self._add_armed = False
             self._add_pending = None
             return
-        if getattr(cfg, "exec_scale_mode", "Trail") == "Trail":
+        if getattr(cfg, "exec_scale_mode", "Trail") in ("Trail", "1m break"):
             price = sig.open          # market: TradingView fills it at the next bar's open
         else:
             reached = (sig.low <= self._add_limit) if d > 0 else (sig.high >= self._add_limit)
@@ -4170,7 +4293,7 @@ class Execution:
         # "Trail" add is a MARKET order at this bar's open, so the whole bar is genuinely the
         # lot's and both sides seed at the fill — `_manage_open` runs later in this same `step`
         # and widens it with the bar. Reporting only; no decision reads any of it.
-        limit_fill = getattr(cfg, "exec_scale_mode", "Trail") != "Trail"
+        limit_fill = getattr(cfg, "exec_scale_mode", "Trail") not in ("Trail", "1m break")
         if not limit_fill:
             ext_hi = ext_lo = price
         elif d > 0:

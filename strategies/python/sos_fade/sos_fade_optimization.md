@@ -42,6 +42,7 @@ Standing rules for anything recorded here:
 | 43 | 2026-09-23 | 🟢 **THE SCALE-IN BUDGET RE-EARNED after the sizing fix** — 37 cells, 3 arms (old sizing / fixed sizing / fixed + the new re-arm gate) x 1-4 adds x 3 caps, XAUUSD.p 15m 2018-09-14 → 2026-08-14, PU Prime ECN costs | **The budget is unchanged (`Trail` 3 x 0.5x) and it is now chosen on the rule the bot runs.** The fix makes MORE money at LESS drawdown at nearly every cell, and **restores the worst trade to -2.07R in all 24 scaled cells** where the old rule degraded to -2.86R at 4 x 2.0x. 🔴 **Run 21's caveat no longer holds** — the shipped cell now beats not-scaling on ret/DD on BOTH books (22.51 vs 19.98, EX20 18.08 vs 16.71). The new gate costs 12.79R for 0.11R of drawdown and **ships OFF** — but it WINS at 4 adds, so re-measure before raising the count. | **SHIPPED (gate default reverted to `Stop improved`) — ✅ PARITY PROVEN — a second golden (4 adds, 2.0x) is green on the fix and RED on the pre-fix sizing at bar 6,120.** |
 | 44 | 2026-09-23 | 🔴 **THE LEVEL MEMORY REPLAYED INSIDE THE BOT** — rest a limit again at the price a primary already entered at, once the setup is dead and price has travelled 1R away; half-width stop, 2R target, 3-day hold. Four replays, XAUUSD.p 15m+5m 2020-01-01 → 2026-09-21, PU Prime ECN costs | **Run 42's +16.35R screen did not survive the position slot.** The 65 trades it adds are worth **+0.85R in 6.5 years** (+0.80R without their best one) and 2025 carries all of it; one collision on 2023-01-12 cost a **+22.31R** primary. Replayed **215.7R vs 227.5R** with the re-entry on and **150.7R vs 168.1R** primary-only. Two defects found by RUNNING it: the memory resurrected itself (141 trades), and the report tool could not reach the fast clock with the re-entry off. | **MEASURED NEGATIVE — `exec_lvl_memory` ships Off and stays Off** |
 | 45 | 2026-09-23 | 🔴 **THREE PRE-REGISTERED FILTERS ON THE LEVEL MEMORY** — only while the original gap is still open, only after a liquidity sweep on the trade's side, or no limit at all and a market entry on a fast shift after the tap. Same window, bars and costs as Run 44 | **All three fail.** The gap filter beat the book with the re-entry on (+230.8R vs +227.5R, 22 trades +2.33R) and then LOST primary-only (166.1R vs 168.1R, first half −3.97R). The sweep filter hardly filters (66 trades vs 65) and hits the same +22.31R collision (+215.7R). The shift entry never fired — 2 chances in 2025, both wider than 1R. | **MEASURED NEGATIVE — `exec_lvl_confluence` stays None, `exec_lvl_memory` stays Off** |
+| 46 | 2026-09-25 | 🟢 **THE SCALE-IN REDESIGN — WHERE an add goes, judged on PROTECTING WINNERS, not on R** (Aaron: *"not to make more money... less drawdown on these scaling entries and less of my winners turn into losers or scratches"*). 15 placements, all sharing the trailing stop: today's market-on-trail, 15m/5m/1m structure breaks after a bounce, fib 38/50/62 limits, fib+gap, and limits at day/week/session/H4 levels. XAUUSD.p 15m 2020-01-01 → 2026-09-24, PU Prime ECN | **The SECOND 1-minute internal break back after a bounce wins on the goal**: built and replayed on the dual clock (251 trades, re-entries on, 1m fill clock): **16 trades made worse vs 46, NO winner scratched vs 5, worst drop 7.86R vs 8.92R** (7.49R with no adds), for **+26.8R over no adds vs +55.7R**. Per-add stops behind the bounce were REJECTED (3 in 4 stopped). Key levels never beat it; 5m/15m structure is too rare to fire. | **BUILT as `exec_scale_mode = "1m break"`, NOT the default — Python only, no parity gate possible (the Pine has no 1m feed)** |
 | 23 | 2026-08-19 | **THE SECONDARY (1m re-entry), END TO END** — 7 levers, 26 replays: the entry gates (swept-stop re-entry, zone depth) and then the exit ladder (depth cap, 1m direction filter, where breakeven fires, banking at TP1). | **The entry gates are already right and the exit ladder was not.** Every loosened door is worse, monotonically. Depth 2/3/5/unlimited are byte-identical (n=1 in 6.6 years). Banking part of a re-entry at TP1 is the first change in 26 replays that works — win/loss 1/1 → 4/1 — and it costs the tail. | measured, **nothing adopted** |
 | 24 | 2026-08-19 | 🔴 **THE LOSS-RECOVERY LEG** — nine stop placements and six exit ladders on the 25%-size counter-trade taken after every SOS Fade loss (`strategies/python/loss_recovery/`). Not a sweep of this bot's params; its population is SOS Fade's 62 real stop-outs. | **Nothing beat the shipped rule, and its best-looking challenger was five trades.** A stop on the CHoCH bar's own extreme scores +24.4R against +16.2R on a 7x tighter stop with lower drawdown — and **−7.4R once its best five are deleted**, where the shipped stop survives at +2.3R. `soft_stop_r=-0.3` is the one free change: same net R, avg loss −1.01R → −0.30R, win 58% → 37%. Everything else lost. | measured, **nothing adopted; `loss_recovery` still ships `enabled=False`** |
 
@@ -5346,4 +5347,48 @@ can see. Everything ships Off. Tests: 10 filter tests, each mutation-proved (`te
 docstring).
 
 ⚠ **No parity gate covers any of this** — the Pine has no fast clock and no level memory. Lab finding only.
+
+## Run 46 — 2026-09-25: the scale-in redesign — where an add goes, judged on protecting winners
+
+**The question (Aaron, 2026-09-24):** adds should go *"not on the push but as deep into the
+retracement as possible right after you have a confirmation that price has turned"*, every lot on
+the trade's own trailing stop, and the goal is *"less drawdown on these scaling entries and less of
+my winners turn into losers or scratches — not making more money."*
+
+**Basis, every arm:** XAUUSD.p 15m (and 5m / 1m where named), PU Prime, 2019-12-12 → 2026-09-24,
+warm-up 1000, trades scored from 2020-01-01, `puprime_ecn` costs, 3 adds, cap 0.5x, adds from the
+second target, shared stop, shipped sizing. Scratch harnesses patched per INSTANCE
+(`retrace_grid.py`, `level_grid.py`); nothing in the repo moved to take them. "Worse" / "~0" count
+trades that added against the SAME trade with no adds.
+
+| where the add goes | extra R | worst drop R | worse | winners → ~0 | adds |
+|---|---|---|---|---|---|
+| no adds | — | 5.98 | 0 | 0 | 0 |
+| today (market, on the trail) | +43.3 | 7.27 | 42 | 5 | 112 |
+| **1m internal break, 2nd back after a bounce** | **+24.1** | **6.45** | **14** | **0** | **40** |
+| 1m internal first break back | +11.9 | 7.94 | 25 | 3 | 69 |
+| fib 38 / 50 / 62 limit | +31.7 / +29.0 / +20.6 | 6.67 / 6.62 / 6.52 | 31 / 28 / 25 | 5 / 5 / 4 | 98 / 90 / 82 |
+| gap inside the 38.2-61.8 band | +9.7 | 6.84 | 20 | 1 | 37 |
+| weekly level / daily / session / H4 / any | +12.4 / +11.8 / +18.5 / +24.4 / +37.2 | 6.38 / 7.44 / 7.47 / 7.93 / 8.61 | 8 / 18 / 23 / 29 / 30 | 1 / 0 / 2 / 4 / 5 | 21 / 46 / 54 / 66 / 86 |
+| any level, then the 1m break | +16.4 | 7.03 | 13 | 1 | 35 |
+| 5m internal break | −0.1 | 5.98 | 2 | 0 | 4 |
+| 15m internal break | never fired | | | | 0 |
+
+**Built and re-measured in the engine** (`exec_scale_mode = "1m break"`, `run_dual`, re-entry on,
+1-minute fill clock, sized NET of costs): 251 trades — no adds 167.4R dd 7.49R; today 223.1R
+(+55.7) dd 8.92R, 46 worse, 5 scratched, 131 adds; **1m break 194.2R (+26.8) dd 7.86R, 16 worse,
+0 scratched, 45 adds**; identical trade set in all three.
+
+- 🔴 **Per-add stops behind the bounce were built first and REJECTED**, by Aaron and by the
+  numbers: 3 in 4 adds stopped on the next wiggle, +17R to +25R, up to 18 scratches. Every lot
+  shares the trailing stop.
+- ⚠ **Key levels were tested because Aaron asked, and none beat the plain 1m break on the goal.**
+  Weekly levels hurt the fewest trades (8) on only 21 adds in 6.6 years — too few to trust.
+- ⚠ **The 5m and 15m engine's internal structure is too coarse** — ~3 breaks a day on 5m, none
+  inside a trade on 15m — so "a lower-timeframe break" here has to mean one minute.
+- ⚠ **The study decided adds at the 15m close and filled at the next 15m open**; the best case
+  (fill at the break's own 1m close) was worth +0.7R. The build keeps the 15m order path.
+- 🔴 **Python only.** The Pine has no 1-minute feed, so the parity gate can never see this mode.
+  It needs `exec_secondary` on with `exec_sec_fill_tf_min = 1` and refuses otherwise.
+- ⚠ **Not the default.** Trail stays shipped; switching is Aaron's call, and it needs a promote.
 
