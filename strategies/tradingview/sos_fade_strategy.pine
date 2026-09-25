@@ -116,6 +116,11 @@ string execScaleMode = input.string("Trail", "   ↳ Where it adds", options = [
 float execMinAtrPct = input.float(0.08, "Minimum market volatility (% of price)", group = G7, minval = 0, step = 0.01, tooltip = "Skip a setup when the market is barely moving. Measured as the average 15-minute range as a percent of price. 0 turns it off. This is NOT the minimum stop distance above: that one asks whether the stop is far enough away to size against, this one asks whether the market is moving at all. A wide stop in a dead market clears that floor and is still refused here. Higher refuses more setups.")
 
 string execScaleTpMode = input.string("Ride", "   ↳ Where the adds take profit", options = ["Ride", "Prev week H/L", "Prev day H/L", "H4 H/L"], group = G6, active = execScaleIn, tooltip = "Where the added lots bank. Ride leaves them on the trailing stop with the rest of the trade. The others rest them at the nearest level of that kind that price has not already taken, and only when it sits beyond the newest add so every lot banks in profit. MEASURED: riding beats all three and is the default. Previous week costs 25.64R, previous day 36.58R and H4 48.06R, against a run-to-run noise of 15.06R — so all three are real costs, not noise.")
+// ⚠ APPENDED after the last `input.string` on purpose (2026-09-23), for the same reason as
+// the dead-market floor above: TradingView keys a saved chart's inputs off DECLARATION ORDER,
+// and this sat between the cap and the add mode for a day, where it shifted every later
+// string input on a saved chart by one slot.
+string execScaleGate = input.string("Stop improved", "   ↳ When it may add again", options = ["Stop improved", "Past the last add"], group = G6, active = execScaleIn, tooltip = "What has to happen before another add is allowed. Stop improved is the old rule: the trailing stop only has to have moved a little since the last add. Past the last add also requires the stop to have moved past the price the last lot was bought at, so the previous add must actually be in profit before another is bought. MEASURED: on 22 Sep 2026 a 1.17-point stop move authorised a second add while the first sat 36 points underwater. It still ships OFF: over 2018-2026 at the shipped 3 adds it costs 12.79R and buys 0.11R of drawdown, and the worst trade is the same either way. At 4 adds it wins, so re-measure before raising the add count.")
 
 // [doc 3] Four corners, not nine (Aaron, 2026-08-04) — synced from mpc_jarvis.p  -> docs/sos_fade_strategy.md
 string tablePositionInput = "Top Right"
@@ -4094,10 +4099,16 @@ if execScaleIn and strategy.position_size > 0 and strategy.position_size[1] > 0 
         lAddLim  := na
         // [doc 183] The add's TP has to clear the price the add was BOUGHT at
         lAddLastPx := strategy.opentrades > 0 ? strategy.opentrades.entry_price(strategy.opentrades - 1) : na
-    if lStage >= 2 and lAddN < execScaleAdds and (na(lAddStop) or lStop > lAddStop)
+    bool _lGateOk = na(lAddStop) or (lStop > lAddStop and (execScaleGate != "Past the last add" or na(lAddLastPx) or lStop > lAddLastPx))
+    if lStage >= 2 and lAddN < execScaleAdds and _lGateOk
         float _lim = execScaleMode == "Trail" ? close : (st.bull_bos and not na(st.bull_bos_high) and not na(st.bull_bos_low) and st.bull_bos_high > st.bull_bos_low ? st.bull_bos_high : na)
         if not na(_lim)
-            float _locked  = (lStop - lEntry) * lBaseQty
+            // [doc 184] The locked profit is the WHOLE position's, never the base lot's alone  -> docs/sos_fade_strategy.md
+            float _locked = (lStop - lEntry) * lBaseQty
+            if strategy.opentrades > 0
+                for _i = 0 to strategy.opentrades - 1
+                    if str.contains(strategy.opentrades.entry_id(_i), "ADD")
+                        _locked += (lStop - strategy.opentrades.entry_price(_i)) * strategy.opentrades.size(_i)
             float _perUnit = _lim - lStop
             if _locked > 0 and _perUnit > 0
                 float _addQty = math.min(_locked / _perUnit, lBaseQty * execScaleCapX)
@@ -4120,10 +4131,16 @@ if execScaleIn and strategy.position_size < 0 and strategy.position_size[1] < 0 
         sAddLim  := na
         // [doc 183] The add's TP has to clear the price the add was BOUGHT at
         sAddLastPx := strategy.opentrades > 0 ? strategy.opentrades.entry_price(strategy.opentrades - 1) : na
-    if sStage >= 2 and sAddN < execScaleAdds and (na(sAddStop) or sStop < sAddStop)
+    bool _sGateOk = na(sAddStop) or (sStop < sAddStop and (execScaleGate != "Past the last add" or na(sAddLastPx) or sStop < sAddLastPx))
+    if sStage >= 2 and sAddN < execScaleAdds and _sGateOk
         float _lim = execScaleMode == "Trail" ? close : (st.bear_bos and not na(st.bear_bos_high) and not na(st.bear_bos_low) and st.bear_bos_high > st.bear_bos_low ? st.bear_bos_low : na)
         if not na(_lim)
-            float _locked  = (sEntry - sStop) * sBaseQty
+            // [doc 184] The locked profit is the WHOLE position's, never the base lot's alone  -> docs/sos_fade_strategy.md
+            float _locked = (sEntry - sStop) * sBaseQty
+            if strategy.opentrades > 0
+                for _i = 0 to strategy.opentrades - 1
+                    if str.contains(strategy.opentrades.entry_id(_i), "ADD")
+                        _locked += (sStop - strategy.opentrades.entry_price(_i)) * strategy.opentrades.size(_i)
             float _perUnit = sStop - _lim
             if _locked > 0 and _perUnit > 0
                 float _addQty = math.min(_locked / _perUnit, sBaseQty * execScaleCapX)

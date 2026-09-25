@@ -363,6 +363,14 @@ export interface BotPosition {
   /** Open profit over that risk. `null` when the opening risk is unknown (a trade picked back up
    *  after a restart from an older record) — never a figure off a stop that has since moved. */
   r: number | null
+  /** The broker's own take-profit on the trade (2026-09-24). `null` = none at the broker. */
+  target: number | null
+  /** Its distance in R off the stop the trade OPENED with; `null` when that is unknown. */
+  target_r: number | null
+  /** 🔴 `false` = the bot's runner predates the field and said NOTHING — "not reported", never
+   *  "no target" (rule 1). Live SOS Fade's ordinary trade really has none, so the two must not
+   *  read alike. A promote brings the field. */
+  target_reported: boolean
   tickets: number
 }
 
@@ -1173,6 +1181,13 @@ export interface BotRunningCode {
   reason: string // why `changes_waiting` is null
 }
 
+/** Do a bot's deployed files still hash to their record — the tamper check, read by the bot panel
+ *  only since 2026-09-24 (it re-hashes ~220 files on the box). `null` = the box did not answer,
+ *  never "the files match". Mirrors `models.py` → `BotFilesCheck`. */
+export interface BotFilesCheck {
+  snapshot_ok: boolean | null
+}
+
 export interface BotDeployedVersion {
   frozen: boolean // false = unpromoted, still importing from the repo tree
   hash: string
@@ -1187,7 +1202,6 @@ export interface BotDeployedVersion {
   params: Record<string, unknown> // the parameters AS DEPLOYED
   repo_commit: string // what the VPS working tree is on now
   commits_ahead: number // how far the repo has moved past the deployment
-  snapshot_ok: boolean // the snapshot still hashes to its record
   running_hash: string // what the live PROCESS reports — may lag after a promote
   params_drift: string[] // settings config.json now states differently
   compare: BotVersionCompare | null

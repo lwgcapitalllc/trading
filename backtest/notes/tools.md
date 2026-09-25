@@ -8,6 +8,29 @@ CLAUDE.md gets at most one index line.
 
 ## Tools
 
+- **`tools/scale_in_grid.py` — the scale-in budget, re-earned after the sizing fix (2026-09-23, SOS Fade Run 43).**
+  Replays three ARMS over identical bars and config — the pre-fix affordability rule, the fixed one,
+  and the fixed one plus the stricter re-arm gate — across 1-4 adds x 3 caps, so the only thing that
+  moves between cells is the rule. Basis lives in one block of module constants rather than at five
+  call sites (rule 11). **Found: the fix makes MORE money at LESS drawdown at nearly every cell, and
+  restores the worst trade to -2.07R in all 24 scaled cells where the old rule degraded to -2.86R;
+  the new gate costs 12.79R for 0.11R of drawdown at the shipped budget and now ships OFF.**
+  ⚠ **No stored run re-prices** — this tool reads fills, costs and the replay loop, it changes none
+  of them.
+  - 🔴 **THE OLD RULE IS BOUND TO ONE EMULATOR INSTANCE, NEVER ASSIGNED TO THE CLASS, AND THE FIRST
+    VERSION GOT THAT WRONG.** It patched `Execution._locked_at_stop` on the class inside a worker,
+    and `ProcessPoolExecutor` REUSED that worker — so every cell that landed after an `old` cell
+    silently ran the old rule too. The table came back with the before and after columns **identical
+    to the cent in all twelve rows**, which reads exactly like *the fix changes nothing* rather than
+    like a bug. **A control arm that a pool can quietly turn into a copy of the treatment arm is the
+    general trap**, and it is invisible in the output: every number was internally consistent.
+  - Every cell now **asserts which of the two rules it actually ran, in both directions**, and the
+    line being replaced is checked against the shipped source before anything starts — so an edit
+    to the shipped method makes the tool refuse rather than compare the fix with itself. Rule 12
+    applied to a measurement tool instead of a test.
+  - The tell that the grid is measuring what it claims: **at ONE add all three arms are identical to
+    the cent.** They must be — there is no second add to gate or to mis-size.
+
 - **`tools/run_report.py` — TWO FIXES AND TWO NEW FLAGS (2026-09-22).**
   🔴 **IT DATED EVERY RE-ENTRY TRADE OFF THE WRONG CLOCK, AND HAD DONE SINCE RE-ENTRIES WERE
   WIRED IN (2026-08-16).** The row was dated `df.index[t.entry_index]`, but a re-entry's
@@ -31,6 +54,16 @@ CLAUDE.md gets at most one index line.
     — a blank says *cannot state it in this frame*, which is true, where a number says something
     false that nothing downstream can catch — and a new **`hours_held`** beside it is exact for
     every trade on any frame. **Finding one instance of a unit bug is not finding the unit bug.**
+  - 🔴 **IT CHOSE THE 15m-ONLY PATH OFF `exec_secondary` ALONE, AND THAT HID A WHOLE FEATURE
+    (2026-09-23).** `_choose_replay` decides whether a run needs the fast feed, and its own
+    docstring says why: *the config that gets REPORTED must be the config that RAN.* It asked only
+    about the re-entry — so a run with SOS Fade's level memory on and the re-entry off took the
+    15m-only path, where that feature cannot fire at all. **The config said it was on, the replay
+    could not reach it, and nothing in the output said so.** The same defect the function exists to
+    prevent, arriving through a second door. It now asks about everything that needs the fast clock,
+    and `--no-secondary` switches off the RE-ENTRY rather than the clock, saying which in its note.
+    ⚠ **Any future feature that fills on the faster feed has to be added THERE**, exactly like the
+    commit hook's per-day exemptions: a rule that enumerates today's shapes stops working silently.
   - `trades.csv` now carries **`kind`** (primary / secondary). Without it no reader could tell a
     15m setup from its re-entry, and the two are sized, stopped and targeted differently.
   - **`--server`** picks the broker cache to replay, same flag and meaning as `axis_sweep.py`'s.
@@ -1677,6 +1710,16 @@ the original trade's own direction, before a return counts. Same check re-run: 2
 **Rule 12 in practice — the bad number was believable, and only a run that should have returned
 NOTHING exposed it.**
 
+🔴 **REPLAYED 2026-09-23 AND THE SCREEN DID NOT SURVIVE — SOS Fade Run 44.** Built as a switch
+defaulted off and replayed inside the bot with one position slot and PU Prime ECN charged, the 65
+trades it adds are worth **+0.85R in six and a half years** (+0.80R without their best one), 2025
+carries all of it, and one collision on 2023-01-12 cost a **+22.31R** primary. The book falls
+**227.5R → 215.7R** with the re-entry on and **168.1R → 150.7R** primary-only. **The entry rule is
+not what was wrong: the screen's population — flat AND nothing armed — is not one the bot can
+select for, so the real feature takes 65 trades where the screen graded 39, and the extra ones have
+no edge in them.** Everything above is still the right reading OF THE SCREEN; the screen is simply
+not the answer. ⚠ **Do not quote the +16.35R without this paragraph.**
+
 ⚠ **SCREEN, NOT A BACKTEST, and the precedent is expensive.** One position slot is not simulated, so
 none of this is charged for the trades it would queue in front of — Run 12's rule. The no-gap entry
 screened positive and replayed at −15.3R inside the bot (Runs 28→29). **Nothing here is an edge until
@@ -1696,6 +1739,8 @@ it is built as a switch defaulted off and replayed with the slot on and costs ch
 Runs one config on two instruments with costs ON and OFF, and prints the four-way table. Written
 for Run 37 (`strategies/python/sos_fade/sos_fade_optimization.md`) and kept so that result can be
 re-run rather than believed.
+
+⚠ **It is a script, not a test, despite the name.** Run it with `python backtest/tools/gbpjpy_travel_test.py` (same for the GBPUSD twin). Since 2026-09-24 the root `conftest.py` stops pytest collecting anything under `backtest/tools/` — before that, both files ran six-year replays at collection time and put 24 errors in `scripts/run_all_tests.sh`.
 
 🔴 **The two controls are the point, and a run without them answers nothing.**
 

@@ -305,6 +305,13 @@ class BotPosition(BaseModel):
     # Open profit over that risk. `None` when the entry risk is unknown (a trade picked back up
     # from a record older than 2026-09-12) — never a figure off a stop that has since moved.
     r: Optional[float] = None
+    # 🔴 The trade's TARGET (2026-09-24) — the broker's own take-profit on it, and its distance in R
+    # off the stop the trade OPENED with. THREE answers (rule 1): `target_reported` False = the
+    # bot's runner predates the field and said nothing (a promote brings it); True with `target`
+    # `None` = the broker holds no take-profit (live SOS Fade's ordinary trade rides its stop).
+    target: Optional[float] = None
+    target_r: Optional[float] = None
+    target_reported: bool = False
     tickets: int = 1
 
 
@@ -821,7 +828,6 @@ class BotDeployedVersion(BaseModel):
     params: dict = {}  # the parameters AS DEPLOYED, not as config.json reads today
     repo_commit: str = ""  # what the VPS working tree is on now
     commits_ahead: int = 0  # how far the repo has moved past the deployment
-    snapshot_ok: bool = True  # on-disk hash still matches the record (tamper check)
     running_hash: str = ""  # what the live PROCESS reports, from bot_state.json
     params_drift: list[str] = []  # settings config.json now states differently from deployed
     # `strategy_version` above was DEAD until 2026-08-14 — declared, defaulted to 0 and never
@@ -832,6 +838,21 @@ class BotDeployedVersion(BaseModel):
     # The runner's code, which the version number above does not count. `None` = not read (an
     # older backend never sent it); a present one with `changes_waiting: None` = could not tell.
     running_code: Optional[BotRunningCode] = None
+
+
+class BotFilesCheck(BaseModel):
+    """Do a bot's deployed files still hash to their record — the tamper check.
+
+    🔴 **Its own read since 2026-09-24, off the version read.** It starts Python on the trading
+    box to re-hash ~220 files, ~5s of the version read's ~9s, and the Bots page asked for it on
+    every bot's row on every load while only the bot panel ever showed it. The version read now
+    skips it; the panel asks for this.
+
+    `None` = the box did not answer the check, which is never "the files match". The version
+    read used to report `True` for an EMPTY answer — a check that never ran, read as a pass.
+    """
+
+    snapshot_ok: Optional[bool] = None
 
 
 class BotPromoteRequest(BaseModel):

@@ -39,6 +39,9 @@ Standing rules for anything recorded here:
 | 20 | 2026-08-17 | 🟢 **WHERE a scale-in adds** — 15 locations (retest, fib 23.6/38.2/50/61.8/78.6%, FVG, order block, fib∩gap, fib∪gap, ATR pullbacks, momentum, market), then per-year, per-half and a budget grid on the finalists | **`BOS retest` at 4 adds / cap 2.0x SHIPPED as the mode default** (toggle still OFF, so no figure here moves). The sweep's own winner (fib 23.6%, 302R) was **80% one year** — 2020-free it falls BELOW the shipped market rule. **Deeper is worse, monotonically**, and 61.8%/78.6% lose money outright. Two harness bugs caught. | 🔴 **VOID — broken fill model, superseded by Run 21** |
 | 21 | 2026-08-18 | 🔴 **The scale-in grid RE-RUN on a corrected fill** — Run 20 priced every add at its TRIGGER, not where Pine buys it. 32 cells (2 modes × 1-4 adds × 4 caps) + a ladder-shape test, XAUUSD 15m 2018-09-13 → 2026-08-14, PU Prime ECN costs | **`Trail` 3 adds × 0.5x cap SHIPPED** — 194.15R vs 128.26R not scaling, drawdown 6.03 → 7.24, and the only cell better than baseline on **both** axes over the full book. **`BOS retest` LOSES money outside 2020 at every budget above one add.** The CAP is the drawdown lever, not the add count. Ladder shape (big-first vs flat vs small-first) is inside the 15.06R jitter. ⚠ No cell beats baseline ret/DD ex-2020. | **SHIPPED (mode + adds + cap) — PARITY GREEN** |
 | 22 | 2026-08-19 | 🔴 **WHERE THE SCALE-IN ADDS TAKE PROFIT** — the adds had no exit of their own, so this asked whether banking them beats riding. Two independent target families: a flat multiple of base risk (1R…8R, the control) and real structure (prev day/week H/L, H4, session H/L, and combinations). 16 configurations, XAUUSD 15m 2018-09-13 → 2026-08-14, PU Prime ECN costs, on `Trail` 3 × 0.5x | **EVERY TARGET LOSES TO RIDING**, and they lose in order of how OFTEN the target fires — Ride 194.15R (0 banks), prev week 168.51R (16), prev day 157.57R (25), H4 146.09R (47). The flat-risk control produced the same monotonic curve independently, and banking at 1R (126.76R) came out **below never scaling at all**. 🔴 **The first structural table was VOID and these are RE-MEASURED** — the harness resolved its target from the LIVE bar, so `Prev day`/`H4` banked ZERO times in 8 years while resolving 1,804 and 2,438 valid targets; day/H4 levels die on a WICK and the engine steps first, so the level was gone on the exact bar it would have filled. **Weekly dies on a CLOSE through and was immune, hiding it on the only mode being watched.** ⚠ Worst trade is −2.06R in every configuration — the affordability rule already prevents the giveback a target was asked for. ⚠ **Strip the top 20 trades and banking WINS on risk-adjusted return** (prev day 14.49, H4 14.60 vs Ride 11.99): it smooths the ordinary book and pays for it out of the tail. | **`exec_scale_tp_mode` SHIPPED defaulting to `"Prev week H/L"` — Aaron's call, AGAINST the measurement.** 🔴 **DEFAULT UNDER REVIEW** — he chose it on a 4.38R gap said to be inside the 15.06R jitter; the true gap is **25.64R, outside it**. 🔴 **NOT PARITY-GATED YET** |
+| 43 | 2026-09-23 | 🟢 **THE SCALE-IN BUDGET RE-EARNED after the sizing fix** — 37 cells, 3 arms (old sizing / fixed sizing / fixed + the new re-arm gate) x 1-4 adds x 3 caps, XAUUSD.p 15m 2018-09-14 → 2026-08-14, PU Prime ECN costs | **The budget is unchanged (`Trail` 3 x 0.5x) and it is now chosen on the rule the bot runs.** The fix makes MORE money at LESS drawdown at nearly every cell, and **restores the worst trade to -2.07R in all 24 scaled cells** where the old rule degraded to -2.86R at 4 x 2.0x. 🔴 **Run 21's caveat no longer holds** — the shipped cell now beats not-scaling on ret/DD on BOTH books (22.51 vs 19.98, EX20 18.08 vs 16.71). The new gate costs 12.79R for 0.11R of drawdown and **ships OFF** — but it WINS at 4 adds, so re-measure before raising the count. | **SHIPPED (gate default reverted to `Stop improved`) — ✅ PARITY PROVEN — a second golden (4 adds, 2.0x) is green on the fix and RED on the pre-fix sizing at bar 6,120.** |
+| 44 | 2026-09-23 | 🔴 **THE LEVEL MEMORY REPLAYED INSIDE THE BOT** — rest a limit again at the price a primary already entered at, once the setup is dead and price has travelled 1R away; half-width stop, 2R target, 3-day hold. Four replays, XAUUSD.p 15m+5m 2020-01-01 → 2026-09-21, PU Prime ECN costs | **Run 42's +16.35R screen did not survive the position slot.** The 65 trades it adds are worth **+0.85R in 6.5 years** (+0.80R without their best one) and 2025 carries all of it; one collision on 2023-01-12 cost a **+22.31R** primary. Replayed **215.7R vs 227.5R** with the re-entry on and **150.7R vs 168.1R** primary-only. Two defects found by RUNNING it: the memory resurrected itself (141 trades), and the report tool could not reach the fast clock with the re-entry off. | **MEASURED NEGATIVE — `exec_lvl_memory` ships Off and stays Off** |
+| 45 | 2026-09-23 | 🔴 **THREE PRE-REGISTERED FILTERS ON THE LEVEL MEMORY** — only while the original gap is still open, only after a liquidity sweep on the trade's side, or no limit at all and a market entry on a fast shift after the tap. Same window, bars and costs as Run 44 | **All three fail.** The gap filter beat the book with the re-entry on (+230.8R vs +227.5R, 22 trades +2.33R) and then LOST primary-only (166.1R vs 168.1R, first half −3.97R). The sweep filter hardly filters (66 trades vs 65) and hits the same +22.31R collision (+215.7R). The shift entry never fired — 2 chances in 2025, both wider than 1R. | **MEASURED NEGATIVE — `exec_lvl_confluence` stays None, `exec_lvl_memory` stays Off** |
 | 23 | 2026-08-19 | **THE SECONDARY (1m re-entry), END TO END** — 7 levers, 26 replays: the entry gates (swept-stop re-entry, zone depth) and then the exit ladder (depth cap, 1m direction filter, where breakeven fires, banking at TP1). | **The entry gates are already right and the exit ladder was not.** Every loosened door is worse, monotonically. Depth 2/3/5/unlimited are byte-identical (n=1 in 6.6 years). Banking part of a re-entry at TP1 is the first change in 26 replays that works — win/loss 1/1 → 4/1 — and it costs the tail. | measured, **nothing adopted** |
 | 24 | 2026-08-19 | 🔴 **THE LOSS-RECOVERY LEG** — nine stop placements and six exit ladders on the 25%-size counter-trade taken after every SOS Fade loss (`strategies/python/loss_recovery/`). Not a sweep of this bot's params; its population is SOS Fade's 62 real stop-outs. | **Nothing beat the shipped rule, and its best-looking challenger was five trades.** A stop on the CHoCH bar's own extreme scores +24.4R against +16.2R on a 7x tighter stop with lower drawdown — and **−7.4R once its best five are deleted**, where the shipped stop survives at +2.3R. `soft_stop_r=-0.3` is the one free change: same net R, avg loss −1.01R → −0.30R, win 58% → 37%. Everything else lost. | measured, **nothing adopted; `loss_recovery` still ships `enabled=False`** |
 
@@ -5081,3 +5084,266 @@ precedent is expensive: the no-gap entry screened positive and replayed at **−
 setup's own traded entry stays armed for N days after it closes, with a stop a fraction of the
 original width — and replay it inside the bot with one slot and `puprime_ecn` charged, the same
 shape as Run 41. That replay decides it. Nothing ships before it.
+
+---
+
+## Run 43 — 2026-09-23: the scale-in budget RE-EARNED after the sizing fix — and the new gate ships OFF
+
+**Why it had to be re-run.** Run 21 chose the shipped budget — `Trail`, 3 adds, 0.5x cap — under an
+affordability rule that was later found to be **exact for one add and double-spent from the second
+onward**: every add pledged the BASE lot's locked profit again and never looked at the lots already
+bought. That rule no longer exists (found by the `sos_fade_1` 2026-09-22 trade, written up in
+`notes/sizing_and_risk_history.md`), so the cell it picked had to be re-earned rather than assumed.
+
+**Basis.** `backtest/tools/scale_in_grid.py`, 37 cells, XAUUSD.p 15m **2018-09-14 → 2026-08-14**,
+PU Prime ECN costs, `exec_secondary=False`, warm-up 1000, $10,000, bar fills. Three arms over the
+identical bars and config, so the only thing that moves between them is the rule:
+
+| arm | sizing | re-arm test |
+|---|---|---|
+| `old` | base lot only | stop improved by any amount |
+| `fixed` | the whole position's locked profit | stop improved by any amount |
+| `fixed+gate` | the whole position's locked profit | stop also past the last add's PRICE |
+
+⚠ **THESE NUMBERS DO NOT RECONCILE WITH RUN 21'S TABLE AND ARE NOT MEANT TO.** The exit ladder, the
+adds' own target and the trail have all moved since 2026-08-18; the baseline here books **119.43R**
+where Run 21's booked 128.26R. What this is, is an internally MATCHED set. Quoting a cell from here
+against a figure from Run 21 is rule 11.
+
+### The grid
+
+```
+                     ALL R    dd  r/dd    EX20 R    dd  r/dd   worst
+no scaling          119.43  5.98 19.98     99.88  5.98 16.71   -2.07
+old        1 x 0.5x 141.25  6.64 21.26    113.34  6.64 17.06   -2.07
+old        2 x 0.5x 157.38  7.41 21.24    126.86  7.41 17.12   -2.07
+old        3 x 0.5x 165.40  7.69 21.52    133.14  7.69 17.32   -2.07   <- was SHIPPED
+old        3 x 1.0x 196.15 11.00 17.83    155.31 13.39 11.60   -2.07
+old        4 x 0.5x 170.93  8.78 19.46    138.39  8.78 15.75   -2.07
+old        4 x 1.0x 203.73 13.24 15.39    163.80 15.63 10.48   -2.37
+old        4 x 2.0x 230.54 19.04 12.11    185.35 22.46  8.25   -2.86
+fixed      1 x 0.5x 141.25  6.64 21.26    113.34  6.64 17.06   -2.07
+fixed      2 x 0.5x 157.42  7.27 21.67    126.91  7.27 17.47   -2.07
+fixed      3 x 0.5x 163.57  7.27 22.51    131.38  7.27 18.08   -2.07   <- SHIPPED
+fixed      3 x 1.0x 196.78  9.64 20.41    156.12 12.03 12.98   -2.07
+fixed      4 x 0.5x 165.25  8.28 19.95    133.80  8.28 16.16   -2.07
+fixed      4 x 1.0x 202.13 10.20 19.81    162.83 12.59 12.93   -2.07
+fixed      4 x 2.0x 236.74 15.51 15.26    192.90 18.93 10.19   -2.07
+fixed+gate 2 x 0.5x 149.15  7.16 20.84    120.79  7.16 16.88   -2.07
+fixed+gate 3 x 0.5x 150.78  7.16 21.07    123.36  7.16 17.24   -2.07
+fixed+gate 4 x 0.5x 151.78  7.16 21.21    124.37  7.16 17.38   -2.07
+fixed+gate 4 x 2.0x 193.73 13.82 14.02    160.01 17.23  9.29   -2.07
+```
+(The full 37 rows, including the 1.0x and 2.0x columns of every arm, reproduce with
+`python backtest/tools/scale_in_grid.py`.)
+
+### 1. The fix is not a safety tax — it makes MORE money at the same drawdown
+
+The double-spend was not buying return, it was buying **size the trade could not afford**, and the
+lots it bought were the ones furthest from the stop. Removing it raises return and lowers drawdown
+together at nearly every cell above one add: `4 x 2.0x` goes 230.54R at 19.04 drawdown → **236.74R
+at 15.51**, and `3 x 1.0x` goes ret/DD 17.83 → **20.41**. The only cell where the fix gives up
+return is the shipped one (165.40 → 163.57R), and it hands back 0.42 of drawdown for it.
+
+### 2. 🔴 THE FIX IS WHAT PUTS THE TAIL BACK, AND THIS IS THE REASON TO SHIP IT
+
+Under the old rule the worst single trade degrades with the budget — **-2.37R at 4 x 1.0x and
+-2.86R at 4 x 2.0x** against an un-scaled worst of -2.07R. That is the promise on the tin ("an add
+can shrink a winner, it cannot manufacture a loser") failing exactly where it was double-spent
+hardest. **Under the fixed rule the worst trade is -2.07R in every one of the 24 scaled cells**, at
+every add count and every cap. Run 21 read this as a reason to cap the ADD COUNT at 3; it was never
+about the add count, it was the sizing, and the cap that was bought with it can now be spent on
+return instead if anyone wants it.
+
+### 3. The new re-arm gate ships OFF — it was on for a few hours on reasoning alone
+
+At the shipped cell it costs **12.79R** and buys **0.11R** of drawdown (ret/DD 22.51 → 21.07). It is
+not buying safety either: the worst trade is -2.07R either way, because the sizing fix had already
+taken the tail. ⚠ **It is NOT dead code.** At **4 adds x 0.5x it WINS** — ret/DD 21.21 vs 19.95, and
+17.38 vs 16.16 ex-2020 — because 4 adds is where the trail stalls and the ladder keeps buying behind
+it. Anyone raising the add count re-runs this grid before leaving the gate at its default.
+
+### 4. Run 21's honest caveat no longer holds, and that is the headline
+
+Run 21 had to say *"no cell in the grid beats not-scaling's 2020-free return-per-drawdown"*. With
+the sizing fixed, **`fixed 3 x 0.5x` beats it on both axes on both books** — 22.51 vs 19.98
+all-period and **18.08 vs 16.71 ex-2020** — while making 44.14R more. Scaling is no longer a trade
+of drawdown for return on this strategy; at the shipped budget it is free.
+
+### What shipped
+
+`exec_scale_gate` **"Past the last add" → "Stop improved"**, in lockstep across `config.py`,
+`sos_fade_strategy.pine` and `sos_fade_strategy_export.pine`. The budget is **unchanged** —
+`Trail`, 3 adds, 0.5x — and it is now chosen on a measurement of the rule the bot actually runs.
+
+⚠ **NO PREVIOUSLY DOCUMENTED BASELINE MOVES.** "Stop improved" is the re-arm test every figure in
+this file was measured on, so reverting the default to it restores the behaviour they describe. The
+sizing fix DOES move them, and none of them have been re-measured — treat every scale-in figure in
+Runs 19–22 as a pre-fix number.
+
+### The check that says the grid is measuring what it claims
+
+**At ONE add all three arms are identical to the cent** (141.25R / 6.64 / 21.26). They must be:
+there is no second add to gate or to mis-size. The first version of this tool patched the old rule
+onto the strategy CLASS inside a worker process and the pool reused that worker, so the `old` and
+`fixed` columns came back identical in **all twelve** rows — which reads exactly like *the fix
+changes nothing* rather than like a bug, and would have been written up that way. The old rule is
+now bound to a single emulator instance and **every cell asserts which of the two rules it ran, in
+both directions.** Rule 12, applied to a measurement tool rather than a test.
+
+### The parity gate — PROVEN, on the second golden this run added
+
+✅ Green on both goldens. ⚠ **Run it at the warm-up `exports/golden/golden.json` records** — without
+it the gate reports chart state a cold replay cannot have as a mismatch at bar 16.
+
+🔴 **THE FIRST GOLDEN CANNOT SEE THIS FIX.** Forcing the pre-fix sizing back on passes it: 13 adds
+over 5 trades and not one had a predecessor underwater at the shared stop. Rule 14 exactly.
+
+✅ **So a second golden was taken and committed, `VANTAGE_XAUUSD_M15_21074bars_scalein_stress.csv`** —
+4 adds, a 2.0x cap, the re-arm setting on "Stop improved". Chosen by replaying the chart's own bars
+first: at these settings the old rule makes 12.35R and the fixed one 15.90R, and the chart made
+**+15.87R**. **The shipped sizing is green on all 20,588 compared bars; the pre-fix sizing goes RED at
+bar 6,120 (2026-02-06, closed R 2.381 against the chart's 2.299).**
+
+⚠ **An export at "Past the last add" proves the GATE and is blind to the SIZING, and one was wasted
+learning it.** That reading only re-arms once every earlier add is in profit at the stop — the one
+state in which the double-spend cannot happen. It did prove the gate column: 20 adds where "Stop
+improved" takes 30, green on both sides.
+
+🔴 **The earlier red in this session was the DEFAULT, not the fix.** The gate went red at bar
+5,698 while the re-arm setting was defaulted ON: the committed export came off a Pine with no such
+input, so the harness configured the Python stricter than the chart had run. Reverting the default
+turned it green. **A new input whose default differs from what every stored export ran is a parity
+break with no code defect behind it** — worth remembering before shipping the next one ON.
+
+---
+
+## Run 44 — 2026-09-23: the LEVEL MEMORY replayed inside the bot — 🔴 the screen did not survive the slot
+
+**What this settles.** Run 42 screened the returns to a level the primary had already traded and
+found +16.35R over 39 trades at a 2R target on a half-width stop. Its own verdict was that a screen
+prices no position-slot contention and that nothing ships before a replay. **This is that replay,
+and it says no.**
+
+### What was built
+
+`strategies/python/sos_fade/level_memory.py`, plus `exec_lvl_*` in `config.py`, the `src` branches
+in `execution.py` and the merge in `dual_clock.py`. Mechanics and design notes:
+`strategies/python/sos_fade/notes/level_memory.md`. **Every setting defaults OFF**, so no stored
+figure moves, and the primary path is untouched — 159 primaries, identical entries, in every run
+below.
+
+It rests a limit at the price a PRIMARY actually entered at, armed from that trade's close for
+`exec_lvl_days`, once price has first travelled a full 1R away, with a stop half the original
+width, a 2R target and a three-day maximum hold. It emits the re-entry's own arming record rather
+than a second contract, so sizing, the stop floor, the budget fit, the fill and the ladder are all
+the existing path.
+
+### Method
+
+`backtest/tools/run_report.py --server PUPrime_Demo --symbol XAUUSD_p --cost-profile puprime_ecn
+--start 2020-01-01 --end 2026-09-21 --no-regime`, four runs, with and without
+`--set exec_lvl_memory=True`, and again with `--no-secondary`. XAUUSD.p, 158,926 M15 bars against
+476,761 M5 (the shipped fill clock), PU Prime ECN charged — the same bars-and-costs pairing as
+Runs 41 and 42. ⚠ The working tree also carried another in-flight change (the give-back guard and
+the reversal exit); both default OFF and are inert in all four runs.
+
+| | Trades | Total R | vs its baseline |
+|---|---|---|---|
+| shipped (re-entry on, memory off) | 249 | **+227.5** | — |
+| re-entry on, memory ON | 311 | **+215.7** | **−11.8** |
+| primary only, memory off | 159 | **+168.1** | — |
+| primary only, memory ON | 224 | **+150.7** | **−17.4** |
+
+### Why, and it is Run 12's rule again
+
+🔴 **THE 65 TRADES IT ADDS ARE WORTH +0.85R IN SIX AND A HALF YEARS. DROP THE SINGLE BEST AND THEY
+ARE WORTH +0.80R.** That is 0.013R a trade — not a small edge, no edge. By year they are +2.67,
+−3.30, +0.49, −0.49, **+7.56**, −2.08 and −0.01: **2025 carries the whole thing**, which is exactly
+the concentration Run 42 flagged as its main caveat.
+
+🔴 **AND THEY DISPLACE. One trade pays for the entire loss:** on 2023-01-12 a level-memory order
+filled at 13:30 and held the slot, so the primary that entered there in the shipped book — **+22.31R**
+— never happened. The same setup got in 75 minutes later for +4.03R. **An added setup does not add
+to the book, it queues in front of it.**
+
+✅ **No primary was displaced anywhere else.** Both primary counts are 159 and the entries are
+identical apart from that one day, so this is one collision rather than a book quietly rearranged.
+
+### What Run 42 measured that the bot cannot reach
+
+The screen's 39 trades required the bot to be flat with **no armed setup at all**. The closest thing
+the bot can act on in real time is *no primary limit resting on that side*, which is a looser door:
+65 trades rather than 39, and the extra ones are the ones with no edge in them. **The screen was not
+wrong about its own population — the population is not one the bot can select for.**
+
+### Verdict
+
+**No edge demonstrated. `exec_lvl_memory` ships Off and stays Off.** It is kept, tested and
+documented so the question is answered rather than re-asked. The shipped book does not change.
+
+🔴 **THIS IS THE SECOND TIME A POSITIVE SCREEN HAS REPLAYED NEGATIVE IN THIS FILE.** The no-gap
+entry screened positive and replayed at −15.3R (Runs 28→29); this screened at +16.35R and replayed
+at −17.4R. **A screen ranks candidates. It has never once decided one.**
+
+### Two defects this build produced, both found by running it rather than reading it
+
+🔴 **THE MEMORY RESURRECTED ITSELF.** The execution keeps its last-closed-primary record standing
+for days and the new class polls it, so a level retired by a fill dropped to nothing and was rebuilt
+from the same record on the next bar, for ever. **MEASURED on the first replay: 141 added trades
+where the screen found 39 returns it could take at all, and +227.5R → +205.4R.** Fixed with a
+per-side *last close time this side has ever taken* marker. ⚠ **Its first test passed against the
+bug** — the test's bars could not re-latch the away gate — which is rule 12 from the inside.
+
+🔴 **`run_report.py` COULD NOT SEE THE FEATURE WITH THE RE-ENTRY OFF.** Its replay-path chooser
+asked only about `exec_secondary`, so a run with the level memory on and the re-entry off took the
+15m-only path and booked none of its trades: the config said on, the replay could not reach it, and
+the report said nothing. That is the exact defect that function's docstring exists to prevent,
+arriving through a second door. **Anything that needs the fast feed has to be asked about there.**
+
+⚠ **No parity gate covers any of this** — the Pine has no fast clock and no level memory, so
+`compare_strategy.py` has never entered this branch and never will. Lab finding only.
+
+## Run 45 — 2026-09-23: three PRE-REGISTERED filters on the level memory — 🔴 all three fail
+
+**What this settles.** Aaron, off Run 44, asked whether a confluence could filter out the level
+memory's losers — the live trade that started it came back to its ORIGINAL gap. Three filters were
+defined, one parameter each, and a pass bar was written BEFORE any filtered replay ran:
+`strategies/python/sos_fade/notes/level_memory.md` → *Run 45 — PRE-REGISTERED*. Setting:
+`exec_lvl_confluence` = `Gap still open` / `Sweep first` / `Shift confirms` (default `None`).
+
+**Method.** `backtest/tools/run_report.py --server PUPrime_Demo --symbol XAUUSD_p --cost-profile
+puprime_ecn --start 2020-01-01 --end 2026-09-21 --no-regime`, fresh baseline in the same tree,
+scored by trade-by-trade matching against it (added, displaced, halves split 2023-05-01, drop-best).
+
+| Replay | Trades | Book | Added | Displaced | Halves | Drop best | Bar |
+|---|---|---|---|---|---|---|---|
+| Baseline (re-entry on) | 249 | +227.51R | — | — | — | — | — |
+| Gap still open | 270 | **+230.85R** | 22, +2.33R | 1, −1.00R | +1.40 / +0.93 | +0.25 | pass |
+| Sweep first | 311 | +215.66R | 66, +8.45R | 4, +20.31R | +5.31 / +3.14 | +4.42 | **fail** (1) |
+| Shift confirms | 249 | +227.51R | 0 | 0 | — | — | **fail** (no trades) |
+| Baseline, primary only | 159 | +168.15R | — | — | — | — | — |
+| Gap still open, primary only | 180 | +166.11R | 21, −2.04R | 0 | −3.97 / +1.93 | −4.11 | **fail** (1, 2, 3) |
+
+- 🔴 **The gap filter's pass belonged to the re-entry.** The pre-registration required a passing
+  filter to survive primary-only before anything was said about it; it did not. By year its added
+  trades are +5.98R in 2025 and negative or flat nearly everywhere else, in BOTH replays.
+- **Sweep first** is live on the trade's side almost all the time, so it removes one trade in 66 and
+  still displaces the 2023-01-12 +22.31R primary. Its added trades are better than unfiltered
+  (+8.45R vs +0.85R), but the book is what gets paid.
+- **Shift confirms is not a wiring fault** — checked, because zero trades is what a dead wire also
+  returns (rule 2). Instrumented over 2025: its code ran on 18,052 fast bars, ~500 bars sat inside a
+  tap window, 40 fast shifts printed, 2 of them inside a window, and both needed a stop wider than
+  the original trade's 1R, which the pre-registered rule refuses.
+- ⚠ **Process defect, caught before any number was read:** the first launch put the shared options
+  in one shell variable, which zsh does not word-split, so all four runs died on argument parsing
+  and the waiter — matching `Error` case-sensitively — hung on `error:`. Relaunched with the options
+  inline; every figure above is from the relaunch.
+
+**Verdict.** Runs 42, 44 and 45 together: re-trading a level the primary already used does not pay
+once the position slot is honest, and the cost is the displaced primary, not the losers a filter
+can see. Everything ships Off. Tests: 10 filter tests, each mutation-proved (`test_level_memory.py`
+docstring).
+
+⚠ **No parity gate covers any of this** — the Pine has no fast clock and no level memory. Lab finding only.
+

@@ -33,6 +33,15 @@ import { offlineTest } from './offline'
 const { test, recorded } = offlineTest('bots-page', { clockFactor: 10 })
 
 /**
+ * The bot panel's files check (`useBotFilesCheck`, 2026-09-24) — every panel open asks it. A
+ * standing "the files match", so no check here reads a tamper warning it did not set up; a check
+ * about the warning routes its own answer, which wins (registered later).
+ */
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/bots/*/version/files', (r) => r.fulfill({ json: { snapshot_ok: true } }))
+})
+
+/**
  * The bot snapshot, with `sos_fade_demo` on the account type THIS check needs.
  *
  * ⚠ Stated, never inherited: the recording holds whatever the box said the day it was taken — on
@@ -110,7 +119,6 @@ function version(
     params: {},
     repo_commit: 'a9bf348',
     commits_ahead: 71,
-    snapshot_ok: true,
     running_hash: 'fbf3b94bebf0b96e1d9f238b982dcb9c',
     params_drift: [],
     compare: cmp,
@@ -427,6 +435,52 @@ test('an up-to-date bot offers no prominent deploy, only a quiet re-deploy', asy
   await expect(banner(page).getByText(/is up to date/)).toBeVisible()
   await expect(banner(page).getByRole('button', { name: /Deploy & restart/ })).toHaveCount(0)
   await expect(banner(page).getByRole('button', { name: /Re-deploy/ })).toBeVisible()
+})
+
+test("a BEHIND bot's version tag opens its panel at the deploy section", async ({ page }) => {
+  // Aaron, 2026-09-24: *"if I click the version tag when it is behind it takes me right to the
+  // deploy and restart under configure"*.
+  // MUTATION: drop the button round the amber pill → red, nothing to click.
+  // MUTATION: open the panel without `focus` → red, the deploy section is below the fold.
+  await mockBot(page, compare())
+  await page.setViewportSize({ width: 1280, height: 700 })
+  await page.goto('/bots')
+  const open = page.locator(
+    '[data-testid="bot-row"][data-bot="sos_fade_demo"] [data-testid="version-open-deploy"]'
+  )
+  await open.click()
+  await expect(page).toHaveURL(/bot=sos_fade_demo/)
+  await expect(page).toHaveURL(/focus=deploy/)
+  // The panel SCROLLED to it. Checked by the panel's own scroll, not by visibility — on a tall
+  // window the section is visible either way, and a visibility check passed with the scroll
+  // deleted. (It cannot always reach the very top: the panel stops scrolling at its end.)
+  const deploy = page.getByTestId('bot-deploy')
+  await expect(deploy).toBeInViewport()
+  await expect
+    .poll(() =>
+      deploy.evaluate((el) => {
+        let box = el.parentElement
+        while (box && box.scrollHeight <= box.clientHeight) box = box.parentElement
+        return box ? box.scrollTop : -1
+      })
+    )
+    .toBeGreaterThan(0)
+  await expect(banner(page).getByRole('button', { name: /Deploy & restart/ })).toBeVisible()
+})
+
+test('an up-to-date version tag is a label, not a way in', async ({ page }) => {
+  // MUTATION: make every pill clickable → red. Only what is amber asks for a person.
+  await mockBot(
+    page,
+    compare({ versions_behind: 0, deployed_version: 121, changes: [], setting_changes: [] })
+  )
+  await page.goto('/bots')
+  await expect(rowPill(page)).toBeVisible({ timeout: 20_000 })
+  await expect(
+    page.locator(
+      '[data-testid="bot-row"][data-bot="sos_fade_demo"] [data-testid="version-open-deploy"]'
+    )
+  ).toHaveCount(0)
 })
 
 // ── never deployed — the one unanswerable version that is a PROBLEM (2026-09-16) ─
@@ -1226,4 +1280,168 @@ test('a deploy with NOTHING NEW says so, and never asks for a restart', async ({
   await expect(banner(page)).toContainText('was left alone')
   await expect(banner(page)).not.toContainText('restart')
   expect(posts.length, 'the deploy really ran').toBe(1)
+})
+
+test('the Refresh button re-reads the VERSION badges, not just status and P&L', async ({
+  page,
+}) => {
+  /**
+   * 🔴 The failure (Aaron, 2026-09-24): four demo bots were deployed from outside the page, and
+   * *"I click that refresh icon… and it still said they were not up to latest versions. I had to
+   * then refresh the whole page."* The button called the SNAPSHOT's own refetch — status and P&L —
+   * and never touched the per-bot version query, which has no poll of its own.
+   *
+   * ⚠ **The version route answers "behind" until the deploy has landed, and the deploy lands
+   * with the page already open and NO job the page could have watched** — the shape of a deploy
+   * made from the CLI or the trading-box tool. Nothing but the button can make the page ask again.
+   *
+   * MUTATION: point the button back at the snapshot's `refetch` → red, the pill still `behind`.
+   */
+  const before = compare({ deployed_version: 100, local_version: 121, versions_behind: 21 })
+  let landed = false
+  await pinSnapshot(page, false)
+  await page.route('**/api/bots/*/version', (r) =>
+    r.fulfill({
+      json: version(
+        landed ? { ...before, deployed_version: 121, versions_behind: 0, changes: [] } : before,
+        null,
+        true
+      ),
+    })
+  )
+  await page.route('**/api/bots/*/promote/job', (r) => r.fulfill({ json: null }))
+  await page.goto('/bots')
+  await expect(rowPill(page)).toHaveAttribute('data-state', 'behind', { timeout: 20_000 })
+
+  landed = true // deployed from somewhere this page was not watching
+  await page.getByTestId('refresh-bots').click()
+
+  await expect(rowPill(page)).not.toHaveAttribute('data-state', 'behind', { timeout: 20_000 })
+  await expect(rowPill(page)).toContainText('v121')
+})
+
+test('no version read is sent until the status read has answered', async ({ page }) => {
+  /**
+   * 🔴 The failure (Aaron, 2026-09-24: *"the bots page takes so dam long to load"*): the page
+   * sent all ten version reads the same moment as the status read. Each one starts Python on a
+   * two-CPU trading box, and the status read queued behind them — MEASURED 3.1s alone, 26.7s
+   * beside the ten — so the whole page shimmered for half a minute.
+   *
+   * The status read is HELD here until released, and no version read may arrive before that.
+   * MUTATION: drop the `!asking` gate on `useBotVersions` → red, versions arrive while it is held.
+   */
+  let release!: () => void
+  const held = new Promise<void>((r) => (release = r))
+  let statusAnswered = false
+  let earlyVersions = 0
+  let versions = 0
+  await page.route('**/api/bots/snapshot', async (r) => {
+    await held
+    statusAnswered = true
+    return r.fulfill({ json: recorded<BotSnapshot>('/bots/snapshot') })
+  })
+  await page.route('**/api/bots/*/version', (r) => {
+    versions += 1
+    if (!statusAnswered) earlyVersions += 1
+    return r.fulfill({ json: version(compare(), null, true) })
+  })
+  await page.route('**/api/bots/*/promote/job', (r) => r.fulfill({ json: null }))
+  await page.goto('/bots')
+  // Long enough for the config list to answer and the version reads to have gone out if ungated.
+  await page.waitForTimeout(1_500)
+  expect(earlyVersions).toBe(0)
+  release()
+  await expect.poll(() => versions, { timeout: 20_000 }).toBeGreaterThan(0)
+  expect(earlyVersions).toBe(0)
+})
+
+test('a running deploy holds its bot and its account — no Stop, no Restart, no account change', async ({
+  page,
+}) => {
+  /**
+   * 🔴 The failure (Aaron, 2026-09-24): *"if I'm updating a bot I shouldn't be able to stop and
+   * restart it."* Mid-deploy of the LIVE SOS Fade bot the panel still offered Stop and Restart,
+   * and the account's settings stayed editable — a deploy stops and starts the bot itself, so a
+   * hand-pressed Stop raced it on a live process. The server refuses these now too.
+   *
+   * The deploy is HELD at its build step for the whole check (`holdAt`), so nothing here can pass
+   * because the deploy happened to finish first.
+   * MUTATION: drop `deployingNow` from `busyFor` / `actionOf` in `index.tsx` → red, the row and
+   * the panel offer Stop again and the account's Add bot is pressable.
+   */
+  await pinSnapshot(page, true, { status: 'RUNNING' })
+  const frames = jobFrames({ holdAt: 'build' })
+  const held = frames[frames.length - 1]
+  await page.route('**/api/bots/*/promote/job', (r) =>
+    r.fulfill({ json: r.request().url().includes('/sos_fade_demo/') ? held : null })
+  )
+  await page.route('**/api/bots/*/version', (r) =>
+    r.fulfill({ json: version(compare(), null, true) })
+  )
+
+  // The row: a Deploying pill where Stop was.
+  await page.goto('/bots')
+  const row = page.locator('[data-testid="bot-row"][data-bot="sos_fade_demo"]')
+  await expect(row.getByTestId('bot-action-pill')).toHaveAttribute('data-action', 'deploy', {
+    timeout: 20_000,
+  })
+  await expect(row.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0)
+  // Its account-mate is not held by it.
+  const mate = page.locator('[data-testid="bot-row"][data-bot="extreme_leg_demo"]')
+  await expect(mate.getByTestId('bot-action-pill')).toHaveCount(0)
+
+  // The bot's panel: no Stop, no Restart; Move is disabled.
+  await page.goto('/bots?bot=sos_fade_demo')
+  const panel = page.getByRole('complementary', { name: /settings/ })
+  await expect(panel.getByTestId('bot-action-pill')).toHaveAttribute('data-action', 'deploy', {
+    timeout: 20_000,
+  })
+  await expect(panel.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0)
+  await expect(panel.getByRole('button', { name: 'Restart', exact: true })).toHaveCount(0)
+  await expect(panel.getByTestId('move-sos_fade_demo')).toBeDisabled()
+
+  // Its account: nothing that changes what the account's bots read is pressable, and it says why.
+  await page.goto('/bots?account=34957946')
+  const add = page.getByTestId('add-bot')
+  await expect(add).toBeDisabled({ timeout: 20_000 })
+  await expect(add).toHaveAttribute('title', /deploying/)
+})
+
+test('the rows never ask for the files check; the panel does, and only a definite no warns', async ({
+  page,
+}) => {
+  /**
+   * 🔴 (2026-09-24, Aaron: *"the bots page takes so dam long to load"*.) The files check re-hashes
+   * ~220 files on a two-CPU box and rode on every row's version read, while only the panel shows
+   * it. MUTATION: call `useBotFilesCheck` from `useBotVersions` → the first assert reddens.
+   * MUTATION: `versionFlags` back to `!snapshot_ok` → the unanswered case warns, and reddens.
+   */
+  let filesAsked = 0
+  let answer: { snapshot_ok: boolean | null } = { snapshot_ok: null }
+  await pinSnapshot(page, false)
+  await page.route('**/api/bots/*/version', (r) =>
+    r.fulfill({ json: version(compare(), null, true) })
+  )
+  await page.route('**/api/bots/*/version/files', (r) => {
+    filesAsked += 1
+    return r.fulfill({ json: answer })
+  })
+  await page.route('**/api/bots/*/promote/job', (r) => r.fulfill({ json: null }))
+
+  await page.goto('/bots')
+  // The pill is drawn only once its version has ANSWERED (a shimmer until then).
+  await expect(rowPill(page)).toBeVisible({ timeout: 20_000 })
+  expect(filesAsked).toBe(0)
+
+  // Opened: asked, and an unanswered check is NOT "modified".
+  await openConfigure(page)
+  await expect.poll(() => filesAsked, { timeout: 20_000 }).toBeGreaterThan(0)
+  await expect(banner(page).getByTestId('banner-snapshot-modified')).toHaveCount(0)
+
+  // A definite no warns.
+  answer = { snapshot_ok: false }
+  await page.reload()
+  await expect(banner(page).getByTestId('banner-snapshot-modified')).toBeVisible({
+    timeout: 20_000,
+  })
 })

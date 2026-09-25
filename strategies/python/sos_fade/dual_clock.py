@@ -32,14 +32,41 @@ trusted. Nothing in this file assumes a minute, and nothing in it may start to �
 from __future__ import annotations
 
 from collections import namedtuple
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any, List, Optional
 from zoneinfo import ZoneInfo
 
-from .secondary import SecondaryArm, Structure1m
+from .level_memory import SRC as LVL_SRC
+from .level_memory import LevelMemory
+from .entry_window import in_window as in_entry_window
+from .secondary import SecArm, SecondaryArm, Structure1m
 
 _NY = ZoneInfo("America/New_York")
+
+
+def _merge_arm(primary: SecArm, extra: SecArm) -> SecArm:
+    """Fold a second arming source into a `SecArm`, per SIDE, with `primary` winning.
+
+    🔴 **THE RE-ENTRY WINS EVERY CONTEST AND THAT IS A DECISION.** There is ONE position slot,
+    so two armed sources on one side are two claims on it, not two trades. The re-entry is the
+    measured, shipped feature; the level memory is the candidate. A candidate that could
+    displace shipped trades would be measured against a book it had already changed — Run 12's
+    lesson, where four loosenings each displaced real trades and one displaced winner was worth
+    +16.5R on its own.
+
+    ⚠ Side by side, not whole-record: the two can legitimately be armed on OPPOSITE sides, and
+    only one of them can be taken anyway (`_secondary_pending` returns a single order).
+    """
+    if extra.l_armed and not primary.l_armed:
+        primary = replace(primary, l_armed=True, l_edge=extra.l_edge, l_sl=extra.l_sl,
+                          l_tp1=extra.l_tp1, l_tp2=extra.l_tp2, l_leg=extra.l_leg,
+                          l_src=extra.l_src, l_after=extra.l_after)
+    if extra.s_armed and not primary.s_armed:
+        primary = replace(primary, s_armed=True, s_edge=extra.s_edge, s_sl=extra.s_sl,
+                          s_tp1=extra.s_tp1, s_tp2=extra.s_tp2, s_leg=extra.s_leg,
+                          s_src=extra.s_src, s_after=extra.s_after)
+    return primary
 
 
 class FastBarOutOfOrder(RuntimeError):
@@ -116,6 +143,11 @@ class DualClock:
         self._major_length = int(major_length)
         self.struct_fast = Structure1m(major_length=major_length)
         self.arm_sm = SecondaryArm(strategy.config)
+        # The LEVEL MEMORY rides the same fill clock, and deliberately not the same lifetime —
+        # see `reset_fast`. Built unconditionally, because a state machine that only exists
+        # when a switch is on cannot be inspected, tested or switched on mid-run; it returns
+        # an empty arm while the switch is off and costs one comparison a bar.
+        self.lvl_mem = LevelMemory(strategy.config)
 
         # The last-CLOSED 15m context. `None` until the first 15m bar has been stepped, and the
         # secondary refuses to run until then — a fast bar with no 15m context behind it has
@@ -224,26 +256,78 @@ class DualClock:
         # computing over a history that never happened the moment it was switched on.
         m1 = self.struct_fast.update(bar.index, bar.open, bar.high, bar.low, bar.close)
 
-        if not self._st.config.exec_secondary or self.last_sig is None:
+        # The REVERSAL EXIT runs here, BEFORE the re-entry's early return, and the order matters
+        # twice over. It reads the fast structure feed rather than the arm state, so it must not
+        # be switched off with the re-entry; and it can free the position slot on this very bar,
+        # which is the effect a cheap re-walk of a stored book can never see and the whole reason
+        # this rule has to be replayed rather than screened. `exec_rev_exit` is "Off" by default,
+        # so this is inert on every stored run.
+        ex_rev = self._st.execution
+        sig_rev = FastSig(bar.index, ts, bar.open, bar.high, bar.low, bar.close,
+                          self.struct_fast.conf_high, self.struct_fast.conf_low)
+        # The major levels the last CLOSED 15m bar published — weekly, daily and 4-hour highs and
+        # lows, each None once taken. Read by the reversal exit's "Level rejected" trigger only.
+        ls = self.last_sig
+        rev_levels = () if ls is None else (ls.liq_w_high, ls.liq_w_low, ls.liq_d_high,
+                                            ls.liq_d_low, ls.liq_h4_high, ls.liq_h4_low)
+        ex_rev.step_reversal(sig_rev, m1, rev_levels)
+
+        cfg = self._st.config
+        sec_on = bool(cfg.exec_secondary)
+        # ⚠ **THE LEVEL MEMORY IS NOT GATED BY `exec_secondary`**, and that is not an
+        # oversight. It shares the re-entry's ORDER PATH and nothing else: it needs no shift
+        # leg, no live setup and no primary outcome, and Run 42 graded it with the re-entry
+        # pinned OFF. Hanging it off that switch would make the measured configuration
+        # unreachable. Same reasoning as the reversal exit above it.
+        lvl_on = bool(getattr(cfg, "exec_lvl_memory", False))
+        if (not sec_on and not lvl_on) or self.last_sig is None:
             return out
 
         ex = self._st.execution
         ny_hour = datetime.fromtimestamp(ts / 1000.0, tz=timezone.utc).astimezone(_NY).hour
-        arm = self.arm_sm.update(
-            m1, self.last_sig, self.last_seq, self.last_close_primary, ny_hour,
-            ex.is_flat, ex.be_sos_l, ex.be_sos_s,
-            ex.prim_closed_sos_l, ex.prim_closed_sos_s,
-            ex.prim_lost_sos_l, ex.prim_lost_sos_s,
-            ex._poi_edge_l, ex._poi_edge_s,
-            bar.high, bar.low,
-            ex._poi_last_l, ex._poi_last_s,
-        )
+        arm = SecArm()
+        if sec_on:
+            arm = self.arm_sm.update(
+                m1, self.last_sig, self.last_seq, self.last_close_primary, ny_hour,
+                ex.is_flat, ex.be_sos_l, ex.be_sos_s,
+                ex.prim_closed_sos_l, ex.prim_closed_sos_s,
+                ex.prim_lost_sos_l, ex.prim_lost_sos_s,
+                ex._poi_edge_l, ex._poi_edge_s,
+                bar.high, bar.low,
+                ex._poi_last_l, ex._poi_last_s,
+            )
+        if lvl_on:
+            self.lvl_mem.observe(ex.last_primary_level_l, ex.last_primary_level_s,
+                                 sig=self.last_sig)
+            arm = _merge_arm(arm, self.lvl_mem.update(
+                now_ms=ts, high=bar.high, low=bar.low, flat=ex.is_flat,
+                primary_resting_l=ex.primary_resting_long,
+                primary_resting_s=ex.primary_resting_short,
+                sig=self.last_sig, m1=m1, close=bar.close,
+            ))
+        # The New York no-entry window, asked of the SAME module the first entry asks, at the
+        # time an order decided now would be live (this fast bar's close). An empty arm is what
+        # "nothing armed" already looks like, so the order path drops any resting order exactly
+        # as it does when nothing qualifies — no second refusal mechanism. It covers the level
+        # memory too, because that shares this order path.
+        if cfg.exec_entry_block_from and in_entry_window(
+                cfg.exec_entry_block_from, cfg.exec_entry_block_to,
+                ts + fast_tf_minutes(cfg) * 60_000):
+            arm = SecArm()
         out.arm = arm
         sig_fast = FastSig(bar.index, ts, bar.open, bar.high, bar.low, bar.close,
                            self.last_sig.last_conf_high, self.last_sig.last_conf_low)
         filled = ex.step_secondary(sig_fast, arm)
         if filled is not None:
-            self.arm_sm.mark_traded(filled)     # retire the just-filled leg
+            # 🔴 **WHICH STATE MACHINE RETIRES IS DECIDED BY WHAT ACTUALLY FILLED, NEVER BY
+            # WHICH SWITCHES ARE ON.** Both can be armed on the same side on the same bar, one
+            # order rests, and telling the re-entry it has traded a leg a level-memory order
+            # took would retire a shift leg that never fired. The execution froze the source
+            # on the order, so it is the one thing here that cannot be wrong.
+            if ex.entry_src == LVL_SRC:
+                self.lvl_mem.mark_traded(filled)
+            else:
+                self.arm_sm.mark_traded(filled)     # retire the just-filled leg
             out.filled_dir = filled
         elif ex.sec_stop_dir is not None:
             # a re-entry hit its initial stop → kill this 15m leg (no more re-entries)
@@ -274,6 +358,11 @@ class DualClock:
         """
         self.struct_fast = Structure1m(major_length=self._major_length)
         self.arm_sm = SecondaryArm(self._st.config)
+        # ⚠ **THE LEVEL MEMORY DELIBERATELY SURVIVES A FEED REBUILD.** The arm state above goes
+        # because its latched legs are keyed on fast BAR NUMBERS and a rebuilt feed renumbers
+        # them. Nothing the level memory holds is a bar number — a price, a distance and a
+        # wall-clock time — so throwing it away would forget a level for a reason that does
+        # not apply to it, on the one path a live bot takes after a gap in its data.
 
     def drain_primary(self) -> List[PrimaryStep]:
         """Step every queued 15m bar regardless of the fast clock. The window tail — and, live,

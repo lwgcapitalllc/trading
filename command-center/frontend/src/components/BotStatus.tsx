@@ -1,4 +1,5 @@
 import type { Condition, Tone, TradeView } from '@/lib/botCondition'
+import type { ReactNode } from 'react'
 
 /**
  * How a bot's state is DRAWN — on the Bots rows, both panels and the Overview alike: ONE pill in
@@ -119,6 +120,84 @@ export function StatusText({ cond, size = 'row' }: { cond: Condition; size?: Siz
           <span className="shrink-0 text-text-tertiary">·</span>
           <Trade trade={cond.trade} />
         </>
+      )}
+    </span>
+  )
+}
+
+const SIDE_TAG: Record<NonNullable<TradeView['side']>, string> = {
+  long: 'LONG',
+  short: 'SHORT',
+  mixed: 'BOTH',
+}
+
+/**
+ * A bot's state as it sits BEFORE ITS NAME on a Bots row (2026-09-24): a dot in the row's worst
+ * tone, then the name, then a word only when there is something to say.
+ *
+ * 🔴 **Why the status column went.** Aaron, 2026-09-24: *"the status column seems like a waste of
+ * space … can we just do a colored dot before the bot name?"* and then *"what I really care about
+ * is the state of the bot, the name, any action buttons, and how much the bot has made. That's
+ * it."* A green "Running" pill on every healthy row was a column of ink saying nothing.
+ *
+ * ⚠ **A dot alone is not enough, so a word follows it whenever the bot is not simply running.**
+ * Eleven states share four colours — "Halted" and "Stopped" are both red, "No MT5 link" and "Locked
+ * for the day" both amber — so the colour says how bad and the word says what.
+ * ⚠ **An open trade is STATE, not detail**, so it keeps a one-word tag on the row (LONG / SHORT /
+ * BOTH). Money at risk never needs a click to see — least of all on a halted bot.
+ * ⚠ The whole story stays on hover (`cond.title`), and the expanded row lists every problem.
+ */
+export function StatusDot({ cond, name }: { cond: Condition; name: ReactNode }) {
+  const plain = cond.state === 'running' || cond.state === 'in-trade'
+  return (
+    <span
+      data-testid="bot-status"
+      data-state={cond.state}
+      data-tone={cond.tone}
+      title={cond.title}
+      className="flex items-center gap-[8px] min-w-0 whitespace-nowrap"
+    >
+      <span
+        data-testid="status-dot"
+        data-tone={cond.tone}
+        className={`w-[8px] h-[8px] rounded-full shrink-0 ${
+          cond.tone === 'unknown'
+            ? 'border border-dashed border-text-tertiary'
+            : TONE_DOT[cond.tone]
+        }`}
+      />
+      {name}
+      {!plain && (
+        <>
+          <span className="shrink-0 text-text-tertiary">·</span>
+          <span
+            data-testid="status-word"
+            data-tone={cond.wordTone}
+            className={`shrink-0 text-[11.5px] font-medium ${
+              cond.wordTone === 'idle' ? 'text-text-secondary' : TONE_TEXT[cond.wordTone]
+            }`}
+          >
+            {cond.word}
+          </span>
+        </>
+      )}
+      {cond.more > 0 && (
+        <span
+          data-testid="status-more"
+          data-tone={cond.moreTone ?? undefined}
+          className={`shrink-0 text-[11px] font-medium ${cond.moreTone ? TONE_TEXT[cond.moreTone] : 'text-text-tertiary'}`}
+        >
+          +{cond.more}
+        </span>
+      )}
+      {cond.trade && (
+        <span
+          data-testid="trade-open"
+          title={cond.trade.title}
+          className="shrink-0 text-[10px] font-mono font-semibold tracking-[0.4px] px-[5px] py-[1px] rounded-[4px] border border-border-default text-text-secondary"
+        >
+          {cond.trade.side ? SIDE_TAG[cond.trade.side] : 'IN TRADE'}
+        </span>
       )}
     </span>
   )

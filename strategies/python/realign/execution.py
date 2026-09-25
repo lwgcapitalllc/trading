@@ -47,6 +47,8 @@ class RealignExecution(Execution):
 
     #: Bar index the resting retest limit was placed on. None = nothing resting.
     _retest_bar = None
+    #: Why the last trigger was refused, in words — REPORTING ONLY (`setups.py`). None = none.
+    refusal = None
     #: Triggers refused because the retest had no level to rest at. REPORTING — but it is
     #: the number that tells "the retest works" apart from "the lookup dropped trades".
     retest_no_level = 0
@@ -81,6 +83,22 @@ class RealignExecution(Execution):
                 f"realign's entry mode is {self._cfg.realign_entry_mode!r}; only the market "
                 "entry is live-capable. Set it to 'market' for a live bot.")
         return self._strategy.step(sig)
+
+    # ── pre-trade setup snapshots (backtest/setups.py) — reporting only ───────
+    # 🔴 **Overrides the SOS Fade ones it inherits.** Those describe SOS Fade's three confluences,
+    # a setup this fork never trades; `_records_misses = False` switched them off. This bot's own
+    # setup is the armed false break — `setups.py`.
+    @property
+    def reports_setups(self) -> bool:
+        return self._strategy is not None
+
+    def live_setups(self):
+        """What the strategy's setup watch holds. Read AFTER `step()`."""
+        return self._strategy.setup_watch.live_setups()
+
+    def drain_setups(self):
+        """`live_setups()`, then forget the ended ones. The live runner calls it once per bar."""
+        return self._strategy.setup_watch.drain_setups()
 
     def step_bar(self, sig, seq, state):
         """One bar of the SOS Fade order layer, with this fork's setup state. Called by the strategy."""
@@ -160,11 +178,15 @@ class RealignExecution(Execution):
     def _place_entries(self, sig, seq, dec, long_edge, short_edge) -> None:
         cfg = self._cfg
         st = self._state
+        # REPORTING ONLY — why this bar's trigger did not become a trade, for the signals room
+        # (`setups.py`). Written before each refusal below and read by nothing that decides.
+        self.refusal = None
         if st is None or st.trigger_dir == 0:
             return
 
         d = st.trigger_dir
         if (d > 0 and not cfg.realign_longs) or (d < 0 and not cfg.realign_shorts):
+            self.refusal = "that side is switched off"
             return
 
         # ── the slower-trend gate ────────────────────────────────────────────────
@@ -175,6 +197,7 @@ class RealignExecution(Execution):
         #   attribute at all, so nothing is gated.
         if cfg.realign_trend_minutes is not None:
             if getattr(self, "trend_dir", 0) != d:
+                self.refusal = "the slower trend is not with the trade"
                 return
 
         # ── the N-day momentum gate ──────────────────────────────────────────────
@@ -183,6 +206,10 @@ class RealignExecution(Execution):
         if cfg.realign_mom_days is not None:
             m = getattr(self, "mom_dir", None)
             if m is None or m == d:
+                self.refusal = (f"the {cfg.realign_mom_days}-day momentum is with the trade — "
+                                "this setup only fades it" if m == d
+                                else f"not enough days yet for the {cfg.realign_mom_days}-day "
+                                "momentum read")
                 return
 
         # ── where the order goes ─────────────────────────────────────────────────
@@ -197,6 +224,7 @@ class RealignExecution(Execution):
                     # would make this a market entry on part of the book and the row would
                     # be measuring a blend of the two things it exists to tell apart.
                     self.retest_no_level += 1
+                    self.refusal = "no structure level to rest the retest at"
                     return
                 entry = st.trigger_level
             else:
@@ -205,17 +233,20 @@ class RealignExecution(Execution):
             # through the market is not a retest — it would fill at the next bar's open and
             # quietly re-become the market entry, at a worse price and under another name.
             if (entry - sig.close) * d >= 0:
+                self.refusal = "price is already past the retest level"
                 return
 
         sl = st.trigger_stop - d * cfg.realign_sl_buf_tk * cfg.mintick
         dist = (entry - sl) * d
         if dist <= 0:
+            self.refusal = "the stop is not behind the entry"
             return
 
         # The minimum-stop guard is inherited and is the reason it matters here: qty is
         # risk / dist, so a stop collapsing onto the entry balloons the position. This
         # fork's stops are structural and can be genuinely tight.
         if not self._min_stop_ok(dist, entry):
+            self.refusal = "the stop is tighter than the minimum-stop setting"
             return
 
         qty = (self.equity * cfg.exec_risk_pct / 100.0) / dist
@@ -246,6 +277,7 @@ class RealignExecution(Execution):
             #    retest whose limit sat EXACTLY on the target — a trade with no reward, which the
             #    third parity export caught on 2026-08-07 08:30 (limit and target both 4304.13).
             if reward <= 0 or reward < cfg.realign_min_rr * dist:
+                self.refusal = "the reward-to-risk is below the floor"
                 return
 
         pend = _Pending(dir=d, edge=entry, qty=qty, sl=sl, tp1=tp1, tp2=tp2,
@@ -258,6 +290,8 @@ class RealignExecution(Execution):
                 # position. Left unset, the bridge refuses the order for having no stop and the
                 # bot halts. Reporting only on a replay: nothing reads `dec.stop` back.
                 dec.stop = self._current_stop()
+            else:
+                self.refusal = "the order was refused — no size, or no room under the account's risk cap"
             return
         # Rest the limit and let the INHERITED fill path take it — `_try_entry_fill` already
         # prices a limit against the bar, pays the ask on a long, and gives a gap the better

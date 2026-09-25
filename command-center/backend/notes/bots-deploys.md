@@ -478,7 +478,9 @@ latest job, or `null`). Built so the page can show ONE progress readout over a d
   only for the pull, *may or may not have deployed* for a build that timed out or reported nothing
   (a structured `error`, so the page never reads promote.py's prose), *IS deployed* past the build.
 - ⚠ **A second job for the same bot while one runs is a 409**, and eviction never drops a running
-  job. **In memory**: a backend restart loses the readout, never the deploy.
+  job. ~~**In memory**: a backend restart loses the readout, never the deploy.~~ 🔴 **Wrong, and
+  corrected 2026-09-24** — the deploy runs on the backend's own thread and dies with it. Jobs are
+  saved to disk now; see *One action at a time per bot* below.
 - ⚠ **The browser guard refuses the POST** — it is the same action as `/promote`.
 - ✅ `tests/test_bot_promote_job.py` (24). **15 mutations run, 15 killed.**
 
@@ -772,6 +774,11 @@ on RUNNING**: a stopped bot's trade may have closed since its last heartbeat.
   NaN and infinity) and DROPPED when unreadable — a 500 here blanks every bot on the page.
 - ⚠ Declared on the model, or Pydantic drops them. Tests: 3 in `test_bot_registry.py`; 7 mutations
   run, 7 killed.
+- **`target` / `target_r` / `target_reported` (2026-09-24)** — the broker's take-profit on the
+  trade and its R off the opening stop. 🔴 **Three answers (rule 1)**: `target_reported` False is
+  a runner that predates the field (no promote yet) and says NOTHING — never "no target", which
+  is live SOS Fade's real everyday answer. A target that is not a positive finite price is dropped,
+  and its R with it. Test: `test_the_target_has_three_answers…`, 2 mutations run, 2 killed.
 
 ---
 
@@ -889,3 +896,161 @@ reason. Falling through printed *Deployed — restart it to pick it up* over a b
 that exact code, which is how one pointless deploy becomes two.
 
 **Escape hatch:** `promote.py --redeploy` rewrites the snapshot anyway.
+
+## 🔴 Nothing new ON DISK is not nothing new IN THE PROCESS (2026-09-24)
+
+`fft_1`'s deploy on 2026-09-24 built and pinned the new code, then timed out before its restart.
+A retry would have found nothing new to build and — under the rule above — left the bot alone, on
+the OLD code, with no deploy able to move it onto code already pinned. The escape hatch was a plain
+restart, which nobody is told to reach for.
+
+`_finish_promote` now asks the live PROCESS (`bot_state.json`) before leaving a nothing-new bot
+alone (`_running_older_code`, the same prefix comparison the confirm step uses):
+
+- **running older code** → restart it, with its own message: `🔄 RESTARTING ONTO DEPLOYED CODE`.
+- **running the pinned code** → left alone, as before.
+- **cannot read either side** → left alone (never restarted on a guess), and the message no longer
+  claims it is running this code: it says it could not tell, and to restart if the badge asks.
+
+TESTED: `tests/test_bot_promote.py`, three tests faking the box at the SSH boundary only; three
+mutations run, each red.
+
+## The status read runs its two calls side by side, and version reads are capped at three (2026-09-24)
+
+Aaron: *"the bots page takes so dam long to load."* MEASURED on the live box, one page load:
+
+| | before | after |
+|---|---|---|
+| status read, alone | 9.3–11.7s | 3.1s |
+| status read, on a real page load | 26.7s | 4.4–5.2s |
+| every version badge filled | ~27s | ~29s |
+
+- **The status read's two SSH calls run side by side** (`_SNAPSHOT_POOL`). Neither reads the other's
+  answer; one after the other they cost 5.2s + 4.0s.
+- **At most three version reads on the box at once** (`_VERSION_READS`). Each one starts Python on
+  the box to re-hash the bot's frozen code (~5s of its ~9s), and the box has **two CPUs** and runs
+  the live bots. Ten at once buried the status read. Only the read that starts Python is capped;
+  the plain `type` of the deploy record is not.
+- **The page asks for versions only once status has answered** — see frontend `notes/bots-page.md`.
+- ~~⚠ **The version column is still ~29s to fill, and this app cannot fix that.**~~ **Fixed the
+  same day — see *The files check is its own read* below.** The claim was wrong: the cost was ours
+  to move, because only the bot panel ever showed the result.
+
+TESTED: `test_bot_version.py` → `test_no_more_than_three_version_reads_are_on_the_box_at_once`,
+`test_bots_snapshot_parse.py` → `test_the_snapshot_s_two_calls_run_side_by_side`; each red under
+its mutation, run in memory.
+
+## One action at a time per bot, and an account holds still — `services/bot_ops.py` (2026-09-24)
+
+Aaron: *"if I'm updating a bot I shouldn't be able to stop and restart it … do a full audit on the
+bots page and look at all processes that should be locked down while other processes are running
+at the account level and at the bot level."* The audit found every action checked only ITSELF:
+
+- **Mid-deploy, Stop / Start / Restart went straight through** on the page and the server. A deploy
+  stops and starts the bot itself, so a hand-pressed Stop raced two stop/start sequences on one LIVE
+  process.
+- **A deploy started over a start / stop / restart already in flight** — the same race the other way.
+- **An account's cap, shares, priority, registration and bots could change mid-deploy** of one of
+  its bots, and a sync or a go-live could rewrite accounts under any of them.
+- 🔴 **A backend restart mid-deploy erased the deploy without a trace.** It happened that day: a
+  `.py` edit under `backend/` restarted the server during the deploy of the LIVE SOS Fade bot to
+  v394. The job, its steps and the fact a deploy had been asked for vanished; the bot stayed on
+  v365, running and untouched, with nothing anywhere saying the deploy had not happened.
+
+**The rule now, enforced on the server and mirrored on the page:**
+
+| While a bot is… | refused on that bot | refused on its account |
+|---|---|---|
+| deploying | start, stop, restart, deploy, settings save, stress-test settings, move / remove | cap, shares, priority, registration edit, unregister, a bot joining |
+| starting / stopping / restarting | the same | the same |
+| being moved | the same (the move HANDS its claim straight to the deploy it starts — no gap) | the same |
+
+Fleet-wide writes — start / stop / restart all, VPS sync, stack settings, go-live — are refused while
+ANY bot is mid-action; the fleet start / stop / restart also hold every bot while they run.
+
+- **Refused, never queued** (409 naming what the bot is doing). A click that silently waits behind a
+  four-minute deploy looks like a hung page.
+- **Claims are in memory, per backend.** Two clones do not see each other's claims; the box has no
+  lock to offer. A restart clears them, which is right — whatever held them died with it.
+- **Deploy jobs are saved to disk** — superseded the same day by one file per job, written by the
+  deploy's own process; see *A deploy runs in its own process* below.
+- ⚠ **What is NOT locked, deliberately:** Logs, the version read, the deploy preview (it stages to
+  a scratch copy and writes nothing), an account's pin, its password and its channel test (none
+  changes what a bot trades).
+- ⚠ **A move or removal waiting on a stop still locks EVERY bot's start/stop on the page** — the
+  page-wide half of `busyFor`, kept because `useStopFirst` holds one waiting bot. Not widened here.
+- ~~⚠ **Still open: a backend restart still KILLS a running deploy**~~ **Fixed the same day — a
+  deploy runs in its own process now.** See *A deploy runs in its own process* below.
+
+TESTED: `tests/test_bot_ops.py` (21 tests); seven mutations run in memory, each red — the routes
+without the lock, the deploy without its claim, the thread without its release, `hold` releasing a
+handed-over claim, the account routes without their check, the join without its destination check,
+`load` passing a running job through untouched. Browser: `bots-version.spec.ts` → *a running deploy
+holds its bot and its account*, red with the page's deploy check removed.
+
+## The files check is its own read, and the rows never ask for it (2026-09-24)
+
+The version read ran `promote.py --show` for every bot on every page load — the tamper check that
+re-hashes ~220 frozen files on the box, ~5s of the read's ~9s. Its ONE output, whether the files
+still match their record, is shown in ONE place: the bot panel's *Snapshot modified* warning. The
+row badge never used it. So it moved to `GET /bots/{bot}/version/files` (`BotFilesCheck`), which
+only the panel asks for, and the three-at-once cap moved with it.
+
+| MEASURED on the live box | before | after |
+|---|---|---|
+| status | 4.4–5.2s | 3.0s |
+| every version badge filled | ~29s | 11.4s |
+| the panel's files check | (inside each version read) | 2.7s |
+
+- 🔴 **An unanswered check is now `None`, never a pass.** The old parse was `"SNAPSHOT MODIFIED"
+  not in <output>`, so an EMPTY answer — the box dropping the call, Python failing to start — read
+  as "the files match". It now needs promote.py's own `matches` to say yes.
+- ⚠ **`snapshot_ok` is gone from the version model**, not left defaulting: a field that is always
+  `None` there would be a declared-not-assigned value (root rule 10). The trading-box tool never
+  read it.
+- ⚠ The page keys the check UNDER the bot's version key, so a finished deploy and the Refresh
+  button re-read it with no second list.
+
+TESTED: `test_bot_version.py` — the files check's three answers, the box down, the version read
+sending no `--show`, the cap on the check. Mutations: old verdict (red), cap removed (red), `--show`
+put back on the version read (red, on a scratch copy — the live server reloads on a source edit).
+
+## A deploy runs in its own process, and a backend restart no longer touches it (2026-09-24)
+
+Aaron: *"yes"* — to running deploys outside the server. The backend restarts on any `.py` edit under
+`backend/` (`uvicorn --reload`), and a deploy ran on one of its threads, so it died with it — twice
+that day: the LIVE SOS Fade deploy to v394 never happened, and a demo Realign one was cut off during
+its pull. A deploy stops and starts a live bot; it must never end halfway because a file was saved.
+
+**How it works now:**
+
+- **Its own process, in its own session.** `_launch_worker` starts `python -m
+  services.promote_worker <job id>` with `start_new_session=True`; a backend restart signals the
+  backend's session and this is not in it. It runs the SAME steps the thread did
+  (`_run_promote_job` → `_run_promote_steps`) — one implementation of what a deploy does.
+- **One file per job** (`data/promote_jobs/<job id>.json`, git-ignored; its output beside it in
+  `.log`). The backend writes it ONCE, at creation; then only the job's process writes it. The
+  backend writes a running job again only once that process is provably gone. No shared file, so
+  no lost update between processes.
+- **Running = the status says so AND its process is alive** (`promote_jobs.alive`): the pid exists
+  and its command line still carries `promote_worker` (pids are reused). No pid yet = still
+  importing, held for a 90s grace. A job whose process is gone (reboot, crash) is closed as failed
+  at its step: *"The build stopped unexpectedly — the deploy's own process ended before it
+  reported a result. It may or may not have deployed — check the version."*
+- **The deploy's claim on its bot is its FILE** (`bot_ops.set_external`), so a restarted backend
+  still refuses a Stop mid-deploy. The in-memory claim covers only the create.
+- **The one-shot route (the trading-box tool) goes through the same job** and answers with the
+  deploy's RESULT, recorded before the confirm step — the tool gives up at 120s and the confirm can
+  take four minutes. Past 110s it says *still deploying*, never done.
+- 🔴 **No test may start a real deploy process** — one is outside every guard `tests/conftest.py`
+  puts round the trading box. The suite swaps `_spawn` for the in-process runner in an autouse
+  fixture; a test that needs a job left running swaps in a no-op.
+
+⚠ **What still stops a deploy:** the Mac sleeping or shutting down mid-deploy, or its process being
+killed by hand. Both are now REPORTED at the step they hit, never silent.
+
+TESTED: `tests/test_bot_ops.py` — its own session, a restarted backend still refusing Stop, a gone
+process closed at its step, a reused pid not holding the bot, the launch grace, a failed launch,
+the one-shot answering with the result. Six mutations run, each red. End to end: a real worker
+process, launched by a parent that exited at once, stamped its pid and recorded its failure (a
+deliberately invalid request, so nothing reached the box).

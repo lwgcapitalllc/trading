@@ -633,6 +633,40 @@ class SosFadeConfig:
     #   winners into losers, which is the one thing the affordability rule promises cannot
     #   happen. "Trail" is a MARKET rule, so it still carries the trigger-to-fill gap that the
     #   resting limit closed for "BOS retest". At 3 and below the worst trade never moves.
+    exec_scale_gate: str = "Stop improved"   # "↳ When it may add again"
+    #   ∈ {"Stop improved", "Past the last add"}. WHAT HAS TO HAPPEN before a second (or third)
+    #   add is allowed. Both readings also require the ceiling above and the affordability rule.
+    #   "Stop improved" is the rule every measurement in this package was taken on: the trail
+    #   must have ratcheted past the stop the LAST add was sized against, by any amount at all.
+    #   "Past the last add" also requires the stop to have ratcheted past the PRICE the last add
+    #   was BOUGHT at — i.e. the previous lot must actually be in profit at the shared stop
+    #   before another is bought.
+    #
+    #   🔴 IT SHIPS OFF, AND IT SHIPPED ON FOR A FEW HOURS ON 2026-09-23 ON REASONING ALONE.
+    #   MEASURED the same day (Run 43, `backtest/tools/scale_in_grid.py`, 37 cells, XAUUSD.p 15m
+    #   2018-09-14 → 2026-08-14, PU Prime ECN costs), at the shipped 3 adds x 0.5x:
+    #       sizing fix, "Stop improved"     ALL 163.57R dd 7.27  ret/DD 22.51   EX20 ret/DD 18.08
+    #       sizing fix, "Past the last add" ALL 150.78R dd 7.16  ret/DD 21.07   EX20 ret/DD 17.24
+    #   It costs 12.79R and buys 0.11R of drawdown. The worst trade is -2.07R either way, so it
+    #   is not buying safety either — the sizing fix below had already taken the tail.
+    #   ⚠ IT IS NOT DEAD CODE AND MUST NOT BE DELETED: at 4 adds x 0.5x it WINS (ret/DD 21.21 vs
+    #   19.95, EX20 17.38 vs 16.16), because that is where the trail stalls and the ladder keeps
+    #   buying. Anyone raising the add count re-runs the grid before leaving this at its default.
+    #   ⚠ At ONE add all three readings are identical to the cent, which is the check that the
+    #   grid is measuring what it claims — there is no second add to gate or to mis-size.
+    #
+    #   🔴 IT EXISTS BECAUSE "BY ANY AMOUNT AT ALL" IS NOT A CONDITION. On `sos_fade_1`
+    #   2026-09-22 the stop moved 4357.859 → 4356.691 — **1.17 points** — and that authorised a
+    #   second add while the first sat **36 points** underwater against the same stop. The old
+    #   reading asks whether the trade improved; this one asks whether the thing you last bought
+    #   is working, which is the question the size rule is actually resting on.
+    #   ⚠ IT IS NOT A SUBSTITUTE FOR THE SIZING FIX and neither replaces the other.
+    #   `_locked_at_stop` makes the worst case flat at ANY number of adds; this decides whether a
+    #   further add is taken at all. Shipping the sizing fix alone leaves the ladder buying tiny
+    #   lots behind a stalled trail; shipping this alone leaves the double-spend intact whenever
+    #   the gate does open.
+    #   ⚠ A string rather than a bool so the optimizer can sweep it and so a third reading has
+    #   somewhere to go — same standing as `exec_scale_mode`.
     exec_scale_cap_x: float = 0.5      # "↳ Biggest add, as a multiple of the original size"
     #   Per-add ceiling as a multiple of the BASE quantity. The affordability rule alone would
     #   sometimes permit 4x or more.
@@ -752,6 +786,122 @@ class SosFadeConfig:
     #   ⚠ **"Always" cuts winners and losers at nearly the same rate below ~16h**, because losers
     #   die FASTER than winners here (median hold: losers 2.0h, winners 17.8h). The stop is already
     #   the fast exit; the clock can only ever catch the tail that lingers.
+    exec_giveback_arm_r: float = -1.0  # "Give-back guard: arm at (R)"
+    #   -1 (default) = OFF and nothing changes. Otherwise: once the trade's best price has been
+    #   worth this many R, the guard starts watching what the trade HANDS BACK from that best.
+    #   ⚠ It arms off the trade's own high-water mark, not off a target — a trade that never
+    #   reaches the arm level is managed exactly as it is today.
+    #   WHY IT EXISTS. MEASURED 2026-09-21 on lab run `ea46142df097`: the book keeps 44% of the
+    #   profit its trades ever show (533R of best case, 235R kept), and the leak is NOT the
+    #   runner trail — trades reaching 5R keep 97% of their peak, while trades reaching 1-3R
+    #   showed 123R and kept 11R. The band below the trail's arming point had no protection at
+    #   all. MEASURED 2026-09-22 (`backtest/tools/exit_study.py`, 129 trades, 2020-01-01 →
+    #   2025-08-31, puprime_ecn charged): arming at 1.5R and allowing half the peak back scores
+    #   25.1 return-per-drawdown against 16.5 for holding, by cutting the worst drawdown from
+    #   7.69R to 4.37R for 17R of the 127R.
+    #   🔴 THAT FIGURE IS FROM A RE-WALK OF ONE BOOK, AND THE REPLAY OVERTURNED IT. A re-walk
+    #   cannot see that leaving earlier frees the one position slot for the next setup. Replayed
+    #   (244 trades, 2020-01-01 -> 2026-09-20, `puprime_ecn`): arming at 1.5R scores 27.3 against
+    #   29.5 for the shipped ladder — it LOSES, having scored 25.1 against 16.5 in the re-walk.
+    #   The re-walk rewarded it for a drawdown it cut by cutting the book. The arming levels that
+    #   survive a replay are 2.5R-3.5R, and only when the action TIGHTENS rather than closes.
+    #   🔴 USE THE RE-WALK TO PICK WHAT TO REPLAY, NEVER TO DECIDE.
+    exec_giveback_pct: float = 50.0    # "↳ How much of the best it may hand back (%)"
+    #   Read only when the guard is armed. 50 = leave when the trade has given back more than
+    #   half of its best. MEASURED: tighter is WORSE, not better — 25% scores 10.5 and 33%
+    #   scores 9.9 against 25.1 at 50%, because a trade that cannot breathe is stopped out of
+    #   the move it was right about. Must be above 0 and below 100: at 0 the guard closes on the
+    #   arming bar, and at 100 it can never fire, both of which read as a setting that is on.
+    exec_giveback_action: str = "Close"  # "↳ What it does when it fires"
+    #   ∈ {"Close", "Hand to the trail", "Bank half"}. Read only when the guard is armed.
+    #   "Close" (default) flattens at the next bar's open.
+    #   "Hand to the trail" leaves the trade open and puts it straight onto the runner trail —
+    #   the stop the trade would have had after its second target — so a runner is TIGHTENED
+    #   rather than cut.
+    #   "Bank half" sells half of what is still open at the next bar's open and puts the rest on
+    #   that same trail, so the trade SECURES money and still runs. It fires ONCE per trade —
+    #   halving again every bar would walk a runner out of the market a rung at a time.
+    #   ⚠ A market exit takes every scale-in add in full, the way a stop does, so on a laddered
+    #   trade "half" means half the BASE plus all the adds. That is the Pine's own rule for a
+    #   force-close and not a choice made here.
+    #   WHY THE SECOND OPTION EXISTS, REPLAYED 2026-09-22 (244 trades, 2020-01-01 -> 2026-09-20,
+    #   `puprime_ecn` charged, full strategy — NOT the cheap re-walk). At one arming level all
+    #   three actions cut the worst drawdown IDENTICALLY, 7.39R -> 5.89R, and differ only in what
+    #   they hand back. Arm 3R / half the peak: tighten 217.2R (ret/DD 36.9), bank half 209.9R
+    #   (35.6), close 206.0R (35.0), against 218.5R (29.5) shipped. TIGHTEN, NEVER CUT — closing
+    #   gives up 11.2R that tightening keeps, for the same drawdown.
+    #   🔴 THE FLAT TOP IS ONE TRADE'S HIGH-WATER MARK, AND THIS COMMENT CLAIMED THE OPPOSITE
+    #   UNTIL THE NEIGHBOURS WERE REPLAYED. It said "its neighbours LOSE (2R arm 31.2, 4R arm
+    #   28.1)" on cheap-mode numbers. They do not: 2.5R scores 36.8 and 3.5R scores 36.9. What
+    #   the replay actually shows is a bracket — the 2022-06-09 trade peaks at 3.84R and closes
+    #   -0.23R shipped, so ANY arming level under 3.84R catches it (-0.23R -> +1.52R) and ends
+    #   the 2022 drawdown stretch early, while a 4R arm never touches it and the drawdown returns
+    #   to the shipped 7.39R exactly.
+    #   🔴 WHICH IS WHY THE DEFAULT IS OFF AND SHOULD STAY OFF. Eight of 244 trades change. The
+    #   profit actually kept moves 41.0% -> 41.1%. A 25% drawdown improvement decided by one
+    #   trade is a coincidence with an alibi, not an edge.
+    #   ⚠ THE TRAIL IS ALSO WHAT PERMITS SCALING IN, so on this option a trade that trips the
+    #   guard becomes eligible to ADD. That is a real behaviour change, not a side effect to
+    #   discover later: with adds switched on, run both and compare.
+    exec_rev_exit: str = "Off"          # "Reversal exit: what it does"
+    #   ∈ {"Off", "Bank half", "Tighten to the trail", "Close"}. OFF by default and inert.
+    #   WHAT FIRES IT: a shift of structure AGAINST an open primary, printed on the FAST frame
+    #   (`exec_sec_fill_tf_min`, 5 minutes by default) — Aaron's own definition of a reversal,
+    #   2026-09-22: *"if we're getting a shift of structure and then break of structure coming
+    #   back towards us on lower time frames, that tells me price is reversing."*
+    #
+    #   🔴 IT READS A DIFFERENT CHART FROM THE ONE THE TRADE WAS FOUND ON, AND THAT IS THE POINT.
+    #   A 15m reversal is confirmed long after the turn: by the time the bar closes the profit has
+    #   already been handed back. MEASURED 2026-09-22 (`backtest/tools/exit_study.py`): the same
+    #   rule read on the trade's own 15m frame is worth less than reading it on 5m, because the
+    #   signal arrives after the money has gone.
+    #   🔴 IT IS A SIGNAL, NOT A PERCENTAGE, and that is the whole difference from the give-back
+    #   guard above. The guard fires off the trade's own profit curve, which says nothing about
+    #   whether the market turned; this fires off what the market did.
+    #   ⚠ PRIMARY POSITIONS ONLY. The fast stream already owns the re-entry's ladder
+    #   (`step_secondary` → `_manage_open`), and a second exit path on the same bar and the same
+    #   position is two rules answering one question. The 15m stream owns the primary's ladder,
+    #   so this is the one place a primary is touched off a fast bar — deliberately, and it is
+    #   why it prices at the next FAST bar's open rather than the next 15m one.
+    #   ⚠ IT FIRES ONCE PER TRADE on the two actions that leave the trade open. Re-banking half
+    #   on every later shift would walk a runner out of the market a rung at a time — the same
+    #   reason the give-back guard's "Bank half" is spent after one use.
+    #   ⚠ NO PINE COUNTERPART, so the parity gate is structurally blind to it and every figure
+    #   taken with it on is a lab finding. Same standing as the give-back guard.
+    #   🔴 IT AND THE GIVE-BACK GUARD ARE INDEPENDENT AND BOTH CAN FIRE ON ONE TRADE. They keep
+    #   separate pending slots (`_pending_rev` on the fast clock, `_pending_bank` on the 15m one)
+    #   because a fast-frame decision dropped into the 15m slot would wait up to a whole 15m bar
+    #   to fill. The consequence is arithmetic rather than a defect: with BOTH set to "Bank half"
+    #   a trade can sell half and then half of the remainder — three quarters of what it held.
+    #   Every figure in this repo measured one of them with the other pinned OFF; the pair has
+    #   never been replayed together, so do not assume their results add.
+    exec_rev_arm_r: float = 1.0         # "↳ Arm once the best has reached (R)"
+    #   Read only when the reversal exit is on. The trade's best price must have been worth at
+    #   least this many R before a shift against it can close anything.
+    #   ⚠ WITHOUT AN ARMING LEVEL THIS IS A STOP LOSS WITH EXTRA STEPS. A trade that has never
+    #   been in profit does not need a reversal exit — it has a stop, and the stop is the faster
+    #   of the two. The guard exists for the trade that showed real money and gave it back.
+    #   Must be positive; 0 would arm at the fill.
+    exec_rev_trigger: str = "Structure shift"   # "↳ What counts as a reversal"
+    #   ∈ {"Structure shift", "Level rejected"}. Read only when the reversal exit is on.
+    #   "Structure shift" (default) is the rule measured 2026-09-23 — it lost on every setting.
+    #   "Level rejected" is the other half of Aaron's definition, 2026-09-22: *"if we're hitting
+    #   that level over and over and over ... that's time to get out."* It watches the major
+    #   levels AHEAD of the trade — the weekly, daily and 4-hour highs and lows the liquidity
+    #   engine already hands this bot — and fires when price reaches the same one and closes back
+    #   off it on `exec_rev_level_touches` SEPARATE visits (consecutive touching bars are one
+    #   visit), on the fast frame. A close through the level ends its count: that is the level
+    #   being taken, the opposite of a rejection.
+    #   🔴 DELIBERATELY NOT THE RULE THE RE-WALK SCREENED. `exit_study.py`'s `level2` counted ANY
+    #   level touched and closed off — including support holding UNDER a long, which is the trade
+    #   working, not reversing — and fired on 117 of 129 trades. This one only reads levels ahead
+    #   of price, which is what "can't get through it" means. So the screen's number does not
+    #   describe it in either direction; only the replay does.
+    #   ⚠ Session highs and lows are NOT included. The signal deliberately carries only these six
+    #   levels (Run 22 had session levels worst of every family as a target), and adding them is
+    #   a Pine change as well as a Python one.
+    exec_rev_level_touches: int = 2    # "↳ Rejections of the same level before it acts"
+    #   Read only when the trigger is "Level rejected". 2 = the second failed visit.
     exec_time_stop_hrs: float = 36.0   # "Time stop (hours)"
     #   Calendar hours since the FILL, weekends included — the same clock a swap is charged on, and
     #   the one a reader can check against a chart. Read only when the mode is not "Off".
@@ -783,6 +933,20 @@ class SosFadeConfig:
     #   deviation. **The case for this lever is the DRAWDOWN — 7.99R → 5.62R at 36h (30%), 5.38R
     #   at 30h — bought for R that is indistinguishable from noise, and resting on 6 trades in
     #   6.5 years.** It is not a profit lever.
+    exec_entry_block_from: str = ""    # "No new entries from (New York, HH:MM)"
+    exec_entry_block_to: str = ""      # "↳ ...until (New York, HH:MM)"
+    #   A window of the New York day in which NO new entry may fill — first entries AND
+    #   re-entries — half-open [from, to), 24-hour "HH:MM". Both empty = off, which is the default.
+    #   Aaron, 2026-09-23: refuse entries 11:30-15:30 New York.
+    #   🔴 THE WINDOW WAS PICKED OFF A TABLE, AFTER LOOKING AT IT. On the 244-trade replay the
+    #   11:30-15:30 slots were 45 trades for +6.8R — NOT a losing block — and +15.4R of the
+    #   first-entry half is a single trade. A boundary chosen by reading the data it is then
+    #   tested on is the shape of an artefact; the short-hold variant's 10:00-12:00 window below
+    #   carries the same warning. So it is only believed if it survives both halves of the history
+    #   and the neighbouring windows, not just the one that was read off the table.
+    #   ⚠ It tests when the order would be LIVE (the deciding bar's close), not the bar's open —
+    #   see `entry_window.py`, the one place both entry paths ask.
+    #   ⚠ No Pine counterpart, so the parity gate is structurally blind to it.
     exec_no_late_day: bool = True      # "No entries in final hour (16:00-17:00 NY)"
     exec_conf_sz: bool = False         # "Allow Sniper Zone as entry confirmation" (Pine execConfSZ)
     #   Added to `sos_fade_strategy.pine` 2026-07-21. NOT PORTED YET — the field exists so the toggle is
@@ -1679,6 +1843,105 @@ class SosFadeConfig:
     #   that predates the data; this one does not. **Set it deliberately or leave it alone.**
     #   ⚠ Read ONLY when exec_short_hold is on.
 
+    # ── Level memory — trade a level this bot ALREADY traded, after the setup died ──────────
+    #
+    # Aaron, 2026-09-22, off a live trade: the Monday short filled at the gap edge, closed at a
+    # profit stop for nothing, and ~20 hours later price came all the way back to that price and
+    # sold off with nothing placed. *"We did not have any logic to take that trade. Why?"*
+    #
+    # The bot had nothing for two independent reasons, both read out of its own decision record:
+    # the setup DIED when structure re-broke (the entry price is discarded with it — see
+    # `_sync_gap_latch`), and no shift of structure printed that evening, so nothing armed.
+    #
+    # 🔴 **THIS IS NOT `exec_sec_poi_fallback` AND MUST NOT BE READ AS IT.** That one rests the
+    # re-entry at the primary's own entry price WHILE THE SETUP IS STILL ALIVE. This one is the
+    # opposite case: the setup is gone, nothing is watching, and the level is remembered anyway.
+    #
+    # MEASURED 2026-09-23 as a SCREEN (`backtest/tools/level_memory_audit.py`, Run 42): 88 of 158
+    # primaries saw price come back to the entry within 5 days after travelling at least 1R away,
+    # and 39 of those had the bot flat with nothing armed. At the ORIGINAL stop width those are
+    # worth +4.91R/+11.67R/+11.80R at 1R/2R/3R; at HALF that width, +10.63R/+16.35R/+19.35R.
+    # ⚠ A screen prices no position-slot contention, which is why every one of these ships OFF.
+    exec_lvl_memory: bool = False      # "Trade a level we already traded"
+    #   The master switch. Off = the memory is never read and nothing can rest on it, so no stored
+    #   figure moves. On, the fill clock watches the last level a PRIMARY actually entered at on
+    #   each side and rests a limit there again under the four gates below.
+
+    exec_lvl_days: float = 5.0         # "↳ Remember the level for (days)"
+    #   How long after the primary CLOSES the level stays armed. The screen's window; beyond it the
+    #   memory is dropped and the side goes quiet. ⚠ Read only when exec_lvl_memory is on.
+
+    exec_lvl_away_r: float = 1.0       # "↳ Price must first travel away (R)"
+    #   🔴 **IT IS THE POPULATION, NOT A KNOB, AND LEAVING IT OUT PRODUCES NONSENSE.** A breakeven
+    #   or profit stop exits AT the entry price, so "price came back to the level" is trivially
+    #   true within minutes of the close. In the audit a fourteen-minute window — which should
+    #   return nothing at all — still reported 82 returns and a spurious -38R. Price must travel
+    #   this multiple of the ORIGINAL trade's own 1R away from the level, in that trade's own
+    #   direction, before a return counts. ⚠ Read only when exec_lvl_memory is on.
+
+    exec_lvl_stop_frac: float = 0.5    # "↳ Stop, as a fraction of the original trade's"
+    #   🔴 **THE ENTRY IS NOT THE VARIABLE — THIS IS.** Same trades, same fills, same targets: at
+    #   1.0 (the original width) the screen makes +11.67R at a 2R target and at 0.5 it makes
+    #   +16.35R. Median best excursion before the stop is 2.14R, so the primary's width is paying
+    #   for room these returns never use. ⚠ Read only when exec_lvl_memory is on.
+
+    exec_lvl_tp_r: float = 2.0         # "↳ Target, in R"
+    #   Priced off this trade's OWN risk, which is already the narrowed stop above — so 2R here is
+    #   2R of the narrowed risk, exactly as the screen graded it. ⚠ Read only when exec_lvl_memory
+    #   is on.
+
+    exec_lvl_tp1_pct: float = 100.0    # "↳ How much comes off at that target"
+    #   100 = the whole position, no runner, which is what the screen measured. Below 100 hands the
+    #   remainder to the existing runner machinery. ⚠ Read only when exec_lvl_memory is on.
+
+    exec_lvl_tp2_r: float = -1.0       # "↳ Second target, in R"
+    #   -1 puts the second rung on the first one's price, which is inert while the bank above is
+    #   100. ⚠ Read only when exec_lvl_memory is on.
+
+    exec_lvl_risk_pct: float = 100.0   # "↳ Risk (% of the primary's)"
+    #   Scales the LOT and nothing else, the same meaning `exec_sec_risk_pct` has for the re-entry.
+    #   ⚠ Read only when exec_lvl_memory is on.
+
+    exec_lvl_max_hold_hrs: float = 72.0   # "↳ Give up after (hours)"
+    #   The screen's three-day maximum hold. The close goes through `request_close`, so it is
+    #   booked, recorded and alerted on exactly like the ordinary time stop rather than through a
+    #   second exit path. ⚠ Read only when exec_lvl_memory is on.
+
+    exec_lvl_require_quiet: bool = True   # "↳ Only when nothing else is resting"
+    #   🔴 **MEASURED, AND IT IS THE HALF OF THE POPULATION THAT IS WORTH NOTHING.** Of the 88
+    #   returns, the 44 where the bot already had an armed setup on that side are worth -0.02R at a
+    #   1R target and are negative at 2R and 3R. On top of that there is ONE position slot, so a
+    #   level-memory limit resting beside a primary's own limit is a second order competing for it.
+    #   Off = rest it anyway. ⚠ Read only when exec_lvl_memory is on.
+
+    exec_lvl_be_r: float = -1.0        # "↳ Move the stop after (R)"
+    exec_lvl_be_keep_r: float = 0.0    # "↳ ...leaving this much risk (R)"
+    #   This entry method's OWN pre-rung stop rule, the same pair every other method carries (see
+    #   `Execution._PROTECT_RULES`). -1 means never move the stop, which is a VALUE of the rule
+    #   rather than the rule being absent, and is what the screen graded.
+    #   ⚠ Read only when exec_lvl_memory is on.
+
+    exec_lvl_confluence: str = "None"  # "↳ Extra condition before it trades"
+    #   ∈ {"None", "Gap still open", "Sweep first", "Shift confirms"}. Aaron, off Run 44: *"did you
+    #   add any confluences to test how we can filter out some of the losers ... in this case it
+    #   came back to the original FVG"*. Run 45 tests each one ALONE, pre-registered in
+    #   `notes/level_memory.md` before any of them was replayed.
+    #   "Gap still open" — rest only while the gap the level came from is still on the gap engine's
+    #   live list. "Sweep first" — rest only while the primary's own liquidity-sweep reading is
+    #   live on the trade's side. "Shift confirms" — no resting order: wait for a fast-chart shift
+    #   of structure after the tap, enter at market, stop at the extreme since the tap.
+    #   ⚠ Read only when exec_lvl_memory is on.
+
+    exec_lvl_gap_tol_r: float = 0.1    # "↳ Gap match tolerance (R)"
+    #   How far outside a gap's band the level may sit and still count as that gap's, as a fraction
+    #   of the original trade's 1R — the entry edge can be snapped or deepened before it is
+    #   published. ⚠ Read only when exec_lvl_confluence is "Gap still open".
+
+    exec_lvl_shift_bars: int = 24      # "↳ Wait for the shift for (fast bars)"
+    #   How long after the tap a shift of structure may confirm. FAST-CLOCK bars, so it moves with
+    #   the fill clock: 24 is two hours on the shipped 5-minute feed. ⚠ Read only when
+    #   exec_lvl_confluence is "Shift confirms".
+
     def __post_init__(self) -> None:
         """Refuse a Custom SL ratio outside (0, 1.0], and a time stop of 0 hours — LOUDLY,
         at construction.
@@ -1816,6 +2079,12 @@ class SosFadeConfig:
                 f"{self.exec_nogap_arm!r}. It gates the no-FVG fallback entry and is read only "
                 "when exec_req_fvg is False."
             )
+        if self.exec_scale_in and self.exec_scale_gate not in (
+                "Stop improved", "Past the last add"):
+            raise ValueError(
+                f"exec_scale_gate={self.exec_scale_gate!r} is not a rule. Use 'Stop improved' or "
+                "'Past the last add'. A typed value that is not a rule must never fall through "
+                "to a default — that replays a whole book against a rule nobody chose.")
         if self.exec_secondary and self.exec_sec_max_per_setup < 1:
             # 0 would be "a cap of none", which reads as unlimited and means the opposite. The
             # switch for no cap is `exec_sec_once_per_setup = False`, and having two ways to say it
@@ -1849,6 +2118,60 @@ class SosFadeConfig:
             raise ValueError(
                 f"exec_tp1_r must be -1 (use the frozen 15m fib TP1) or a positive R multiple, "
                 f"got {self.exec_tp1_r!r}. Zero would put the first target ON the entry.")
+        from .entry_window import parse_hhmm
+        try:
+            _eb = (parse_hhmm(self.exec_entry_block_from), parse_hhmm(self.exec_entry_block_to))
+        except ValueError as e:
+            raise ValueError(f"exec_entry_block_from / _to: {e}. Use 24-hour HH:MM, "
+                             "or leave both empty for off.") from None
+        if (_eb[0] is None) != (_eb[1] is None):
+            raise ValueError(
+                "exec_entry_block_from and exec_entry_block_to must be set together. Refusing a "
+                "HALF-set window rather than reading the set half — one time filled in is a "
+                "window nobody asked for.")
+        if _eb[0] is not None and _eb[0] == _eb[1]:
+            raise ValueError(
+                "exec_entry_block_from equals exec_entry_block_to — an empty window that reads "
+                "as a rule switched on. Leave both empty to mean off.")
+        if self.exec_rev_exit not in (
+                "Off", "Bank half", "Tighten to the trail", "Close"):
+            raise ValueError(
+                "exec_rev_exit is 'Off', 'Bank half', 'Tighten to the trail' or 'Close'. "
+                f"Got {self.exec_rev_exit!r}. A typed value that is not a mode must never fall "
+                "through to a default — that replays a whole book against a rule nobody chose."
+            )
+        if self.exec_rev_trigger not in ("Structure shift", "Level rejected"):
+            raise ValueError(
+                "exec_rev_trigger is 'Structure shift' or 'Level rejected'. "
+                f"Got {self.exec_rev_trigger!r}. A typed value that is not a trigger must never "
+                "fall through to a default.")
+        if self.exec_rev_level_touches < 1:
+            raise ValueError(
+                f"exec_rev_level_touches must be at least 1, got {self.exec_rev_level_touches}.")
+        if self.exec_rev_exit != "Off" and self.exec_rev_arm_r <= 0:
+            raise ValueError(
+                "exec_rev_arm_r must be a positive number of R — at 0 the reversal exit arms on "
+                "the fill, which makes it a second stop loss rather than a way of keeping "
+                f"profit that was actually shown. Got {self.exec_rev_arm_r}."
+            )
+        if self.exec_giveback_arm_r != -1.0 and self.exec_giveback_arm_r <= 0:
+            raise ValueError(
+                "exec_giveback_arm_r is -1 for off, or a positive number of R. "
+                f"Got {self.exec_giveback_arm_r}."
+            )
+        if self.exec_giveback_action not in ("Close", "Hand to the trail", "Bank half"):
+            raise ValueError(
+                "exec_giveback_action is 'Close', 'Hand to the trail' or 'Bank half'. "
+                f"Got {self.exec_giveback_action!r}. A typed value that is not a mode must "
+                "never fall through to a default — that replays a whole book against a rule "
+                "nobody chose."
+            )
+        if self.exec_giveback_arm_r != -1.0 and not (0 < self.exec_giveback_pct < 100):
+            raise ValueError(
+                "exec_giveback_pct must be above 0 and below 100 — at 0 the guard closes the "
+                "trade the moment it arms, and at 100 it can never fire, and both read as a "
+                f"guard that is switched on. Got {self.exec_giveback_pct}."
+            )
         if self.exec_secondary and not (self.exec_sec_tp_r == -1.0 or self.exec_sec_tp_r > 0):
             raise ValueError(
                 f"exec_sec_tp_r must be -1 (use the 15m 0.5 fib) or a positive R multiple, got "
@@ -2069,6 +2392,73 @@ class SosFadeConfig:
                 raise ValueError(
                     f"exec_be_cost_conflict must be one of {conflicts}, got "
                     f"{self.exec_be_cost_conflict!r}.")
+
+        # ── Level memory ────────────────────────────────────────────────────────────────
+        # Every one of these REFUSES rather than clamps, for the reason the rest of this method
+        # gives: a silently corrected number replays a whole book against settings nobody chose.
+        # ⚠ Guarded by the switch, so a stored config that never turns the feature on cannot be
+        # refused by a field it does not use.
+        if self.exec_lvl_memory:
+            if self.exec_lvl_days <= 0:
+                raise ValueError(
+                    f"exec_lvl_days must be a positive number of days, got "
+                    f"{self.exec_lvl_days!r}. At 0 the level is forgotten on the bar the primary "
+                    f"closes, which reads as the feature being on and does nothing.")
+            if self.exec_lvl_away_r <= 0:
+                raise ValueError(
+                    f"exec_lvl_away_r must be positive, got {self.exec_lvl_away_r!r}. At 0 a "
+                    f"breakeven stop — which exits AT the entry price — counts as a return the "
+                    f"moment it fills, and the feature trades its own exit. See the note on the "
+                    f"field; a fourteen-minute window without this reported 82 returns.")
+            if not 0.0 < self.exec_lvl_stop_frac <= 1.0:
+                raise ValueError(
+                    f"exec_lvl_stop_frac must sit in (0, 1], got {self.exec_lvl_stop_frac!r}. "
+                    f"Above 1 the stop is WIDER than the trade the level came from, which the "
+                    f"measurement says is the losing direction, and 0 has no stop at all.")
+            if self.exec_lvl_tp_r <= 0:
+                raise ValueError(
+                    f"exec_lvl_tp_r must be a positive R multiple, got {self.exec_lvl_tp_r!r}. "
+                    f"There is no frozen fib ladder behind this entry to fall back to — the "
+                    f"setup it came from is gone — so a target in R is the only rung it has.")
+            if self.exec_lvl_tp2_r != -1.0 and self.exec_lvl_tp2_r <= 0:
+                raise ValueError(
+                    f"exec_lvl_tp2_r is -1 (put the second rung on the first) or a positive R "
+                    f"multiple, got {self.exec_lvl_tp2_r!r}.")
+            if not 0.0 < self.exec_lvl_tp1_pct <= 100.0:
+                raise ValueError(
+                    f"exec_lvl_tp1_pct must sit in (0, 100], got {self.exec_lvl_tp1_pct!r}.")
+            if self.exec_lvl_risk_pct <= 0:
+                raise ValueError(
+                    f"exec_lvl_risk_pct must be positive, got {self.exec_lvl_risk_pct!r}. Zero "
+                    f"sizes every order at nothing, which is the feature switched off wearing "
+                    f"the label of it being on.")
+            if self.exec_lvl_max_hold_hrs <= 0:
+                raise ValueError(
+                    f"exec_lvl_max_hold_hrs must be a positive number of hours, got "
+                    f"{self.exec_lvl_max_hold_hrs!r}. At 0 the trade is closed on the bar it "
+                    f"opens.")
+            if not (self.exec_lvl_be_r == -1.0 or self.exec_lvl_be_r > 0):
+                raise ValueError(
+                    f"exec_lvl_be_r is -1 (never move the stop) or a positive R, got "
+                    f"{self.exec_lvl_be_r!r}. Zero would protect a trade that has not moved.")
+            if not 0.0 <= self.exec_lvl_be_keep_r < 1.0:
+                raise ValueError(
+                    f"exec_lvl_be_keep_r must sit in [0, 1), got {self.exec_lvl_be_keep_r!r}. At "
+                    f"1.0 the 'protected' stop IS the original stop.")
+            from .level_memory import CONFLUENCES as _LVL_CONFLUENCES
+
+            if self.exec_lvl_confluence not in _LVL_CONFLUENCES:
+                raise ValueError(
+                    f"exec_lvl_confluence must be one of {list(_LVL_CONFLUENCES)}, got "
+                    f"{self.exec_lvl_confluence!r}. A typed value that is not a mode must never "
+                    f"fall through to the unfiltered feature.")
+            if self.exec_lvl_gap_tol_r < 0:
+                raise ValueError(
+                    f"exec_lvl_gap_tol_r must be 0 or more, got {self.exec_lvl_gap_tol_r!r}.")
+            if self.exec_lvl_shift_bars < 0:
+                raise ValueError(
+                    f"exec_lvl_shift_bars must be 0 or more, got {self.exec_lvl_shift_bars!r}. "
+                    f"0 allows only a shift on the tap bar itself.")
 
         if self.exec_sl_level != "Custom":
             return

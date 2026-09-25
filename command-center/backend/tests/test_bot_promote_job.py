@@ -15,6 +15,7 @@ import pytest
 from fastapi import HTTPException
 from models import BotPromoteRequest
 from routers import bots
+from services import promote_jobs
 
 BOT = "sos_fade_demo"
 FULL = BotPromoteRequest(pull=True, allow_dirty=False, restart=True)
@@ -102,9 +103,8 @@ def box(monkeypatch):
     monkeypatch.setattr(bots, "_notify_telegram", lambda *_a, **_k: None)
     monkeypatch.setattr(bots, "_set_alert_thread", lambda *_a, **_k: True)
     monkeypatch.setattr(bots._time, "sleep", lambda *_a: None)
-    # Run the job inline, so each test reads the finished job without racing a thread.
-    monkeypatch.setattr(bots, "_spawn", lambda fn: fn())
-    monkeypatch.setattr(bots, "_PROMOTE_JOBS", {})
+    # The job runs INLINE (`tests/conftest.py`), so each test reads the finished job without
+    # racing its process — and no test can start a real one.
     return state
 
 
@@ -276,7 +276,7 @@ def test_a_second_deploy_of_the_same_bot_while_one_runs_is_REFUSED(box, monkeypa
     """The page can be closed and reopened mid-deploy. Two promote.py runs over one instance
     directory, and two stop/start pairs on one process, is not a state anybody meant.
     MUTATION: drop the running-job check → red."""
-    monkeypatch.setattr(bots, "_spawn", lambda fn: None)  # leave the first one running
+    monkeypatch.setattr(bots, "_spawn", lambda job_id: None)  # leave the first one running
     bots.start_promote_job(BOT, FULL)
     with pytest.raises(HTTPException) as e:
         bots.start_promote_job(BOT, FULL)
@@ -284,7 +284,7 @@ def test_a_second_deploy_of_the_same_bot_while_one_runs_is_REFUSED(box, monkeypa
 
 
 def test_a_running_deploy_of_ANOTHER_bot_does_not_block_this_one(box, monkeypatch):
-    monkeypatch.setattr(bots, "_spawn", lambda fn: None)
+    monkeypatch.setattr(bots, "_spawn", lambda job_id: None)
     bots.start_promote_job(BOT, FULL)
     other = next(b.key for b in bots._BOTS if b.key != BOT)
     bots.start_promote_job(other, FULL)  # must not raise
@@ -293,7 +293,7 @@ def test_a_running_deploy_of_ANOTHER_bot_does_not_block_this_one(box, monkeypatc
 def test_the_page_finds_the_RUNNING_job_by_the_bot_not_by_an_id(box, monkeypatch):
     """Reopening the drawer mid-deploy must show the run already going, not a fresh Deploy
     button over it — so the latest job is addressed by the bot."""
-    monkeypatch.setattr(bots, "_spawn", lambda fn: None)
+    monkeypatch.setattr(bots, "_spawn", lambda job_id: None)
     started = bots.start_promote_job(BOT, FULL)
     found = bots.get_promote_job(BOT)
     assert found.job_id == started.job_id
@@ -309,17 +309,18 @@ def test_no_job_yet_is_NULL_and_another_bots_job_is_not_mine(box):
 
 def test_eviction_never_drops_a_RUNNING_job(box, monkeypatch):
     """A job evicted while it runs is a deploy the page can no longer see — and the 409 guard
-    reads the same dict, so it would also let a second one start. MUTATION: evict the oldest job
+    reads the same files, so it would also let a second one start. MUTATION: prune the oldest job
     whatever its status → red."""
     monkeypatch.setattr(bots, "_PROMOTE_JOBS_CAP", 2)
-    monkeypatch.setattr(bots, "_spawn", lambda fn: None)
+    monkeypatch.setattr(bots, "_spawn", lambda job_id: None)
     running = bots.start_promote_job(BOT, FULL)
-    monkeypatch.setattr(bots, "_spawn", lambda fn: fn())
+    monkeypatch.setattr(bots, "_spawn", bots._run_promote_job)
     others = [b.key for b in bots._BOTS if b.key != BOT]
     for _ in range(3):
         for k in others:
             bots.start_promote_job(k, FULL)
-    assert running.job_id in bots._PROMOTE_JOBS
+    assert promote_jobs.read(running.job_id) is not None
+    assert len(promote_jobs.all_jobs()) == 2, "the finished ones past the cap were pruned"
 
 
 # ── the routes exist where the page calls them ───────────────────────────────

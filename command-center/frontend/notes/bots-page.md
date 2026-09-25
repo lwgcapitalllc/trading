@@ -521,6 +521,9 @@ trade open, each its own colour and shape. On the live account two wrapped and c
 header, the account panel, the Overview — and `src/components/BotStatus.tsx` draws it: one pill, a
 count.
 
+- ⚠ **Reversed 2026-09-24 on the Bots ROWS** — the Status column went and the dot came back,
+  with a word beside it. See *The bot row: a dot, the name, P&L, version, buttons*. The panels
+  and the Overview keep the pill.
 - 🔴 **No dot, since the same day.** One sat before every name and said what the Status column
   says — Aaron: *"the status column is redundant … remove the dots and just use the status column
   solely since you put other statuses there."* The word is the one kept: it says what a dot cannot.
@@ -1698,7 +1701,10 @@ What the page did wrong, each measured off his screenshot with three accounts op
   a bot counts when its own Status is `bad`/`warn` (`botCondition`) or its version pill is amber —
   and the pill's amber states now come off one function, `versionNeed` in `lib/botVersion.ts`, read
   by the pill AND this line, so they can never disagree. Grouped by the row's own word. Empty while
-  the box is still being asked.
+  the box is still being asked. **Redrawn 2026-09-24 as one tile per problem** (Aaron: the single
+  run-on line was hard to read) — the bot count leads large, the word under its colour (red for a
+  `bad` status, amber otherwise), the accounts on their own dim line beneath. Worst first, as
+  before; what it counts did not change.
 - **The equity shows MT5's figure or a dash** — the rail row's "not read"/"unread" words went too,
   matching origin's 2026-09-14 rule (*"read exactly what's on the MT5"*).
 
@@ -1815,3 +1821,191 @@ live — it only reads). Backend: `backend/notes/accounts-risk.md` → *An accou
   unchanged.
 - The account page shows the Price tab as loading while the backend fills the bars in the
   background, and asks again every 4s until they arrive (about 20s on the real accounts).
+
+---
+
+## 🔴 The Refresh button refreshed half the screen (2026-09-24)
+
+Four demo bots were deployed from outside the page, and the version badges went on saying
+*behind* through any number of clicks on the top-right Refresh button; only a full page reload
+cleared them. Aaron: *"I click that refresh icon… and it still said they were not up to latest
+versions."*
+
+**Why.** The button called the SNAPSHOT query's own `refetch` — status and P&L. The version badges
+come from a separate per-bot query with no poll of its own (it is one SSH round trip per bot,
+measured 4.5s, so nothing polls it), and the deploy watcher only re-reads it for a deploy it can
+see. A deploy made from the CLI, the trading-box tool or the other clone is invisible to both, so
+the badges had exactly one way to update — a remount.
+
+**Now** the button invalidates the whole `['bots']` prefix — snapshot, versions, deploy jobs,
+params, accounts — and spins while any of them is in flight. ⚠ **The prefix, not a list of keys**:
+a list is a second statement of what the page reads, stale the day somebody adds a query.
+
+A label on a button is a claim about code somewhere else (rule 7). *Refresh* claimed the screen and
+delivered one of its queries. Check: `tests/bots-version.spec.ts` → *the Refresh button re-reads
+the VERSION badges*, red when pointed back at the snapshot alone.
+
+## One bot's start / stop / restart locks THAT bot, never the page (2026-09-24)
+
+Aaron: *"why can I only restart one bot at a time on an account?"* It was not the account. The page
+held ONE in-flight slot, and one flag off it greyed out every bot's Start, Stop and Restart on
+every account until that single action came back — so two bots could only be restarted one after
+the other.
+
+Nothing needed that. **The server refuses nothing** — the per-bot routes run side by side. **The
+only real limit is on the box**: two bots on one account take turns at the broker login
+(`algos/shared/mt5_lock.py`, up to 90s each), which is the right place for it.
+
+**Now** the page tracks each bot's action separately, and only the bot being acted on is locked.
+
+- ⚠ **`mutateAsync`, never `mutate` with per-call callbacks.** A mutation's per-call callbacks fire
+  only for its LATEST call, so with two bots in flight the first one's lock would never clear.
+- ⚠ **A move or a removal is still page-wide, on purpose.** The stop-first flow (`stopFirst.ts`)
+  holds ONE waiting bot; a second move started meanwhile would overwrite the first one's wait.
+
+Check: `tests/bots-accounts.spec.ts` → *starting one bot leaves the OTHER bot on the account free to
+start at the same time*, watched RED with the page-wide lock put back. ⚠ Six other checks in that
+file and in `overview.spec.ts` were already failing before this change (same result with the old
+page restored); they are not this change's.
+
+## Removing a running bot from the ACCOUNT panel left the row with no control (2026-09-23)
+
+**Before:** on the account panel, the second click on Remove started the stop, and the row hid the
+Remove button the moment any start / stop / restart was under way (2026-09-16, "its pill is the
+row's ONLY control"). The take-off's own stop counted too, so the row showed neither a pill nor a
+button, and never read "Removing…".
+
+**Now:** the button stays while a take-off is what is under way, and reads "Removing…". A start,
+stop or restart started any other way still shows only its pill.
+
+Check: `tests/bots-accounts.spec.ts` → *a RUNNING bot on the account panel: ONE button from Remove
+to Removing…*, which was red on the old condition.
+
+⚠ **Three more checks in that file were stale, not broken**, and were brought in line with the
+2026-09-16 panel redesign (1d4651ee): the "stops it first" line is on the heading's hover, the
+record is four tiles including net dollars, and each setting row carries its own name once. All
+152 checks in the file pass.
+
+## Version reads start once the status read has answered (2026-09-24)
+
+Aaron: *"the bots page takes so dam long to load."* The page sent all ten version reads at the same
+moment as the status read. Each version read starts Python on a two-CPU trading box, so the status
+read queued behind them: **MEASURED 3.1s alone, 26.7s beside the ten**, and the whole page
+shimmered for half a minute. `useBotVersions` now takes `enabled`, and the page passes `!asking`,
+so status and P&L land first (4.4–5.2s) and the version badges fill in after.
+
+- ⚠ **`!asking`, never `!!snapshot`.** A FAILED status read must still let the version column try,
+  or a down box leaves the badges shimmering for ever.
+- **The keys still come off the config list**, so a version never waits for its bot to show up in
+  the snapshot — the 2026-09-10 reason for starting them early still holds for the KEYS.
+- **A not-yet-started read shows as loading, not as "No version"** — the pill reads `isPending`,
+  which is true for a query that has not been allowed to run yet.
+
+TESTED: `tests/bots-version.spec.ts` → *no version read is sent until the status read has
+answered*; red with the gate removed (3 early reads), green restored.
+
+## A running deploy locks its bot, and a busy bot locks its account (2026-09-24)
+
+Aaron: *"if I'm updating a bot I shouldn't be able to stop and restart it."* The page's per-bot lock
+(`busyFor` / `actionOf`) read the start/stop/restart map and the stop-first wait, and nothing else,
+so mid-deploy the row and the panel offered Stop and Restart and the account panel offered every
+setting. The server refuses all of it now (backend `notes/bots-deploys.md` → *One action at a time
+per bot*); this is the page not offering what would be refused.
+
+- **A deploy is an action like start / stop / restart.** `BotAction` gained `deploy`, so the row and
+  the panel draw a **Deploying** pill where Stop was, and every change on the panel waits.
+- **One reason string, `lockOf(keys)`**, for anything reaching several bots: an account's cap,
+  shares, priority, its settings form, Add bot and Go live; the priority drag on the table; the Sync
+  drawer's write. Each control stays, disabled, with the reason on its hover — a control that
+  vanishes reads as a feature that does not exist.
+- **The Deploy button waits for a start / stop / restart / move** (`blocked` on `VersionBanner`),
+  and never for its own deploy, which it draws as progress.
+- ⚠ **Not locked:** Logs, Configure (opening the panel), the scan in the Sync drawer (a read), the
+  password-only save in the account form (it goes to the box's credential store).
+- ⚠ **The page can only lock what it knows about** — a deploy started from the trading-box tool or
+  the other clone does not show here until its job is read. The server's refusal is the backstop.
+
+TESTED: `tests/bots-version.spec.ts` → *a running deploy holds its bot and its account — no Stop, no
+Restart, no account change*; red with the deploy check removed from `index.tsx`, green restored.
+
+## The rows never ask for the files check; the panel does (2026-09-24)
+
+The files (tamper) check re-hashes ~220 files on the two-CPU box and rode on every row's version
+read, while only the bot panel's *Snapshot modified* warning uses it. `useBotFilesCheck` now asks
+`/version/files` from the panel alone; the whole page fills in 11.4s instead of ~29s (MEASURED).
+
+- ⚠ **Only a definite `false` warns.** `versionFlags` read `!snapshot_ok`, which would warn on a
+  check not yet asked or not answered — `=== false` now.
+- ⚠ **Keyed under `['bots', 'version', name]`**, so a finished deploy and Refresh re-read it too.
+- ⚠ **Both bots specs answer it by default** (`test.beforeEach`) — the offline harness refuses any
+  read nobody answers, and every panel open asks this one.
+
+TESTED: `bots-version.spec.ts` → *the rows never ask for the files check; the panel does, and only
+a definite no warns*; red with the rows asking, red with the old `!snapshot_ok`.
+
+
+## The bot row: a dot, the name, P&L, version, buttons — the rest behind an arrow (2026-09-24)
+
+Aaron, off a screenshot: *"the status column seems like a waste of space … can we just do a
+colored dot before the bot name?"*, *"I hate that we repeat the word trades"*, then *"what I really
+care about is the state of the bot, the name, any action buttons, and how much the bot has made.
+That's it."* — and, mid-build, *"keep the version on the bot row, I need to see if we're behind"*
+and *"I don't want the account to expand, just the bots."* Picked off a mockup.
+
+- **Four tracks: Bot, P&L, Version, Actions** (`GRID` in `src/pages/Bots/index.tsx`). P&L is
+  right-aligned in tabular digits, so every dollar figure — the bots' and the account band's
+  net — ends on one edge. The heading-alignment test compares RIGHT edges for that reason.
+- **The state is a dot before the name** (`StatusDot`, `src/components/BotStatus.tsx`) in the row's
+  worst tone. ⚠ **A dot alone was rejected**: eleven states share four colours ("Halted" and
+  "Stopped" are both red), so any bot that is not simply running also shows its WORD, and the `+N`
+  count stays. A healthy bot shows the dot and nothing else.
+- ⚠ **An open trade keeps a one-word tag on the row (LONG / SHORT / BOTH).** Money at risk is
+  state, not detail — least of all on a halted bot. Its size, entry, stop, open P&L and R are in
+  the expansion.
+- **The expansion (`BotDetail`)** holds what a glance does not need: the problems spelled out, the
+  open trade, and the record — trades (won/lost), R per trade with the TROPHY (it stays beside the
+  R it is judged on, never beside dollars), total R, return on the account, the recorded span.
+  The target price arrived later the same day — see the target bullet below.
+- **A record with no closed trade reads "—" on the row**, its reason on hover, and `0` in the
+  detail. "no record yet" is still its own words — a different answer (rule 1).
+- **The account band does NOT expand** and keeps its return, cap and "Not from these bots" line.
+- **Configure stays on the row** — the mockup folded it into "···", and the 2026-09-15 note says
+  Aaron lost that control twice when it had to be found.
+- 🔴 **The spare width is shared, and Version has a 32px gutter** (same day, Aaron: *"why is P&L so
+  crammed to version and so crammed to actions?"*). With only the name track flexible, P&L and
+  Version sat at their caps against Actions and a right-aligned P&L ended 12px from the version
+  pill. Tracks are now `2fr / 1fr / 1fr / 150px`. *(The gutter half of this was replaced by left
+  alignment the same day — next bullets.)*
+- 🔴 **EVERY heading and value is LEFT-aligned** (same day, after two gutter passes on a
+  right-aligned P&L both still read *"way too close to version"*; Aaron: *"either all my headers
+  are left aligned or they're right aligned"*). Each value starts where its heading starts —
+  P&L, Version, the buttons under Actions, and the account band's figures. The P&L track's own
+  width is now the space before Version, and both gutters are gone. ⚠ The cost, accepted: dollar
+  figures of different lengths no longer end on one digit edge. The heading test compares LEFT
+  edges on all three columns, and was watched going red with P&L right-aligned again.
+- 🔴 **The expansion was redesigned the same day** (Aaron: *"everything kind of just to the left …
+  use the row appropriately"*, *"the word record there, what was the point"*, then *"space it out
+  up until the end of the version column"*). It sits on the row's own grid and spans Bot → Version,
+  leaving nothing under the buttons. No group titles — the label over each figure says what it is.
+  Six fixed columns, read left to right: the open trade (what, entry, stop, target, risked, how it
+  is doing) on the line above the record (since when, won, lost, R per trade, total R, return) —
+  same columns, one above the other. ⚠ **The last figure of each line sits under the Version
+  heading** (Aaron: *"make return in the details line up with version header"*): the detail is a
+  SUBGRID of the row's columns, with the first five figures across Bot and P&L. **No total trade count**: won in green, lost in red; a zero
+  stays grey (colour means money up or down).
+- 🔴 **An AMBER version tag on a row is a button** (same day, Aaron: *"if I click the version tag
+  when it is behind it takes me right to the deploy and restart"*). It opens the bot's panel
+  scrolled to its deploy section (`?bot=<key>&focus=deploy`). Only an amber tag is clickable — the
+  same rule that colours it (`versionNeed`) — and never mid-deploy. Any other way of opening the
+  panel drops the focus. Tested by the panel's own scroll, not by visibility: a visibility check
+  passed with the scroll deleted.
+- **The trade's target is on the open-trade line since 2026-09-24** (`TradeTarget`), in THREE
+  states: the price with its R off the opening stop; "none — rides its stop" (the broker holds no
+  take-profit — live SOS Fade's normal trade); or "not reported" (the runner predates the field).
+  ⚠ Every live bot reads "not reported" until its next promote ships the runner that sends it.
+- *Superseded — kept for the decision:* **The trade's target stays out for now — DECIDED
+  2026-09-24: it rides the NEXT live promote, never one of its own.** It has to be added to the
+  heartbeat the live bots send (`algos/` work,
+  `/live-safety`), and a restart is the cost: it has cancelled a resting order before. The value is
+  a check, not a trigger — seeing that a bot's exit sits where the backtest puts it — so it does not
+  earn a restart by itself. Show it as distance in R ("+1.2R now · target 3R"), not a bare price.

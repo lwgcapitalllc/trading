@@ -32,10 +32,14 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time as _time
-from collections.abc import Callable
+import uuid
+from collections.abc import Callable, Iterator
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass
 from dataclasses import fields as dataclass_fields
 from datetime import date, datetime, timezone
@@ -74,6 +78,7 @@ from models import (
     BotChannelTestResult,
     BotCloneResult,
     BotDeployedVersion,
+    BotFilesCheck,
     BotParamsView,
     BotPromoteJob,
     BotPromoteRequest,
@@ -108,6 +113,7 @@ from services import (
     bot_accounts,
     bot_clone,
     bot_earnings,
+    bot_ops,
     bot_params,
     bot_settings_import,
     bot_versions,
@@ -115,6 +121,7 @@ from services import (
     gradable,
     lab_db,
     notify,
+    promote_jobs,
     stack_settings_import,
     strategy_import,
     terminal_scan,
@@ -818,7 +825,10 @@ def _fetch_vps_snapshot() -> dict[str, str]:
         " & echo ===TASKS==="
         " & schtasks /query /fo CSV /nh 2>nul"
     )
-    sections = _parse_sections(_ssh(cmd1), "procs")
+    # 🔴 **The two calls run SIDE BY SIDE (2026-09-24).** Neither reads the other's answer, and one
+    # after the other they were the whole of the page's first wait — MEASURED 5.2s + 4.0s = 9.3s.
+    # Started first so it runs while the second command is built and sent.
+    first = _SNAPSHOT_POOL.submit(_ssh, cmd1)
 
     # One `type` per registered instance's bot_state.json, plus the Telegram start marker.
     # Built from _BOT_STATE_SECTIONS so adding a bot never means editing this string —
@@ -881,8 +891,16 @@ def _fetch_vps_snapshot() -> dict[str, str]:
     parts.append(
         "echo. & echo ===TELEGRAM_START=== & type C:\\trading\\algos\\telegram_start.json 2>nul"
     )
-    sections.update(_parse_sections(_ssh(" & ".join(parts)), "state_main"))
+    state_raw = _ssh(" & ".join(parts))
+    # `.result()` re-raises the first call's own exception, so a timeout or an unreachable box
+    # reaches `get_snapshot` exactly as it did when the call ran inline.
+    sections = _parse_sections(first.result(), "procs")
+    sections.update(_parse_sections(state_raw, "state_main"))
     return sections
+
+
+# Two workers: the snapshot's two calls, and nothing else ever queues on it.
+_SNAPSHOT_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="bots-snapshot")
 
 
 # `_BOT_STATE_SECTIONS` and `_BOT_STATE_PATHS` are built with the bot list — see `_refresh_bots`.
@@ -1555,6 +1573,7 @@ def _position_payload(raw) -> Optional[dict]:
     if side not in ("long", "short", "mixed") or lots is None or lots <= 0:
         return None
     tickets = raw.get("tickets")
+    target = _finite(raw.get("target"))
     return {
         "side": side,
         "lots": lots,
@@ -1563,6 +1582,12 @@ def _position_payload(raw) -> Optional[dict]:
         "profit_usd": _finite(raw.get("profit_usd")),
         "risk_usd": _finite(raw.get("risk_usd")),
         "r": _finite(raw.get("r")),
+        # A price is positive; anything else is dropped, never served as a target at 0.
+        "target": target if target is not None and target > 0 else None,
+        "target_r": _finite(raw.get("target_r")) if target is not None and target > 0 else None,
+        # Whether the runner SAYS anything about a target — its absence is an older runner, which
+        # is "not reported", never "none" (rule 1).
+        "target_reported": "target" in raw,
         "tickets": tickets if type(tickets) is int and tickets > 0 else 1,
     }
 
@@ -2533,6 +2558,12 @@ def _bot_accounts_for_sync() -> Optional[dict]:
 
 @router.post("/accounts/registry/sync", response_model=AccountSync)
 def sync_accounts_with_box(body: AccountSyncRequest):
+    """Refused while any bot is mid-action (`_refuse_if_any_busy`) — it touches several."""
+    _refuse_if_any_busy()
+    return _sync_accounts_with_box(body)
+
+
+def _sync_accounts_with_box(body: AccountSyncRequest):
     """Apply the sync the person was SHOWN. Manual only.
 
     Aaron, 2026-09-10: *"not a scan, a sync"*, *"sync is 100% manually triggered by me only"* —
@@ -2599,6 +2630,12 @@ def _registry_refusal(e: bot_account_registry.RegistryError) -> HTTPException:
 
 @router.put("/accounts/registry/{account}", response_model=BotAccountRegistration)
 def register_account(account: int, body: BotAccountRegistrationWrite):
+    """Refused while a bot on this account is mid-action (`_refuse_if_account_busy`)."""
+    _refuse_if_account_busy(account)
+    return _register_account(account, body)
+
+
+def _register_account(account: int, body: BotAccountRegistrationWrite):
     """Add a broker account, or replace the registered facts about one.
 
     ⚠ **It REPLACES the row rather than merging**, so a field cleared on the page is cleared on
@@ -2692,6 +2729,12 @@ def register_account(account: int, body: BotAccountRegistrationWrite):
 
 @router.delete("/accounts/registry/{account}")
 def unregister_account(account: int, deploy: bool = True):
+    """Refused while a bot on this account is mid-action (`_refuse_if_account_busy`)."""
+    _refuse_if_account_busy(account)
+    return _unregister_account(account, deploy)
+
+
+def _unregister_account(account: int, deploy: bool = True):
     """Forget a broker account.
 
     ⚠ **Refused while a bot still names it.** The bot would go on trading an account this page
@@ -2848,6 +2891,12 @@ def _deploy_registry(message: str) -> None:
 
 @router.patch("/accounts/{account}/risk-cap")
 def set_account_risk_cap(account: int, update: BotAccountCapUpdate):
+    """Refused while a bot on this account is mid-action (`_refuse_if_account_busy`)."""
+    _refuse_if_account_busy(account)
+    return _set_account_risk_cap(account, update)
+
+
+def _set_account_risk_cap(account: int, update: BotAccountCapUpdate):
     """Set the account-level risk cap on EVERY bot trading this account.
 
     **One write, N files.** The cap is an account-level fact stored per instance, because an
@@ -3091,6 +3140,12 @@ def plan_account_risk(account: int, body: BotAccountRiskRequest):
 
 @router.patch("/accounts/{account}/risk", response_model=BotAccountRiskPlan)
 def set_account_risk(account: int, body: BotAccountRiskRequest):
+    """Refused while a bot on this account is mid-action (`_refuse_if_account_busy`)."""
+    _refuse_if_account_busy(account)
+    return _set_account_risk(account, body)
+
+
+def _set_account_risk(account: int, body: BotAccountRiskRequest):
     """Save one account's risk budget — its cap, any bot's share, or both — in ONE commit.
 
     🔴 **One write, because the budget is one thing (2026-09-11).** The cap and each share lived
@@ -3176,6 +3231,12 @@ _PRIORITY_APPLIES = "Each bot reads the new order at its next bar — no restart
 
 @router.put("/accounts/{account}/priority", response_model=BotAccountPriorityResult)
 def set_account_priority(account: int, body: BotAccountPriorityRequest):
+    """Refused while a bot on this account is mid-action (`_refuse_if_account_busy`)."""
+    _refuse_if_account_busy(account)
+    return _set_account_priority(account, body)
+
+
+def _set_account_priority(account: int, body: BotAccountPriorityRequest):
     """Save one account's PRIORITY order — which bot sizes first when two close a bar together.
 
     Aaron, 2026-09-15: any number of bots may share an account's cap; a bot short of room trades
@@ -3316,6 +3377,18 @@ def _declared_strategy_params(strategy_package: str) -> "set[str] | None":
 
 @router.patch("/{bot_name}/account")
 def set_bot_account(bot_name: str, update: BotAccountAssign):
+    """One action at a time on a bot: refused (409) while it is mid-action (`services/bot_ops.py`).
+
+    ⚠ The DESTINATION account holds still too: a bot joining it takes a share of the risk budget
+    its other bots size against, so it waits while one of them is mid-action."""
+    _, bot_key = _resolve_bot(bot_name)
+    if update.account is not None:
+        _refuse_if_account_busy(update.account)
+    with _acting(bot_key, _MOVING):
+        return _set_bot_account(bot_name, update)
+
+
+def _set_bot_account(bot_name: str, update: BotAccountAssign):
     """Put this bot ON an account, or take it OFF one.
 
     **This is add-and-remove for a live stack, and it is a config write rather than a membership
@@ -3593,7 +3666,9 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
     if update.account is not None:
         try:
             deploy_job = _begin_promote_job(
-                bot_key, BotPromoteRequest(pull=False, restart=False, allow_dirty=False)
+                bot_key,
+                BotPromoteRequest(pull=False, restart=False, allow_dirty=False),
+                take_over=_MOVING,
             )["job_id"]
         except Exception as e:  # noqa: BLE001 - a failed deploy may not undo a written move
             plan.notes.append(
@@ -3962,6 +4037,12 @@ def _start_task() -> str:
 
 @router.post("/start")
 def start_bots():
+    """The whole fleet at once: refused while any bot is mid-action, and holds every bot meanwhile."""
+    with _acting_all(_STARTING):
+        return _start_bots()
+
+
+def _start_bots():
     """Run the SYS_STARTUP scheduled task on the VPS."""
     try:
         out = _start_task()
@@ -3975,6 +4056,12 @@ def start_bots():
 
 @router.post("/stop")
 def stop_bots():
+    """The whole fleet at once: refused while any bot is mid-action, and holds every bot meanwhile."""
+    with _acting_all(_STOPPING):
+        return _stop_bots()
+
+
+def _stop_bots():
     """Delete the MT5 lock file and kill all python.exe processes on the VPS."""
     try:
         for _b in _BOTS:
@@ -3997,6 +4084,12 @@ def stop_bots():
 
 @router.post("/restart")
 def restart_bots():
+    """The whole fleet at once: refused while any bot is mid-action, and holds every bot meanwhile."""
+    with _acting_all(_RESTARTING):
+        return _restart_bots()
+
+
+def _restart_bots():
     """Stop all bots, wait 3 s, then run SYS_STARTUP."""
     try:
         for _b in _BOTS:
@@ -4249,6 +4342,13 @@ def preview_settings_from_stress_test(bot_name: str, stress_test_id: str):
     response_model=BotSettingImportPlan,
 )
 def apply_settings_from_stress_test(bot_name: str, stress_test_id: str):
+    """One action at a time on a bot: refused (409) while it is mid-action (`services/bot_ops.py`)."""
+    _, bot_key = _resolve_bot(bot_name)
+    with _acting(bot_key, _SAVING):
+        return _apply_settings_from_stress_test(bot_name, stress_test_id)
+
+
+def _apply_settings_from_stress_test(bot_name: str, stress_test_id: str):
     """Write this stress test's settings onto this bot's config, commit and push.
 
     ⚠ **A RUNNING bot is refused (409)**, for the reason `set_bot_account` is: the bot read its
@@ -4479,6 +4579,12 @@ def preview_stack_settings_from_stress_test(stress_test_id: str):
     response_model=StackSettingImportPlan,
 )
 def apply_stack_settings_from_stress_test(stress_test_id: str):
+    """Refused while any bot is mid-action (`_refuse_if_any_busy`) — it touches several."""
+    _refuse_if_any_busy()
+    return _apply_stack_settings_from_stress_test(stress_test_id)
+
+
+def _apply_stack_settings_from_stress_test(stress_test_id: str):
     """Write this stack's settings onto every leg's bot AND the account's risk budget.
 
     🔴 **ALL OR NOTHING, and the writes are staged before ANY of them lands.** The plan is
@@ -4629,6 +4735,12 @@ def preview_go_live(body: GoLiveRequest):
 
 @router.post("/go-live", response_model=GoLivePlan)
 def apply_go_live(body: GoLiveRequest):
+    """Refused while any bot is mid-action (`_refuse_if_any_busy`) — it touches several."""
+    _refuse_if_any_busy()
+    return _apply_go_live(body)
+
+
+def _apply_go_live(body: GoLiveRequest):
     """Move this proven set off its demo account and onto the live one.
 
     🔴 **THE ONLY WRITE IN THIS APP THAT PUTS A STRATEGY ON REAL MONEY, and it is guarded three
@@ -4849,14 +4961,49 @@ def _running_code(section: str | None, started: float | None) -> BotRunningCode:
         )
 
 
+# 🔴 **At most three files checks on the box at once (2026-09-24).** Each starts Python on the box
+# to re-hash a bot's frozen code (MEASURED ~5s). It rode on every VERSION read until the same day,
+# and the page asked for every bot's version at once: ten Pythons on the two-CPU machine the LIVE
+# bots trade from, with the status read queued behind them (3.1s alone, 26.7s beside the ten).
+# The version read no longer runs it at all (`get_bot_files_check`); the cap stays on the check.
+_VERSION_READS = threading.BoundedSemaphore(3)
+
+_MODIFIED = "SNAPSHOT MODIFIED"
+_MATCHES = "matches"
+
+
+def _files_verdict(show: str) -> bool | None:
+    """`promote.py --show`'s own words → match, modified, or `None` when it said neither — an
+    empty answer is a check that did not run, never a pass."""
+    if _MODIFIED in show:
+        return False
+    if _MATCHES in show:
+        return True
+    return None
+
+
+@router.get("/{bot_name}/version/files", response_model=BotFilesCheck)
+def get_bot_files_check(bot_name: str):
+    """Do this bot's deployed files still match their record? Read by the bot PANEL only — it is
+    the expensive half of what the version read used to do, see `BotFilesCheck`."""
+    _, bot_key = _resolve_bot(bot_name)
+    with _VERSION_READS:
+        try:
+            out = _ssh(f"{_PYTHON_EXE} {_PROMOTE_PY} --bot {bot_key} --show 2>nul")
+        except Exception:
+            return BotFilesCheck(snapshot_ok=None)
+    return BotFilesCheck(snapshot_ok=_files_verdict(out))
+
+
 @router.get("/{bot_name}/version", response_model=BotDeployedVersion)
 def get_bot_version(bot_name: str):
     """What this bot is actually running, plus how far the repo has moved past it."""
     _, bot_key = _resolve_bot(bot_name)
     rec = _deployed_json(bot_key)
 
-    # ONE round trip for every fact on this card. `--show` re-hashes the snapshot on disk,
-    # which is the tamper check: the record can only be trusted if the files still match it.
+    # ONE round trip for every fact on this card. ⚠ The tamper check (`--show`, which re-hashes
+    # the snapshot on disk) is NOT one of them since 2026-09-24 — it was ~5s of this read's ~9s on
+    # every row of the page, and only the panel shows it: `get_bot_files_check`.
     #
     # The bot's own `bot_state.json` rides along on the same connection. It used to come
     # from a second `_fetch_vps_snapshot()` — a two-command fleet-wide fetch (every python
@@ -4867,7 +5014,6 @@ def get_bot_version(bot_name: str):
     cmd = (
         f"cd {_VPS_REPO} & git rev-parse --short HEAD"
         f" & echo. & echo ===AHEAD=== & git rev-list --count {rec.get('promoted_commit') or 'HEAD'}..HEAD"
-        f" & echo. & echo ===SHOW=== & {_PYTHON_EXE} {_PROMOTE_PY} --bot {bot_key} --show 2>nul"
     )
     if state_path:
         # `echo.` before the marker for the reason `_fetch_vps_snapshot` documents: `type`
@@ -4976,7 +5122,6 @@ def get_bot_version(bot_name: str):
         params=deployed_params,
         repo_commit=parts.get("head", "").strip().splitlines()[0] if parts.get("head") else "",
         commits_ahead=ahead,
-        snapshot_ok="SNAPSHOT MODIFIED" not in parts.get("show", ""),
         running_hash=running_hash,
         params_drift=drift,
         compare=comparison,
@@ -5123,21 +5268,22 @@ def preview_bot_promote(bot_name: str, req: BotPromoteRequest):
 
 @router.post("/{bot_name}/promote", response_model=BotPromoteResult)
 def promote_bot(bot_name: str, req: BotPromoteRequest):
-    """Deploy the current VPS code to this bot, then restart it onto the new version.
+    """Deploy the current VPS code to this bot, then restart it onto the new version — and answer
+    with the result in ONE request (the trading-box tool, a terminal).
 
     This is the ONLY action that changes what a bot trades. A pull does not, a restart does
     not, a lab experiment does not — see `algos/live/version.py`.
+
+    🔴 **Through the SAME job as the page's Deploy button since 2026-09-24**, so it runs in the
+    deploy's own process and a backend restart cannot cut it off. It used to run inside this
+    request. Refused (409) while the bot is mid-action (`services/bot_ops.py`).
     """
     _, bot_key = _resolve_bot(bot_name)
     try:
-        reported, out, versions, idle = _run_promote(
-            bot_key, dry_run=False, pull=req.pull, allow_dirty=req.allow_dirty
-        )
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=504, detail="VPS SSH call timed out")
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
-    return _finish_promote(bot_key, req, reported, out, versions, nothing_new=idle)
+        job = _begin_promote_job(bot_key, req)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return _await_promote_result(job["job_id"])
 
 
 def _finish_promote(
@@ -5172,13 +5318,22 @@ def _finish_promote(
     # ⚠ **The message is its own shape, not the PROMOTED one with different words.** "v373 → v373 ·
     # deployed / Restarting it now" was true of nothing that happened, and a reader acting on it
     # would go looking for a restart that never came.
-    if ok and nothing_new:
+    # 🔴 **BUT "NOTHING NEW ON DISK" IS NOT "NOTHING NEW IN THE PROCESS" (2026-09-24).** A deploy
+    # whose build finished and whose restart never came — `fft_1`'s timed out after the build that
+    # day — leaves the new code pinned and the OLD process running. The retry then found nothing to
+    # build and, before this check, refused to restart, so no deploy could ever move the bot onto
+    # code already pinned. The process's own report decides it; see `_running_older_code`.
+    stale = _running_older_code(bot_key) if (ok and nothing_new and req.restart) else False
+    if ok and nothing_new and not stale:
         _notify_telegram(
             alert(
                 "ℹ️",
                 "NOTHING TO DEPLOY",
                 _bot_label(bot_key),
-                "It is already running this code, so nothing was deployed and it was left alone.",
+                "It is already running this code, so nothing was deployed and it was left alone."
+                if stale is False
+                else "Nothing new was deployed and it was left alone. What the running bot is on "
+                "could not be read — if its badge says a restart is pending, restart it.",
                 "Its record now names the current commit, so the page will stop asking.",
             ),
             bot_key=bot_key,
@@ -5187,7 +5342,19 @@ def _finish_promote(
         # still pending as `skipped`, which is the state that already means *this did not happen*
         # — marking them here would be a second way of saying it, able to disagree with the first.
         return BotPromoteResult(ok=True, output=out, restarted=False, nothing_new=True)
-    if ok:
+    if ok and stale:
+        root = _notify_telegram(
+            alert(
+                "🔄",
+                "RESTARTING ONTO DEPLOYED CODE",
+                _bot_label(bot_key),
+                "This code was already deployed, but the bot was still running an older version.",
+                "Restarting it now.",
+            ),
+            bot_key=bot_key,
+        )
+        _set_alert_thread(bot_key, root)
+    elif ok:
         # 🔴 SENT BEFORE THE RESTART, and the ordering is the feature rather than a detail.
         # A deploy produces THREE messages from TWO machines — this one, then the bot's own
         # STOPPED and ONLINE — and Aaron read them as three unrelated events. Threading them
@@ -5244,9 +5411,13 @@ def _finish_promote(
 # and a person running it from a terminal wants one answer. Both go through `_run_promote` and
 # `_finish_promote`, so there is one implementation of what a deploy DOES.
 #
-# ⚠ **In memory, and that is enough.** A job lives as long as the backend; a restart mid-deploy
-# loses the progress readout, never the deploy — the work is on the VPS, and the version endpoint
-# reports what landed.
+# 🔴 **A DEPLOY RUNS IN ITS OWN PROCESS since 2026-09-24 (`services/promote_worker.py`).** It ran
+# on a thread in THIS process, which restarts on any `.py` edit under `backend/` — and did, twice
+# that day, mid-deploy: the LIVE SOS Fade deploy to v394 never happened, and a demo Realign one was
+# cut off during its pull. The job now runs in a process started in its own session, so a backend
+# restart leaves it running; it writes its progress to its own file (`services/promote_jobs.py`),
+# and everything here READS that file. A job whose process is gone is closed as failed at the step
+# it was on. This note said "in memory, and that is enough" until the same day, which was wrong.
 
 _PROMOTE_STAGE_KEYS = ("pull", "build", "stop", "start", "confirm")
 # How long the job waits for the restarted bot to report the new code, and how often it asks.
@@ -5254,16 +5425,55 @@ _PROMOTE_STAGE_KEYS = ("pull", "build", "stop", "start", "confirm")
 # and the version panel's own *restart pending* warning, which re-reads every 15s, carries on.
 _CONFIRM_POLL_SECONDS = 5
 _CONFIRM_ATTEMPTS = 48  # four minutes
-_PROMOTE_JOBS: dict[str, dict] = {}
+# Guards one job's dict against the threads of ONE process. Across processes there is nothing to
+# guard: a job's file has one writer at a time (`services/promote_jobs.py`).
 _PROMOTE_JOBS_LOCK = threading.Lock()
 # Enough to cover every bot several times over; a job is only ever read while it runs and for
 # the minutes after. The OLDEST finished jobs go first — a running one is never evicted.
 _PROMOTE_JOBS_CAP = 20
+_BACKEND_DIR = Path(__file__).resolve().parent.parent
 
 
-def _spawn(fn: Callable[[], None]) -> None:
-    """Run a job off the request thread. A seam so a test can run it inline instead."""
-    threading.Thread(target=fn, daemon=True).start()
+def _worker_argv(job_id: str) -> list[str]:
+    """The command that runs one job. `promote_worker` in it is what `promote_jobs.alive` reads to
+    tell the job's process from an unrelated one that inherited its pid."""
+    return [sys.executable, "-m", "services.promote_worker", job_id]
+
+
+def _launch_worker(job_id: str) -> None:
+    """Start the job's own process, in its OWN SESSION — `start_new_session` is the whole point: a
+    backend restart signals the backend's session, and this is not in it. Its output goes to the
+    job's log, beside its record."""
+    log = promote_jobs.log_path(job_id)
+    if log is not None:
+        log.parent.mkdir(parents=True, exist_ok=True)
+    out = open(log, "ab") if log is not None else subprocess.DEVNULL  # noqa: SIM115
+    try:
+        subprocess.Popen(
+            _worker_argv(job_id),
+            cwd=_BACKEND_DIR,
+            stdin=subprocess.DEVNULL,
+            stdout=out,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+            close_fds=True,
+        )
+    finally:
+        if out is not subprocess.DEVNULL:
+            out.close()
+
+
+# Where a job is started. A seam: the test suite runs the job INLINE instead (`tests/conftest.py`),
+# so no test can ever start a real deploy process — one that would reach the trading box outside
+# the suite's guards.
+_spawn: Callable[[str], None] = _launch_worker
+
+
+def _interrupted(stage: str | None) -> str:
+    """What it means for the bot that a job's process ended before the job did."""
+    return _describe_job_failure(
+        stage, what="stopped unexpectedly — the deploy's own process ended"
+    )
 
 
 def _job_view(job: dict) -> BotPromoteJob:
@@ -5295,6 +5505,7 @@ def _job_enter(job: dict, key: str) -> None:
                 s["state"], s["ended"] = "done", now
         s = job["stages"][key]
         s["state"], s["started"] = "active", now
+        promote_jobs.write(job)
 
 
 def _job_close(job: dict, *, status: str, result=None, error=None) -> None:
@@ -5309,19 +5520,23 @@ def _job_close(job: dict, *, status: str, result=None, error=None) -> None:
             elif s["state"] == "pending":
                 s["state"] = "skipped"
         job["status"], job["result"], job["error"], job["ended"] = status, result, error, now
+        promote_jobs.write(job)
 
 
-def _describe_job_failure(stage: str | None, exc: Exception) -> str:
+def _describe_job_failure(
+    stage: str | None, exc: Exception | None = None, what: str | None = None
+) -> str:
     """What a raised exception MEANS for the bot, which depends on the step it hit.
 
     ⚠ A timeout during the BUILD is the uncertain one: promote.py may have finished on the box
     after this end stopped listening, so it is reported as *may have deployed*, never as
     *untouched*."""
-    what = (
-        "timed out"
-        if isinstance(exc, subprocess.TimeoutExpired)
-        else f"could not reach the trading box ({exc})"
-    )
+    if what is None:
+        what = (
+            "timed out"
+            if isinstance(exc, subprocess.TimeoutExpired)
+            else f"could not reach the trading box ({exc})"
+        )
     if stage == "pull":
         return f"The code pull {what}. Nothing was deployed and the bot is untouched."
     if stage == "build":
@@ -5383,6 +5598,23 @@ def _is_new_process_on(state: dict, before: dict | None, deployed_hash: str) -> 
     ) != before.get("last_updated")
 
 
+def _running_older_code(bot_key: str) -> bool | None:
+    """Is the live PROCESS running code other than what is pinned on disk?
+
+    `None` = one of the two could not be read — never read as *no*, which would leave a stale
+    process alone while saying it is current (root `CLAUDE.md` rule 1). Same comparison as
+    `_is_new_process_on`: the process reports a prefix of the pinned hash."""
+    state = _read_run_state(bot_key)
+    try:
+        pinned = _deployed_hash(_deployed_json(bot_key))
+    except Exception:
+        pinned = ""
+    running = (state or {}).get("source_hash") or ""
+    if not running or not pinned:
+        return None
+    return not pinned.startswith(running)
+
+
 def _await_new_version(bot_key: str, before: dict | None) -> bool:
     """Poll until the restarted bot reports the deployed code, or give up. A read that fails
     mid-wait is a blip, not a verdict — it just uses up one attempt."""
@@ -5401,7 +5633,30 @@ def _await_new_version(bot_key: str, before: dict | None) -> bool:
     return False
 
 
-def _run_promote_job(job: dict, bot_key: str, req: BotPromoteRequest) -> None:
+def _run_promote_job(job_id: str) -> None:
+    """Run one job to its end — what the job's OWN process does (`services/promote_worker.py`).
+
+    It stamps its pid first: from then on the job is alive exactly as long as this process is. It
+    never touches the in-memory claims; the job's file is the claim (`bot_ops.set_external`)."""
+    job = promote_jobs.read(job_id)
+    if job is None:
+        return
+    job["pid"] = os.getpid()
+    promote_jobs.write(job)
+    try:
+        _run_promote_steps(job, job["bot"], BotPromoteRequest(**job["request"]))
+    except Exception as e:  # noqa: BLE001 - the steps catch their own; this is the last line
+        if job.get("status") == "running":
+            # Not a network failure — the steps turn those into their own words. This is the job
+            # failing in a way they did not catch, so it says only what it knows.
+            with _PROMOTE_JOBS_LOCK:
+                stage = next((k for k, s in job["stages"].items() if s["state"] == "active"), None)
+            _job_close(
+                job, status="failed", error=_describe_job_failure(stage, what=f"failed ({e})")
+            )
+
+
+def _run_promote_steps(job: dict, bot_key: str, req: BotPromoteRequest) -> None:
     before: dict = {}
 
     def stage(key: str) -> None:
@@ -5422,6 +5677,11 @@ def _run_promote_job(job: dict, bot_key: str, req: BotPromoteRequest) -> None:
         result = _finish_promote(
             bot_key, req, reported, out, versions, stage=stage, nothing_new=idle
         )
+        # Recorded the moment it exists: the one-shot route answers with it rather than waiting
+        # out the confirm step, which can take four minutes (`_await_promote_result`).
+        with _PROMOTE_JOBS_LOCK:
+            job["result"] = result
+            promote_jobs.write(job)
         if result.ok and result.restarted:
             stage("confirm")
             if not _await_new_version(bot_key, before or None):
@@ -5430,6 +5690,7 @@ def _run_promote_job(job: dict, bot_key: str, req: BotPromoteRequest) -> None:
                 with _PROMOTE_JOBS_LOCK:
                     s = job["stages"]["confirm"]
                     s["state"], s["ended"] = "unconfirmed", _time.time()
+                    promote_jobs.write(job)
     except Exception as e:  # everything — a job that dies silently leaves the page waiting
         _job_close(job, status="failed", error=_describe_job_failure(current(), e))
         return
@@ -5445,17 +5706,7 @@ def _run_promote_job(job: dict, bot_key: str, req: BotPromoteRequest) -> None:
     _job_close(job, status="done" if result.ok else "failed", result=result, error=error)
 
 
-def _evict_promote_jobs() -> None:
-    """Drop the oldest FINISHED jobs past the cap. Caller holds the lock."""
-    finished = sorted(
-        (j for j in _PROMOTE_JOBS.values() if j["status"] != "running"),
-        key=lambda j: j["started"],
-    )
-    while len(_PROMOTE_JOBS) > _PROMOTE_JOBS_CAP and finished:
-        _PROMOTE_JOBS.pop(finished.pop(0)["job_id"], None)
-
-
-def _begin_promote_job(bot_key: str, req: BotPromoteRequest) -> dict:
+def _begin_promote_job(bot_key: str, req: BotPromoteRequest, take_over: str | None = None) -> dict:
     """Register a promote job for `bot_key` and set it running in the background.
 
     Raises `ValueError` when one is already running — two runs of promote.py over one instance
@@ -5467,11 +5718,44 @@ def _begin_promote_job(bot_key: str, req: BotPromoteRequest) -> dict:
     is a second answer about what a deploy does — on the one action here that changes what a live
     account trades.
     """
+    # 🔴 **The deploy HOLDS the bot from here until its process ends (2026-09-24)** — see
+    # `services/bot_ops.py`. It used to refuse only a second deploy, so Stop, Start and Restart
+    # went straight through mid-deploy and raced its own stop/start on a live process.
+    # `take_over` is a caller already holding the bot (a move) handing its claim straight on.
+    # ⚠ The in-memory claim covers only the CREATE; once the job's file says running, that file is
+    # the claim (it outlives a backend restart), and the in-memory one is let go.
+    if take_over is not None:
+        if not bot_ops.hand_over(bot_key, take_over, _DEPLOYING):
+            raise ValueError(f"{_bot_label(bot_key)} is not held by the step handing it over.")
+    else:
+        try:
+            bot_ops.claim(bot_key, _DEPLOYING, _bot_label(bot_key))
+        except bot_ops.Busy as e:
+            raise ValueError(str(e)) from None
+    try:
+        job = _new_promote_job(bot_key, req)
+        try:
+            _spawn(job["job_id"])
+        except Exception as e:
+            # Never started: say so now, rather than leave it `running` until its grace runs out.
+            job = promote_jobs.read(job["job_id"]) or job
+            _job_close(
+                job,
+                status="failed",
+                error=f"The deploy could not be started ({e}). "
+                "Nothing was deployed and the bot is untouched.",
+            )
+            raise ValueError(job["error"]) from None
+    finally:
+        bot_ops.release(bot_key, _DEPLOYING)
+    return promote_jobs.read(job["job_id"]) or job
+
+
+def _new_promote_job(bot_key: str, req: BotPromoteRequest) -> dict:
     with _PROMOTE_JOBS_LOCK:
-        if any(j["bot"] == bot_key and j["status"] == "running" for j in _PROMOTE_JOBS.values()):
-            raise ValueError(f"A deploy of {bot_key} is already running — wait for it to finish.")
         job = {
-            "job_id": f"pj_{int(_time.time() * 1000)}_{bot_key}",
+            # The random part: two jobs made in one millisecond must not share a FILE.
+            "job_id": f"pj_{int(_time.time() * 1000)}_{uuid.uuid4().hex[:6]}_{bot_key}",
             "bot": bot_key,
             "status": "running",
             "stages": {
@@ -5481,11 +5765,47 @@ def _begin_promote_job(bot_key: str, req: BotPromoteRequest) -> dict:
             "error": None,
             "started": _time.time(),
             "ended": None,
+            # What the job's process runs, and — once it has started — which process that is.
+            "request": req.model_dump(),
+            "pid": None,
         }
-        _PROMOTE_JOBS[job["job_id"]] = job
-        _evict_promote_jobs()
-    _spawn(lambda: _run_promote_job(job, bot_key, req))
+        promote_jobs.write(job)
+        promote_jobs.prune(_PROMOTE_JOBS_CAP)
     return job
+
+
+# A deploy's claim on its bot is its job FILE, so a restarted backend still sees it.
+bot_ops.set_external(lambda: promote_jobs.running_bots(_interrupted))
+
+# How long the one-shot route waits for a deploy's RESULT — under the trading-box tool's own 120s.
+_ONE_SHOT_WAIT_S = 110
+_ONE_SHOT_POLL_S = 1.0
+
+
+def _await_promote_result(job_id: str) -> BotPromoteResult:
+    """The deploy's result as soon as it has one, for the one-shot route. The job carries on in
+    its own process past this — its confirm step can take four minutes — and the page watches it."""
+    deadline = _time.time() + _ONE_SHOT_WAIT_S
+    while True:
+        job = promote_jobs.read(job_id)
+        if job is not None:
+            job = promote_jobs.settle_if_dead(job, _interrupted)
+            if job.get("result") is not None:
+                return (
+                    BotPromoteResult(**job["result"])
+                    if isinstance(job["result"], dict)
+                    else job["result"]
+                )
+            if job.get("status") != "running":
+                return BotPromoteResult(ok=False, output=job.get("error") or "", restarted=False)
+        if _time.time() >= deadline:
+            return BotPromoteResult(
+                ok=False,
+                restarted=False,
+                output=f"Still deploying after {_ONE_SHOT_WAIT_S}s. It carries on in its own "
+                "process — watch the bot's deploy on the Bots page before assuming either way.",
+            )
+        _time.sleep(_ONE_SHOT_POLL_S)
 
 
 @router.post("/{bot_name}/promote/job", response_model=BotPromoteJob, status_code=202)
@@ -5501,8 +5821,7 @@ def start_promote_job(bot_name: str, req: BotPromoteRequest):
         job = _begin_promote_job(bot_key, req)
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
-    with _PROMOTE_JOBS_LOCK:  # the thread is already writing to it
-        return _job_view(job)
+    return _job_view(job)
 
 
 @router.get("/{bot_name}/promote/job", response_model=Optional[BotPromoteJob])
@@ -5512,12 +5831,8 @@ def get_promote_job(bot_name: str):
     Addressed by the BOT rather than a job id, so a page reopened mid-deploy finds the run that
     is already going instead of offering a second Deploy button over it."""
     _, bot_key = _resolve_bot(bot_name)
-    with _PROMOTE_JOBS_LOCK:
-        mine = [j for j in _PROMOTE_JOBS.values() if j["bot"] == bot_key]
-        if not mine:
-            return None
-        job = max(mine, key=lambda j: j["started"])
-        return _job_view(job)
+    job = promote_jobs.latest_for(bot_key, _interrupted)
+    return _job_view(job) if job is not None else None
 
 
 # ── Reading and changing a bot's settings ─────────────────────────────────────
@@ -5572,6 +5887,13 @@ def get_bot_params(bot_name: str):
 
 @router.patch("/{bot_name}/runtime")
 def save_bot_runtime(bot_name: str, update: BotRuntimeUpdate):
+    """One action at a time on a bot: refused (409) while it is mid-action (`services/bot_ops.py`)."""
+    _, bot_key = _resolve_bot(bot_name)
+    with _acting(bot_key, _SAVING):
+        return _save_bot_runtime(bot_name, update)
+
+
+def _save_bot_runtime(bot_name: str, update: BotRuntimeUpdate):
     """Change the levers that are allowed to move on a running bot.
 
     Today that is `exec_risk_pct` alone — see `services/bot_params.py` for why the strategy
@@ -5663,6 +5985,73 @@ def save_bot_runtime(bot_name: str, update: BotRuntimeUpdate):
     return {"status": "ok", "changed": True, "deployed": True, "detail": changed, "output": out}
 
 
+# ── One action at a time per bot (2026-09-24) — see `services/bot_ops.py` ──────────────────
+# What each action is called in the refusal a second one gets: "SOS Fade · LIVE is deploying".
+_STARTING = "starting"
+_STOPPING = "stopping"
+_RESTARTING = "restarting"
+_DEPLOYING = "deploying"
+_MOVING = "being moved between accounts"
+_SAVING = "having its settings changed"
+
+
+@contextmanager
+def _acting(bot_key: str, doing: str) -> Iterator[None]:
+    """Hold `bot_key` as `doing` for a request; a bot already mid-action answers 409."""
+    try:
+        bot_ops.claim(bot_key, doing, _bot_label(bot_key))
+    except bot_ops.Busy as e:
+        raise HTTPException(status_code=409, detail=str(e)) from None
+    try:
+        yield
+    finally:
+        bot_ops.release(bot_key, doing)
+
+
+@contextmanager
+def _acting_all(doing: str) -> Iterator[None]:
+    """Hold EVERY bot for a fleet-wide action — refused, with nothing held, if any is mid-action."""
+    held: list[str] = []
+    try:
+        for b in _BOTS:
+            bot_ops.claim(b.key, doing, _bot_label(b.key))
+            held.append(b.key)
+    except bot_ops.Busy as e:
+        for k in held:
+            bot_ops.release(k, doing)
+        raise HTTPException(status_code=409, detail=str(e)) from None
+    try:
+        yield
+    finally:
+        for k in held:
+            bot_ops.release(k, doing)
+
+
+def _refuse_if_account_busy(account: int) -> None:
+    """An account's cap, shares, priority and registration are read by every bot on it, so none of
+    them may change while one of those bots is being deployed, stopped, started or moved."""
+    keys = [
+        b.key
+        for g in _account_groups()
+        if g.kind == "account" and g.account == account
+        for b in g.bots
+    ]
+    why = bot_ops.account_busy(keys, {k: _bot_label(k) for k in keys})
+    if why:
+        raise HTTPException(status_code=409, detail=why)
+
+
+def _refuse_if_any_busy() -> None:
+    """For a write that reaches several bots or accounts at once."""
+    busy = bot_ops.snapshot()
+    if busy:
+        k, what = next(iter(busy.items()))
+        raise HTTPException(
+            status_code=409,
+            detail=f"{_bot_label(k)} is {what} — wait for that to finish, then try again.",
+        )
+
+
 def _refuse_if_benched(bot_key: str) -> None:
     """🔴 A bot on NO account is refused a start (2026-09-11). The runner refuses it on the box
     anyway, but this endpoint answered 200 and sent STARTING to Telegram first — a start that reads
@@ -5682,6 +6071,13 @@ def _refuse_if_benched(bot_key: str) -> None:
 
 @router.post("/{bot_name}/start")
 def start_bot(bot_name: str):
+    """One action at a time on a bot: refused (409) while it is mid-action (`services/bot_ops.py`)."""
+    _, bot_key = _resolve_bot(bot_name)
+    with _acting(bot_key, _STARTING):
+        return _start_bot(bot_name)
+
+
+def _start_bot(bot_name: str):
     """Launch a single bot via startup_coordinator.py --bot <key> (via WMI).
     Individual BOT_* scheduled tasks are Disabled — schtasks /run does nothing.
     """
@@ -5702,6 +6098,13 @@ def start_bot(bot_name: str):
 
 @router.post("/{bot_name}/stop")
 def stop_bot(bot_name: str):
+    """One action at a time on a bot: refused (409) while it is mid-action (`services/bot_ops.py`)."""
+    _, bot_key = _resolve_bot(bot_name)
+    with _acting(bot_key, _STOPPING):
+        return _stop_bot(bot_name)
+
+
+def _stop_bot(bot_name: str):
     """Stop ONE bot by ASKING — see `_kill_bot`, which is named for what it used to do.
 
     ⚠ This docstring said "kill only the python.exe process" until 2026-08-21, describing the
@@ -5732,6 +6135,13 @@ def stop_bot(bot_name: str):
 
 @router.post("/{bot_name}/restart")
 def restart_bot(bot_name: str):
+    """One action at a time on a bot: refused (409) while it is mid-action (`services/bot_ops.py`)."""
+    _, bot_key = _resolve_bot(bot_name)
+    with _acting(bot_key, _RESTARTING):
+        return _restart_bot(bot_name)
+
+
+def _restart_bot(bot_name: str):
     """Kill this bot's process, wait 3 s, then relaunch via startup_coordinator --bot."""
     _, bot_key = _resolve_bot(bot_name)
     _refuse_if_benched(bot_key)

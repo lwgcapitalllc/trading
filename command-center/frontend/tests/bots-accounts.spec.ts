@@ -4,6 +4,15 @@ import { offlineTest } from './offline'
 const { test } = offlineTest('bots-page', { clockFactor: 10 })
 
 /**
+ * The bot panel's files check (`useBotFilesCheck`, 2026-09-24) — every panel open asks it. A
+ * standing "the files match", so no check here reads a tamper warning it did not set up; a check
+ * about the warning routes its own answer, which wins (registered later).
+ */
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/bots/*/version/files', (r) => r.fulfill({ json: { snapshot_ok: true } }))
+})
+
+/**
  * The Bots page's Accounts tab — which bots share a balance, and the ceiling over it.
  *
  * ⚠ **Mocked whole, so this needs no VPS.** The real `/bots/snapshot` SSHes to the live trading
@@ -311,7 +320,6 @@ async function mock(page: Page, groups: unknown[], registry: unknown[] = []) {
           params: {},
           repo_commit: 'dead',
           commits_ahead: 0,
-          snapshot_ok: true,
           running_hash: 'abc',
           params_drift: [],
           compare:
@@ -1159,7 +1167,12 @@ test('a RUNNING bot’s Remove says it is stopped first, and the first click sen
   await mock(page, [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] })], [reg()])
   const log = await stopsWhenAsked(page, 'sos_fade')
   await openBot(page, 'sos_fade') // the snapshot mock has sos_fade RUNNING
-  await expect(page.getByTestId('bot-account')).toContainText('stops it first')
+  // On the section heading's hover since the 2026-09-16 panel redesign — "what a move does went
+  // to the heading's hover" (notes/bots-page.md) — so it is read off the title, not the text.
+  await expect(page.getByTestId('bot-account').locator('p[title]').first()).toHaveAttribute(
+    'title',
+    /stops it first/
+  )
   // The account's NICKNAME since 2026-09-13 — `reg()` carries one, so the broker is not printed.
   await expect(page.getByTestId('bot-account-name')).toHaveText('PU Prime ECN demo')
   const remove = page.getByTestId('remove-sos_fade')
@@ -2244,6 +2257,15 @@ async function mockBothSides(
   await expect(page.getByTestId('section-demo')).toBeVisible()
 }
 
+/** Open a bot row's detail (2026-09-24) — trades, R per trade and the open trade live behind the
+ *  row's arrow now, so a test reading them opens the row first, the way Aaron does. Returns the
+ *  detail, which renders as the row's SIBLING, never inside it. */
+async function expandBot(page: Page, key: string) {
+  const row = page.locator(`[data-testid="bot-row"][data-bot="${key}"]`).first()
+  await row.getByTestId('bot-expand').click()
+  return row.locator('xpath=following-sibling::*[1]')
+}
+
 test('an account measured off what went IN says so, and no longer blames a deposit', async ({
   page,
 }) => {
@@ -2298,7 +2320,7 @@ test('a bot whose account cannot trade says so on its row, and nothing else does
   )
   const off = page.locator('[data-testid="bot-status"][data-state="trading-off"]')
   await expect(off).toHaveCount(1)
-  await expect(off).toHaveText('Trading off')
+  await expect(off.getByTestId('status-word')).toHaveText('Trading off')
   await expect(off).toHaveAttribute('title', /read-only/)
 })
 
@@ -2345,7 +2367,16 @@ test('a bot in a trade and a HALTED bot each say so on their row, and no other b
   const detail = page.getByTestId('account-detail')
   const trade = detail.getByTestId('trade-open')
   await expect(trade).toHaveCount(1)
-  await expect(trade).toHaveText(/long 0\.40 lots · \+1\.2R/i)
+  // 🔴 On the row since 2026-09-24 it is ONE word — an open trade is state, so it never needs a
+  // click — and its size, entry, stop and R are in the row's detail.
+  await expect(trade).toHaveText('LONG')
+  const open = await expandBot(page, 'sos_live')
+  await expect(open).toContainText('Long 0.40 lots')
+  await expect(open).toContainText('3,280.00')
+  await expect(open).toContainText('+$83.00 · +1.19R')
+  // A runner that predates the target field (this fixture has none): "not reported", never "none".
+  await expect(open.getByTestId('trade-target')).toHaveAttribute('data-state', 'unreported')
+  await expect(open.getByTestId('trade-target')).toHaveText('not reported')
   await expect(trade).toHaveAttribute(
     'title',
     /\+\$83\.00: \+1\.19R of the \$70\.00 risked at entry/
@@ -2354,6 +2385,51 @@ test('a bot in a trade and a HALTED bot each say so on their row, and no other b
   await expect(halted).toHaveCount(1)
   await expect(halted).toHaveAttribute('data-tone', 'bad')
   await expect(halted).toHaveAttribute('title', /MT5 holds none/)
+})
+
+test("an open trade's target reads as a price, as none, or as not reported — three answers", async ({
+  page,
+}) => {
+  // 🔴 Rule 1: a runner that said nothing and a broker holding no take-profit are different
+  // answers. Live SOS Fade's normal trade has no target; an old runner has not reported one.
+  // MUTATION: read `target == null` as "none" without checking `target_reported` → red on the
+  // "not reported" case, which is pinned in the trade test just above (its fixture has no field).
+  // MUTATION: drop the R beside the price → red on "3,320.00 · +3.00R".
+  const pos = {
+    side: 'long',
+    lots: 0.4,
+    entry: 3290,
+    stop: 3280,
+    profit_usd: 83,
+    risk_usd: 70,
+    r: 1.19,
+    tickets: 1,
+  }
+  await mockBothSides(
+    page,
+    SCORED,
+    [],
+    false,
+    {},
+    {
+      sos_live: {
+        bridge_state: 'live',
+        in_trade: true,
+        position: { ...pos, target: 3320, target_r: 3, target_reported: true },
+      },
+      sos_fade: {
+        bridge_state: 'live',
+        in_trade: true,
+        position: { ...pos, target: null, target_r: null, target_reported: true },
+      },
+    }
+  )
+  const set = (await expandBot(page, 'sos_live')).getByTestId('trade-target')
+  await expect(set).toHaveAttribute('data-state', 'set')
+  await expect(set).toHaveText('3,320.00 · +3.00R')
+  const none = (await expandBot(page, 'sos_fade')).getByTestId('trade-target')
+  await expect(none).toHaveAttribute('data-state', 'none')
+  await expect(none).toHaveText('none — rides its stop')
 })
 
 test('a row says ONE thing — its worst problem — and counts the rest in the colour of the worst', async ({
@@ -2410,9 +2486,12 @@ test('a row says ONE thing — its worst problem — and counts the rest in the 
   await expect(calm.getByTestId('bot-status')).toHaveAttribute('data-state', 'running')
   await expect(calm.getByTestId('status-more')).toHaveCount(0)
   await expect(calm.getByTestId('bot-status')).toHaveAttribute('data-tone', 'ok')
-  // 🔴 No dot on any row (2026-09-12): it said what the Status column says. Aaron: "remove the
-  // dots and just use the status column solely since you put other statuses there."
-  await expect(page.getByTestId('status-dot')).toHaveCount(0)
+  // 🔴 A DOT on every row since 2026-09-24, and it replaced the Status column (Aaron: "can we just
+  // do a colored dot before the bot name?"). A healthy running bot says nothing beside it.
+  // MUTATION: print "Running" beside a healthy bot → red on the word count.
+  await expect(calm.getByTestId('status-dot')).toHaveCount(1)
+  await expect(calm.getByTestId('status-word')).toHaveCount(0)
+  await expect(stopped.getByTestId('status-word')).toHaveText('Stopped')
 })
 
 test('a benched bot with a problem still reads Benched — only a RUNNING bot’s problem takes the word', async ({
@@ -2439,7 +2518,7 @@ test('a benched bot with a problem still reads Benched — only a RUNNING bot’
   await expect(status.getByTestId('status-more')).toHaveAttribute('data-tone', 'bad')
 })
 
-test('every status is ONE coloured pill — the same on the row, the bot panel and the account panel', async ({
+test('every status is ONE colour — the dot on the row, the pill on the bot panel and the account panel', async ({
   page,
 }) => {
   // 🔴 Aaron, 2026-09-13: "the status for running or stopped should be color coded … whether that
@@ -2453,9 +2532,12 @@ test('every status is ONE coloured pill — the same on the row, the bot panel a
   const pillIn = (scope: string) => page.locator(`${scope} [data-testid="status-pill"]`)
   const row = (key: string) => `[data-testid="bot-row"][data-bot="${key}"]`
   await page.goto('/bots')
-  await expect(pillIn(row('sos_fade'))).toHaveText('Running')
-  await expect(pillIn(row('sos_fade'))).toHaveClass(/bg-pos-muted/)
-  await expect(pillIn(row('b_leg'))).toHaveClass(/bg-neg-muted/)
+  // ⚠ The Bots ROW draws a dot since 2026-09-24 (Aaron chose it for the space); the panels keep the
+  // pill. The colours are the same tones, so the two can still not disagree.
+  const dotIn = (scope: string) => page.locator(`${scope} [data-testid="status-dot"]`)
+  await expect(dotIn(row('sos_fade'))).toHaveClass(/bg-pos/)
+  await expect(dotIn(row('b_leg'))).toHaveClass(/bg-neg/)
+  await expect(page.locator(`${row('b_leg')} [data-testid="status-word"]`)).toHaveText('Stopped')
 
   await openAccount(page)
   await expect(pillIn('[data-testid="account-bot-state-sos_fade"]')).toHaveClass(/bg-pos-muted/)
@@ -2492,9 +2574,10 @@ test('the number columns share the spare width — no blank track before Actions
     .getByTestId('fleet-table')
     .getByTestId('column-headings')
     .locator(':scope > span')
-  await expect(heads).toHaveCount(5)
-  await expect(heads.nth(2)).toHaveText('Performance')
-  await expect.poll(async () => (await heads.nth(2).boundingBox())?.width ?? 0).toBeGreaterThan(230)
+  // 🔴 Four tracks since 2026-09-24 — Bot, P&L, Version, Actions. P&L's floor is 150px.
+  await expect(heads).toHaveCount(4)
+  await expect(heads.nth(1)).toHaveText('P&L')
+  await expect.poll(async () => (await heads.nth(1).boundingBox())?.width ?? 0).toBeGreaterThan(150)
 })
 
 test('a trade whose opening risk is unknown shows no R rather than a guess', async ({ page }) => {
@@ -2524,7 +2607,10 @@ test('a trade whose opening risk is unknown shows no R rather than a guess', asy
     }
   )
   const trade = page.getByTestId('trade-open')
-  await expect(trade).toHaveText(/^short 0\.20 lots$/i)
+  await expect(trade).toHaveText('SHORT')
+  const open = await expandBot(page, 'sos_live')
+  await expect(open).toContainText('−$12.50')
+  await expect(open).not.toContainText('−$12.50 ·')
   await expect(trade).toHaveAttribute('title', /R unknown/)
   await expect(trade).toHaveAttribute('title', /the trade plus 1 added lot\./)
 })
@@ -2666,63 +2752,51 @@ test('the best bot on R per trade holds the one trophy, with its sample beside i
 }) => {
   // MUTATION: rank bots by dollars → red (SOS Fade's $1,500 is the most money).
   // MUTATION: rank bots by total R → red (SOS Fade live's 2.95R is the most R).
-  // MUTATION: drop the Trades column → red. On one trade a lead is not a verdict, and the count
-  // beside the score is the only thing on the row that says so.
+  // MUTATION: drop the won count → red. On one trade a lead is not a verdict, and the count
+  // beside the score is the only thing in the detail that says so.
   await mockBothSides(page, SCORED)
+  // The R and the trophy are in each row's detail since 2026-09-24 — open every bot.
+  for (const key of ['sos_fade', 'ext_leg', 'sos_live', 'ext_live']) await expandBot(page, key)
   const top = page.locator('[data-testid="per-trade"][data-top="true"]')
   await expect(top).toHaveCount(1)
-  const ext = page
-    .getByTestId('bot-row')
-    .filter({ hasText: 'Extreme Leg' })
-    .filter({ hasNotText: 'live' })
-  await expect(ext.locator('[data-top="true"]')).toHaveCount(1)
-  await expect(ext.getByTestId('per-trade')).toHaveText('+2.10R')
-  await expect(ext.getByTestId('trades')).toHaveText('1')
+  const ext = page.locator('[data-testid="bot-row"][data-bot="ext_leg"]').first()
+  const extDetail = ext.locator('xpath=following-sibling::*[1]')
+  await expect(extDetail.locator('[data-top="true"]')).toHaveCount(1)
+  await expect(extDetail.getByTestId('per-trade')).toHaveText('+2.10R')
+  await expect(extDetail.getByTestId('trades')).toHaveAttribute('data-count', '1')
+  await expect(extDetail.getByTestId('wins')).toHaveText('1')
 })
 
-test("a bot's performance reads as one line — money, trades and R, nothing stacked", async ({
-  page,
-}) => {
-  // Aaron, 2026-09-10: *"I don't want anything stacked on top of each other in columns like
-  // that."* The % sat under the dollars and the count under the R, and the two stacked figures read
-  // as one thing.
-  // MUTATION: stack the % back under the dollars → red on the P&L cell holding only dollars.
-  // MUTATION: stack the count back under the R → red on the Per trade cell holding only R.
-  // MUTATION: drop the Return % column → red.
+test("a bot's row carries only its P&L — its trades and R are one click away", async ({ page }) => {
+  // 🔴 Aaron, 2026-09-24: *"what I really care about is the state of the bot, the name, any action
+  // buttons, and how much the bot has made. That's it."* The trade count and R per trade left the
+  // row for its expansion; the dollars stay, right-aligned under their own heading.
+  // MUTATION: put the count back on the row → red on the row's trades count.
   // MUTATION: count a record holding no closed trade as "no record" → red on its "0".
   await mockBothSides(page, SCORED)
-  // ⚠ Filtered by account number, not `section-demo` — the detail column is a sibling of the
-  // rail now, not nested under either section's heading (see "rail order" in `notes/bots-page.md`).
-  // 🔴 **Repointed 2026-09-15.** P&L, Trades and Per trade became ONE Performance cell on one line
-  // ("+$1,305.58 · 1 trade · +2.10R"), and Return % left the row for the bot panel — Aaron picked
-  // that layout off a mockup. What still holds from 2026-09-10 is the part he asked for: nothing is
-  // STACKED, and each figure keeps its own element.
-  await expect(page.getByTestId('column-headings').first()).toContainText('Performance')
-  const ext = page
-    .getByTestId('bot-row')
-    .filter({ hasText: 'Extreme Leg' })
-    .filter({ hasNotText: 'live' })
+  await expect(page.getByTestId('column-headings').first()).toContainText('P&L')
+  await expect(page.getByTestId('column-headings').first()).not.toContainText('Performance')
+  const ext = page.locator('[data-testid="bot-row"][data-bot="ext_leg"]').first()
   await expect(ext.getByTestId('bot-pnl')).toHaveText('+$1,305.58')
-  // One LINE: every piece of the cell overlaps the same horizontal band. Stacked, the lower
-  // piece's top would sit at or below the upper one's bottom. ⚠ Not "equal bottoms" — figures of
-  // different sizes on one line never share a bottom edge, and that version failed a correct page.
-  // MUTATION: make the cell a column (`flex-col`) → red here.
-  const perf = ext.getByTestId('performance')
-  const band = await perf.evaluate((el) => {
-    const r = [...el.children].map((c) => c.getBoundingClientRect())
-    return {
-      maxTop: Math.max(...r.map((x) => x.top)),
-      minBottom: Math.min(...r.map((x) => x.bottom)),
-    }
-  })
-  expect(band.maxTop).toBeLessThan(band.minBottom)
-  await expect(ext.getByTestId('trades')).toHaveText('1')
-  await expect(ext.getByTestId('per-trade')).toHaveText('+2.10R')
-  // A record that was read and holds no closed trade: a measured 0, said once in words — never
-  // a dash (that is "no record"), and never four zeros across four cells.
-  const idle = page.getByTestId('bot-row').filter({ hasText: 'Extreme Leg live' })
-  await expect(idle.getByTestId('trades')).toHaveAttribute('data-count', '0')
-  await expect(idle.getByTestId('trades')).toHaveText('no trades yet')
+  await expect(ext.getByTestId('trades')).toHaveCount(0)
+  await expect(ext.getByTestId('per-trade')).toHaveCount(0)
+  const detail = await expandBot(page, 'ext_leg')
+  // Won in green, lost in red — no separate total (Aaron, 2026-09-24: "I don't need that").
+  // MUTATION: colour a zero count → red on the grey "0 lost".
+  await expect(detail.getByTestId('trades')).toHaveAttribute('data-count', '1')
+  await expect(detail.getByTestId('wins')).toHaveText('1')
+  await expect(detail.getByTestId('wins')).toHaveClass(/text-pos-text/)
+  await expect(detail.getByTestId('losses')).toHaveText('0')
+  await expect(detail.getByTestId('losses')).toHaveClass(/text-text-tertiary/)
+  await expect(detail).not.toContainText('Record')
+  await expect(detail.getByTestId('per-trade')).toHaveText('+2.10R')
+  // A record that was read and holds no closed trade: a measured nothing — a dash on the row with
+  // its reason on hover, and a 0 in the detail. Never "no record", which is a different answer.
+  const idle = page.locator('[data-testid="bot-row"][data-bot="ext_live"]').first()
+  await expect(idle.getByTestId('bot-pnl')).toHaveAttribute('data-count', '0')
+  await expect(idle.getByTestId('bot-pnl')).toHaveAttribute('title', /holds no closed trade/)
+  const idleDetail = await expandBot(page, 'ext_live')
+  await expect(idleDetail.getByTestId('trades')).toHaveAttribute('data-count', '0')
 })
 
 test('every value sits under its own heading — on a 1280px screen too', async ({ page }) => {
@@ -2734,20 +2808,33 @@ test('every value sits under its own heading — on a 1280px screen too', async 
   await mockBothSides(page, SCORED)
   // The headings are the FLEET TABLE's since 2026-09-15, drawn once above every account.
   const table = page.getByTestId('fleet-table')
+  // 🔴 Every column is LEFT-aligned since 2026-09-24 (Aaron: "either all my headers are left
+  // aligned or they're right aligned"), so each value must START where its heading starts.
+  // MUTATION: right-align P&L again → red on P&L. MUTATION: justify the buttons to the end → red
+  // on Actions.
   const left = (l: ReturnType<Page['getByTestId']>) =>
     l.evaluate((e) => e.getBoundingClientRect().left)
-  const head = await left(
-    table.getByTestId('column-headings').getByText('Performance', { exact: true })
-  )
-  const cell = await left(
-    table
-      .getByTestId('account-detail')
-      .filter({ hasText: String(ACCOUNT) })
-      .getByTestId('bot-row')
-      .first()
-      .getByTestId('performance')
-  )
-  expect(Math.abs(head - cell)).toBeLessThan(2)
+  const headings = table.getByTestId('column-headings')
+  const row = table
+    .getByTestId('account-detail')
+    .filter({ hasText: String(ACCOUNT) })
+    .getByTestId('bot-row')
+    .first()
+  const pairs: [string, ReturnType<Page['getByTestId']>][] = [
+    ['P&L', row.getByTestId('performance').locator(':scope > *').first()],
+    ['Version', row.getByTestId('version-pill').first()],
+    ['Actions', row.getByTestId('configure-bot').locator('xpath=..').locator(':scope > *').first()],
+  ]
+  for (const [word, cell] of pairs) {
+    const head = await left(headings.getByText(word, { exact: true }))
+    expect(Math.abs(head - (await left(cell))), word).toBeLessThan(2)
+  }
+  // The detail's last figure — Return — starts under the Version heading (Aaron, 2026-09-24).
+  // MUTATION: lay the six figures out evenly again → red, Return lands left of Version.
+  const detail = await expandBot(page, 'sos_fade')
+  const ret = detail.getByText('Return', { exact: true })
+  const version = await left(headings.getByText('Version', { exact: true }))
+  expect(Math.abs(version - (await left(ret)))).toBeLessThan(2)
 })
 
 test('no trophy is awarded until there is a contest', async ({ page }) => {
@@ -2847,8 +2934,8 @@ test('after a move to live, the demo trades stay on DEMO and the live rows start
     .filter({ hasText: String(LIVE) })
     .getByTestId('bot-row')
     .filter({ hasText: 'SOS Fade' })
-  // Starts at zero — said in words since the one-line Performance cell (2026-09-15).
-  await expect(liveRow).toContainText('no trades yet')
+  // Starts at zero — a measured nothing, a dash with its reason on hover (2026-09-24).
+  await expect(liveRow.getByTestId('bot-pnl')).toHaveAttribute('data-count', '0')
   await expect(liveRow).not.toContainText('$1,500.00')
 })
 
@@ -2941,15 +3028,16 @@ test('the bot panel says only what its row does not — won/lost, and how far th
 }) => {
   // Aaron, 2026-09-10: *"we don't need to be redundant on data anywhere on this page."* The panel
   // led with the dollars, the % of the account, the trade count and the R — all on the row beside it.
-  // MUTATION: put the dollar figure back in the panel → red on "not the row's $1,500".
-  // MUTATION: drop the won/lost split → red.
+  // ⚠ The 2026-09-16 redesign (commit 1d4651ee) deliberately made the record four tiles — trades,
+  // won · lost, net dollars, net R — so the dollars are back by decision; the % of the account is not.
+  // MUTATION: drop the won/lost tile → red. MUTATION: print the % of the account again → red.
   await mockBothSides(page, SCORED)
   await page.goto('/bots?bot=sos_fade')
   const panel = page.getByRole('complementary', { name: 'SOS Fade settings' })
   const record = panel.getByTestId('bot-record')
-  await expect(record).toContainText('2 won · 0 lost')
+  await expect(record).toContainText('Won · lost')
+  await expect(record).toContainText('2 · 0')
   await expect(record).toContainText('2026-09-01 → 2026-09-10')
-  await expect(panel).not.toContainText('$1,500.00')
   await expect(panel).not.toContainText('of the account')
 
   // A bot with a record and no closed trade says so, never "0 won · 0 lost" (2026-09-12).
@@ -4263,7 +4351,9 @@ test('the bot panel says each thing once — the risk in its box, Save only once
   // redundancy"*. Under a heading reading Risk per trade sat the setting's own name, the value in
   // large type, "Change to" and the same value again in a box, a Save nothing could press yet, and
   // under Version a paragraph saying the same two sentences on every open.
-  // MUTATION: print the setting's own name with only one setting → red on it inside the editor.
+  // ⚠ The 2026-09-16 redesign (commit 1d4651ee) retired the section heading and made each setting
+  // a row with its name on the left — so the name now appears exactly ONCE, on its row.
+  // MUTATION: bring back a heading reading Risk per trade above the row → red on the count.
   // MUTATION: show Save before anything changed → red on its count.
   // MUTATION: drop "was" once the value changes → red on it.
   await mock(page, [FULL], [reg()])
@@ -4276,7 +4366,7 @@ test('the bot panel says each thing once — the risk in its box, Save only once
   await openBot(page, 'b_leg')
   const risk = page.getByTestId('bot-risk')
   await expect(page.getByTestId('risk-input')).toHaveValue('5')
-  await expect(risk).not.toContainText('Risk per trade')
+  await expect(risk.getByText(/Risk.*per trade/i)).toHaveCount(1)
   await expect(risk).not.toContainText('Change to')
   await expect(page.getByTestId('risk-save')).toHaveCount(0)
   await expect(page.getByText('Deploying copies the code')).toHaveCount(0)
@@ -5000,4 +5090,53 @@ test('a switch row is NOT drawn as a number box, and the risk row still is', asy
   await expect(page.getByTestId('bot-switch')).toHaveAttribute('data-name', 'use_breakeven')
   await expect(page.getByTestId('risk-input')).toHaveCount(1)
   await expect(page.getByTestId('bot-risk')).toHaveCount(1)
+})
+
+// ── One bot's start/stop locks THAT bot, never the page (2026-09-24) ───────────────────────────
+//
+// Aaron: *"why can I only restart one bot at a time on an account?"* One flag for the whole page
+// greyed out every bot's buttons until the one in flight came back. Nothing needed it — the server
+// refuses nothing, and two bots on one account already take turns at the broker login on the box.
+
+test('starting one bot leaves the OTHER bot on the account free to start at the same time', async ({
+  page,
+}) => {
+  // 🔴 B-LEG's start is held open, so it is mid-flight for the whole check. SOS Fade must still be
+  // startable, and pressing it must SEND.
+  // MUTATION: put back the page-wide lock (`busyFor = () => pending.size > 0 || …`) → SOS Fade's
+  // Start is disabled while B-LEG's is in flight and this goes red. Watched RED 2026-09-24.
+  await mock(page, STACKED)
+  await page.route('**/api/bots/snapshot', (route) =>
+    route.fulfill({
+      json: {
+        fetched_at: new Date().toISOString(),
+        bots: [
+          { key: 'sos_fade', name: 'SOS Fade', status: 'STOPPED', account_type: 'demo' },
+          { key: 'b_leg', name: 'B-LEG', status: 'STOPPED', account_type: 'demo' },
+        ],
+        scheduled_jobs: [],
+        telegram: { name: 'Telegram', status: 'RUNNING' },
+      },
+    })
+  )
+  let release = () => {}
+  const held = new Promise<void>((r) => (release = r))
+  const started: string[] = []
+  await page.route('**/api/bots/b_leg/start', async (route) => {
+    started.push('b_leg')
+    await held
+    return route.fulfill({ json: { status: 'ok', output: '' } })
+  })
+  await page.route('**/api/bots/sos_fade/start', (route) => {
+    started.push('sos_fade')
+    return route.fulfill({ json: { status: 'ok', output: '' } })
+  })
+  await openAccount(page)
+  await page.getByTestId('start-b_leg').click()
+  await expect.poll(() => started).toEqual(['b_leg'])
+  const other = page.getByTestId('start-sos_fade')
+  await expect(other).toBeEnabled()
+  await other.click()
+  await expect.poll(() => started).toEqual(['b_leg', 'sos_fade'])
+  release()
 })

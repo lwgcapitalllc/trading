@@ -44,6 +44,7 @@ from live_contract import PassThroughSequence, PassThroughSignals  # noqa: E402
 from .config import RealignConfig  # noqa: E402
 from .execution import RealignExecution  # noqa: E402
 from .htf import MAJOR_LENGTH, HtfStructure  # noqa: E402
+from .setups import RealignSetupWatch  # noqa: E402
 from .tracker import RealignTracker  # noqa: E402
 
 
@@ -81,6 +82,9 @@ class RealignStrategy(SosFadeStrategy):
                          if self.config.realign_mom_days is not None else None)
         self.decisions: List[Decision] = []
         self.states: List = []
+        # The signals room's setups (`setups.py`). REPORTING ONLY — fed after each bar's decision.
+        self.setup_watch = RealignSetupWatch(self.config)
+        self.execution.setup_key_scheme = RealignSetupWatch.key_scheme
 
     @staticmethod
     def engine_config():
@@ -100,6 +104,7 @@ class RealignStrategy(SosFadeStrategy):
 
     def _step_core(self, state, bar_time_ms: int) -> Decision:
         b = state.bar
+        was_in_position = self.execution._pos_dir != 0
         closed = self.htf.update(bar_time_ms, b.open, b.high, b.low, b.close)
         if closed is not None:
             self.tracker.on_htf(closed, bar_time_ms,
@@ -136,6 +141,8 @@ class RealignStrategy(SosFadeStrategy):
             self.execution._trail_swing_lo = self.htf.conf_low
         self._report(rs, sig)
         self._last_state = rs
+        # The signals room, told what was decided. Reporting only — reads, never writes back.
+        self.setup_watch.observe(self, rs, bar_time_ms, was_in_position)
         return dec
 
     def _report(self, rs, sig) -> None:

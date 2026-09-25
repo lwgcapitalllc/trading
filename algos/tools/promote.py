@@ -581,6 +581,30 @@ def verify(cfg, root: Path) -> tuple[bool, str]:
     return True, marker[0][2:] if marker else "{}"
 
 
+def snapshot_hashes(cfg, staging, trees):
+    """`(staged, deployed)` content hashes over the SAME roots, or `(None, None)`.
+
+    🔴 **The one comparison in this file that is like for like.** `deployment_hash` folds each
+    root's NAME into the digest, so a hash only means anything against another taken over the same
+    root set — and the pinned hash (`cfg.source_roots`) is taken over a DIFFERENT one from the
+    staged hash. Both values here run over `trees`, which is what this tool copies.
+
+    `(None, None)` for a snapshot that is absent or unreadable, which is never "the same" (rule 1)
+    and never a code change either: the caller says what it could not read rather than inventing a
+    verdict from it.
+    """
+    deployed = Path(cfg.deployed_dir)
+    if not deployed.is_dir():
+        return None, None
+    try:
+        return (
+            deployment_hash([Path(staging) / rel for _, rel in trees]),
+            deployment_hash([deployed / rel for _, rel in trees]),
+        )
+    except Exception:
+        return None, None
+
+
 def nothing_new(cfg, was: dict, staging, trees, params: dict) -> bool:
     """Is there genuinely nothing for the bot to LOAD? Then a restart costs and buys nothing.
 
@@ -620,15 +644,8 @@ def nothing_new(cfg, was: dict, staging, trees, params: dict) -> bool:
     """
     if not was or not was.get("strategy_source_hash"):
         return False  # never deployed: there is no "same" to be the same as
-    deployed = Path(cfg.deployed_dir)
-    if not deployed.is_dir():
-        return False
-    try:
-        staged_hash = deployment_hash([Path(staging) / rel for _, rel in trees])
-        live_hash = deployment_hash([deployed / rel for _, rel in trees])
-    except Exception:
-        return False
-    if staged_hash != live_hash:
+    staged_hash, live_hash = snapshot_hashes(cfg, staging, trees)
+    if staged_hash is None or live_hash is None or staged_hash != live_hash:
         return False
     return (was.get("strategy_params") or {}) == (params or {})
 
@@ -859,12 +876,22 @@ def main(argv=None) -> int:
                 print(f"      {name} = {val}")
             print("    Add them to strategy_params to state them deliberately.")
 
+    # 🔴 **BOTH SIDES OVER THE SAME ROOTS (2026-09-23).** This said
+    # `code changes: <recorded>[:12] -> <staged>[:12]` and those two are taken over DIFFERENT root
+    # sets, so it announced a code change on every promote — including ones that changed nothing,
+    # which is how the message read as a fact the tool knew and ignored. It never knew it.
     new_hash = deployment_hash([staging / r for _, r in trees])
-    old_hash = was.get("strategy_source_hash", "")
-    if old_hash and old_hash == new_hash:
-        print(f"  code is UNCHANGED from the running deployment ({old_hash[:12]})")
-    elif old_hash:
-        print(f"  code changes: {old_hash[:12]} -> {new_hash[:12]}")
+    staged_hash, live_hash = snapshot_hashes(cfg, staging, trees)
+    if staged_hash is not None and live_hash is not None:
+        if staged_hash == live_hash:
+            print(f"  code is UNCHANGED from the running deployment ({live_hash[:12]})")
+        else:
+            print(f"  code changes: {live_hash[:12]} -> {staged_hash[:12]}")
+    elif was.get("strategy_source_hash"):
+        # ⚠ Named rather than passed over. A snapshot this tool could not read is the state a
+        # deploy repairs, and saying nothing here would leave the only trace of it in the absence
+        # of a line nobody is looking for.
+        print("  the deployed snapshot could not be read, so what changes is not known")
 
     # The version this promote MOVES FROM and TO, printed on the dry run as well — it is one
     # of the two questions a preview exists to answer, and it is the one a reader can act on

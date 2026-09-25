@@ -238,3 +238,36 @@ def test_stepping_an_execution_with_no_strategy_REFUSES_rather_than_crashing_odd
     """It is built by the strategy in production. A bare one says so."""
     with pytest.raises(RuntimeError, match="strategy"):
         _exec().step(object(), None)
+
+
+# ── a position carried across a re-warm ──────────────────────────────────────
+
+
+def test_a_restored_position_still_stops_out_after_the_bar_count_restarts():
+    """🔴 **The 2026-09-24 halt on both extreme-leg bots, live and demo.** The daily break makes the
+    runner re-warm, and a re-warm numbers bars from the start of its own window again — so the
+    open trade came back carrying an entry bar number ~200 HIGHER than every live bar after it.
+    Gated on that number, the strategy read the trade as not yet open, never tested its stop, and
+    the broker's stop closed a trade the strategy still held. The bridge then halted both bots.
+
+    Bar TIME is the same in every process; bar NUMBER is not. RED against the old
+    `pos.entry_index >= index` gate — the trade survives a bar far below its stop.
+    """
+    T = 1_600_000_000_000
+    old = _held(_exec(), index=15_263, stop=95.0)   # numbered by the process that opened it
+    new = _exec()
+    new.restore_position(old.snapshot_position())
+    # Eight hours later, in the re-warmed numbering: a SMALLER bar number, a LATER time.
+    new.resolve(15_048, T + 8 * 3_600_000, high=100.0, low=94.0, open_=99.0)
+    assert new.pos is None, "the strategy ignored its own stop on a restored trade"
+    assert new.trades[-1].exit_reason == "stop"
+
+
+def test_a_restored_position_can_still_arm_breakeven_after_the_bar_count_restarts():
+    """Same defect, second gate. RED against `pos.entry_index >= index` in `arm_breakeven`."""
+    T = 1_600_000_000_000
+    old = _held(_exec(use_breakeven=True, be_arm_frac=0.5), index=15_263, stop=95.0, tp=110.0)
+    new = _exec(use_breakeven=True, be_arm_frac=0.5)
+    new.restore_position(old.snapshot_position())
+    new.arm_breakeven(15_048, T + 8 * 3_600_000, high=106.0, low=100.0)
+    assert new.pos.be_armed is True

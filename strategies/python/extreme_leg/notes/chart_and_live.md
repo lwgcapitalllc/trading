@@ -166,3 +166,22 @@ forbids the reverse coupling for the same reason.
 
 A read-only property off the open position (`None` while flat), required by the live contract.
 The bridge uses it after a warm-up to recognise a replayed trade the owner already closed by hand.
+
+## The exits are gated on bar TIME, never bar NUMBER (2026-09-24)
+
+🔴 **Both bots — live 34957946 and demo 700152905 — halted at 02:10 UTC on 2026-09-24, and the
+cause was here, not in the bridge.** The trade opened 17:50 on 09-23, and the daily break at 22:05
+made the runner re-warm. A re-warm numbers bars from the start of its own window again, so the
+restored trade carried entry bar ~15,263 while every live bar after it was numbered ~15,000–15,050.
+`resolve` and `arm_breakeven` both skipped any bar numbered at or below the entry, so the strategy
+never tested its stop again. The broker's stop filled at 4273.84 (−1.14R on both accounts), the
+strategy still held the trade, and the bridge correctly halted on the disagreement.
+
+⚠ **It hit EVERY trade held across the daily break, and every trade held across a restart** — not a
+rare race. The trade would also have ignored its target and its breakeven for ~200 bars.
+
+**Fix:** both gates compare `entry_ms` against the bar's time. Time is the same in every process;
+in a replay time order and bar order are identical, so the trade list cannot move (parity gate
+re-run, see the commit). The FFT bot had the same gate and got the same fix. SOS Fade and Realign
+store an entry number but never gate on it. Tests: two in `tests/test_live_seams.py`, both watched
+RED against the old gates.

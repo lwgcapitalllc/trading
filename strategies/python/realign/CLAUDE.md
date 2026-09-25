@@ -42,6 +42,7 @@ measured on the old 5m trail (`realign_optimization.md` Run 14). Earlier: 2026-0
 5-minute-only arm researched, measured negative and parked off main (last section). 2026-09-10 — swing length and adding to winners pinned to the Pine;
 the book re-measured and reproduced exactly. 2026-08-13 — first commit.
 
+## Setups: notes/setup_alerts.md
 
 ## Flat before the close — one field now, spelled as this fork's Pine spells it
 
@@ -600,3 +601,10 @@ page hides the whole bullet. That is why breakeven sits in the always-shown stop
 ## SOS Fade target-level settings inherited (2026-09-20)
 
 This strategy builds on the SOS Fade config, so it inherits three new exit-ladder settings: "Target 1 level", "Target 2 level" and "First target, in R". They are off by default and change nothing here. They are listed in this meta file so the lab page shows them rather than silently accepting them. They have not been measured for this strategy. SOS Fade results: `strategies/python/sos_fade/sos_fade_optimization.md` Run 40.
+
+## Inherited exit rules and no-entry window, all OFF — unmeasured here (2026-09-23)
+
+⚠ The give-back guard, reversal exit (both triggers) and no-entry window arrive from SOS Fade's config and default OFF, so
+nothing here moved. 🔴 **None was measured on this bot**; on SOS Fade's book the reversal exit
+lost on all six settings. Switching one on here is a new experiment, and neither has a Pine side.
+Evidence: `strategies/python/sos_fade/notes/exit_ladder_history.md`.

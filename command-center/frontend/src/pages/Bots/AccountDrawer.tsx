@@ -173,9 +173,9 @@ export function AccountDrawer({
   onStart,
   onStop,
   onStopThen,
-  pendingKey = null,
-  pendingAction = null,
-  busy = false,
+  actionOf = () => null,
+  busyFor = () => false,
+  lock = null,
 }: {
   group: BotAccountGroup
   reg: BotAccountRegistration | undefined
@@ -213,10 +213,16 @@ export function AccountDrawer({
     what: string,
     then: () => Promise<boolean> | void
   ) => Promise<void> | void
-  /** A start/stop still in flight — the same pill the page's row shows. */
-  pendingKey?: string | null
-  pendingAction?: BotAction | null
-  busy?: boolean
+  /** The start/stop a bot has in flight — the same pill the page's row shows. PER BOT: the page
+   *  can have several in flight at once (2026-09-24). */
+  actionOf?: (key: string) => BotAction | null
+  /** Whether THIS bot's start/stop is locked — never another bot's. */
+  busyFor?: (key: string) => boolean
+  /** 🔴 Why THIS ACCOUNT's settings must wait, or `null` (2026-09-24) — one of its bots is being
+   *  deployed, started, stopped or moved. Its cap, shares, priority, registration and bots are
+   *  read by every bot on it, so each of those writes is disabled with this reason on it; the
+   *  server refuses them too (`services/bot_ops.py`). */
+  lock?: string | null
 }) {
   const navigate = useNavigate()
   const unregister = useUnregisterAccount()
@@ -307,7 +313,8 @@ export function AccountDrawer({
     group.bots.length > 1 &&
     (orderDirty || orderUnsaved) &&
     !group.bots.some((b) => b.unreadable) &&
-    !savePriority.isPending
+    !savePriority.isPending &&
+    !lock
   const saveOrder = () => {
     if (account === null) return
     savePriority.mutate({ account, order }, { onSuccess: () => setOrderEdit(null) })
@@ -365,6 +372,7 @@ export function AccountDrawer({
     editsValid &&
     !group.cap_unknown &&
     !save.isPending &&
+    !lock &&
     account !== null &&
     hasBots &&
     (p ? !p.refused : planFailed)
@@ -519,6 +527,7 @@ export function AccountDrawer({
         <button
           data-testid="cap-save"
           disabled={!canSave}
+          title={lock ?? undefined}
           onClick={saveAll}
           className="shrink-0 inline-flex items-center gap-[6px] px-4 py-[6px] rounded-md text-[12.5px] font-semibold bg-accent-muted text-accent-text border border-accent/50 hover:bg-accent/15 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
@@ -586,6 +595,7 @@ export function AccountDrawer({
       <AccountForm
         existing={reg}
         focus={focus}
+        lock={lock}
         onClose={() => setEditing(false)}
         frame={(body, formFooter) =>
           shell(body, formFooter, <BackButton onClick={() => setEditing(false)} />)
@@ -681,8 +691,8 @@ export function AccountDrawer({
                  *  reads as a feature that does not exist. */
                 <button
                   data-testid="add-bot"
-                  disabled={!!addBlock || adding}
-                  title={addBlock ?? 'Put a bot on this account'}
+                  disabled={!!addBlock || adding || !!lock}
+                  title={lock ?? addBlock ?? 'Put a bot on this account'}
                   onClick={() => setAdding(true)}
                   className="inline-flex items-center gap-[5px] px-[11px] py-[5px] rounded-md text-[12px] font-medium border border-accent/40 text-accent-text hover:bg-accent/15 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
@@ -729,7 +739,7 @@ export function AccountDrawer({
                 const known = st !== undefined
                 // A trade it holds would be left with nothing managing it (the bot panel's rule).
                 const holding = running && botByKey?.get(b.key)?.in_trade === true
-                const action = pendingKey === b.key ? pendingAction : null
+                const action = actionOf(b.key)
                 const off = takeOff.stateOf(b.key)
                 const share = shareOf(b)
                 const edited = share !== b.risk_pct
@@ -795,7 +805,7 @@ export function AccountDrawer({
                           <button
                             data-testid={`stop-${b.key}`}
                             onClick={() => onStop(b.key)}
-                            disabled={busy}
+                            disabled={busyFor(b.key)}
                             title={`Stop ${b.display}`}
                             aria-label={`Stop ${b.display}`}
                             className="w-[26px] h-[26px] grid place-items-center rounded-md border border-border-default text-text-secondary hover:text-neg-text hover:border-neg/40 transition-colors disabled:opacity-40"
@@ -809,7 +819,7 @@ export function AccountDrawer({
                           <button
                             data-testid={`start-${b.key}`}
                             onClick={() => onStart(b.key)}
-                            disabled={busy}
+                            disabled={busyFor(b.key)}
                             title={`Start ${b.display}`}
                             aria-label={`Start ${b.display}`}
                             className="w-[26px] h-[26px] grid place-items-center rounded-md border border-border-default text-text-secondary hover:text-pos-text hover:border-pos/40 transition-colors disabled:opacity-40"
@@ -821,8 +831,11 @@ export function AccountDrawer({
                       {/* ⚠ Withheld while the box has not answered, and while it HOLDS A TRADE;
                        *  a RUNNING bot is stopped first (`stopFirst.ts`). Hidden while a
                        *  start / stop / restart is under way — its pill is the row's ONLY
-                       *  control then, the same one-button rule as a take-off (2026-09-16). */}
-                      {action === null && (
+                       *  control then, the same one-button rule as a take-off (2026-09-16).
+                       *  ⚠ Except when the take-off itself is what started that stop: then THIS
+                       *  button is the one control and reads "Removing…" — hiding it too left
+                       *  the row with no control at all (2026-09-23). */}
+                      {(action === null || off !== 'idle') && (
                         <TakeOffButton
                           testId={`take-off-${b.key}`}
                           compact
@@ -900,6 +913,7 @@ export function AccountDrawer({
                   <button
                     data-testid="priority-save"
                     disabled={!canSaveOrder}
+                    title={lock ?? undefined}
                     onClick={saveOrder}
                     className="inline-flex items-center gap-[6px] px-3 py-[5px] rounded-md text-[12px] font-semibold bg-accent-muted text-accent-text border border-accent/50 hover:bg-accent/15 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
@@ -1115,8 +1129,8 @@ export function AccountDrawer({
             {group.bots.length > 0 && reg?.kind === 'demo' && (
               <button
                 data-testid="go-live"
-                disabled={!!goLiveBlock}
-                title={goLiveBlock ?? 'Move every bot on this account onto a live one'}
+                disabled={!!goLiveBlock || !!lock}
+                title={lock ?? goLiveBlock ?? 'Move every bot on this account onto a live one'}
                 onClick={() => setGoingLive(true)}
                 className={`${actionCls} border-warn/40 bg-warn-muted text-warn-text hover:bg-warn/10`}
               >

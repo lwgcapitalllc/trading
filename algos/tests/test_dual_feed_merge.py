@@ -105,11 +105,19 @@ def _stub_strategy(secondary=False):
     state machine in and test something else.
     """
     cfg = SimpleNamespace(exec_secondary=secondary)
+    # The reversal exit runs on EVERY fast bar whatever the secondary says, and reads the major
+    # levels off the last 15m signal — so the stub carries both, inert: no levels, no exit.
+    no_levels = dict.fromkeys(
+        ("liq_w_high", "liq_w_low", "liq_d_high", "liq_d_low", "liq_h4_high", "liq_h4_low")
+    )
     return SimpleNamespace(
         config=cfg,
-        signals=SimpleNamespace(update=lambda s: SimpleNamespace(bar=s.bar)),
+        signals=SimpleNamespace(update=lambda s: SimpleNamespace(bar=s.bar, **no_levels)),
         sequence=SimpleNamespace(update=lambda s: SimpleNamespace()),
-        execution=SimpleNamespace(step=lambda sig, seq: SimpleNamespace()),
+        execution=SimpleNamespace(
+            step=lambda sig, seq: SimpleNamespace(),
+            step_reversal=lambda sig_fast, m1, levels=(): None,
+        ),
     )
 
 
@@ -137,12 +145,13 @@ def _lab_pairing(df15, df5, boundary):
 class _FakeFeed:
     """Hands out bars whose CLOSE has passed the harness clock — what MT5 does, minus the lies."""
 
-    def __init__(self, df, secs, timeframe, clock):
+    def __init__(self, df, secs, timeframe, clock, lag_ms=0):
         self.df, self.bar_seconds, self.timeframe = df, secs, timeframe
         self._clock = clock
         self.i = 0
         self.last_bar_time = None
-        self.closes = [int(t.value // 1_000_000) + secs * 1000 for t in df.index]
+        # `lag_ms` delays DELIVERY past the close — a broker whose 15m bar shows up late.
+        self.closes = [int(t.value // 1_000_000) + secs * 1000 + lag_ms for t in df.index]
 
     def _upto(self):
         j = 0
@@ -173,7 +182,7 @@ class _FakeFeed:
             self.last_bar_time = df.index[-1]
 
 
-def _live_pairing(df15, df5, boundary):
+def _live_pairing(df15, df5, boundary, lag15_ms=0):
     """The LIVE order — driven through the REAL `LiveRunner` methods, not a copy of them.
 
     🔴 **Driving the runner rather than re-creating its loop is the point.** An earlier version of
@@ -200,7 +209,7 @@ def _live_pairing(df15, df5, boundary):
     r._settle_primary = lambda ps: None
     r._drain_records = lambda: None
     r._notify_health = lambda *a, **k: None
-    r.feed = _FakeFeed(df15, 900, "M15", now)
+    r.feed = _FakeFeed(df15, 900, "M15", now, lag15_ms)
     r.fast_feed = _FakeFeed(df5, 300, "M5", now)
     r.stack = SimpleNamespace(step=lambda bar: SimpleNamespace(bar=bar))
     r.clock = _clock(r.strategy)
@@ -273,7 +282,11 @@ def test_a_fast_bar_never_reads_a_context_from_its_own_future():
     A fast bar opening at X may only read a 15m bar that CLOSED at or before X. This is the
     property a merge bug destroys, and it is checkable on the live pairing alone.
 
-    MUTATION: make `can_step_fast` return True unconditionally and 39 pairs break it.
+    MUTATION: flush a queued 15m bar on its OPEN instead of its close inside
+    `DualClock.step_fast`, and the lab comparison above goes red.
+    ⚠ This check is mostly a guard on the clock, not on the runner's wait: with both feeds on
+    time, removing that wait (`can_step_fast` → True) leaves it green. The late-15m test below
+    is the one that pins the wait.
     """
     df15, df5 = _frames()
     closes = {float(i): b.timestamp_ms + TF15 for i, b in enumerate(_bars(df15))}
@@ -282,6 +295,31 @@ def test_a_fast_bar_never_reads_a_context_from_its_own_future():
             f"a fast bar opening at {fast_open} read the 15m bar closing at {closes[ctx_close]} — "
             f"a context from its own future"
         )
+
+
+def test_a_LATE_15m_bar_holds_the_fast_bars_back_until_it_arrives():
+    """The runner's wait, stated as the failure it prevents.
+
+    A broker can deliver the 15m bar AFTER the 5m bar that opens at its close. That 5m bar must
+    wait for it — stepped early, it reads the 15m bar BEFORE, a stale context, and nothing
+    downstream can tell. With both feeds on time the wait never binds (a 5m bar is only delivered
+    once it has closed, by which time its 15m context has too), so the checks above cannot see it.
+
+    MUTATION: make the runner's drain in `_pump_fast` ignore `can_step_fast` (step every pending
+    bar) → red here, while every on-time check stays green. Watched 2026-09-23.
+    """
+    df15, df5 = _frames()
+    b = _boundary(df15)
+    lab = _lab_pairing(df15, df5, b)
+    # Ten minutes late: the 15m bar closing at X arrives after the 5m bar opening at X (at X+5m).
+    live = _live_pairing(df15, df5, b, lag15_ms=2 * TF5)
+    assert live, "the late feed stepped no fast bar at all — this would pass for free"
+    lab_by_open = dict(lab)
+    wrong = [(t, ctx, lab_by_open[t]) for t, ctx in live if lab_by_open.get(t) != ctx]
+    assert not wrong, (
+        f"{len(wrong)} fast bars read a different 15m context from the lab when the 15m bar came "
+        f"late; first (open, live, lab): {wrong[0]}"
+    )
 
 
 def test_a_fast_bar_that_arrives_late_is_REFUSED_not_stepped():

@@ -114,6 +114,69 @@ def test_a_timeout_is_never_retried(box):
     assert box["calls"] == 1
 
 
+# ── the shared login (2026-09-24) ───────────────────────────────────────────────
+
+
+@pytest.fixture
+def sent(monkeypatch, tmp_path):
+    """Record the argv each call hands to `subprocess.run`, with the socket folder in tmp."""
+    argvs: list[list[str]] = []
+
+    def fake_run(argv, **kwargs):
+        argvs.append(list(argv))
+        return _done(0, b"ok")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(vps_ssh, "_MUX_DIR", str(tmp_path / "mux"))
+    return argvs
+
+
+def test_a_command_rides_the_shared_login(sent):
+    """MUTATION: `run` without `_shared` — this reddens (killed 2026-09-24)."""
+    vps_ssh.run(["ssh", "forexvps", "echo ok"], capture_output=True)
+    argv = sent[0]
+    assert argv[0] == "ssh" and argv[-2:] == ["forexvps", "echo ok"], "host and command stay last"
+    assert "ControlMaster=auto" in argv
+    assert any(a.startswith("ControlPath=") for a in argv)
+    # Without it the shared login would sit on the tunnel's port from the ssh config.
+    assert "ClearAllForwardings=yes" in argv
+
+
+def test_a_caller_s_own_options_are_kept(sent):
+    vps_ssh.run(["ssh", "-o", "ConnectTimeout=5", "forexvps", "x"], capture_output=True)
+    assert sent[0][-4:] == ["-o", "ConnectTimeout=5", "forexvps", "x"]
+
+
+@pytest.mark.parametrize("flag", ["-N", "-L", "-R", "-D"])
+def test_a_tunnel_is_never_put_on_the_shared_login(sent, flag):
+    """A forward made through the shared login would outlive the process `start.sh` kills.
+    MUTATION: drop the tunnel check — every case reddens (killed 2026-09-24)."""
+    argv = ["ssh", flag, "8765:127.0.0.1:8765", "forexvps"]
+    vps_ssh.run(argv, capture_output=True)
+    assert sent[0] == argv
+
+
+def test_a_non_ssh_program_is_left_alone(sent):
+    vps_ssh.run(["scp", "a", "forexvps:b"], capture_output=True)
+    assert sent[0] == ["scp", "a", "forexvps:b"]
+
+
+def test_every_retry_asks_on_the_shared_login_too(box, monkeypatch, tmp_path):
+    """The retry re-sends the SAME argv. MUTATION: `run` without `_shared` — this reddens
+    (killed 2026-09-24)."""
+    monkeypatch.setattr(vps_ssh, "_MUX_DIR", str(tmp_path / "mux"))
+    seen: list[list[str]] = []
+    answers = [_done(255, err=REFUSED), _done(0, b"ok")]
+
+    def fake_run(argv, **kwargs):
+        seen.append(list(argv))
+        return answers.pop(0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    vps_ssh.run(["ssh", "forexvps", "x"], capture_output=True)
+    assert len(seen) == 2 and all("ControlMaster=auto" in a for a in seen)
+
+
 # ── the callers ─────────────────────────────────────────────────────────────────
 
 

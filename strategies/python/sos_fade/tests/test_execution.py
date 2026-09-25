@@ -1714,3 +1714,124 @@ def test_a_provider_returning_a_BAD_rate_falls_back_rather_than_sizing_on_it():
     ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())
     assert ex._pv() == 1.0
     assert abs(ex._qty - (10_000.0 / 3.82)) < 1e-6
+
+
+# ── the scale-in guarantee at MORE THAN ONE add (2026-09-23) ─────────────────────────────
+# Found on the live demo bot, `sos_fade_1` 2026-09-22: a short that was +$2,890 open closed
+# −$690 with two adds on it. Both were sized against the BASE lot's locked profit alone, so the
+# same guarantee was pledged twice while the first add sat 36 points underwater.
+
+def _long_with_one_add():
+    """Drive a long to stage 2 with ONE add filled, and hand back the executor."""
+    cfg = _cfg(exec_scale_in=True, exec_scale_mode="Trail", exec_scale_max_adds=3,
+               exec_scale_cap_x=2.0)
+    ex = Execution(cfg)
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())   # fill @103.82
+    ex.step(_sig(2, 104.0, 107.0, 103.9, 106.5), _seq_flat())         # stage 2, add PLACED
+    ex.step(_sig(3, 106.5, 107.2, 106.4, 107.0), _seq_flat())         # add FILLS @106.5
+    assert len(ex._adds) == 1 and ex._adds[0][1] > 0
+    return ex
+
+
+def test_the_locked_profit_counts_every_open_lot_not_just_the_base():
+    """The sizing rule's `locked` is the WHOLE position's profit at the stop.
+
+    Read off the base alone it is a statement about a position the trade does not hold. With an
+    add bought above the stop and underwater against it, the honest figure is strictly SMALLER,
+    and the difference is exactly that lot's loss to the same stop.
+    """
+    ex = _long_with_one_add()
+    d, pv = ex._pos_dir, ex._pv()
+    stop = ex._current_stop()
+
+    add_px, add_qty = ex._adds[0]
+    assert (add_px - stop) * d > 0, "fixture: the add must sit above the stop to be at risk"
+
+    base_only = (stop - ex._entry) * d * ex._base_qty * pv
+    add_leg = (stop - add_px) * d * add_qty * pv
+    assert add_leg < 0, "fixture: that lot is underwater against the shared stop"
+
+    assert abs(ex._locked_at_stop(stop) - (base_only + add_leg)) < 1e-9
+    assert ex._locked_at_stop(stop) < base_only, (
+        "an add already underwater must SHRINK what the next one may spend"
+    )
+
+
+def test_a_second_add_is_never_sized_against_profit_the_first_one_has_already_spent():
+    """The property the whole rule exists to provide, at TWO adds rather than one.
+
+    Stop out the instant the second add fills and the position must be at worst FLAT. The gate is
+    pinned to the OLD reading on purpose: this test is about the SIZING half of the fix, so the
+    second add has to be allowed to happen. Bar 3 gaps up, so add 1 is bought at 107.5 and is
+    deeply underwater against the 105 stop when add 2 is sized — which is exactly the state the
+    base-only arithmetic could not see.
+
+    Under that arithmetic the base's locked profit pays for add 2 and add 1's loss to the same
+    stop has nothing behind it, so the position books a LOSS on a winning trade. That is
+    `sos_fade_1` 2026-09-22: +$483 base, −$617 and −$560 adds, −$690 net on a trade that was
+    +$2,890 open.
+    """
+    cfg = _cfg(exec_scale_in=True, exec_scale_mode="Trail", exec_scale_max_adds=3,
+               exec_scale_cap_x=2.0, exec_scale_gate="Stop improved",
+               exec_runner_trail="Fixed step", exec_trail_step=1.5)
+    ex = Execution(cfg)
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())   # fill @103.82
+    ex.step(_sig(2, 104.0, 107.0, 103.9, 106.9), _seq_flat())         # stage 2, add 1 PLACED
+    ex.step(_sig(3, 107.5, 107.6, 107.4, 107.5), _seq_flat())         # gaps up, add 1 fills @107.5
+    ex.step(_sig(4, 107.5, 107.8, 107.4, 107.75), _seq_flat())        # trail creeps, add 2 PLACED
+    ex.step(_sig(5, 107.75, 107.9, 107.7, 107.8), _seq_flat())        # add 2 fills @107.75
+
+    assert len(ex._adds) == 2, "fixture: both adds must actually fill"
+    d, pv = ex._pos_dir, ex._pv()
+    stop = ex._current_stop()
+    assert (ex._adds[0][0] - stop) * d > 0, "fixture: add 1 is underwater against the shared stop"
+
+    whole = (stop - ex._entry) * d * (ex._qty - ex._filled_qty) * pv
+    whole += sum((stop - px) * d * q * pv for px, q in ex._adds)
+    assert whole >= -1e-6, (
+        f"stopped out right after adding, the position books {whole:.2f} — an add manufactured a "
+        f"loser, which is the one thing this rule promises cannot happen"
+    )
+
+
+def test_the_gate_decides_whether_a_second_add_is_allowed_at_all():
+    """Both readings of "when it may add again", contrasted on ONE set of bars.
+
+    The contrast IS the test: a setting nothing consumes would answer the same twice. Bar 3 gaps
+    up, so the add is bought at 107.5 while the trail is still down at 106.18 — the lot is deeply
+    underwater against the stop that is supposed to protect it. "Stop improved" asks only whether
+    the trail moved since that add was sized, and places a second one. "Past the last add" asks
+    whether the lot bought last is in profit at the shared stop, and refuses.
+
+    This is the shape of `sos_fade_1` 2026-09-22 in miniature: there, a 1.17-point stop
+    improvement authorised a second add over a first that sat 36 points underwater.
+    """
+    def _run(gate):
+        cfg = _cfg(exec_scale_in=True, exec_scale_mode="Trail", exec_scale_max_adds=3,
+                   exec_scale_cap_x=2.0, exec_scale_gate=gate,
+                   exec_runner_trail="Fixed step", exec_trail_step=1.5)
+        ex = Execution(cfg)
+        ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+        ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())   # fill @103.82
+        ex.step(_sig(2, 104.0, 107.0, 103.9, 106.9), _seq_flat())         # stage 2, add PLACED
+        ex.step(_sig(3, 107.5, 107.6, 107.4, 107.5), _seq_flat())         # gaps up, add fills @107.5
+        ex.step(_sig(4, 107.5, 107.8, 107.4, 107.75), _seq_flat())        # trail creeps
+        return ex
+
+    loose, strict = _run("Stop improved"), _run("Past the last add")
+    assert len(loose._adds) == 1 and len(strict._adds) == 1, "fixture: one add on each side"
+    assert loose._add_last_px == strict._add_last_px == 107.5
+
+    d = strict._pos_dir
+    assert (strict._current_stop() - 107.5) * d < 0, (
+        "fixture: the stop must still be short of the price that add was bought at"
+    )
+    assert strict._add_pending is None, (
+        "the lot bought last is still underwater against the shared stop, so no second add may "
+        "be sized as though its profit were available"
+    )
+    assert loose._add_pending is not None, (
+        "the old reading places one here — without that contrast this test proves nothing"
+    )

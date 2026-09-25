@@ -2514,3 +2514,21 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // have filled. Week levels die on a CLOSE through and were immune, which is why only the
 // two modes nobody was watching were broken. Do not "simplify" this to a live lookup.
 ```
+
+## [184] The locked profit is the WHOLE position's, never the base lot's alone
+
+An add is sized so that, stopped out at the shared stop, it loses at most the profit the stop
+already guarantees. That guarantee used to be read off the BASE lot alone, which is exact for the
+first add and double-spent from the second: each add pledged the base's profit again while the
+lots already bought — always the ones furthest from the stop — were invisible to it. On
+2026-09-22 a live trade went from +$2,890 open to −$690 closed that way.
+
+Every open `ADD` lot is now marked to the stop and summed, signed, on top of the base lot at the
+size the trade OPENED with. A lot in profit at the stop funds more; a lot underwater shrinks or
+refuses the next add. `strategy.opentrades.size()` is negative on a short, which is what makes
+the one expression right on both sides.
+
+⚠ The re-arm setting "When it may add again" ships at "Stop improved". "Past the last add"
+cannot prove this rule on an export: it only re-arms once every earlier add is in profit, the one
+state in which the double-spend cannot happen. Proof, grid and numbers:
+`strategies/python/sos_fade/sos_fade_optimization.md` → Run 43.

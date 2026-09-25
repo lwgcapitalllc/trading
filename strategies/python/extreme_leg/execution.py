@@ -589,7 +589,12 @@ class ExtremeLegExecution(LivePositionMixin):
         safe direction.
         """
         pos = self.pos
-        if pos is None or pos.entry_index >= index:
+        # 🔴 **BY TIME, NEVER BY BAR NUMBER** (the 2026-09-24 halt on both live bots). A bar number
+        # is only meaningful inside the process that counted it: every live re-warm renumbers from
+        # the start of its window, so a restored trade can carry an entry number HIGHER than every
+        # bar after it, and a number gate then never tests its stop again. Time is the same in
+        # every process, and in a replay the two orders are identical, so parity cannot move.
+        if pos is None or pos.entry_ms >= ts_ms:
             return
         # Excursion widens BEFORE the exits resolve, so the closing bar's own extreme counts.
         # Reporting only — nothing below reads it, so the trade list cannot move.
@@ -737,7 +742,7 @@ class ExtremeLegExecution(LivePositionMixin):
             return True
         return False
 
-    def arm_breakeven(self, index: int, high: float, low: float) -> None:
+    def arm_breakeven(self, index: int, ts_ms: int, high: float, low: float) -> None:
         """Pine's breakeven block. Runs only on a bar where a position was ALREADY open.
 
         ⚠ The Pine gates this on `strategy.position_size != 0`, which is still 0 on the bar the
@@ -747,7 +752,9 @@ class ExtremeLegExecution(LivePositionMixin):
         """
         cfg = self._cfg
         pos = self.pos
-        if pos is None or pos.entry_index >= index or not cfg.use_breakeven or pos.be_armed:
+        # By TIME, for the reason `resolve` gives — a restored trade's bar number is from another
+        # process's count.
+        if pos is None or pos.entry_ms >= ts_ms or not cfg.use_breakeven or pos.be_armed:
             return
         if not math.isfinite(pos.take_profit) or not math.isfinite(pos.stop):
             return

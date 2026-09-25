@@ -858,18 +858,77 @@ class OrderBridge:
             return False
 
         opened = {
-            row.get("ticket")
+            row.get("ticket"): row
             for row in rows
             if row.get("event") == "opened"
             and row.get("dir") == side
             and _same_price(row)
             and (_ms(row) or 0) >= int(entry_ms)
         }
-        opened.discard(None)
+        opened.pop(None, None)
         for row in reversed(rows):
             if row.get("event") == "closed" and row.get("ticket") in opened:
                 return row
-        return self._closed_at_broker(opened)
+        closed = self._closed_at_broker(opened)
+        if closed is not None:
+            self._book_broker_close(opened[closed["ticket"]], closed["origin"])
+        return closed
+
+    def _book_broker_close(self, opened: dict, origin: dict) -> None:
+        """Write the `closed` row the ledger never got, off the broker's own deals.
+
+        🔴 **Why (2026-09-24).** `_closed_at_broker` proved a trade over and the copy was dropped,
+        but nothing wrote down what it MADE — so its profit left this bot's record and the Bots
+        page filed it under "Not from these bots". Live: SOS Fade's hand-closed short of
+        2026-09-21, +$181.56. The money is the broker's (`get_deal_breakdown`, net of swap and
+        commission); the risk is the one this bot recorded at the open.
+
+        ⚠ **Nothing is written when the deals cannot be read** (`deals: 0`) — a row of zeros
+        would read as a scratch, which is a measurement nobody took. The next restart asks again,
+        and once this row exists it is found by the ordinary `closed` lookup, so it is never
+        booked twice. ⚠ The row's time is when it was WRITTEN, not the broker's close time.
+        """
+        ask = getattr(self._mt5, "get_deal_breakdown", None)
+        ticket = opened.get("ticket")
+        b = ask(int(ticket)) if callable(ask) else None
+        if not b or not b.get("deals"):
+            self._log.warning(
+                f"T{ticket} is closed at the broker but its deals could not be read, so its "
+                f"result is NOT booked. The next restart asks again."
+            )
+            return
+        closed = origin.get("closed") or {}
+        if any(v > 0 for c, v in closed.items() if c in _MANUAL_CLOSE_REASONS):
+            reason = MANUAL_CLOSE_REASON
+        elif closed.get(4):
+            reason = "stop"
+        elif closed.get(5):
+            reason = "target"
+        else:
+            reason = "closed"
+        risk = opened.get("risk_usd")
+        pnl = b["net_usd"]
+        r = pnl / float(risk) if isinstance(risk, (int, float)) and risk else None
+        self._log.info(
+            f"Booked T{ticket}, closed at the broker while this bot was not watching: "
+            f"${pnl:,.2f}" + (f" ({r:+.2f}R)" if r is not None else "") + f", {reason}."
+        )
+        self._ledger.trade_closed(
+            ticket=ticket,
+            direction=opened.get("dir"),
+            symbol=opened.get("symbol") or self._mt5.symbol,
+            price=b["close_price"],
+            pnl_usd=pnl,
+            r_multiple=r,
+            reason=reason,
+            lots=opened.get("lots") or 0.0,
+            intent=opened.get("intent") or "primary",
+            gross_usd=b["gross_usd"],
+            swap_usd=b["swap_usd"],
+            commission_usd=b["commission_usd"],
+            entry_price=opened.get("price"),
+            intended_price=opened.get("intended_price"),
+        )
 
     def _closed_at_broker(self, tickets) -> Optional[dict]:
         """No `closed` row — does the BROKER's own history prove one of these trades is over?
@@ -896,7 +955,11 @@ class OrderBridge:
             out = sum(float(v) for v in closed.values())
             if opened <= 0 or abs(out - opened) >= 0.005:
                 continue
-            return {"ticket": ticket, "reason": "closed at the broker, no close row in the ledger"}
+            return {
+                "ticket": ticket,
+                "reason": "closed at the broker, no close row in the ledger",
+                "origin": origin,
+            }
         return None
 
     def _flatten_warmup_copy(self, closed: dict) -> bool:
@@ -911,6 +974,14 @@ class OrderBridge:
             took = False
         if not took:
             return False
+        # 🔴 The record of the trade goes with it (2026-09-24), the way a live close clears it.
+        # Left behind, it made `promote.py` refuse this bot as "holding a position" for a trade
+        # closed two days earlier. Only a record of THIS ticket — anything else is not ours to
+        # judge here.
+        if self._instance_dir is not None:
+            record = position_state.read(self._instance_dir)
+            if record is not None and record.ticket == closed.get("ticket"):
+                position_state.clear(self._instance_dir)
         self._log.info(
             f"Warmup ended holding a copy of T{closed.get('ticket')}, which is already closed "
             f"({closed.get('reason')}). The strategy drops it on its next bar and the bot then "

@@ -23,18 +23,30 @@
  */
 import { Loader2 } from 'lucide-react'
 
-export type BotAction = 'start' | 'stop' | 'restart'
+/** ⚠ `deploy` since 2026-09-24: a running deploy is something the bot is in the middle of, and
+ *  its Start / Stop / Restart wait for it like they wait for each other (`index.tsx` → `actionOf`). */
+export type BotAction = 'start' | 'stop' | 'restart' | 'deploy'
 
 const ACTION_WORD: Record<BotAction, string> = {
   start: 'Starting',
   stop: 'Stopping',
   restart: 'Restarting',
+  deploy: 'Deploying',
+}
+
+/** The action as the middle of a sentence: "SOS Fade · LIVE is deploying — wait until it finishes." */
+export const ACTION_DOING: Record<BotAction, string> = {
+  start: 'starting',
+  stop: 'stopping',
+  restart: 'restarting',
+  deploy: 'deploying',
 }
 
 const ACTION_TITLE: Record<BotAction, string> = {
   start: 'Starting this bot on the trading box.',
   stop: 'Asking this bot to stop. It finishes what it is doing and shuts down cleanly — this can take up to half a minute.',
   restart: 'Stopping this bot, then starting it again.',
+  deploy: 'Deploying new code to this bot. Its other controls come back when the deploy finishes.',
 }
 
 /**

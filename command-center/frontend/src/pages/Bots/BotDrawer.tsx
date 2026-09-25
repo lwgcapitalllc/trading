@@ -24,7 +24,7 @@
  * ⚠ **Nothing is deleted, it is folded.** The parameter list is how you check the bot is the bot
  * that was backtested, and the risk note is the measured reasoning behind a live number.
  */
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowRightLeft, ChevronRight, FileText, Play, RotateCcw, Square } from 'lucide-react'
 import {
   useBotAccounts,
@@ -48,7 +48,7 @@ import { botCondition, type Condition } from '@/lib/botCondition'
 import { StatusText, TONE_TEXT } from '@/components/BotStatus'
 import { accountName } from './AccountForm'
 import { ParamGroup, VersionBanner } from './ConfigureTab'
-import { BotActionPill, type BotAction } from './BotStatusPill'
+import { ACTION_DOING, BotActionPill, type BotAction } from './BotStatusPill'
 import { BotRiskEditor } from './BotRiskEditor'
 import { BotSwitchEditor } from './BotSwitchEditor'
 import { SectionTitle } from './drawerParts'
@@ -262,8 +262,13 @@ export function BotDrawer({
   configAccount,
   onOpenAccount,
   fetchedAt,
+  focus,
 }: {
   bot: BotStatus
+  /** Open scrolled to one section — `deploy` when the row's amber version tag was clicked
+   *  (Aaron, 2026-09-24: *"if I click the version tag when it is behind it takes me right to the
+   *  deploy and restart"*). */
+  focus?: 'deploy'
   /** When the trading box took the reading `bot` came from. The version banner measures whether a
    *  restart is still owed off it, the way the row does — one clock, one answer. */
   fetchedAt?: string
@@ -299,6 +304,11 @@ export function BotDrawer({
   /** Open the account this bot is on, in its own panel. */
   onOpenAccount?: (account: number) => void
 }) {
+  const deployRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (focus === 'deploy')
+      deployRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  }, [focus, bot.key])
   const { data, isLoading, error } = useBotParams(bot.key)
   const { data: groups } = useBotAccounts()
   const { data: registry } = useRegisteredAccounts()
@@ -441,6 +451,21 @@ export function BotDrawer({
     removing || moving || checkingDest !== null || after !== null || pendingAction !== null
   // What a MOVE is doing, which the selector cannot say. ⚠ Never a removal's: its own button says
   // "Removing…" (Aaron, 2026-09-13: "I dont need the text next to the button").
+  // 🔴 ONE reason every change on this panel waits for (2026-09-24): the bot is mid-deploy, start,
+  // stop or restart. `pendingAction` carries all four from the page (`index.tsx` → `actionOf`).
+  const lock = pendingAction
+    ? `${labelOf(bot)} is ${ACTION_DOING[pendingAction]} — wait until it finishes.`
+    : null
+  // What the Deploy button waits for: the same, minus its OWN deploy (it shows that as progress),
+  // plus a move or removal this panel has under way.
+  const deployBlocked =
+    pendingAction === 'deploy'
+      ? null
+      : pendingAction
+        ? lock
+        : selectBusy
+          ? `${labelOf(bot)} is being moved or removed — wait until it finishes.`
+          : null
   const busyText =
     after === 'move' && pendingAction === 'stop'
       ? 'Stopping it first, then moving it…'
@@ -634,6 +659,7 @@ export function BotDrawer({
                   botLabel={labelOf(bot)}
                   row={r}
                   live={onLive}
+                  lock={lock}
                 />
               ) : (
                 <BotRiskEditor
@@ -648,6 +674,7 @@ export function BotDrawer({
                   group={r.name === 'exec_risk_pct' ? myGroup : undefined}
                   live={onLive}
                   onOpenAccount={onOpenAccount}
+                  lock={lock}
                 />
               )
             )
@@ -840,7 +867,11 @@ export function BotDrawer({
       </section>
 
       {/* ── version, and the only Deploy control ────────────────────────────── */}
-      <section className="py-[16px] border-b border-border-subtle">
+      <section
+        ref={deployRef}
+        data-testid="bot-deploy"
+        className="py-[16px] border-b border-border-subtle scroll-mt-2"
+      >
         {/* 🔴 IT SAYS "DEPLOY" IN THE HEADING (2026-09-06) — *Version* names the noun; the reader is
          *  looking for the verb. What a deploy does moved to the heading's hover (2026-09-12): a
          *  paragraph under it said the same two sentences on every open. */}
@@ -854,6 +885,7 @@ export function BotDrawer({
           live={bot.account_type === 'live'}
           liveBot={bot}
           fetchedAt={fetchedAt}
+          blocked={deployBlocked}
         />
       </section>
 

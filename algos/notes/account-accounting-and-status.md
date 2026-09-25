@@ -153,9 +153,17 @@ up to an hour late), and nothing said a bot held a trade at all.
 - ⚠ **The exit message's R counts the trade's own ticket; the tag counts every lot.** With scale-in
   lots open the two differ, by design — the tag describes the money at the broker.
 - ⚠ **Never raises** — it runs ahead of the heartbeat write, whose failure mode is no stamp.
-- ⚠ **Reaches a bot by `git pull` plus a restart** (`algos/`, no promote).
+- 🔴 **Reaches a bot by a PROMOTE, not a pull** — corrected 2026-09-24. This line said `git pull`
+  plus a restart, which stopped being true on 2026-09-17 when `live/` joined the frozen snapshot
+  (`tools/promote.py` → `rehearse_start` runs the snapshot's OWN `algos/live/runner.py`).
+- **`target` / `target_r` (2026-09-24)** — the broker's own take-profit on the trade's ticket
+  (MT5's `0.0` → `None`), and its distance in R off the bridge's frozen OPENING stop
+  (`_pos_stop0`), in prices only, so no contract size is read. ⚠ **Live SOS Fade's ordinary trade
+  has NO target** — it banks nothing at a price and rides its stop — so `None` is the usual answer
+  there, and the page says "none — rides its stop". Only a whole-position target reaches the
+  broker (`bridge._sync_take_profit`); a rung that banks part is closed at market and never shows.
 
-Tests: `test_heartbeat_position.py` (15), 2 in `test_mt5_ops_pending.py`, 6 in
+Tests: `test_heartbeat_position.py` (20 — 5 for the target, all watched RED by mutation), 2 in `test_mt5_ops_pending.py`, 6 in
 `test_position_restore.py`. **19 mutations RUN, 19 killed.**
 
 ## The FLAT-state record — what the bot is still WATCHING after a trade ends (2026-09-22)

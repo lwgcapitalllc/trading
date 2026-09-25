@@ -122,7 +122,11 @@ export function AccountForm({
   focus = null,
   onClose,
   frame,
+  lock = null,
 }: {
+  /** Why the account's settings must wait — one of its bots is mid-action (2026-09-24). A
+   *  password-only save goes to the box's credential store, not the settings, and is not held. */
+  lock?: string | null
   /** The account being changed. Absent for the by-hand add, which types every MT5 fact. */
   existing?: BotAccountRegistration
   /** Open on (and re-open to) one card. `at` makes a second request for the same card count. */
@@ -768,12 +772,14 @@ export function AccountForm({
       </button>
       <button
         data-testid="save-account"
-        disabled={!canSave}
+        disabled={!canSave || (!passwordOnly && !!lock)}
         onClick={submit}
         title={
-          passwordOnly
-            ? 'Stores the password on the VPS. Nothing is committed.'
-            : 'Committed, pushed and pulled onto the VPS. No secret goes into the repo.'
+          !passwordOnly && lock
+            ? lock
+            : passwordOnly
+              ? 'Stores the password on the VPS. Nothing is committed.'
+              : 'Committed, pushed and pulled onto the VPS. No secret goes into the repo.'
         }
         className="shrink-0 px-4 py-[6px] rounded-md text-[12.5px] font-semibold bg-accent-muted text-accent-text border border-accent/50 hover:bg-accent/15 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
       >

@@ -286,6 +286,19 @@ def config_from_export(df: pd.DataFrame, base: Optional[SosFadeConfig] = None,
         if scap is not None and float(scap) > 0:
             vals["exec_scale_cap_x"] = float(scap)
 
+    # ...and WHEN the ladder may add again (2026-09-23). Decoded OUTSIDE the block above, for
+    # the same reason `exec_scale_tp_mode` is: an older export that had scaling ON still has to
+    # be pinned, and that is exactly the export this would misread. Absent ⇒ "Stop improved"
+    # is a FACT about those exports rather than a guess — the input did not exist, so the Pine
+    # that produced them could only have behaved that way.
+    # ⚠ The shipped default is ALSO "Stop improved", so this decoder cannot be proved by a
+    # green gate on a default export. It is proved by an export taken with the setting on its
+    # other reading, and until one exists the column is published and unexercised.
+    vals["exec_scale_gate"] = "Stop improved"
+    sg = get("cfg_scale_gate")
+    if sg is not None:
+        vals["exec_scale_gate"] = "Stop improved" if int(round(sg)) == 0 else "Past the last add"
+
     # ...and where those adds BANK (2026-08-19).
     # 🔴 THIS ONE IS DECODED THE OPPOSITE WAY ROUND FROM THE FOUR ABOVE, and the difference is
     # the whole reason it gets its own paragraph. "Absent ⇒ off" works for `cfg_scale_in`

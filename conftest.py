@@ -75,3 +75,12 @@ if str(_ENGINES) not in sys.path:
 # own internals rather than the file. Ignored here so the directory is collectable now that
 # `algos/tests/` holds a real suite.
 collect_ignore = ["algos/nt8/test_bt_switch.py"]
+
+# `backtest/tools/` holds STUDY SCRIPTS, never tests — and two of them (`gbpjpy_travel_test.py`,
+# `gbpusd_travel_test.py`) are named `*_test.py`, which pytest collects by default. They replay
+# six years of bars at IMPORT time, so collecting them reached for the trading box's data agent
+# and put 24 errors in `scripts/run_all_tests.sh`. The whole folder is ignored rather than the two
+# files, so the next study script named after what it tests cannot do it again. Nothing under
+# `backtest/tools/` was a real test when this landed (2026-09-24); a tool's tests live in
+# `backtest/tests/`.
+collect_ignore_glob = ["backtest/tools/*.py"]

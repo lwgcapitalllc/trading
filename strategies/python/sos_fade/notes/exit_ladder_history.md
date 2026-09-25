@@ -881,3 +881,212 @@ different ladders: there is no TradingView side for any of them.
 - Ported to both Pine files and to the gate's input list. ⚠ **The parity gate has NOT run on these branches.** It needs a fresh TradingView export with the new inputs set, and nothing may reach a live bot before it runs.
 - Results: `sos_fade_optimization.md` → Run 40.
 - **The verdict, MEASURED 2026-09-21 and NOT adopted:** banking half the trade at target 1 and nothing at target 2 is the best of the 9 banking splits on return per drawdown in R — 33.6 (run `8b137a61fcae`, 191.4R over a 5.69R worst drawdown) against 31.8 for the shipped setting (run `ea46142df097`, 234.9R over 7.39R). It buys a quarter off the drawdown for a fifth of the return, which is what a smoother curve costs here. **The shipped default is unchanged** — the parity gate has not run on it. The top three splits sit within 0.4 of each other, so "bank some at target 1" is the finding and 50% exactly is not.
+
+## The give-back guard — added 2026-09-22
+
+**Why.** Aaron, 2026-09-22, after a demo trade on account 700152905 went from over $2,000 up to a
+loss: *"this trailing SL is giving too much back"*. MEASURED on run `ea46142df097`: the book keeps
+**41% of the profit its trades ever show** (533R of best case, 218R kept). The leak is NOT the
+runner trail — trades that reach 5R keep 97% of their peak — it is the band BELOW the trail's
+arming point, where nothing protects the trade at all.
+
+**What it is.** Three settings, all off by default (`exec_giveback_arm_r = -1`):
+
+- **arm at (R)** — how far in front the trade must have been, measured on its own high-water mark,
+  before the guard starts watching. Priced off the FROZEN entry risk (`_entry` − `_init_stop`).
+- **how much of the best it may hand back (%)** — 50 means fire once more than half the peak is gone.
+- **what it does** — `Close`, `Hand to the trail` (straight to `_stage = 2`, the runner trail) or
+  `Bank half` (sell half of what is still open at the next bar's open, then trail the rest).
+
+⚠ **The two keep-it-open actions fire ONCE per trade (`_gave_back`), and the flag guards the ELIF
+CHAIN, not just the action.** A branch that is taken and then does nothing still consumes the bar —
+without the flag, a trade whose peak stays above the arming level would swallow the time stop on
+every later bar for the rest of its life. `_giveback_has_work()` exists for that, and its test is
+mutation-proved: make it return True unconditionally and the test goes red.
+
+⚠ **`Bank half` takes every scale-in add in full**, because it is a market exit and `_exit_portion`
+treats the adds the way a stop does. On a laddered trade "half" means half the BASE plus all the
+adds. That is the Pine's own rule for a force-close, not a choice made here.
+
+### MEASURED 2026-09-22 — the replays
+
+Full book 2020-01-01 → 2026-09-20, `puprime_ecn` charged, 244 trades, scale-in on.
+🔴 **Every row below was re-measured on the CURRENT working tree**, which carries another
+session's uncommitted scale-in sizing fix. That fix alone takes the same shipped settings from
+234.9R to **218.5R**, so no number here may be compared against a run stored before it.
+
+| setting | total R | worst DD | return / DD |
+|---|---|---|---|
+| guard off (shipped) | 218.5 | 7.39 | **29.5** |
+| arm 1.5R, half back, Close | 161.0 | 5.89 | 27.3 |
+| arm 2R, half back, Close | 174.6 | 5.89 | 29.6 |
+| arm 2.5R, half back, Close | 208.4 | 5.89 | 35.4 |
+| arm 3R, half back, Close | 206.0 | 5.89 | 35.0 |
+| arm 3.5R, half back, Close | 204.5 | 5.89 | 34.7 |
+| arm 4R, half back, Close | 207.8 | **7.39** | 28.1 |
+| arm 2R, half back, Bank half | 178.1 | 6.97 | 25.5 |
+| arm 3R, half back, Bank half | 209.9 | 5.89 | 35.6 |
+| arm 2.5R, half back, Hand to the trail | 216.7 | 5.89 | 36.8 |
+| arm 3R, half back, Hand to the trail | 217.2 | 5.89 | **36.9** |
+| arm 3.5R, half back, Hand to the trail | 217.2 | 5.89 | **36.9** |
+
+**The finding: TIGHTEN, never CUT.** At the same arming level the three actions cut exactly the
+same drawdown (7.39 → 5.89) and differ only in what they leave on the table — closing gives up
+11.2R that tightening keeps. Whatever the guard is doing for the drawdown, it does not need the
+trade to be flat to do it.
+
+🔴 **THE ARMING LEVEL IS NOT A PEAK, IT IS A ONE-TRADE BRACKET, AND THAT IS THE REASON THIS
+SHIPS OFF.** This line said "a narrow peak at 3R" until the neighbours were replayed; they disprove
+it. The real shape is a cliff at BOTH ends with a flat floor between: return/DD is 29.6 at 2R,
+then 34.7–35.4 right across 2.5R–3.5R (close) or 36.8–36.9 (tighten), then back to **28.1 at 4R
+with the drawdown restored to the shipped 7.39R exactly**.
+
+**The bracket is one trade's high-water mark.** MEASURED: the 2022-06-09 trade peaks at **3.84R**
+and closes −0.23R shipped. Arm anywhere below 3.84R and the guard catches it (−0.23R → +1.52R) and
+the 2022 drawdown stretch ends early; arm at 4R and it is never touched, so the drawdown is byte-for-byte
+the shipped one. The "plateau" is therefore not evidence of robustness — it is the width of the gap
+between that one trade's peak and the level below which the guard starts eating runners. A flat
+region measured this way is what a single decisive trade looks like from the outside, and it would
+move the moment that trade does.
+
+Every protective rule ever measured on this strategy has behaved the same way (see the
+partial-banking grid above, and Run 12 in the optimization file): protecting the 1–3R band costs
+more upside than it saves, because that give-back is the PRICE of the runners rather than a leak
+beside them. The tighten action is the only one that does not pay that price, and it buys nothing
+except this one 2022 trade.
+
+⚠ **AND THE WHOLE DRAWDOWN GAIN IS ONE STRETCH.** The shipped 7.39R worst drawdown runs
+2022-01-24 → 2022-07-14; with the guard on it ends 2022-03-07 at 5.89R, a level the shipped run
+also reaches. At the tighten setting **eight** trades out of 244 move at all, and the one that ends
+the stretch early is 2022-06-09 going −0.23R → +1.52R. Read that as *the guard did not hurt*
+rather than *the guard found 25%*.
+
+⚠ **It barely moves the thing it was built for.** Capture of best-case profit goes 41.0% → 41.1%
+(tighten) or 42.7% (close), and trades that reached 1R and still closed red go 26 → 24. The guard
+is close to free at 3R; it is not an answer to the give-back itself.
+
+⚠ **IT ADDS TWO FIELDS TO THE POSITION RECORD** (`_pending_bank`, `_gave_back`), so a bot
+promoted onto this version while holding a trade cannot restore a record the previous version
+wrote — `restore_position()` refuses an incomplete record by design. `algos/tools/migrate_position_record.py`
+covers it without a change, because it reads every default off a freshly constructed deployed
+strategy rather than a list typed into the tool.
+
+⚠ **NOT PORTED TO PINE.** There is no TradingView side for any of the three settings, so the moment
+the arm goes positive the two implementations are trading different ladders. Parity is unaffected
+while it ships off.
+
+## The reversal exit — Aaron's own definition, measured, and it LOSES (2026-09-23)
+
+Aaron, 2026-09-22, after a demo trade that showed over $2,000 and closed red: *"I want to know how
+can we confidently tell we are losing momentum, or hit a point of major reversal or the trade is
+reversing as soon as possible so we can get out and bank our max profit .... this trailing SL is
+giving too much back."* His definition of a reversal, given when asked what to measure: *"as simple
+as shift of structure, right? Um, if we're getting a shift of structure and then break of structure
+is coming back towards us on lower time frames, that tells me price is reversing"* — and explicitly
+NOT on the trade's own chart: *"if we're looking at it on a 15 minute obviously by the time we look
+at 15 minutes um, reversal that will be too late so you need to look at a five to one minute."*
+
+**What was built.** `exec_rev_exit` ∈ {Off, Bank half, Tighten to the trail, Close}, armed by
+`exec_rev_arm_r` (the R the trade's best must have reached). It fires on a shift of structure
+against an open PRIMARY, printed on the FAST frame — the same 5-minute stream the re-entry fills
+on, already stepped unconditionally by `DualClock.step_fast`, so no new engine and no new feed.
+It prices at the next FAST bar's open, which is the one place a primary is touched off a fast bar.
+
+**MEASURED 2026-09-23. Full replay, 2020-01-01 → 2026-09-20, `XAUUSD.p` M15, `puprime_ecn`
+charged, 244 trades. `exec_scale_gate` and the give-back guard PINNED on every row** — the
+scale-in gate's default moved while the first queue was in flight, which would have put the
+baseline and the treatments on two different scale-in rules (rule 11).
+
+| setting | trades | total R | worst DD | ret/DD | profit kept | trades changed | net on those |
+|---|---|---|---|---|---|---|---|
+| **off (baseline)** | 244 | **234.5** | **7.39** | **31.7** | **44.0%** | — | — |
+| tighten, arm 2R | 243 | 227.0 | 7.39 | 30.7 | 43.6% | 3 | −0.40R |
+| tighten, arm 1R | 243 | 222.5 | 7.39 | 30.1 | 43.1% | 6 | −4.90R |
+| bank half, arm 2R | 243 | 215.1 | 7.98 | 27.0 | 41.3% | 19 | −12.32R |
+| bank half, arm 1R | 243 | 210.1 | 7.98 | 26.3 | 40.7% | 21 | −17.34R |
+| close, arm 2R | 243 | 210.5 | 8.35 | 25.2 | 41.7% | 19 | −16.91R |
+| close, arm 1R | 243 | 206.1 | 8.35 | 24.7 | 41.3% | 21 | −21.30R |
+
+- 🔴 **EVERY ROW LOSES, ON EVERY MEASURE, AND THE RULE IT WAS BUILT TO FIX GETS WORSE.** The whole
+  point was to keep more of the profit a trade shows. Profit kept goes 44.0% DOWN to 40.7–43.6% on
+  every single setting. This is not a tuning problem — a rule that reliably kept more profit would
+  show it somewhere in this table, and none of them do.
+- 🔴 **THE TWO CUTTING ACTIONS MAKE THE DRAWDOWN DEEPER, NOT SHALLOWER** (7.39R → 7.98R banking,
+  → 8.35R closing). That is the opposite of the one thing an early exit is supposed to buy, and it
+  rules out the usual defence that a lower return bought a smoother curve. It did not.
+- 🔴 **THE NET ON EVERY TRADE IT TOUCHES IS NEGATIVE, at every arming level and every action.**
+  Not "a few bad ones outweigh the good" — the sum over the changed trades is negative in all six
+  rows. The signal is not identifying reversals that matter; it is cutting winners mid-move.
+- **WHY, and it is the mechanism rather than a story.** A 5-minute shift of structure against the
+  trade is what an ordinary pullback inside a winning swing looks like. It fires on roughly 21 of
+  243 trades, and this book's winners are long holds (median hold: winners 17.8h, losers 2.0h), so
+  almost every fire lands inside a move the trade was right about.
+- ⚠ **TIGHTENING IS THE LEAST BAD, AND THAT IS NOT AN ENDORSEMENT.** At arm 2R it touches 3 trades
+  for −0.40R. It is indistinguishable from doing nothing, which is the honest reading of a rule
+  that has to be turned down to near-inert before it stops losing money.
+- ✅ **IT AGREES WITH THE CHEAP RE-WALK, which is worth recording because the give-back guard did
+  NOT.** `backtest/tools/exit_study.py` already had every engine-driven reversal exit losing to
+  holding, including both definitions asked for by name. For the give-back cap the replay reversed
+  that ranking; here it confirmed it. So the re-walk is not uniformly wrong — it is unreliable,
+  and the only way to know which it was is to replay.
+
+**It ships OFF, and off is the measured answer rather than caution.** ✅ **Parity GREEN with it in
+the tree** — `tools/compare_strategy.py` on the committed golden (20,220 bars, warm-up 468): exit 0,
+19,668 bars compared, Python == Pine on every one. It has no Pine counterpart, so a green gate says
+only that switching it off changes nothing, which is exactly the claim being made.
+
+⚠ **WHAT THIS DOES NOT SAY.** It does not say price action cannot time an exit. It says THIS
+signal — a fast-frame structure shift against the trade — does not, on this book, at these two
+arming levels, as a standalone rule. The level-rejection half of Aaron's definition (*"if we're
+hitting that level over and over and over and we print a reversal pattern on there"*) is NOT
+measured here: it needs `engines/liquidity/`, which this bot does not currently run, and the
+re-walk had it firing on 117 of 129 trades, which is an early exit with a story rather than a
+signal. That is the next thing to build if this line is pursued, and it starts from a worse prior
+than this one did.
+
+## The level-rejection trigger — the other half of the definition, measured, not adopted (2026-09-23)
+
+Aaron asked for it by name on 2026-09-23 ("test 1 and 3"). **What was built:** a second answer to
+"↳ What counts as a reversal" — "Level rejected". It watches only the major levels AHEAD of the
+trade (weekly, daily and 4-hour highs and lows, already handed to this bot by the liquidity engine)
+and fires when price reaches the same one and closes back off it on "↳ Rejections of the same
+level before it acts" separate visits, on the 5-minute frame. Touching bars in a row count as one
+visit; a close through the level ends its count. Support holding BEHIND the trade never counts —
+that is the difference from the re-walk's screen, which fired on 117 of 129 trades. Unit tests:
+`tests/test_reversal_levels.py`.
+
+**MEASURED.** Same basis as the table above (run `ea46142df097`'s params, 2020-01-01 → 2026-09-20,
+`puprime_ecn` charged, consistent sizing, 100-lot ceiling). Pinned on every row: scale gate "Stop
+improved", give-back guard off, level memory off, no-entry window empty. The re-run of "off" on
+today's code (`9fa0f5d9bcaf`) reproduces `e805a5d503a8` exactly.
+
+| action | arm | visits | run | trades | total R | worst DD | R / DD | 2020–22 R | 2023–26 R |
+|---|---|---|---|---|---|---|---|---|---|
+| **off** | — | — | `e805a5d503a8` | 244 | **234.5** | 7.39 | 31.7 | 68.3 | 166.2 |
+| tighten | 1R | 2 | `f291344a0cfb` | 243 | 233.6 | 5.89 | 39.7 | 71.8 | 161.8 |
+| tighten | 2R | 2 | `c651c8140b4b` | 243 | 230.1 | 5.89 | 39.1 | 70.5 | 159.6 |
+| tighten | 1R | 3 | `4735e6f4d317` | 243 | 229.2 | 7.39 | 31.0 | 69.1 | 160.1 |
+| tighten | 1R | 1 | `043969a892ef` | 241 | 157.2 | 5.89 | 26.7 | 38.1 | 119.2 |
+| bank half | 1R | 2 | `b23cae3f6ccf` | 243 | 181.6 | 5.89 | 30.8 | 57.2 | 124.4 |
+| close | 1R | 2 | `0a8302fb7d3d` | 243 | 111.0 | 5.89 | 18.8 | 33.3 | 77.8 |
+| close | 2R | 2 | `77db1c3bb749` | 243 | 117.3 | 5.89 | 19.9 | 34.4 | 82.9 |
+
+- 🔴 **NO SETTING BEATS OFF ON TOTAL R.** Closing and banking half lose 53–123R: they fired 41 times
+  and cut the long runners this book is paid by.
+- 🔴 **THE BEST ROW'S DRAWDOWN CUT IS THE SAME ONE 2022 TRADE THE GIVE-BACK GUARD CAUGHT.** The
+  2022-06-09 trade goes −0.23R → +1.74R and the worst drawdown falls 7.39R → 5.89R. With three
+  visits it does not fire on that trade and the drawdown is back to 7.39R. One trade, not a
+  property of the rule.
+- 🔴 **EVERY TIGHTEN ROW LOSES THE SAME +7.05R TRADE.** Tightening the 2023-03-27 trade ends it
+  days early, and the 2023-04-03 re-entry that paid +7.05R never happens. At 1R / 2 visits the
+  other 16 changed trades are +6.18R, so the net is −0.9R: the sign rests on two trades.
+- 🔴 **ONE VISIT IS AN EARLY EXIT, NOT A SIGNAL.** It cuts the 2020-06-18 trade from +28.9R to +2.5R
+  and the 2025-10-21 trade from +24.9R to +0.9R: −77R.
+- **Neighbours all fall away from the best row**, both halves of the history included, so there is
+  no plateau to stand on.
+
+**Verdict: not adopted.** "What counts as a reversal" stays on "Structure shift", and the reversal
+exit stays Off. Both halves of Aaron's definition are now measured, and both lose to holding. The
+honest reading is that on this book the trailing stop's give-back is the price of the long
+runners, and every exit tried so far that trims give-back also trims them. Parity GREEN with it in
+the tree (19,668 bars, warm-up 468); it has no Pine side.

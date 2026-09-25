@@ -155,6 +155,14 @@ promote tool would have drifted the first time either moved. Tests drive the rea
 subprocess against a real staged snapshot, because a hand-written payload would only prove the
 parser reads my own dict.
 
+
+🔴 **The runner's wait for a late 15m bar had no test that could fail (found 2026-09-23).** Removing
+it left every merge check green, although one check's own note said that change would break 39
+pairs. With both feeds on time the wait never binds — a 5m bar is delivered only after it closes, by
+which time its 15m context has closed too — so only a LATE 15m bar exercises it.
+`tests/test_dual_feed_merge.py` → *a LATE 15m bar holds the fast bars back* delivers the 15m feed ten
+minutes late; with the wait removed, 70 fast bars read the wrong 15m context and it goes red.
+
 ## 🔴 The bridge could not bank at a price, and only two of the six rungs were refused (2026-09-01)
 
 **`assert_supported` read `exec_tp1_pct`/`exec_tp2_pct` and nothing else — which is the LAST branch
@@ -823,6 +831,27 @@ close being booked (the fill-clock halt above did), leaving `opened` and nothing
 restart waited out the rebuilt copy. `_closed_at_broker` now asks the broker for that ticket's deals:
 history read, closing deals equal to the opening ones, ticket not open now. Only then is the copy
 dropped; unreadable, partial or still open keeps the wait. Tests: `test_warmup_hand_closed.py`.
+
+🔴 **…and it now BOOKS what that trade made (2026-09-24).** The drop above wrote down nothing the
+trade made, so its profit left the bot's record and the Bots page filed it under "Not from these
+bots" — live: SOS Fade's hand-closed short of 2026-09-21 (ticket 365501068), +$181.56 on the
+account. `_book_broker_close` writes the missing `closed` row off `get_deal_breakdown` (net of swap
+and commission), R off the `risk_usd` recorded at the open, and the reason off who closed it (you,
+the stop, the target). ⚠ **Nothing is written when the deals cannot be read** (`deals: 0`) — a
+zero row would read as a scratch. ⚠ Once written, the next restart finds it by the ordinary
+`closed` lookup, so it is never booked twice. ⚠ The row's time is when it was written, not the
+broker's close time. ⚠ `get_deal_breakdown` looks back **7 days**, so a trade that closed longer
+ago than that is still dropped unbooked. **Reaches a live bot only at its next promote.**
+🔴 **The drop now clears the trade's `position.json` too, as a live close does (same day).** Left
+behind, it made `promote.py` refuse sos_fade_demo as "HOLDING A POSITION (T365501068)" two days
+after the trade closed — which is why its promote never ran and a settings change it could not
+read sat as "Needs review". The bot itself was safe (a restart reads the record only when the
+broker holds a position). Only a record of the dropped ticket is cleared.
+⚠ **Ticket 365501068 itself is NOT healed by this** — it was dropped on 2026-09-22, before this
+existed. It needed a one-off close row added to the bot's 2026-09-22 file off the broker's own
+figure, the way 2026-09-17's hand-booked row was (`booked_after_the_fact`, `closed_at`) — DONE
+2026-09-25 01:32 UTC off deals 354835919 / 354870600 / 354872371: +$181.56 net, +0.34R, closed
+from the phone. Its stale `position.json` on the box still needs removing by hand.
 
 ⚠ **Backtest comparison:** exclude or split `closed_by_you` rows — they are the owner's exit, not
 the strategy's. Inside the emulator the same trade ends under its own `CMD` tag a bar later, at

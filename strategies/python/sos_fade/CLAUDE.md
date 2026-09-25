@@ -402,6 +402,31 @@ every commanded exit carries — including the hand close `algos/live/bridge.py`
   `tests/test_commanded_close.py` is the whole of the evidence; 5 tests, 2 mutations.
 - ⚠ **It needs a PROMOTE to reach the live bot**, like everything else in this package.
 
+## 🔴 An add is sized against the WHOLE position's locked profit, never the base lot's
+
+The size rule promises *an add can shrink a winner but never manufacture a loser*. Reading the
+base lot alone made that exact for ONE add and double-spent from the second onward. **Fixed
+2026-09-23, found by a live trade: +$2,890 open, closed −$690.**
+
+- **The rule: mark every open lot to the shared stop, signed.** The base term stays at the size
+  the trade OPENED with — reading the remaining base instead breaks the invariant that banking
+  at a price and stopping at that price are the same thing.
+- **The stricter re-arm gate ships OFF**, on a measurement, and is NOT dead code — it wins at 4
+  adds. Re-measure before raising the add count.
+- ✅ **PARITY PROVEN ON A SECOND GOLDEN, `exports/golden/..._scalein_stress.csv` (2026-09-24).** The
+  first golden cannot see this fix — the pre-fix sizing passes it. The stress file (4 adds, 2.0x cap,
+  re-arm on "Stop improved") is green on the shipped sizing and RED on the pre-fix one at bar 6,120.
+  ⚠ **"Past the last add" cannot prove the sizing**: it only re-arms once every earlier add is in
+  profit, which is the one state the double-spend needed to be absent. An export at that reading
+  proved the GATE (20 adds against 30) and was blind to the sizing.
+- ⚠ **Run the gate at the warm-up `golden.json` records**, or it reports chart state a cold replay
+  cannot have as a mismatch in the first 98 bars.
+- ⚠ **Runs 19–22's own questions are still pre-fix numbers.** Only the BUDGET was re-earned
+  (Run 43); where an add happens and where its lots bank were not.
+- ⚠ **Two live-side defects found with it and NOT fixed**: the bot buys each add a full bar
+  after the lab does, and the ledger records the risk an add was SIZED at, not the risk it took.
+- Story, arithmetic, the grid and the mutation record: `notes/sizing_and_risk_history.md`.
+
 ## Flat before the close — `flat_mode`, and it is NOT `flat_by_close` any more
 
 **`flat_mode` is the setting: `"Off"` / `"Friday only"` / `"Every day"`, shipped Off.** The clock
@@ -445,6 +470,10 @@ Most-cited code: `compare_strategy.py`, `tests/test_secondary.py`, `algos/live/b
 
 ### `notes/exit_ladder_history.md` — Exit ladder — dated build and measurement history
 
+🔴 **MEASURED 2026-09-23 AND IT LOSES ON EVERY SETTING — the reversal exit** (leave, bank half or tighten when structure shifts against the trade on the 5-minute chart, Aaron's own definition). Full replay, 244 trades, `puprime_ecn` charged: every one of six settings is worse than doing nothing, and **the profit actually kept goes DOWN in all of them** (44.0% → 40.7-43.6%), which is the one thing it was built to raise. Cutting or banking makes the worst drawdown DEEPER (7.39R → 7.98R / 8.35R), so the usual "bought a smoother curve" defence does not apply. The net over every trade it touches is negative at every arming level. A 5-minute shift against the trade is what a pullback inside a winning swing looks like, and this book's winners are long holds. Ships OFF; parity GREEN with it in the tree. 🔴 **The level-rejection trigger (2026-09-23) also loses R on every setting**; its only drawdown cut is the same 2022 trade. Detail: `notes/exit_ladder_history.md`.
+
+🔵 **MEASURED 2026-09-22, not adopted:** the give-back guard — leave when a trade hands back more than half of a 3R peak — beats the shipped ladder on return per drawdown in R (36.9 against 29.5) by cutting the worst drawdown from 7.39R to 5.89R for 1.3R of return. ⚠ Only when it TIGHTENS the stop; closing the trade gives up 11.2R for the same drawdown. 🔴 The flat top is ONE TRADE'S high-water mark, not robustness — ret/DD is level across 2.5R–3.5R and falls to 29.6 at 2R and 28.1 at 4R, because the 2022-06-09 trade peaks at 3.84R and is the only thing the guard catches. The whole gain is that one 2022 drawdown stretch, and it barely moves profit capture at all (41.0% → 41.1%). It ships off and has no Pine side. Detail: `notes/exit_ladder_history.md`.
+
 🔵 **MEASURED 2026-09-21, not adopted:** banking half the trade at the first fib target beats the shipped ladder on return per drawdown in R (33.6 against 31.8) by cutting the worst drawdown from 7.39R to 5.69R. Pinning either target to another fib level loses, across all 108 combinations. Run 40 in `sos_fade_optimization.md`; the default is unchanged and the parity gate has not run on it.
 
 **Read before touching:** changing any exit-ladder lever and needing the measurement that set its default.
@@ -453,6 +482,8 @@ Most-cited code: `compare_strategy.py`, `sos_fade_strategy.pine`, `backtest/outp
 - The 2026-07-26 exit-lever sync
 - The exit ladder — every TP/SL lever, and which ones are switchable
 - Every entry method OWNS its stop rule — the precedence list is gone (2026-08-27)
+- The give-back guard — TIGHTEN, never CUT, and it ships off (2026-09-22)
+- The reversal exit — Aaron's own definition, measured, and it LOSES (2026-09-23)
 
 ### `notes/reentry_ladder_mechanics.md` — Re-entry ladder mechanics — dated fixes and measurements
 
@@ -529,3 +560,11 @@ Most-cited code: `compare_strategy.py`, `compare_bleg.py`.
 
 **Read before touching:** the strategy meta file, a setting label, or a description shown on a lab page.
 Most-cited code: `compare_strategy.py`, `sos_fade.meta.json`, `sos_fade_strategy.pine`, `compare_bleg.py`, `config.py`, `sequence.py`.
+
+### `notes/level_memory.md` — Level memory — re-trading a level after its setup died (measured, OFF)
+
+**Read before touching:** `level_memory.py`, the level-memory settings in `config.py`, or the fast-clock merge in `dual_clock.py`.
+
+### `notes/entry_window.md` — The no-entry window (New York hours), measured, OFF
+
+**Read before touching:** `entry_window.py` or the no-entry window settings. Every window tried lost R; the drawdown cut was one 2022 stretch.

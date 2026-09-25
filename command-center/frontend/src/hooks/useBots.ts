@@ -27,6 +27,7 @@ import type {
   BotChannelTestResult,
   ChannelKind,
   BotDeployedVersion,
+  BotFilesCheck,
   BotPromoteJob,
   BotSnapshot,
   BotCloneResult,
@@ -222,6 +223,30 @@ export function useBotVersion(botName: string | null) {
 }
 
 /**
+ * Do this bot's deployed files still match their record — the tamper check, for the bot PANEL.
+ *
+ * 🔴 **Split off the version read on 2026-09-24.** It starts Python on the trading box to re-hash
+ * ~220 files (~5s of the version read's ~9s) and rode on every ROW of the Bots page on every load,
+ * while only the panel ever shows it. The rows now read the version alone and fill in seconds.
+ *
+ * ⚠ **Keyed UNDER `['bots', 'version', name]`**, so everything that re-reads a bot's version — a
+ * finished deploy, the Refresh button — re-reads this with it, with no second list to keep.
+ * ⚠ `null` is "the box did not answer", never "the files match" (`versionFlags`).
+ */
+export function useBotFilesCheck(botName: string | null) {
+  return useQuery({
+    queryKey: ['bots', 'version', botName, 'files'],
+    queryFn: () =>
+      api.get<BotFilesCheck>(`/bots/${encodeURIComponent(botName!)}/version/files`, {
+        silent: true,
+      }),
+    enabled: !!botName,
+    staleTime: 30_000,
+    retry: false,
+  })
+}
+
+/**
  * The same read as `useBotVersion`, for every bot at once — the fleet strip's source.
  *
  * ⚠ It deliberately reuses `useBotVersion`'s query key and query function, so a bot's row in the
@@ -234,11 +259,12 @@ export function useBotVersion(botName: string | null) {
  * rather than healthy (`no data` and `cannot ask` are not the same value — the rule this repo
  * learned from a bot that was blind for 50 minutes).
  */
-export function useBotVersions(botNames: string[]) {
+export function useBotVersions(botNames: string[], enabled = true) {
   return useQueries({
     queries: botNames.map((name) => ({
       queryKey: ['bots', 'version', name],
       queryFn: () => readVersion(name),
+      enabled,
       staleTime: 30_000,
       retry: false,
       // ⚠ The SAME poll rule as `useBotVersion`, through the same function. These share a cache

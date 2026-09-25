@@ -40,6 +40,7 @@ export function BotRiskEditor({
   group,
   live,
   onOpenAccount,
+  lock = null,
 }: {
   botKey: string
   /** Name plus LIVE or demo — this is where a live bot's risk is changed. */
@@ -55,6 +56,9 @@ export function BotRiskEditor({
   group: BotAccountGroup | undefined
   live: boolean
   onOpenAccount?: (account: number) => void
+  /** Why a change must wait — the bot is mid-deploy, start, stop or move (2026-09-24). The server
+   *  refuses the write then too (`services/bot_ops.py`); this is the panel not offering it. */
+  lock?: string | null
 }) {
   const current = Number(row.value)
   const unit = row.unit ?? '%'
@@ -164,7 +168,8 @@ export function BotRiskEditor({
             </span>
             <button
               data-testid="risk-save"
-              disabled={!canSave || confirming}
+              disabled={!canSave || confirming || !!lock}
+              title={lock ?? undefined}
               onClick={() => setConfirming(true)}
               className="ml-auto px-4 h-[32px] rounded-md text-[12.5px] font-medium bg-accent-muted text-accent-text border border-accent/40 hover:bg-accent/15 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
@@ -305,7 +310,8 @@ export function BotRiskEditor({
           <div className="flex items-center gap-2 mt-[10px]">
             <button
               data-testid="risk-confirm-go"
-              disabled={pending}
+              disabled={pending || !!lock}
+              title={lock ?? undefined}
               onClick={commit}
               className={`inline-flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-semibold border transition-colors disabled:opacity-50 ${
                 live

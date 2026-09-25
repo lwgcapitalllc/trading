@@ -35,8 +35,11 @@ against and where that baseline is written down.
 The result that would make us abandon this. If you cannot name one, the spec is not finished
 — you have described an intention, not a test.
 
-**5. The alternative I am NOT doing, and why.**
-One sentence. This is where the reader catches you optimising the wrong lever. The time-stop
+**5. Why this is the simplest thing that works.**
+Before writing this step, weigh at least TWO alternatives yourself, one of them the smallest
+change that would work; if that one fully solves it, switch to it and rewrite the spec. Do NOT
+list the losers — Aaron wants the outcome, not the debate (root CLAUDE.md → *Second look before
+you recommend*). One sentence on why the chosen approach is the simplest one that solves it. The time-stop
 pass asked for an HOUR; the hour turned out to sit on a 16-hour plateau while the MILESTONE
 it was gated on moved the result by a third of the strategy.
 

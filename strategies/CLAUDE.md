@@ -272,6 +272,7 @@ Most-cited code: `test_live_contract.py`, `extreme_leg/tests/test_live_seams.py`
 - The live contract gained `intents`, and it is LOAD-BEARING (2026-09-08)
 - The contract gained `full_exit_price`, and it is REQUIRED (2026-09-09)
 - The contract gained `planned_full_exit_price`, and it is REQUIRED (2026-09-09)
+- 🔴 A restored bar NUMBER is never a gate — compare bar TIME; a re-warm renumbers bars (2026-09-24)
 
 ### `notes/flat-before-the-close.md` — The flat-before-the-close switch and what it costs
 

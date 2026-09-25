@@ -113,6 +113,10 @@ watched — while two comments claimed the lists agreed. **A list stated twice i
   set with no wiring and no config key. Aaron: *"if I create a bot, I shouldn't have to go say, hey,
   create telegram messages for it. It should be part of how we do work."* Detail and the throttle:
   `notes/telegram-and-notifications.md`.
+- 🔴 **Setup messages are per STRATEGY and cannot be inherited — so they are ENFORCED (2026-09-24).**
+  Only a strategy knows its own setup. A bot folder with an account whose strategy cannot report
+  setups fails `tests/test_setup_alerts_every_bot.py` by name. Build its `setups.py` and measure it
+  with `tools/setup_alert_rate.py <bot key>` before assigning it an account.
 
 ## Documentation Rules — Non-Negotiable
 
@@ -225,6 +229,7 @@ drift this repo has already paid for three times.
 
 - 🔴 A deploy that would ship NOTHING now refuses and leaves the running bot alone (2026-09-23). It used to restart it anyway: `fft_1` was deployed twice in three minutes, the second run staged byte-identical code, and the restart cancelled the limit order the bot had placed ninety seconds earlier. It compares the STAGED tree against the DEPLOYED tree plus the pinned PARAMETERS; the commit is deliberately not part of it, and the pin is still written. `--redeploy` forces it.
 - 🔴 **`deployment_hash` folds each ROOT'S NAME into the digest, so two hashes are only comparable over the SAME root set** — and the staged hash (11 roots for `fft_1`) and the pinned hash (`cfg.source_roots`, 3) are not. The first version of the refusal above compared those two and could never fire; the `code is UNCHANGED from the running deployment` line this tool has printed since it was written has never once been true. ⚠ **Its first tests passed because they STUBBED the hash** — rule 13 inside the tests written to answer rule 9. Hash real files, or prove nothing (2026-09-23).
+- ⚠ **The `code changes: A -> B` line the deploy prints came off that same broken pair, so it announced a change on EVERY promote** — including ones that changed nothing, which is exactly what made the message read as a fact the tool knew and ignored. Both sides now come off `snapshot_hashes` (staged vs deployed, same roots), and an unreadable snapshot prints neither a change nor a match (2026-09-23).
 
 ### `notes/order-execution.md` — Order execution — the bridge's entries, exits, banking and market orders
 
@@ -238,6 +243,7 @@ drift this repo has already paid for three times.
 - The live runner's SECOND bar feed — G18 stage 1 (2026-09-01). Stages 2-4 still open
 - 🔴 The fill clock halted both SOS Fade bots on their OWN limit; the fix, re-adopt by replay, and the daily-break alert (2026-09-17)
 - ✋ A hand close of the bot's own trade is booked as yours and the bot keeps trading; what a hand-moved stop does (2026-09-17)
+- 🔴 A trade that closed while the bot was away is now BOOKED off the broker's deals when a restart drops it — it used to vanish from the bot's record (2026-09-24)
 - ✋ A stop you tighten at the broker is kept, a looser one halts; a trade vanishing beside another halts (2026-09-17)
 - 🔴 A broker rejection is alerted once, and a temporary one (no connection, requote …) is re-sent within seconds rather than a bar later (2026-09-16)
 

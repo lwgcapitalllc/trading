@@ -219,6 +219,7 @@ Most-cited code: `services/agent_supervisor.py`, `routers/bots.py`, `services/nt
 
 - The agent supervisor — and the two indicators that were lying
 - The box refuses SSH when it is crowded — `services/vps_ssh.py` (2026-09-11)
+- Every SSH call rides ONE shared login — 2.2s → 0.45s a call; never a tunnel (2026-09-24)
 - The calendar's polarity list was written for the wrong provider
 - Readiness — the checks whose failure mode is silence
 - A unit test may not reach the VPS, and now it cannot
@@ -265,6 +266,7 @@ Most-cited code: `routers/bots.py`, `services/bot_versions.py`.
 - A bot's VERSION — the number the page showed was never written (2026-08-07)
 - A promote as a JOB — the steps the deploy panel draws (2026-09-10)
 - 🔴 A deploy with NOTHING to deploy still stopped and restarted the bot, and the badge that asked for it was drawing a pre-deploy reading (2026-09-23)
+- 🔴 Nothing new ON DISK is not nothing new IN THE PROCESS — a nothing-new deploy still restarts a bot running older code (2026-09-24)
 - Stopping a bot ASKS it to stop (2026-08-07)
 - `_BOTS` is DISCOVERED from the bot folders (2026-09-13)
 - The "needs review" flag — the one thing this page could not see
@@ -272,6 +274,10 @@ Most-cited code: `routers/bots.py`, `services/bot_versions.py`.
 - Nav activity — three booleans so the sidebar stops pulling three lists
 - The snapshot says whether a bot's account may TRADE (2026-09-12)
 - The snapshot carries the bot's open trade and its halt (2026-09-12)
+- The status read runs its two calls side by side, and version reads are capped at three (2026-09-24)
+- The files (tamper) check is its own read, asked only by the bot panel; an unanswered check is unknown, never a pass (2026-09-24)
+- 🔴 One action at a time per bot, and an account holds still while one of its bots is mid-action — every route that changes a bot or an account goes through `services/bot_ops.py`; deploy jobs are saved to disk (2026-09-24)
+- 🔴 A deploy runs in its OWN process (`services/promote_worker.py`) and outlives a backend restart; its job file is its claim on the bot. No test may start a real one (2026-09-24)
 
 ### `notes/optimizer.md` — Optimizer and worthiness
 
