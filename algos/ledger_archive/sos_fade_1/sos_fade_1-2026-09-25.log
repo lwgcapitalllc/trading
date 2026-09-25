@@ -17,3 +17,4 @@
 2026-09-25 04:09:10,344 [INFO] Warmed the fast feed on 15000 M5 bars (2026-07-10 16:35:00+00:00 → 2026-09-25 04:00:00+00:00).
 2026-09-25 04:09:10,344 [INFO] Equity re-anchored to the account after warm-up: 15,671.11 → 14,862.76
 2026-09-25 04:09:10,969 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-25 16:55:03,168 [WARNING] Heartbeat write failed: [WinError 5] Access is denied: 'C:\\trading\\algos\\markets\\fx\\instances\\sos_fade_1\\bot_state.json.15096.tmp' -> 'C:\\trading\\algos\\markets\\fx\\instances\\sos_fade_1\\bot_state.json'
