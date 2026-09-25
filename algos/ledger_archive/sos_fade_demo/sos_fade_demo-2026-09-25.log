@@ -15,3 +15,5 @@
 2026-09-25 01:52:24,521 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
 2026-09-25 01:53:44,847 [ERROR] TRADING OFF: the broker has switched trading off for this account — it is read-only. Every order this bot sends will be refused.
 2026-09-25 01:54:41,960 [INFO] Trading is allowed on this account again.
+2026-09-25 02:53:54,865 [ERROR] TRADING OFF: the broker has switched trading off for this account — it is read-only. Every order this bot sends will be refused.
+2026-09-25 02:54:39,938 [INFO] Trading is allowed on this account again.
