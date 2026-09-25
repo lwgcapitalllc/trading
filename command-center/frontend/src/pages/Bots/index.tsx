@@ -1403,20 +1403,18 @@ export function Bots() {
   // so the column waited for both back to back, and until then every pill said "No version"
   // (a finding) instead of loading. Now they run side by side with the snapshot.
   //
-  // 🔴 **…but they START once the snapshot has answered (2026-09-24).** Side by side stopped paying
-  // once the fleet reached ten bots: the box has TWO CPUs, and ten version reads (each starts
-  // Python there) buried the status read — MEASURED 3.1s alone, 26.7s beside them, so the whole
-  // page shimmered for half a minute. Status and P&L are what the page is for; versions fill in
-  // after. The KEYS still come off the config list, so a version never waits for its bot to show
-  // up in the snapshot. ⚠ `!asking`, not `!!snapshot` — a FAILED snapshot must still let the
-  // version column try, or a down box would leave it loading for ever.
+  // 🔴 **ONE fleet read since 2026-09-24, started with the page** (`useBotVersions`). Ten per-bot
+  // reads had to wait for the status read — they started Python on the two-CPU box and buried it
+  // (3.1s → 26.7s) — so the pills trickled in last. The fleet read starts no Python there, so it
+  // runs beside the status read. The KEYS still come off the config list, so a version never
+  // waits for its bot to show up in the snapshot.
   const fleetKeys = [
     ...new Set([
       ...(accountGroups ?? []).flatMap((g) => g.bots.map((b) => b.key)),
       ...bots.map((b) => b.key),
     ]),
   ]
-  const versionQueries = useBotVersions(fleetKeys, !asking)
+  const versionQueries = useBotVersions(fleetKeys)
   const versionByKey = new Map(fleetKeys.map((k, i) => [k, versionQueries[i]]))
   // 🔴 Every bot's deploy is watched HERE, on the page, never inside the drawer (2026-09-10) — a
   // drawer closed mid-deploy stopped the watch, so the row said "behind" through the whole deploy

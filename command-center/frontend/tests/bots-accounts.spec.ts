@@ -1,5 +1,6 @@
 import { expect, Page } from '@playwright/test'
 import { offlineTest } from './offline'
+import { serveFleetVersions } from './fleetVersions'
 
 const { test } = offlineTest('bots-page', { clockFactor: 10 })
 
@@ -10,6 +11,9 @@ const { test } = offlineTest('bots-page', { clockFactor: 10 })
  */
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/bots/*/version/files', (r) => r.fulfill({ json: { snapshot_ok: true } }))
+  // The rows read every bot's version in ONE fleet read (2026-09-24), composed here from each
+  // check's own per-bot answers — see `fleetVersions.ts`.
+  await serveFleetVersions(page)
 })
 
 /**

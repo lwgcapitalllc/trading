@@ -25,6 +25,7 @@ import type {
   BotVersionCompare,
 } from '../src/types'
 import { offlineTest } from './offline'
+import { serveFleetVersions } from './fleetVersions'
 
 // OFFLINE (2026-09-10): every read this page makes beyond the two routed below is answered from
 // `recordings/bots-page.json`, and anything else is aborted and fails the check — see offline.ts.
@@ -39,6 +40,9 @@ const { test, recorded } = offlineTest('bots-page', { clockFactor: 10 })
  */
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/bots/*/version/files', (r) => r.fulfill({ json: { snapshot_ok: true } }))
+  // The rows read every bot's version in ONE fleet read (2026-09-24), composed here from each
+  // check's own per-bot answers — see `fleetVersions.ts`.
+  await serveFleetVersions(page)
 })
 
 /**
@@ -1320,39 +1324,36 @@ test('the Refresh button re-reads the VERSION badges, not just status and P&L', 
   await expect(rowPill(page)).toContainText('v121')
 })
 
-test('no version read is sent until the status read has answered', async ({ page }) => {
+test('the rows read every version in ONE fleet read, without waiting for the status read', async ({
+  page,
+}) => {
   /**
-   * 🔴 The failure (Aaron, 2026-09-24: *"the bots page takes so dam long to load"*): the page
-   * sent all ten version reads the same moment as the status read. Each one starts Python on a
-   * two-CPU trading box, and the status read queued behind them — MEASURED 3.1s alone, 26.7s
-   * beside the ten — so the whole page shimmered for half a minute.
+   * 🔴 Aaron, 2026-09-24: *"the version pill is always slow to update or load"*. The rows sent one
+   * version read per bot, held back until the status read answered (ten at once had buried it on
+   * the two-CPU box), so the pills filled in last. They now come from ONE fleet read that starts
+   * with the page and starts no Python on the box.
    *
-   * The status read is HELD here until released, and no version read may arrive before that.
-   * MUTATION: drop the `!asking` gate on `useBotVersions` → red, versions arrive while it is held.
+   * The status read is HELD here the whole time; the pill must still fill, off the fleet read,
+   * with no per-bot read sent.
+   * MUTATION: read the rows through `/bots/{bot}/version` again → red on the per-bot count.
+   * MUTATION: gate the fleet read on the status read → red, the pill never fills while it is held.
    */
-  let release!: () => void
-  const held = new Promise<void>((r) => (release = r))
-  let statusAnswered = false
-  let earlyVersions = 0
-  let versions = 0
-  await page.route('**/api/bots/snapshot', async (r) => {
-    await held
-    statusAnswered = true
-    return r.fulfill({ json: recorded<BotSnapshot>('/bots/snapshot') })
+  let fleet = 0
+  let perBot = 0
+  await page.route('**/api/bots/snapshot', () => new Promise<void>(() => {}))
+  await page.route('**/api/bots/versions', (r) => {
+    fleet += 1
+    return r.fulfill({ json: { sos_fade_demo: version(compare(), null, true) } })
   })
   await page.route('**/api/bots/*/version', (r) => {
-    versions += 1
-    if (!statusAnswered) earlyVersions += 1
+    perBot += 1
     return r.fulfill({ json: version(compare(), null, true) })
   })
   await page.route('**/api/bots/*/promote/job', (r) => r.fulfill({ json: null }))
   await page.goto('/bots')
-  // Long enough for the config list to answer and the version reads to have gone out if ungated.
-  await page.waitForTimeout(1_500)
-  expect(earlyVersions).toBe(0)
-  release()
-  await expect.poll(() => versions, { timeout: 20_000 }).toBeGreaterThan(0)
-  expect(earlyVersions).toBe(0)
+  await expect(rowPill(page)).toHaveAttribute('data-state', 'behind', { timeout: 20_000 })
+  expect(fleet).toBeGreaterThan(0)
+  expect(perBot).toBe(0)
 })
 
 test('a running deploy holds its bot and its account — no Stop, no Restart, no account change', async ({

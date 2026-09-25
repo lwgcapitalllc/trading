@@ -57,6 +57,7 @@ import subprocess
 import sys
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 import config as cfg
@@ -116,6 +117,17 @@ def trees_for(strategy_package: str) -> list[str]:
     """
     if not strategy_package:
         return []
+    memo = _memo
+    key = ("trees_for", strategy_package)
+    if memo is not None and key in memo:
+        return list(memo[key])
+    trees = _trees_for(strategy_package)
+    if memo is not None:
+        memo[key] = list(trees)
+    return trees
+
+
+def _trees_for(strategy_package: str) -> list[str]:
     try:
         from package_deps import local_dependencies
 
@@ -125,6 +137,58 @@ def trees_for(strategy_package: str) -> list[str]:
     return [*strategy, *_SHARED_TREES]
 
 
+# Each answer, kept while the repo's STATE is unchanged (`one_reading`). `None` = not in a read.
+_memo: dict | None = None
+_memo_lock = threading.Lock()
+# The last state's answers: (state token, answers). One entry, so it cannot grow.
+_kept: tuple[str, dict] | None = None
+
+
+def _repo_state() -> str | None:
+    """What every answer here depends on: this clone's HEAD, its upstream, and its edits.
+
+    `None` when git cannot say — nothing is then kept, and every question is asked fresh.
+    """
+    head = _git_run("rev-parse", "HEAD")
+    if head is None:
+        return None
+    upstream = _git_run("rev-parse", "@{upstream}") or ""
+    edits = _git_run("status", "--porcelain")
+    if edits is None:
+        return None
+    return "\n".join((head.strip(), upstream.strip(), edits))
+
+
+@contextmanager
+def one_reading():
+    """Answer each question once per repo STATE while the block runs (2026-09-24).
+
+    🔴 **Why.** The fleet version read (`GET /bots/versions`) compares every bot against this repo:
+    ~0.8s a bot, MEASURED, 7s for the fleet — 3.5s of it re-parsing each strategy's imports
+    (`trees_for`) and the rest git, and the bots share strategies, so most of it repeats. The
+    page polls that read every minute.
+
+    ⚠ **The answers are kept across reads only while the STATE is unchanged** — HEAD, its
+    upstream and `git status --porcelain`. A commit, a pull, a fetch that moves the upstream, or
+    an edit changes the state and every answer is asked again, so nothing here can go stale. A
+    `fetch` is never memoised: it changes what the next answer is.
+    """
+    global _memo, _kept
+    state = _repo_state()
+    with _memo_lock:
+        owner = _memo is None
+        if owner:
+            _memo = _kept[1] if (state is not None and _kept and _kept[0] == state) else {}
+    try:
+        yield
+    finally:
+        if owner:
+            with _memo_lock:
+                if state is not None:
+                    _kept = (state, _memo)
+                _memo = None
+
+
 def _git(*args: str) -> str | None:
     """Run git in the monorepo, or None.
 
@@ -132,6 +196,21 @@ def _git(*args: str) -> str | None:
     clone has never fetched exits 128, and treating that as an empty result would report
     version 0 for a deployment that is simply not describable from here.
     """
+    memo = _memo
+    if memo is not None and args and args[0] == "fetch":
+        # A fetch can bring in the very commit an earlier answer said was missing.
+        memo.clear()
+        return _git_run(*args)
+    if memo is not None and args:
+        if args in memo:
+            return memo[args]
+        out = _git_run(*args)
+        memo[args] = out
+        return out
+    return _git_run(*args)
+
+
+def _git_run(*args: str) -> str | None:
     try:
         out = subprocess.run(
             ["git", "-C", str(cfg.MONOREPO_ROOT), *args],

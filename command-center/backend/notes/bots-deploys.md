@@ -1054,3 +1054,24 @@ process closed at its step, a reused pid not holding the bot, the launch grace, 
 the one-shot answering with the result. Six mutations run, each red. End to end: a real worker
 process, launched by a parent that exited at once, stamped its pid and recorded its failure (a
 deliberately invalid request, so nothing reached the box).
+
+
+## `GET /bots/versions` — every bot's version in two round trips (2026-09-24)
+
+The Bots page rows asked `/bots/{bot}/version` once per bot — two SSH calls each, capped at three —
+and nothing polled them, so the pills filled last and a deploy made off the page left them stale.
+The rows now read this route once, every minute.
+
+- **Built by `_build_version`, the same function as the one-bot read**, and the page writes each
+  answer into that bot's own cache entry, so a row and the panel can never disagree.
+  `tests/test_bot_versions_fleet.py` scripts one box, asks it both ways and requires identical
+  answers bot for bot (red when a bot is handed another's commit count).
+- **Two SSH calls whatever the fleet**: the first reads every bot's `deployed.json`, state file and
+  `startup` records; the second counts each bot's commits ahead, which needs the promoted commit
+  the first returned. A bot whose sections did not come back is LEFT OUT, never given an empty
+  record.
+- **The local comparison was the slow half, not the box.** MEASURED: box 1.8s, comparison ~0.8s a
+  bot, 3.5s of it re-parsing each strategy's imports (`trees_for`). `bot_versions.one_reading()`
+  keeps every git answer and every `trees_for` result while the repo's STATE — HEAD, upstream and
+  `git status --porcelain` — is unchanged, so a repeat read is ~2.6–3s for the fleet. A `fetch`
+  clears the memo, because it can bring in a commit an earlier answer said was missing.

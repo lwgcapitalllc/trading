@@ -5023,19 +5023,102 @@ def get_bot_version(bot_name: str):
     # The run's own `startup` records ride the SAME connection — they say which checkout the
     # running process started on (`_running_code`). Same window and same plain token as the
     # snapshot's read of them, for the same reasons (see `_fetch_vps_snapshot`).
-    reg = next((b for b in _BOTS if b.key == bot_key), None)
-    if reg is not None:
-        cmd += " & echo. & echo ===STARTS==="
-        for month in _ledger_months(datetime.now(timezone.utc)):
-            cmd += (
-                " & findstr /c:startup"
-                rf" {_VPS_INSTANCES}\{reg.instance_dir}\ledger\health-{month}-*.jsonl 2>nul"
-            )
+    cmd += _starts_cmd(bot_key, "STARTS")
 
-    raw = _ssh(cmd)
-    parts = _parse_sections(raw, "head")
+    parts = _parse_sections(_ssh(cmd), "head")
+    return _build_version(
+        bot_key,
+        rec,
+        parts.get("head", ""),
+        parts.get("ahead", ""),
+        parts.get("state", ""),
+        parts.get("starts"),
+    )
+
+
+def _starts_cmd(bot_key: str, marker: str) -> str:
+    """The shell fragment that prints this bot's `startup` records under `===<marker>===`."""
+    reg = next((b for b in _BOTS if b.key == bot_key), None)
+    if reg is None:
+        return ""
+    out = f" & echo. & echo ==={marker}==="
+    for month in _ledger_months(datetime.now(timezone.utc)):
+        out += (
+            " & findstr /c:startup"
+            rf" {_VPS_INSTANCES}\{reg.instance_dir}\ledger\health-{month}-*.jsonl 2>nul"
+        )
+    return out
+
+
+@router.get("/versions", response_model=dict[str, BotDeployedVersion])
+def get_bot_versions():
+    """Every bot's version, in TWO round trips for the whole fleet — the rows' source (2026-09-24).
+
+    🔴 **Why.** The rows asked `/{bot}/version` once per bot — two SSH calls each, capped at three
+    at a time, and started only after the status read — so the pills trickled in seconds after
+    the rest of the page, and nothing re-read them on a timer, so a deploy made anywhere but this
+    page (the CLI, the trading-box tool, the other laptop) left them stale until a reload. Aaron:
+    *"the version pill is always slow to update or load"*. The page now polls THIS every minute.
+
+    ⚠ **Built by `_build_version`, the same function as the one-bot read**, and the page seeds
+    each bot's own cache entry from it — so a row and the bot's panel can never disagree.
+    ⚠ Two calls, not one: the second needs each bot's promoted commit, which is in the first.
+    ⚠ A bot whose sections did not come back is LEFT OUT, never given an empty record — absent
+    means "not answered", and the page renders it as unread (rule 1).
+    """
+    keys = [b.key for b in _BOTS]
+    first = "cd " + _VPS_REPO + " & git rev-parse --short HEAD"
+    for k in keys:
+        u = k.upper()
+        first += (
+            rf" & echo. & echo ===DEPLOYED_{u}=== & type {_VPS_INSTANCES}\{k}\deployed.json 2>nul"
+        )
+        state_path = _bot_state_path(k)
+        if state_path:
+            first += f" & echo. & echo ===STATE_{u}=== & type {state_path} 2>nul"
+        first += _starts_cmd(k, f"STARTS_{u}")
+    parts = _parse_sections(_ssh(first), "head")
+
+    recs: dict[str, dict] = {}
+    for k in keys:
+        if f"deployed_{k}" not in parts:
+            continue
+        try:
+            raw = parts[f"deployed_{k}"]
+            recs[k] = json.loads(raw) if raw.strip() else {}
+        except json.JSONDecodeError:
+            recs[k] = {}
+
+    second = "cd " + _VPS_REPO
+    for k, rec in recs.items():
+        second += (
+            f" & echo. & echo ===AHEAD_{k.upper()}==="
+            f" & git rev-list --count {rec.get('promoted_commit') or 'HEAD'}..HEAD"
+        )
+    ahead = _parse_sections(_ssh(second), "head") if recs else {}
+
+    # Side by side: each build compares against THIS repo's git history (~0.75s a bot, MEASURED),
+    # and one after another that was 7s of a 9s read. Git reads are safe to run concurrently.
+    def build(k: str) -> BotDeployedVersion:
+        return _build_version(
+            k,
+            recs[k],
+            parts.get("head", ""),
+            ahead.get(f"ahead_{k}", ""),
+            parts.get(f"state_{k}", ""),
+            parts.get(f"starts_{k}"),
+        )
+
+    with bot_versions.one_reading(), ThreadPoolExecutor(max_workers=max(1, len(recs))) as pool:
+        return dict(zip(recs, pool.map(build, recs)))
+
+
+def _build_version(
+    bot_key: str, rec: dict, head: str, ahead_raw: str, state_raw: str, starts: str | None
+) -> BotDeployedVersion:
+    """One bot's version card from what the box returned — shared by the one-bot and fleet reads."""
     try:
-        ahead = int(parts.get("ahead", "0").strip().splitlines()[-1])
+        ahead = int(ahead_raw.strip().splitlines()[-1])
     except (ValueError, IndexError):
         ahead = 0
 
@@ -5048,7 +5131,7 @@ def get_bot_version(bot_name: str):
     # rather than failed — the record alone is still the best reading there is.
     started: float | None = None
     try:
-        state = json.loads(parts.get("state", "").strip() or "{}")
+        state = json.loads(state_raw.strip() or "{}")
         mine = state.get(bot_key) or {}
         running_hash = mine.get("source_hash", "") or ""
         s = mine.get("started")
@@ -5120,12 +5203,12 @@ def get_bot_version(bot_name: str):
         strategy_version=rec.get("strategy_version"),
         files=rec.get("files", 0),
         params=deployed_params,
-        repo_commit=parts.get("head", "").strip().splitlines()[0] if parts.get("head") else "",
+        repo_commit=head.strip().splitlines()[0] if head.strip() else "",
         commits_ahead=ahead,
         running_hash=running_hash,
         params_drift=drift,
         compare=comparison,
-        running_code=_running_code(parts.get("starts"), started),
+        running_code=_running_code(starts, started),
     )
 
 

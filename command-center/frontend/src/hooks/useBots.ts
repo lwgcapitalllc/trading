@@ -247,32 +247,54 @@ export function useBotFilesCheck(botName: string | null) {
 }
 
 /**
- * The same read as `useBotVersion`, for every bot at once — the fleet strip's source.
+ * Every bot's version for the ROWS, off ONE fleet read (`GET /bots/versions`, 2026-09-24).
  *
- * ⚠ It deliberately reuses `useBotVersion`'s query key and query function, so a bot's row in the
- * fleet summary and its own Deployed version card are ONE cache entry. Two fetches of the same
- * fact are two facts that can disagree, and this page's whole job is saying which version is
- * deployed — a strip claiming "1 restart pending" over a card claiming nothing is worse than no
- * strip at all.
+ * 🔴 **It asked `/bots/{bot}/version` once per bot until 2026-09-24** — two SSH calls each, capped
+ * at three at a time and started only after the status read — so the pills trickled in after the
+ * rest of the page, and nothing re-read them on a timer: a deploy made anywhere but this page (the
+ * CLI, the trading-box tool, the other laptop) left them stale until a reload. Aaron: *"the
+ * version pill is always slow to update or load"*. The fleet read answers in ~3s for every bot
+ * (MEASURED; the backend keeps its git answers while the repo is unchanged) and is polled every
+ * minute — every 15s while any bot is waiting on a restart.
  *
- * Each entry stays `undefined` while loading or on error; the caller must count that as UNKNOWN
- * rather than healthy (`no data` and `cannot ask` are not the same value — the rule this repo
- * learned from a bot that was blind for 50 minutes).
+ * ⚠ **Each bot's answer is written into ITS OWN cache entry** (`['bots', 'version', name]`), the
+ * one `useBotVersion` reads — so a row and the bot's panel stay ONE reading and can never disagree,
+ * and the panel opens on data already there. The per-bot entries are read here with `enabled:
+ * false`: the fleet read is their only source on the page.
+ *
+ * ⚠ **Three states per bot, never two** (rule 1): the fleet read still out → loading; it failed,
+ * or answered without this bot → the error (the pill renders Unread), never a blank "no version".
  */
-export function useBotVersions(botNames: string[], enabled = true) {
-  return useQueries({
+export function useBotVersions(botNames: string[]) {
+  const qc = useQueryClient()
+  const fleet = useQuery({
+    queryKey: ['bots', 'versions'],
+    queryFn: async () => {
+      const all = await api.get<Record<string, BotDeployedVersion>>('/bots/versions', {
+        silent: true,
+      })
+      for (const [name, v] of Object.entries(all)) qc.setQueryData(['bots', 'version', name], v)
+      return all
+    },
+    retry: false,
+    refetchInterval: (q: Query<Record<string, BotDeployedVersion>>) =>
+      Object.values(q.state.data ?? {}).some(isRestartPending) ? 15_000 : 60_000,
+  })
+  const each = useQueries({
     queries: botNames.map((name) => ({
       queryKey: ['bots', 'version', name],
       queryFn: () => readVersion(name),
-      enabled,
+      enabled: false,
       staleTime: 30_000,
       retry: false,
-      // ⚠ The SAME poll rule as `useBotVersion`, through the same function. These share a cache
-      // entry per bot, so two different intervals would not merely disagree — whichever query
-      // mounted last would decide, and the strip and the card would settle at different times
-      // while claiming to be one reading.
-      refetchInterval: (q: Query<BotDeployedVersion>) => versionPoll(q.state.data),
     })),
+  })
+  return each.map((q, i) => {
+    if (q.data !== undefined) return { data: q.data, isPending: false, error: null as unknown }
+    if (fleet.isPending) return { data: undefined, isPending: true, error: null as unknown }
+    const error =
+      fleet.error ?? new Error(`The fleet version read did not answer for ${botNames[i]}.`)
+    return { data: undefined, isPending: false, error: error as unknown }
   })
 }
 
@@ -333,8 +355,13 @@ export function usePromoteJobs(botNames: string[]) {
             _settledDeploys.add(next.job_id)
             qc.invalidateQueries({ queryKey: ['bots', 'params', name] })
             qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] })
-            // Resolves once the re-read lands, failed or not — it never throws.
-            await qc.invalidateQueries({ queryKey: ['bots', 'version', name] })
+            // Resolves once the re-read lands, failed or not — it never throws. The FLEET read
+            // too: the rows' entries are fed only by it, and with no panel open nothing else
+            // would re-read this bot's version.
+            await Promise.all([
+              qc.invalidateQueries({ queryKey: ['bots', 'version', name] }),
+              qc.invalidateQueries({ queryKey: ['bots', 'versions'] }),
+            ])
             // ⚠ The TOAST still needs the transition, and that asymmetry is the point. Re-reading
             // a stale version is always right; announcing a deploy this tab was not open for is
             // telling somebody something just happened when it did not.

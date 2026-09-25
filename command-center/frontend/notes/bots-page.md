@@ -1886,7 +1886,32 @@ to Removing…*, which was red on the old condition.
 record is four tiles including net dollars, and each setting row carries its own name once. All
 152 checks in the file pass.
 
-## Version reads start once the status read has answered (2026-09-24)
+## The rows' versions are ONE fleet read, polled every minute (2026-09-24)
+
+Aaron: *"after I restart or deploy a new version the version tag instantly updated? it seems the
+version pill is always slow to update or load"*. Two faults: the rows sent one version read per
+bot, held back until the status read answered (below), so the pills filled last; and nothing
+re-read them on a timer, so a deploy made anywhere but this page — the CLI, the trading-box tool,
+the other laptop — left them stale until a reload or a Refresh.
+
+- **`useBotVersions` reads `GET /bots/versions` once for the fleet** and writes each bot's answer
+  into that bot's own `['bots', 'version', name]` entry — the one the panel reads — so a row and
+  the panel stay one reading. The per-bot entries are read with `enabled: false` on the page.
+- **Polled every 60s, every 15s while any bot waits on a restart.** A deploy made anywhere shows
+  within a minute. A finished deploy also re-reads the fleet read, since with no panel open
+  nothing else would re-read that bot.
+- **Started with the page**: the fleet read starts no Python on the box, so it no longer has to
+  wait for the status read. MEASURED on the real page: every pill filled at **4.1s**, all at
+  once.
+- ⚠ Three states per bot: fleet read out → loading; failed, or answered without this bot → the
+  error (Unread), never a blank.
+- ⚠ Browser checks compose the fleet answer from each check's own per-bot mock
+  (`tests/fleetVersions.ts`), the way the backend builds it from the same function.
+
+TESTED: `tests/bots-version.spec.ts` → *the rows read every version in ONE fleet read, without
+waiting for the status read*; red with the rows back on per-bot reads (3 per-bot reads).
+
+## Version reads start once the status read has answered (2026-09-24) — SUPERSEDED, see above
 
 Aaron: *"the bots page takes so dam long to load."* The page sent all ten version reads at the same
 moment as the status read. Each version read starts Python on a two-CPU trading box, so the status
