@@ -974,6 +974,14 @@ class OrderBridge:
             took = False
         if not took:
             return False
+        # 🔴 The record of the trade goes with it (2026-09-24), the way a live close clears it.
+        # Left behind, it made `promote.py` refuse this bot as "holding a position" for a trade
+        # closed two days earlier. Only a record of THIS ticket — anything else is not ours to
+        # judge here.
+        if self._instance_dir is not None:
+            record = position_state.read(self._instance_dir)
+            if record is not None and record.ticket == closed.get("ticket"):
+                position_state.clear(self._instance_dir)
         self._log.info(
             f"Warmup ended holding a copy of T{closed.get('ticket')}, which is already closed "
             f"({closed.get('reason')}). The strategy drops it on its next bar and the bot then "

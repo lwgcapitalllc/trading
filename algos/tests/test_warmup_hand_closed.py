@@ -317,3 +317,52 @@ def test_a_second_restart_finds_the_booked_row_and_books_nothing_more(tmp_path):
     again.mkdir()
     _restart_booking(again, _BREAKDOWN, rows=[{**_BOX_OPENED, "risk_usd": 526.8}, booked])
     assert len(_closed_rows(again)) == 1, "booked once, never twice"
+
+
+# ── ...and its POSITION RECORD goes with it (2026-09-24) ─────────────────────────
+#
+# A live close clears `position.json`; the drop never did. Live: sos_fade_demo still held the
+# record of T365501068 two days after it closed, and `promote.py` refused the bot as "HOLDING A
+# POSITION". RED before: the record survived the drop.
+# MUTATION: clear whatever record is there -> the other-ticket case goes red.
+
+
+def _record(instance, ticket):
+    instance.mkdir(exist_ok=True)
+    rec = {
+        "version": 1,
+        "bot": "sos_fade_demo",
+        "symbol": "XAUUSD.p",
+        "magic": 770115,
+        "ticket": ticket,
+        "written": "2026-09-17T01:40:07Z",
+        "broker": {"dir": -1, "lots": 0.14, "entry": 4316.98, "stop": 4352.44},
+        "strategy": {"_pos_dir": -1},
+    }
+    (instance / "position.json").write_text(json.dumps(rec), encoding="utf-8")
+    return instance / "position.json"
+
+
+def _restart_with_record(tmp_path, ticket):
+    rec = _record(tmp_path / "instance", ticket)
+    ex = _replay_holding()
+    b, ops, _ledger, _n = _bridge(
+        ex, ledger=_box_ledger(tmp_path, [_BOX_OPENED]), instance_dir=tmp_path / "instance"
+    )
+    ops.origin = {"opened": 0.14, "closed": {0: 0.14}}
+    ops.positions = []
+    b.state = live_bridge.BridgeState.LIVE
+    b.begin_live()
+    return rec
+
+
+def test_the_dropped_trades_position_record_is_cleared(tmp_path):
+    rec = _restart_with_record(tmp_path, 364105022)
+    assert _dropped(tmp_path)
+    assert not rec.exists(), "a closed trade's record must not outlive it"
+
+
+def test_a_record_of_a_different_trade_is_left_alone(tmp_path):
+    rec = _restart_with_record(tmp_path, 999)
+    assert _dropped(tmp_path)
+    assert rec.exists()

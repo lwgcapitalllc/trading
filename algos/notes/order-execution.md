@@ -842,9 +842,16 @@ zero row would read as a scratch. ⚠ Once written, the next restart finds it by
 `closed` lookup, so it is never booked twice. ⚠ The row's time is when it was written, not the
 broker's close time. ⚠ `get_deal_breakdown` looks back **7 days**, so a trade that closed longer
 ago than that is still dropped unbooked. **Reaches a live bot only at its next promote.**
+🔴 **The drop now clears the trade's `position.json` too, as a live close does (same day).** Left
+behind, it made `promote.py` refuse sos_fade_demo as "HOLDING A POSITION (T365501068)" two days
+after the trade closed — which is why its promote never ran and a settings change it could not
+read sat as "Needs review". The bot itself was safe (a restart reads the record only when the
+broker holds a position). Only a record of the dropped ticket is cleared.
 ⚠ **Ticket 365501068 itself is NOT healed by this** — it was dropped on 2026-09-22, before this
-existed. It needs a one-off close row added to the bot's 2026-09-22 file off the broker's own
-figure, the way 2026-09-17's hand-booked row was (`booked_after_the_fact`, `closed_at`).
+existed. It needed a one-off close row added to the bot's 2026-09-22 file off the broker's own
+figure, the way 2026-09-17's hand-booked row was (`booked_after_the_fact`, `closed_at`) — DONE
+2026-09-25 01:32 UTC off deals 354835919 / 354870600 / 354872371: +$181.56 net, +0.34R, closed
+from the phone. Its stale `position.json` on the box still needs removing by hand.
 
 ⚠ **Backtest comparison:** exclude or split `closed_by_you` rows — they are the owner's exit, not
 the strategy's. Inside the emulator the same trade ends under its own `CMD` tag a bar later, at
