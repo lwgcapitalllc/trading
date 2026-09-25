@@ -447,6 +447,7 @@ Most-cited code: `pages/Bots/AccountForm.tsx`, `lib/brokerName.ts`, `lib/costLay
 **Read before touching:** the version banner, the fleet strip, deploying/promoting a strategy.
 Most-cited code: `lib/botVersion.ts`, `pages/Bots/ConfigureTab.tsx`, `components/StepProgress.tsx`.
 
+- The version pill — every state it can show, in the order it picks them (reference, 2026-09-24)
 - The version banner — "am I behind, and by how much" (2026-08-07)
 - The fleet strip re-reads itself, and its labels are about the BOT (2026-08-28)
 - Strategy deployment manager

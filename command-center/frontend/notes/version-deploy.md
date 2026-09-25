@@ -6,6 +6,29 @@ CLAUDE.md gets at most one index line.
 
 ---
 
+## The version pill — every state it can show (reference, 2026-09-24)
+
+One pill per bot row, drawn by `components/VersionPill.tsx`. **It shows ONE state — the first that
+applies, top to bottom.** The four amber ones come off `versionNeed` in `lib/botVersion.ts`, which the
+"needs you" tiles above the table also read, so the pill and the tiles can never disagree.
+
+| Pill | Colour | Means | What fixes it |
+|---|---|---|---|
+| Deploying vN | cyan | a deploy of this bot is running | wait |
+| (shimmer) | — | the version read has not answered yet | wait |
+| Unread | grey | the trading box could not be reached | it asks again on the next refresh |
+| Not deployed | amber | never deployed — it trades whatever the box's checkout holds, so a pull there changes it | deploy from Configure |
+| No version | grey | the version could not be worked out | hover for the reason |
+| vN · K behind | amber | the backtester is K strategy changes ahead, and a deploy would move the bot forward | deploy |
+| vN · restart | amber | the bot runs older code than the box holds — a deploy landed and it has not restarted, or shared code changed that the version number does not count | re-deploy (a plain restart starts the box's checkout, not new code) |
+| vN · not pushed | amber | the newer versions exist only on your machine | push, then deploy |
+| vN | plain outline | up to date | — |
+
+⚠ **Behind beats restart** because a deploy restarts the bot anyway; **restart beats not pushed**
+because it is something the bot needs, where not pushed is something this machine needs. Hover any pill for its full reason.
+
+---
+
 ## The version banner — "am I behind, and by how much" (2026-08-07)
 
 `VersionBanner` in `pages/Bots/ConfigureTab.tsx`, first and full width on the detail panel.
