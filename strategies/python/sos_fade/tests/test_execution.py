@@ -1289,10 +1289,11 @@ def _brk_to_bar2(**kw):
     return ex
 
 
-def _breaks(ex, bar, *events):
-    """Deliver fast breaks one minute apart, all inside 15m bar `bar`."""
+def _breaks(ex, bar, *events, trend=1):
+    """Deliver fast breaks one minute apart, all inside 15m bar `bar`. `trend` is the fast
+    feed's external direction on those bars — the long fixture's own way unless a test says so."""
     for i, (d, kind) in enumerate(events):
-        ex.observe_fast_breaks(bar * _Q + (i + 1) * 60_000, ((d, kind),))
+        ex.observe_fast_breaks(bar * _Q + (i + 1) * 60_000, ((d, kind),), trend)
 
 
 def test_a_1m_break_add_needs_a_bounce_and_then_the_SECOND_break_back():
@@ -1310,6 +1311,23 @@ def test_a_1m_break_add_needs_a_bounce_and_then_the_SECOND_break_back():
     assert ex._add_pending is not None and ex._add_pend_stop == ex._current_stop()
     ex.step(_sig(4, 106.5, 106.9, 106.2, 106.6), _seq_flat())
     assert len(ex._adds) == 1 and abs(ex._adds[0][0] - 106.5) < 1e-9, "fills at the next open"
+
+
+def test_a_1m_break_add_waits_for_the_1m_trend_to_point_the_trades_way():
+    """The bug Aaron saw on the chart: two small breaks back can print while the BOUNCE is still
+    the bigger 1-minute move, and adding there is adding into a reversal. Refused until the
+    fast trend agrees; a later break back with the trend agreeing adds. Watched RED with the
+    trend check removed."""
+    ex = _brk_to_bar2()
+    _breaks(ex, 3, (-1, "bos"), (1, "sos"), (1, "bos"), trend=-1)
+    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.5), _seq_flat())
+    assert ex._add_pending is None, "added while the 1m trend still pointed against the trade"
+
+    ex = _brk_to_bar2()
+    _breaks(ex, 3, (-1, "bos"), (1, "sos"), (1, "bos"), trend=-1)
+    _breaks(ex, 3, (1, "bos"), trend=1)          # same bar, a later minute: the trend has turned
+    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.5), _seq_flat())
+    assert ex._add_pending is not None
 
 
 def test_a_1m_break_add_without_a_bounce_does_not_fire():

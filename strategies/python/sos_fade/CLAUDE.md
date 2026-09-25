@@ -427,8 +427,8 @@ base lot alone made that exact for ONE add and double-spent from the second onwa
   after the lab does, and the ledger records the risk an add was SIZED at, not the risk it took.
 - Story, arithmetic, the grid and the mutation record: `notes/sizing_and_risk_history.md`.
 - 🟢 **`exec_scale_mode = "1m break"` (2026-09-25, NOT the default)** adds on the second 1-minute
-  break back after a bounce, shared stop, sized net of costs — 16 trades hurt vs 46, no winner
-  scratched vs 5, for half the extra R (Run 46). ⚠ Python only, no parity gate; needs the
+  break back after a bounce, once the 1m trend points the trade's way, shared stop, sized net of
+  costs — 8 trades hurt vs 46, no winner scratched vs 5, +18.3R vs +55.7R (Run 46). ⚠ Python only, no parity gate; needs the
   re-entry's fast feed at 1 minute and refuses otherwise.
 
 ## Flat before the close — `flat_mode`, and it is NOT `flat_by_close` any more

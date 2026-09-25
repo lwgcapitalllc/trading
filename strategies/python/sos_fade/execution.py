@@ -886,8 +886,9 @@ class Execution:
         # fell inside. The `_brk_*` fields are the trade's own leg bookkeeping, in the DIRECTION
         # frame: the best price since the second target, whether a bounce against the trade has
         # been seen, how many breaks back since, whether this push has already added, and how
-        # many adds had filled when last looked. See `_place_break_add`.
-        self._fast_breaks: List[Tuple[int, int, str]] = []
+        # many adds had filled when last looked. Each buffered break also carries the fast
+        # feed's EXTERNAL trend as of that bar (+1/-1/0). See `_place_break_add`.
+        self._fast_breaks: List[Tuple[int, int, str, int]] = []
         self._brk_ext: Optional[float] = None
         self._brk_bounce = False
         self._brk_count = 0
@@ -4026,7 +4027,7 @@ class Execution:
                 locked += (stop - px) * d * qty * pv
         return locked
 
-    def observe_fast_breaks(self, ts_ms: int, breaks) -> None:
+    def observe_fast_breaks(self, ts_ms: int, breaks, direction: int = 0) -> None:
         """Buffer one fast bar's INTERNAL breaks for the "1m break" scale-in. Called by the dual
         clock on EVERY fast bar; a no-op unless that mode is on and a position is open."""
         cfg = self._cfg
@@ -4034,7 +4035,7 @@ class Execution:
                 or getattr(cfg, "exec_scale_mode", "Trail") != "1m break"):
             return
         for d, kind in breaks:
-            self._fast_breaks.append((int(ts_ms), int(d), kind))
+            self._fast_breaks.append((int(ts_ms), int(d), kind, int(direction or 0)))
 
     def _place_break_add(self, sig) -> None:
         """PLACE a "1m break" add: after a bounce against the trade, the SECOND 1-minute internal
@@ -4046,7 +4047,7 @@ class Execution:
           re-arms — one add per push;
         * a 1m internal break AGAINST the trade marks a bounce and resets the count;
         * after a bounce, the second 1m internal break (either kind) BACK in the trade's
-          direction adds.
+          direction adds — but only once the 1m EXTERNAL trend points the trade's way too.
 
         🔴 **EVERY LOT SHARES THE TRADE'S ONE TRAILING STOP.** Aaron, 2026-09-24: per-add stops
         behind the bounce are "bad because price could come back and hit those easily" — and
@@ -4073,7 +4074,7 @@ class Execution:
         # inside it. Earlier ones belong to a bar this method was not called on (flat, or the
         # fill bar) and are dropped, never carried forward.
         # ⚠ Not keyed on `self.bar_ms`: that defaults to five minutes and only the lab sets it.
-        events = [(dd, k) for (ms, dd, k) in self._fast_breaks if ms >= sig.time_ms]
+        events = [(dd, fdir) for (ms, dd, _k, fdir) in self._fast_breaks if ms >= sig.time_ms]
         self._fast_breaks = []
         if self._stage < 2:
             return
@@ -4087,12 +4088,18 @@ class Execution:
         if len(self._adds) >= cfg.exec_scale_max_adds or self._brk_used:
             return
         fire = False
-        for dd, _kind in events:
+        for dd, fdir in events:
             if dd == -d:
                 self._brk_bounce, self._brk_count = True, 0
             elif self._brk_bounce:
                 self._brk_count += 1
-                if self._brk_count >= 2:
+                # 🔴 AND THE 1-MINUTE TREND MUST ALREADY POINT THE TRADE'S WAY. Two small breaks
+                # back can print while the bounce is still the bigger 1m move — MEASURED: 23 of 42
+                # adds fired that way before this line (Aaron, 2026-09-25: "it should only add if
+                # price is going in the direction of the trade"). Not yet → keep waiting; a later
+                # break back re-checks. With it, adding never deepened the worst drawdown
+                # (5.98R, the same as no adds) — Run 46.
+                if self._brk_count >= 2 and fdir == d:
                     fire = True
                     break
         if not fire:

@@ -241,6 +241,10 @@ were measured; the table and the build's own replay are Run 46 in `sos_fade_opti
 - **The rule:** from the second target, track the best price; a 1-minute internal break against
   the trade is the bounce; the SECOND 1-minute internal break back adds at market (decided at the
   15m close, filled at the next open). One add per push; a new best re-arms. Shared stop.
+- 🔴 **Fixed the same day: the 1-minute EXTERNAL trend must also point the trade's way.** 23 of
+  42 adds had fired inside a bounce that was still the bigger 1m move (Aaron: *"it should only add
+  if price is going in the direction of the trade"*). After: 8 trades made worse instead of 16,
+  23 adds, +18.3R — Run 46's addendum. The dual clock hands each break over with that direction.
 - **Sized net of costs** — the trade's costs so far, the exit side owed on every open lot and this
   add's own round trip come out of the locked profit first, so a stop-out ends at zero AFTER costs.
   Under the shipped rule 5 trades since 2020 closed just under zero on exactly their costs.
