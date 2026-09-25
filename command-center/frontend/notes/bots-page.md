@@ -1701,7 +1701,10 @@ What the page did wrong, each measured off his screenshot with three accounts op
   a bot counts when its own Status is `bad`/`warn` (`botCondition`) or its version pill is amber —
   and the pill's amber states now come off one function, `versionNeed` in `lib/botVersion.ts`, read
   by the pill AND this line, so they can never disagree. Grouped by the row's own word. Empty while
-  the box is still being asked.
+  the box is still being asked. **Redrawn 2026-09-24 as one tile per problem** (Aaron: the single
+  run-on line was hard to read) — the bot count leads large, the word under its colour (red for a
+  `bad` status, amber otherwise), the accounts on their own dim line beneath. Worst first, as
+  before; what it counts did not change.
 - **The equity shows MT5's figure or a dash** — the rail row's "not read"/"unread" words went too,
   matching origin's 2026-09-14 rule (*"read exactly what's on the MT5"*).
 

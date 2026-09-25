@@ -2787,22 +2787,41 @@ export function Bots() {
 
               <div className="flex-1 min-w-0 flex flex-col gap-[12px]">
                 {needs.length > 0 && (
-                  <div
-                    data-testid="needs-you"
-                    className="flex items-baseline gap-x-[16px] gap-y-1 flex-wrap pl-3 py-[2px] border-l-2 border-warn text-[12.5px] text-text-secondary"
-                  >
-                    <span className="text-[10.5px] font-bold uppercase tracking-[0.8px] text-warn-text">
+                  // One TILE per problem, worst first (2026-09-24) — Aaron: the one-line run-on
+                  // ("Stopped — 2 bots on X  Needs review — 1 bot on Y …") was hard to read. The
+                  // count leads, the word names it, the accounts sit underneath on their own line.
+                  <div data-testid="needs-you" className="flex items-stretch gap-[8px] flex-wrap">
+                    <span className="self-center pr-[4px] text-[10.5px] font-bold uppercase tracking-[0.8px] text-warn-text">
                       Needs you
                     </span>
                     {needs.map((n) => (
-                      <span key={n.word} data-testid="needs-item" className="cursor-default">
+                      <div
+                        key={n.word}
+                        data-testid="needs-item"
+                        className={`cursor-default flex items-center gap-[10px] pl-[10px] pr-[14px] py-[6px] rounded-md border bg-bg-surface ${
+                          n.tone === 'bad' ? 'border-neg/40' : 'border-warn/40'
+                        }`}
+                      >
                         <span
-                          className={`font-semibold ${n.tone === 'bad' ? 'text-neg-text' : 'text-warn-text'}`}
+                          className={`text-[20px] leading-none font-semibold tabular-nums ${
+                            n.tone === 'bad' ? 'text-neg-text' : 'text-warn-text'
+                          }`}
                         >
-                          {n.word}
-                        </span>{' '}
-                        — {n.bots} bot{n.bots === 1 ? '' : 's'} on {n.where.join(', ')}
-                      </span>
+                          {n.bots}
+                        </span>
+                        <span className="flex flex-col leading-tight">
+                          <span
+                            className={`text-[12.5px] font-semibold ${
+                              n.tone === 'bad' ? 'text-neg-text' : 'text-warn-text'
+                            }`}
+                          >
+                            {n.word}
+                          </span>
+                          <span className="text-[11.5px] text-text-tertiary">
+                            {n.where.join(' · ')}
+                          </span>
+                        </span>
+                      </div>
                     ))}
                   </div>
                 )}
