@@ -33,8 +33,9 @@ welcomed."*
   return, lower drawdown, a smoother equity curve, more trades (through another leg, instrument or
   timeframe, never a looser filter) or a better Sharpe. Say so when an idea fails statistically.
 - **Second look before you recommend** *(Aaron, 2026-09-24)*. Before proposing any fix or design,
-  name two other ways — one the SMALLEST that works — and pick the simplest that fully solves it;
-  show the losers in a line each. *(A missing $181.56 got a permanent live-bot sweep proposed to
+  weigh two other ways — one the SMALLEST that works — and pick the simplest that fully solves it.
+  The debate is INTERNAL: state only the choice, never the losers (Aaron: *"I only care about the
+  outcome"*). *(A missing $181.56 got a permanent live-bot sweep proposed to
   heal one row; the second look found a one-time correction.)*
 - **Everything from here is built reusable and modular** — designed so a later feature can reuse it,
   no one-off wiring.
