@@ -1,1 +1,2 @@
 2026-09-26 02:12:36,650 [ERROR] TRADING OFF: the broker has switched trading off for this account — it is read-only. Every order this bot sends will be refused.
+2026-09-26 02:21:47,887 [INFO] Trading is allowed on this account again.
