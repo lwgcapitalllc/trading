@@ -1045,3 +1045,17 @@ order blocks 17 s, structure 14 s, VWAP 4 s. Candle loading was 8 s.
   parity gate re-run on a real export — not done here.
 
 🔴 **2026-09-26: the copied fill-clock default is now 1, matching the strategy** (it moved 5 → 1 when SOS Fade's default add became "1m break"). The two must still move together.
+
+---
+
+## The spec carries the instrument's PIP, stamped as it is served (2026-09-26)
+
+`pipSize` on every served ChartSpec, from `services/pip_size.py`: gold 0.10 (PU Prime's
+convention), FX 0.0001, JPY-quoted 0.01, **`null` for everything else** — no settled convention
+means no number, never a guess. It feeds the chart's optional pip readings on `Best` / `DD` / exit.
+
+🔴 **Stamped at SERVE time, never written into `chart_spec.json`.** The warm-cache route streams the
+file as bytes without parsing it (`cached_chart_spec_bytes`), so a field added at build time would
+reach no run built before it. `served_chart_spec_bytes` appends the key onto the bytes instead —
+still no parse — and `build_chart_spec` stamps the dict on its own paths. Tests:
+`tests/test_chart_spec_pip_size.py`, proven by mutation.

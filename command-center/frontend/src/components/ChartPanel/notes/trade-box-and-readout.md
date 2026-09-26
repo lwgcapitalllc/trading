@@ -155,3 +155,29 @@ as an add taken BEFORE the target that allowed it (Aaron, 2026-09-24).
   time. Only the default drawing was wrong.
 - ⚠ **No automated check**, same as the rest of this canvas: checked by driving the real page to
   that trade and reading the screenshot.
+
+---
+
+## Pips on `Best`, `DD` and the exit — behind a toggle (2026-09-26)
+
+Aaron's ask: *"I want to know how far in pips we were in draw down, best price made, how much we
+captured on the exit."* Chart settings → Trades → **Show pips on Best / DD / Exit**, default OFF.
+Each chip gains ` · +152.3p` — the distance from the entry, **signed so favourable is + on a long
+AND a short** (`Best` always +, `DD` always −, an exit whichever way it closed). Every FILL chip
+carries it (`TP1`, `Exit`, `SL / Exit`), because each is a place the trade came off; `SL` and an
+unhit rung do not. An add lot's chips are measured from the LOT's own fill, the same entry its own
+`Best` / `DD` read against.
+
+🔴 **The pip size comes from the BACKEND, never from the panel** (`backend/services/pip_size.py`),
+because the panel holds no instrument names. Gold = **0.10** (PU Prime's convention, the one
+`backtest/fills.py` reads its spread in — some venues call 0.01 a gold pip), FX = 0.0001, JPY-quoted
+= 0.01. **Anything else is `null` and prints no pip reading at all** — indices, silver, futures have
+no single convention, and a guessed size would be a confident wrong number on every chip.
+
+⚠ **It is stamped on the spec as it is SERVED, never into the cache** — a warm cache is streamed as
+raw bytes, so a build-time field would reach no run built before it. See the backend's
+`notes/chart.md`.
+
+Proof: `scripts/check_trade_geometry.mjs` (the pip cases, killed by three mutations) and
+`backend/tests/test_chart_spec_pip_size.py`. Driven on run `ab08dc6c90c7` (a short from 4369.93):
+`DD 4376.14 · −62.1p`, `Exit 4356.86 · +130.7p`, `Best 4291.69 · +782.4p`, each checked by hand.

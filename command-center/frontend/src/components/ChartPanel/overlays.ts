@@ -8,7 +8,15 @@ import {
   type OverlayCreateFiguresCallbackParams,
   type OverlayFigure,
 } from 'klinecharts'
-import { adverseFloor, exitMarker, exitSide, stoppedOut, type Sign } from './tradeGeometry'
+import {
+  adverseFloor,
+  exitMarker,
+  exitSide,
+  fmtPips,
+  pipsFrom,
+  stoppedOut,
+  type Sign,
+} from './tradeGeometry'
 
 /** What `registerOverlay` accepts. Named because the trade template is held in a CONST before it
  *  is registered (twice, under two names) — and a template written inline is contextually typed
@@ -267,6 +275,10 @@ interface TradeExtend {
   // figures the labels sat beside are drawn identically either way, so nothing here changes what
   // the chart is saying about the trade, only how much of it is spelled out.
   showLabels?: boolean
+  // One pip in price units, passed ONLY while the reader has pips switched on (Chart settings →
+  // Trades). Absent/null = off, or an instrument with no pip convention: either way the `Best`,
+  // `DD` and exit chips print no pip reading. Display only — no level moves.
+  pipSize?: number | null
   /** The candlestick reversal at this trade's turn, BY NAME (`Hammer`), or `no candle`. `undefined`
    *  = the layer is off, i.e. NOT ASKED — and it must not render as "no candle". Same rule as
    *  `mt5_link` everywhere else here: never let "no" and "cannot ask" be the same value.
@@ -685,11 +697,18 @@ export function registerChartOverlays(): void {
       // left off — silently, because nothing fails when a label keeps drawing.
       const withLabels = d.showLabels !== false
       const labels: { y: number; text: string; color: string }[] = []
-      const addLabel = (p: number | undefined, text: string, color: string) => {
+      // `pips` = also state the distance from the entry in pips (`Best 2650.30 · +152.3p`). Only the
+      // three chips Aaron asked for carry it — `Best`, `DD` and wherever the trade came off
+      // (2026-09-26) — because a pip count on `SL` or an unhit rung answers a question nobody asked
+      // and widens chips the de-collider is already fighting.
+      const addLabel = (p: number | undefined, text: string, color: string, pips = false) => {
         if (!withLabels) return
         const y = yOf(p)
         if (y == null) return
-        labels.push({ y, text: withPrice ? `${text} ${px(p as number)}` : text, color })
+        let out = withPrice ? `${text} ${px(p as number)}` : text
+        const n = pips ? pipsFrom(d.entryPrice as number, p as number, sign, d.pipSize) : null
+        if (n != null && typeof d.entryPrice === 'number') out += ` · ${fmtPips(n)}`
+        labels.push({ y, text: out, color })
       }
 
       const entryY = entry.y
@@ -754,7 +773,7 @@ export function registerChartOverlays(): void {
       if (typeof d.mfePrice === 'number' && (d.mfePrice - (bankedPrice ?? entryP!)) * sign > 1e-9) {
         crossLine(d.mfePrice, withAlpha(profitColor, 0.4))
         dot(d.mfePrice, runColor)
-        addLabel(d.mfePrice, 'Best', runColor)
+        addLabel(d.mfePrice, 'Best', runColor, true)
       } else {
         crossLine(mfePrice, withAlpha(profitColor, 0.4)) // guide only — Exit already names it
       }
@@ -767,12 +786,12 @@ export function registerChartOverlays(): void {
         const deepColor = withAlpha(stopColor, 0.75)
         crossLine(d.maePrice, withAlpha(stopColor, 0.4))
         dot(d.maePrice, deepColor)
-        addLabel(d.maePrice, 'DD', deepColor)
+        addLabel(d.maePrice, 'DD', deepColor, true)
       }
       // Stop: dotted line across + dot + "SL".
       crossLine(d.stopPrice, withAlpha(stopColor, 0.85))
       dot(d.stopPrice, stopColor)
-      addLabel(d.stopPrice, exitAt === 'stop' ? 'SL / Exit' : 'SL', stopColor)
+      addLabel(d.stopPrice, exitAt === 'stop' ? 'SL / Exit' : 'SL', stopColor, exitAt === 'stop')
       // The trade's own exit LADDER — every rung it aimed at, drawn faint whether or not price
       // reached it. Read the block below the legs for why it is never gated.
       const targets = (d.tpTargets ?? [])
@@ -825,7 +844,13 @@ export function registerChartOverlays(): void {
         crossLine(lg.price, lg.color)
         dot(lg.price, lg.color)
         const rung = rungAt(lg.price)
-        addLabel(lg.price, rung && rung !== lg.label ? `${rung} / ${lg.label}` : lg.label, lg.color)
+        // Every fill is a place the trade came off, so each states what it captured.
+        addLabel(
+          lg.price,
+          rung && rung !== lg.label ? `${rung} / ${lg.label}` : lg.label,
+          lg.color,
+          true
+        )
       }
       // SCALE-IN adds: one dotted line + dot + `Add` per lot, in the ENTRY colour, because that is
       // what they are — further entries, at a later price. Drawn whenever the trade carries them,

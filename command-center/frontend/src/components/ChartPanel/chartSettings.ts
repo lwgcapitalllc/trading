@@ -26,6 +26,8 @@ export interface ChartSettings {
   tradeLabels: boolean
   /** Trade annotations carry their PRICE (`Entry 2635.58`) as well as their name. */
   tradeLabelPrices: boolean
+  /** The `Best`, `DD` and exit chips also state their distance from the entry in PIPS. */
+  tradeLabelPips: boolean
   /** A repainted candlestick-reversal candle names its pattern (`Bearish Engulfing`). */
   candleMarkLabels: boolean
   /** Only the DEEPEST reversal candle of each setup is painted, not every one in its span. */
@@ -46,6 +48,9 @@ export const DEFAULT_CHART_SETTINGS: ChartSettings = {
   // setting now because a re-entry's box is short enough that the chips stack on top of each
   // other, and on that chart the price is what makes them too wide to fit.
   tradeLabelPrices: true,
+  // Default OFF (Aaron, 2026-09-26: *"behind a toggle"*). It widens the three chips it touches, and
+  // it prints nothing on an instrument with no pip convention — see `services/pip_size.py`.
+  tradeLabelPips: false,
   // Default OFF (Aaron, 2026-08-08). Every mark draws its own tag with no cross-overlay
   // de-collision — unlike the batched `LABEL` template — so on a run with marks a few bars apart
   // the names sit on top of the neighbouring candles. The COLOUR is the signal; the name is what
@@ -113,6 +118,15 @@ export const SECTIONS: SettingSection[] = [
         kind: 'toggle',
         dependsOn: 'tradeLabels',
         help: 'Off = just Entry / SL / TP1, with no number beside them.',
+      },
+      {
+        key: 'tradeLabelPips',
+        label: 'Show pips on Best / DD / Exit',
+        kind: 'toggle',
+        dependsOn: 'tradeLabels',
+        help:
+          "How far each one sat from the entry, in pips: + in the trade's favour, − against it." +
+          ' Gold reads $0.10 a pip. Instruments with no standard pip (indices, silver) show none.',
       },
     ],
   },

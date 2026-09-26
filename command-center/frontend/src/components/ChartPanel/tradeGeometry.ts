@@ -118,3 +118,27 @@ export function exitSide(
   if (d < -EPS) return 'adverse'
   return 'flat'
 }
+
+/**
+ * How far `price` sits from the entry, in PIPS, signed so FAVOURABLE is positive on both a long
+ * and a short — `Best` reads +, `DD` reads −, an exit reads whichever way it closed.
+ *
+ * `null` when the instrument has no pip size, which is the chart's cue to print nothing: a pip
+ * reading off a guessed size would be a confident wrong number on every chip (rule 1).
+ */
+export function pipsFrom(
+  entryPrice: number,
+  price: number,
+  sign: Sign,
+  pipSize: number | null | undefined
+): number | null {
+  if (typeof pipSize !== 'number' || !(pipSize > 0)) return null
+  return ((price - entryPrice) * sign) / pipSize
+}
+
+/** `+152.3p` / `−38.0p` — one decimal, always signed, a real minus sign. */
+export function fmtPips(pips: number): string {
+  const r = Math.round(pips * 10) / 10
+  if (r === 0) return '0.0p'
+  return `${r > 0 ? '+' : '\u2212'}${Math.abs(r).toFixed(1)}p`
+}

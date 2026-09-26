@@ -2966,6 +2966,7 @@ export default function ChartPanel({
           // and their dots — the trade is read by shape and colour — and cuts the outcome chip
           // down to whatever NAMES this trade. See `Chart settings` in this folder's CLAUDE.md.
           showLabels: chartSettings.tradeLabels,
+          pipSize: chartSettings.tradeLabelPips ? spec.pipSize : null, // Chart settings → Trades
           entryPrice: tr.entryPrice,
           exitPrice: tr.exitPrice,
           mfePrice: tr.mfePrice,
@@ -3013,6 +3014,7 @@ export default function ChartPanel({
     loadedLoTs,
     loadedHiTs,
     chartSettings,
+    spec.pipSize,
     tradePattern,
     groupsOn,
     atBaseTf,
@@ -3075,6 +3077,8 @@ export default function ChartPanel({
             // With annotations off a lot keeps its `Add` chip — that is its NAME, and it is the
             // only thing separating a lot's box from the trade's own box drawn around it.
             showLabels: chartSettings.tradeLabels,
+            // Measured from the LOT's own fill, the same entry its own Best / DD are read against.
+            pipSize: chartSettings.tradeLabelPips ? spec.pipSize : null,
             entryPrice: a.price,
             exitPrice: a.exitPrice,
             mfePrice: a.mfePrice,
@@ -3118,6 +3122,7 @@ export default function ChartPanel({
     loadedHiTs,
     chartSettings,
     pricePrecision,
+    spec.pipSize,
   ])
 
   // Trade fibs — the leg each trade was priced off. Rebuilt on data change like every other

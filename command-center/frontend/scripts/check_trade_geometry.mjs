@@ -61,7 +61,9 @@ const SRC = join(HERE, '..', 'src', 'components', 'ChartPanel', 'tradeGeometry.t
 const js = transformSync(readFileSync(SRC, 'utf8'), { loader: 'ts', format: 'esm' }).code
 const out = join(mkdtempSync(join(tmpdir(), 'tradegeom-')), 'tradeGeometry.mjs')
 writeFileSync(out, js)
-const { adverseFloor, exitMarker, exitSide, stoppedOut } = await import(pathToFileURL(out).href)
+const { adverseFloor, exitMarker, exitSide, fmtPips, pipsFrom, stoppedOut } = await import(
+  pathToFileURL(out).href
+)
 
 let failed = 0
 let n = 0
@@ -233,6 +235,26 @@ eq(stoppedOut(1871.0, 1879.72, 1), true, 'a long that gapped through its stop is
 eq(stoppedOut(1902.01, 1879.72306, 1), false, 'a long that came off above its stop is NOT')
 eq(stoppedOut(1912.56, 1912.55354, -1), true, 'a short that filled at its stop is stopped out')
 eq(stoppedOut(undefined, 1879.72, 1), false, 'a trade with no exit price cannot be called stopped')
+
+// ── pipsFrom / fmtPips ──────────────────────────────────────────────────────
+// The pip readings on the Best / DD / exit chips. Favourable is + on BOTH sides, and an instrument
+// with no pip size reads nothing at all rather than a guessed number.
+//   mutation: forget a short is the mirror ....... the short cases go red
+//   mutation: treat a missing pip size as 1 ...... the null cases go red
+//   mutation: drop the sign from the formatter ... the − case goes red
+
+const near = (got, want, what) => eq(got != null && Math.abs(got - want) < 1e-6 ? want : got, want, what)
+near(pipsFrom(1901.71, 1916.94, 1, 0.1), 152.3, 'a long 15.23 in profit on gold is +152.3 pips')
+near(pipsFrom(1901.71, 1882.36, 1, 0.1), -193.5, 'the 2020-10-13 long drew down 193.5 pips')
+near(pipsFrom(1904.93, 1895.40058, -1, 0.1), 95.2942, 'a short BELOW its entry reads + (favourable)')
+near(pipsFrom(1904.93, 1912.55354, -1, 0.1), -76.2354, 'a short ABOVE its entry reads − (adverse)')
+near(pipsFrom(1.085, 1.0862, 1, 0.0001), 12, 'EURUSD: 0.0012 is 12 pips')
+eq(pipsFrom(1901.71, 1916.94, 1, null), null, 'no pip convention → no reading, not a guess')
+eq(pipsFrom(1901.71, 1916.94, 1, undefined), null, 'pips switched off → no reading')
+eq(pipsFrom(1901.71, 1916.94, 1, 0), null, 'a zero pip size is refused, never divided by')
+eq(fmtPips(152.3), '+152.3p', 'favourable prints a plus')
+eq(fmtPips(-193.54), '\u2212193.5p', 'adverse prints a real minus, one decimal')
+eq(fmtPips(0.01), '0.0p', 'a move that rounds to nothing carries no sign')
 
 console.log(failed ? `\n  ${failed} of ${n} FAILED\n` : `  trade geometry: ${n} cases green`)
 process.exit(failed ? 1 : 0)

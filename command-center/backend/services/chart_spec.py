@@ -46,6 +46,7 @@ from services.fvg_overlays import GROUP_FVG, build_fvg_overlays
 from services.liquidity_overlays import GROUPS as GROUPS_LIQ
 from services.liquidity_overlays import build_liquidity_overlays
 from services.ob_overlays import GROUP_OB, build_ob_overlays
+from services.pip_size import pip_size
 from services.structure_overlays import (
     GROUP_INTERNAL,
     GROUP_INTERNAL_HISTORIC,
@@ -908,6 +909,22 @@ def _build_structure(
     return overlays, indicators
 
 
+def served_chart_spec_bytes(run_id: str) -> Optional[bytes]:
+    """The cached spec as the route serves it: the bytes on disk plus the instrument's pip.
+
+    ⚠ The pip is APPENDED to the bytes rather than parsed in, because not parsing is the whole
+    point of the byte path (see `cached_chart_spec_bytes`). It is stamped at serve time for the same
+    reason `_with_pip_size` is: a cache built before the field existed must still carry it."""
+    raw = cached_chart_spec_bytes(run_id)
+    if raw is None:
+        return None
+    row = lab_db.get_run(run_id)
+    pip = pip_size(row["instrument"]) if row else None
+    body = raw.rstrip()[:-1].rstrip()
+    sep = b"" if body.endswith(b"{") else b","
+    return body + sep + b'"pipSize":' + json.dumps(pip).encode() + b"}"
+
+
 def cached_chart_spec_bytes(run_id: str) -> Optional[bytes]:
     """The cached ChartSpec as the JSON BYTES on disk, or None if there is no usable cache.
 
@@ -965,10 +982,20 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
         spec_path = run_dir / "chart_spec.json"
         if spec_path.exists() and not refresh:
             try:
-                return json.loads(spec_path.read_text())
+                return _with_pip_size(json.loads(spec_path.read_text()))
             except (ValueError, OSError):
                 pass  # rebuild on a corrupt cache
-        return _build_chart_spec_locked(run_id, row, run_dir, spec_path)
+        return _with_pip_size(_build_chart_spec_locked(run_id, row, run_dir, spec_path))
+
+
+def _with_pip_size(spec: dict) -> dict:
+    """Stamp the instrument's pip on the spec as it is SERVED, never into the cache.
+
+    ⚠ Stamped here rather than built in because a cached spec is never rebuilt on its own: a field
+    added at build time would reach only runs built after it, and every older run's chart would
+    silently lack its pip readings. `None` = no settled pip convention — see `pip_size`."""
+    spec["pipSize"] = pip_size(spec.get("instrument", ""))
+    return spec
 
 
 _RUN_LOCKS: dict[str, threading.Lock] = {}
@@ -1347,6 +1374,7 @@ def build_stack_chart_spec(stack_id: str, refresh: bool = False) -> Optional[dic
 
     return {
         "instrument": src["instrument"],
+        "pipSize": pip_size(src["instrument"]),
         "baseTimeframe": src["baseTimeframe"],
         "runTimeframe": src.get("runTimeframe", src["baseTimeframe"]),
         "historyStartMs": src.get("historyStartMs"),
