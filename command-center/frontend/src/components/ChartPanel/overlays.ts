@@ -842,11 +842,17 @@ export function registerChartOverlays(): void {
       // just above the second target, it read as an add taken before the target that allowed it
       // (Aaron, run e2295f909180, 2026-06-17). The x comes from the overlay's own points 3..,
       // which the panel passes in `adds` order; an add whose time the chart cannot place falls
-      // back to the old entry-column drawing rather than vanishing. The side LABEL stays in the
-      // left column with the others, so the de-collision still sees every chip.
+      // back to the old entry-column drawing rather than vanishing.
+      //
+      // 🔴 ITS LABEL SITS AT THE RIGHT END OF ITS OWN LINE (2026-09-26). It used to stay in the
+      // left column with the other chips, so it named a line that did not reach it — the dash
+      // starts at the add's bar, far to the right of the column. Aaron: *"why is the dash for the
+      // add only from the right … move the add pill to the right of the chart."* The adds are
+      // de-collided among themselves, since nothing else parks on that side of the box.
       const addColor = d.addColor ?? entryColor
       const addXs = coordinates.slice(2)
       const addRows = new Map<number, { count: number; x: number }>()
+      const addChips: { y: number; text: string }[] = []
       ;(d.addsDetailed ? [] : (d.adds ?? [])).forEach((a, i) => {
         if (typeof a?.price !== 'number') return
         const ax = addXs[i]?.x
@@ -880,7 +886,8 @@ export function registerChartOverlays(): void {
           styles: { style: 'fill', color: addColor },
           ignoreEvent: true,
         })
-        addLabel(price, count > 1 ? `Add ×${count}` : 'Add', addColor)
+        const text = count > 1 ? `Add ×${count}` : 'Add'
+        if (withLabels) addChips.push({ y, text: withPrice ? `${text} ${px(price)}` : text })
       }
 
       // Entry: NO line across — just a short tick where the green begins, a dot, and the label.
@@ -1020,6 +1027,17 @@ export function registerChartOverlays(): void {
           : roomLeft < need && roomRight > roomLeft
       for (const { y, text, color } of labels) {
         chip(onRight ? x0 + LBL_GAP : x0 - LBL_GAP, y, text, color, onRight ? 'left' : 'right')
+      }
+      // The add chips, at the right end of their lines — see the scale-in block above. Just past the
+      // box edge, or just inside it when that would run off the pane.
+      addChips.sort((a, b) => a.y - b.y)
+      for (let i = 1; i < addChips.length; i++) {
+        if (addChips[i].y - addChips[i - 1].y < MIN_GAP) addChips[i].y = addChips[i - 1].y + MIN_GAP
+      }
+      for (const { y, text } of addChips) {
+        const w = text.length * 6.3 + 12 + LBL_GAP
+        const inside = paneW > 0 && x1 + w > paneW - 2
+        chip(inside ? x1 - LBL_GAP : x1 + LBL_GAP, y, text, addColor, inside ? 'right' : 'left')
       }
 
       // Outcome chip — a small "Won"/"Lost" tag, same subtle style as the level labels. Now that a

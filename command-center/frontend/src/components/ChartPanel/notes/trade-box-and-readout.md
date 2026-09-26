@@ -145,8 +145,11 @@ as an add taken BEFORE the target that allowed it (Aaron, 2026-09-24).
 - **The add's time reaches the overlay as extra overlay POINTS** (points 3.., in `adds` order),
   so the chart library converts each time to an x the same way it does the entry and exit. No
   second time→pixel mapping.
-- **The dot and the line start at that x; the `Add` chip stays in the left label column** so the
-  de-collision still sees every chip.
+- **The dot and the line start at that x, and the `Add` chip sits at the line's RIGHT end** (just
+  past the box edge; just inside it when that would leave the pane). It sat in the left label
+  column until 2026-09-26, naming a line that never reached it — Aaron: *"why is the dash for the
+  add only from the right … move the add pill to the right."* Adds de-collide among themselves;
+  it carries its price like the other chips (`Add 4204.10`) and hides with them when labels are off.
 - ⚠ **An add the chart cannot place falls back to the entry column** rather than vanishing.
 - ⚠ **The `Scale-in detail` layer was already right** — each lot's own box runs from its own fill
   time. Only the default drawing was wrong.
