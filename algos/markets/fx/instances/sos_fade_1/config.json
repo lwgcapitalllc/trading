@@ -93,12 +93,13 @@
     "exec_recovery_risk_frac": 0.25,
     "exec_recovery_soft_stop_r": 0.0,
     "exec_scale_cap_x": 0.5,
-    "exec_scale_in": false,
+    "exec_scale_in": true,
     "exec_scale_max_adds": 3,
-    "exec_scale_mode": "Trail",
-    "exec_scale_tp_mode": "Ride",
+    "exec_scale_brk_n": 2,
+    "exec_scale_mode": "1m break",
+    "exec_scale_tp_mode": "H4 H/L",
     "exec_sec_be_at": "TP1",
-    "exec_sec_fill_tf_min": 5,
+    "exec_sec_fill_tf_min": 1,
     "exec_sec_max_per_setup": 1,
     "exec_sec_max_wait_bars": 0,
     "exec_sec_once_per_setup": true,
@@ -174,5 +175,5 @@
   "sizing_basis_adjustment": 0.0,
   "_cloned_from": "Created 2026-09-14 as a fresh copy of sos_fade_demo's trading-logic settings, copied byte-for-byte as of that date. Not yet on any account, not yet promoted, not yet started. Every measurement and every broker fact behind these settings lives on sos_fade_demo's own config — this file states none of it, because none of it has been checked for this account.",
   "account_priority": 1,
-  "_scale_in_off_2026_09_26": "TURNED OFF, Aaron's call 2026-09-26, matching the live bot sos_fade_demo (see its _scale_in_off_2026_09_26 for the measurement). The 'Trail' add bought at market whenever the trail moved and turned winners into scratches; the safe '1m break' add replaces it once the 1-minute feed ships. Record: strategies/python/sos_fade/sos_fade_optimization.md, Run 50. Not runtime-reloadable: takes effect on restart; no promote needed."
+  "_safe_add_on_2026_09_26": "TURNED ON, the same day the Trail add was turned off: this demo copy runs the safe '1m break' add ahead of the live bot, as Aaron agreed. It adds after the second target once price bounces and then makes 2 one-minute breaks back with the 15m candle closing the trade's way, at market on the 15m close, and banks the adds at the H4 high/low (a broker take-profit on each add ticket). The re-entry fill clock moved 5 -> 1 because the add reads that 1-minute feed; exec_sec_max_wait_bars is 0, so no fill-clock-bar setting shrinks. MEASURED (Run 50, 2020-01-01 to 2026-09-24, PU Prime ECN): +5.2R over no adds, 0 winners scratched, drawdown 7.49R unchanged. RULE 9: no '1m break' add and no add take-profit has reached a broker yet - watch the first. NEEDS A PROMOTE (the bridge and strategy code landed f2fb639c), then a restart."
 }

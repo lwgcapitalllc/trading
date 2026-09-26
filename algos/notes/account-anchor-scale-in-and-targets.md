@@ -1121,3 +1121,7 @@ for, and M1 is a legal fill clock.
 - ⚠ **Moving a bot's fill clock 5 → 1 also moves its re-entries** onto 1-minute fills (Run 50:
   −5.3R over 6.7 years with adds off, all re-entries filling minutes apart). Any setting counted
   in fill-clock bars shrinks five-fold — check `exec_sec_max_wait_bars` is 0 first.
+
+✅ **`sos_fade_1` (demo 700152905) runs it first, from 2026-09-26** — "1m break", 2 breaks, banked
+at the H4 high/low, fill clock 1. The live bot stays OFF until the demo has shown the first adds
+reach the broker and bank at their level. Values and measurement: its `_safe_add_on_2026_09_26`.
