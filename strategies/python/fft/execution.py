@@ -219,6 +219,10 @@ class FftExecution(LivePositionMixin):
         tp = float(self.pos.take_profit)
         return tp if math.isfinite(tp) and tp > 0 else None
 
+    def add_exit_price(self) -> Optional[float]:
+        """Where the scale-in lots bank (live contract). FFT never scales in, so there is no add lot to bank."""
+        return None
+
     def planned_full_exit_price(self, pend) -> Optional[float]:
         """The target the resting order would carry if it filled — sent WITH the order, so no
         trade is ever open at the broker without it."""

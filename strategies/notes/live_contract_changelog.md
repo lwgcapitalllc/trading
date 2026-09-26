@@ -132,3 +132,12 @@ that follows. The extreme leg gated its stop and breakeven on that number, never
 after the daily-break re-warm, and both its bots halted when the broker's stop closed a trade the
 strategy still held. Any gate on the open trade's age compares the entry bar's TIME. Stated in
 `LivePositionMixin`'s docstring; the story is in `python/extreme_leg/notes/chart_and_live.md`.
+
+## The contract gained `add_exit_price`, and it is REQUIRED (2026-09-26)
+
+`() -> Optional[float]`: the price the open scale-in lots bank at on the next bar, or `None` to
+ride them. The bridge rests it on every add ticket as the broker's take-profit, so the "1m break"
+add banked at the H4 high/low fills AT that level rather than at market on the next 15m close.
+SOS Fade answers its staged `_add_tp_level` (None when flat or with no live lot); FFT and the extreme
+leg never add and answer `None`. ⚠ The bridge asks it only while an add ticket is open, so a bot
+that never adds cannot be halted by it. Detail: `algos/notes/account-anchor-scale-in-and-targets.md`.

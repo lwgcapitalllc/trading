@@ -4581,6 +4581,29 @@ class Execution:
         tp = float(tp)
         return tp if math.isfinite(tp) and tp > 0 else None
 
+    def add_exit_price(self) -> Optional[float]:
+        """The price the scale-in lots bank at on the NEXT bar, or `None` to ride them.
+
+        Part of the live contract (`strategies/python/live_contract.py` → `EXECUTION_ATTRS`). The
+        bridge rests it on every add ticket as the broker's take-profit, so an add banked at the
+        H4 high/low fills THERE — without it the bridge could only close the lots at market on the
+        next 15m close, up to a whole bar away from the price this book records.
+
+        ⚠ **It is `_add_tp_level`, staged at the last close for the next bar**, in the same slot and
+        for the same reason as the stop: that is the level `_manage_open_bar` tests this bar
+        against, so the broker and the emulator watch one price.
+
+        ⚠ **`None` while flat, with no live add, or on "Ride"** — `_add_tp_target` already answers
+        None for the last two, and a stale level must never outlive the lots it was for.
+        """
+        if self._pos_dir == 0 or not any(lot[1] > 1e-12 for lot in self._adds):
+            return None
+        lvl = self._add_tp_level
+        if lvl is None:
+            return None
+        lvl = float(lvl)
+        return lvl if math.isfinite(lvl) and lvl > 0 else None
+
     def planned_full_exit_price(self, pend) -> Optional[float]:
         """The whole-position target a RESTING order would carry if it filled at its own price.
 

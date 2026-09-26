@@ -92,6 +92,12 @@ EXECUTION_ATTRS = (
     # reconcile that rung at market. Answering the rung's price would delete a runner the
     # strategy is still managing.
     "full_exit_price",
+    # () -> Optional[float]. The price the open SCALE-IN lots bank at, or None to ride them. The
+    # bridge rests it on every add ticket as the broker's take-profit, so an add banked at a level
+    # fills at that level rather than at market a bar later. A strategy that never adds answers
+    # None. REQUIRED for the reason `full_exit_price` is: *never implemented* and *no target* must
+    # not be one value.
+    "add_exit_price",
     # (pend) -> Optional[float]. The same question asked about an order that has NOT filled: if
     # this resting order filled at its own price, would the whole position come off at a price,
     # and which. `None` when it would not — a rung that leaves a runner, or a fill price this

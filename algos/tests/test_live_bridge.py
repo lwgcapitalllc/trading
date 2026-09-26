@@ -494,6 +494,11 @@ class _FakeExecution:
         """
         return self._full_exit
 
+    def add_exit_price(self):
+        """Where the scale-in lots bank, or `None` to ride them. Always present, for the reason
+        `full_exit_price` is: it is in the live contract. A test sets `_add_exit` to aim the adds."""
+        return getattr(self, "_add_exit", None)
+
     def planned_full_exit_price(self, pend):
         """The whole-position target an order being PLACED would carry, or `None`.
 
@@ -3866,6 +3871,83 @@ def test_the_STOP_travels_with_the_target_so_the_ratchet_is_not_undone():
     assert ("move_sl", 555, 3285.0, 3320.0) in ops.actions
 
 
+# ── the ADD lots' own bank level (2026-09-26) ─────────────────────────────────
+#
+# 🔴 The "1m break" add banks its lots at the H4 high/low and the emulator fills them THERE.
+# Without a broker target the bridge could only close them at market on the next 15m close.
+
+
+def test_an_ADD_ticket_carries_the_ADD_bank_level_and_the_base_does_not():
+    """The add lot gets its own level; the base keeps riding with no target of its own.
+
+    MUTATION: give every ticket `whole` (drop the per-leg choice) and this goes red — the add
+    would get no target at all. MUTATION: give the base the add level and the second assert goes
+    red. Both watched red 2026-09-26.
+    """
+    b, ops, ledger, _, dec = _targeted_position(full_exit=None)
+    b._ex._add_exit = 3310.0
+    b._sync_take_profit(dec, ops.positions)
+    assert ("move_sl", 556, 3280.0, 3310.0) in ops.actions
+    assert not [a for a in ops.actions if a[0] == "move_sl" and a[1] == 555]
+
+
+def test_an_ADD_ticket_takes_whichever_target_price_reaches_FIRST():
+    """The strategy banks an add at the first of its own level and the whole-position target,
+    so the broker must hold the NEARER one — for a long, the lower.
+
+    MUTATION: take `max` for a long in `_nearer` and this goes red (3320 would be sent). Watched
+    red 2026-09-26.
+    """
+    b, ops, _, _, dec = _targeted_position(full_exit=3320.0)
+    b._ex._add_exit = 3310.0
+    b._sync_take_profit(dec, ops.positions)
+    assert ("move_sl", 556, 3280.0, 3310.0) in ops.actions
+    assert ("move_sl", 555, 3280.0, 3320.0) in ops.actions
+
+
+def test_a_SHORT_adds_nearer_target_is_the_HIGHER_price():
+    """The mirror case — a short's first target is the higher of the two.
+
+    MUTATION: drop the direction and always take `min` and this goes red. Watched red 2026-09-26.
+    """
+    assert live_bridge._nearer(3200.0, 3210.0, -1) == 3210.0
+    assert live_bridge._nearer(3200.0, 3210.0, 1) == 3200.0
+    assert live_bridge._nearer(None, 3210.0, -1) == 3210.0
+    assert live_bridge._nearer(3200.0, None, 1) == 3200.0
+
+
+def test_a_strategy_that_cannot_name_its_ADD_level_HALTS_but_only_once_it_holds_an_add():
+    """Rule 1: *never implemented* must not read as *ride the adds*. And a bot that never adds
+    must never reach this halt, which is why it is asked only when an add ticket is open.
+
+    MUTATION: ask unconditionally (drop `has_adds`) and the flat-of-adds half goes red. Watched
+    red 2026-09-26.
+    """
+    b, ops, _, _, dec = _targeted_position()
+    b._ex.add_exit_price = None
+    ops.positions = ops.positions[:1]  # the base alone: nothing to bank
+    b._sync_take_profit(dec, ops.positions)
+    assert b.state is not live_bridge.BridgeState.HALTED
+    b2, ops2, _, _, dec2 = _targeted_position()
+    b2._ex.add_exit_price = None
+    b2._sync_take_profit(dec2, ops2.positions)
+    assert b2.state is live_bridge.BridgeState.HALTED
+
+
+def test_the_1m_BREAK_add_is_ACCEPTED_and_a_resting_add_is_still_REFUSED():
+    """ "1m break" buys at market on the 15m close, the same placement "Trail" uses.
+
+    MUTATION: drop "1m break" from `_MARKET_ADD_MODES` and this goes red. Watched red 2026-09-26.
+    """
+    c = _add_config()
+    c.exec_scale_mode = "1m break"
+    c.fill_model = "bar"
+    live_bridge.assert_supported(c)
+    c.exec_scale_mode = "BOS retest"
+    with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="rests a LIMIT"):
+        live_bridge.assert_supported(c)
+
+
 def test_a_FAILED_target_is_alerted_and_recorded_and_does_NOT_halt():
     """A broker rejects a target on the wrong side of the market or inside its stop level. The
     honest consequence is that this one trade exits the old way — a divergence worth saying out
@@ -4761,6 +4843,7 @@ def _reentry_bridge():
     ex = _ExSized(SoloAccount(balance=10_000.0))
     ex.cfg.exec_sec_risk_pct = 50.0
     ex.planned_full_exit_price = lambda pend: None  # the bridge halts on a strategy without it
+    ex.add_exit_price = lambda: None  # likewise, once an add ticket is open
     b, ops, _, _ = _bridge(ex, account_risk_cap_pct=10.0)
     b._account_balance = lambda: 10_000.0
     b.refresh_account_room()

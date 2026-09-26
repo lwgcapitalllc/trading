@@ -450,7 +450,10 @@ def assert_supported(strategy_config) -> None:
     # can reach a terminal.
     if getattr(strategy_config, "exec_scale_in", False):
         mode = getattr(strategy_config, "exec_scale_mode", "Trail")
-        if mode != "Trail":
+        # ⚠ "1m break" is accepted for the same reason "Trail" is: it buys AT MARKET on the 15m
+        # close it decides on, so the same placement path mirrors it (2026-09-26). Every other
+        # mode rests a limit, which this bridge has no path for.
+        if mode not in _MARKET_ADD_MODES:
             raise UnsupportedStrategyConfig(
                 f"exec_scale_mode={mode!r} rests a LIMIT for the scale-in lot and waits for price "
                 f"to come back to it. This bridge places an add AT MARKET, on the bar the "
@@ -466,6 +469,18 @@ def assert_supported(strategy_config) -> None:
             "against historical tick data; live, the broker resolves fills and its real prices "
             "are recorded by the ledger."
         )
+
+
+def _nearer(a: Optional[float], b: Optional[float], direction: int) -> Optional[float]:
+    """The target price reaches FIRST for a trade in `direction`; either may be `None`."""
+    if a is None or b is None:
+        return b if a is None else a
+    return min(a, b) if direction > 0 else max(a, b)
+
+
+#: The scale-in modes that buy the add AT MARKET on the bar the strategy decides it, which is the
+#: only placement this bridge mirrors. Anything else rests a limit and is refused.
+_MARKET_ADD_MODES = ("Trail", "1m break")
 
 
 def assert_hedging_for_scale_in(strategy_config, *, hedging) -> None:
@@ -4589,6 +4604,32 @@ class OrderBridge:
         price = float(price)
         return price if math.isfinite(price) and price > 0 else None
 
+    def _wanted_add_take_profit(self) -> Optional[float]:
+        """The price the strategy banks its scale-in lots at, or `None` to ride them.
+
+        🔴 **WHY THE ADDS NOW FILL AT THEIR BANK LEVEL (2026-09-26).** The "1m break" add banks at
+        the H4 high/low and the emulator fills it THERE; without a broker target the lots were
+        only closed by `_sync_add_size` at market on the next 15m close — up to a whole bar from
+        the price the backtest booked. The market close stays as the safety net.
+
+        ⚠ **A strategy that cannot answer HALTS**, for the reason `_wanted_take_profit` gives:
+        read defensively, *never implemented* and *ride them* are one value. It is only asked when
+        an add ticket is open, so a bot that never adds is never halted by it.
+        """
+        if not callable(getattr(self._ex, "add_exit_price", None)):
+            self._halt(
+                "This strategy holds scale-in lots but cannot say where it banks them, so the "
+                "bridge cannot put their target on the broker. The usual cause is a git pull "
+                "moving algos/ ahead of the frozen strategy: run promote.py for this bot, then "
+                "restart it."
+            )
+            return None
+        price = self._ex.add_exit_price()
+        if price is None:
+            return None
+        price = float(price)
+        return price if math.isfinite(price) and price > 0 else None
+
     def _order_take_profit(self, pend, at_market: bool) -> Optional[float]:
         """The target to put on an order being SENT, or `None` for no target.
 
@@ -4671,17 +4712,24 @@ class OrderBridge:
         ⚠ **No positions passed means CANNOT ASK, so nothing is sent and nothing is claimed** —
         rule 1, and the same reading `_sync_add_stops` gives an empty list.
         """
-        want = self._wanted_take_profit()
+        whole = self._wanted_take_profit()
         # The stop that TRAVELS with the target is the one `_sync_stop` just kept — a hand-tightened
         # stop included — or this instruction would loosen it in the act of setting a target.
         stop = self._effective_stop(getattr(dec, "stop", None))
-        if want is None or stop is None or self._pos_ticket is None or not positions:
+        if stop is None or self._pos_ticket is None or not positions:
             return
+        # 🔴 **ASKED ONLY WHEN AN ADD TICKET EXISTS (2026-09-26)** — a bot that never adds never
+        # reaches the halt inside, so this seam cannot stop a strategy that has no adds to bank.
+        has_adds = any(int(p.ticket) != self._pos_ticket for p in positions)
+        add_want = self._wanted_add_take_profit() if has_adds else None
         for p in positions:
-            if not self._moved(getattr(p, "tp", None), want):
-                continue
             ticket = int(p.ticket)
             leg = "base" if ticket == self._pos_ticket else "add"
+            # An add closes at whichever comes FIRST — its own bank level or the whole-position
+            # target — because the strategy banks it at the first of the two the bar reaches.
+            want = whole if leg == "base" else _nearer(whole, add_want, self._ex._pos_dir)
+            if want is None or not self._moved(getattr(p, "tp", None), want):
+                continue
             ok = self._exec(
                 lambda t=ticket: self._mt5.move_sl(t, stop, tp=want),
                 f"set target T{ticket} {getattr(p, 'tp', None)} → {want} ({leg})",

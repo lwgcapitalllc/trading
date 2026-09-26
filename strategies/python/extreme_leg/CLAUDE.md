@@ -281,3 +281,5 @@ Most-cited code: `extreme_leg.meta.json`.
 **Read before touching:** `setups.py`, what this bot sends to the signals room, or its setup key.
 
 - One thread per armed sweep, announced on the 5m shift — measured, and proven not to move a trade (2026-09-16)
+
+⚠ **2026-09-26: the live contract gained `add_exit_price`** (where the scale-in lots bank). This bot never adds, so it answers None and nothing it trades moved. Detail: `algos/notes/account-anchor-scale-in-and-targets.md`.

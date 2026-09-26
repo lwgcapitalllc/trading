@@ -101,3 +101,5 @@ The user cannot export 1-minute data from TradingView, so the Pine parity gate c
   Check its trade list against the account's history first — a fill the replay does not see is the
   one thing it cannot know. ⚠ It replays RAW bars (as the lab and live bot see them), so it can
   differ from the gate, which feeds both sides cleaned bars.
+
+⚠ **2026-09-26: the live contract gained `add_exit_price`** (where the scale-in lots bank). This bot never adds, so it answers None and nothing it trades moved. Detail: `algos/notes/account-anchor-scale-in-and-targets.md`.

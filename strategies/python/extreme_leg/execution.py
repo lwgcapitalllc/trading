@@ -464,6 +464,10 @@ class ExtremeLegExecution(LivePositionMixin):
         tp = float(self.pos.take_profit)
         return tp if math.isfinite(tp) and tp > 0 else None
 
+    def add_exit_price(self) -> Optional[float]:
+        """Where the scale-in lots bank (live contract). The extreme leg never scales in, so there is no add lot to bank."""
+        return None
+
     def planned_full_exit_price(self, pend) -> Optional[float]:
         """Always `None` here — this strategy never rests an order for the bridge to price.
 

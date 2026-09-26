@@ -550,7 +550,8 @@ def test_the_REAL_strategy_with_the_re_entry_ON_gets_a_real_second_feed():
 
     feed = r._build_fast_feed(cfg)
     assert feed is not None, "the re-entry is on and got no second stream"
-    assert feed.timeframe == "M5", feed.timeframe
+    # M1 since 2026-09-26: the default add ("1m break") reads 1-minute structure off this feed.
+    assert feed.timeframe == "M1", feed.timeframe
     assert feed.bar_seconds < r.feed.bar_seconds, "a fill clock must be faster than the primary"
 
 
@@ -686,7 +687,9 @@ def test_the_REAL_shipped_strategy_config_cannot_go_live_until_scale_in_is_turne
     shipped = LAB_STRATEGY["config"](symbol="XAUUSD.p")
     assert shipped.exec_scale_in is True, "the default moved — re-state this test, do not loosen it"
     # The mode is the half that decides whether this bridge can mirror it at all.
-    assert shipped.exec_scale_mode == "Trail", (
+    # ✅ RE-STATED 2026-09-26: the default moved to "1m break", which also buys AT MARKET on the
+    # 15m close, so the bridge accepts it; a resting mode is still refused below.
+    assert shipped.exec_scale_mode == "1m break", (
         "the shipped scale-in mode moved. Only a MARKET add is mirrorable today — re-state this "
         "test against the new mode, and check `assert_supported` still refuses a resting one."
     )
