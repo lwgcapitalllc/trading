@@ -1087,3 +1087,16 @@ The rows now read this route once, every minute.
   looking at the page.
 - Pinned by `tests/test_notification_routing.py::test_every_send_is_written_to_the_send_log_in_the_algos_format`,
   which reads the algos file for the field names rather than restating them.
+
+### 🔴 A deploy, start or restart is ONE message, edited by the bot into its outcome (2026-09-26)
+
+- `_start_bot` and `_restart_bot` now send their message BEFORE they touch the bot (the promote
+  always did) and `_set_alert_thread` writes `action`, `chat` (`_health_room`), `from_version` and
+  `sent_at` beside the id. A bot on current code edits that message into DEPLOYED / ONLINE /
+  RESTARTED once it is up and holds its own STOPPED; the box's watchdog says NOT BACK ONLINE if the
+  record is still there after three minutes. Rules and the mixed-version behaviour:
+  `algos/notes/telegram-and-notifications.md` → *Stage 2*.
+- `_stop_bot` sends its STOPPED only when the bot had to be TERMINATED; after a clean shutdown the
+  bot's own STOPPED already said it, and this one is logged `held`.
+- ⚠ A promote still launches with `_launch_bot` directly — it sends no STARTING of its own.
+- Tests: `tests/test_one_message_per_action.py`.

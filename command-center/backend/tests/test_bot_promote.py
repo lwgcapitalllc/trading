@@ -224,7 +224,7 @@ def test_the_root_is_sent_BEFORE_the_bot_is_stopped(vps, sent, monkeypatch):
     order: list[str] = []
     monkeypatch.setattr(bots, "_notify_telegram", lambda m, *a, **k: order.append("alert") or 1)
     monkeypatch.setattr(bots, "_kill_bot", lambda k: order.append("kill") or "")
-    monkeypatch.setattr(bots, "_set_alert_thread", lambda *a: order.append("thread"))
+    monkeypatch.setattr(bots, "_set_alert_thread", lambda *a, **_k: order.append("thread"))
     vps["out"] = f"  pinned abc123\n{bots._VERSION_MARK} 164 165\n{bots._PROMOTE_OK}"
     bots.promote_bot("sos_fade_demo", REQ)
     assert order == ["alert", "thread", "kill"]
@@ -243,7 +243,7 @@ def test_no_thread_is_written_when_no_restart_was_asked_for(vps, sent, monkeypat
     """Without a restart the bot sends neither STOPPED nor ONLINE, so there is nothing to
     thread — and a file left in the instance directory would parent whatever it sends next."""
     wrote: list = []
-    monkeypatch.setattr(bots, "_set_alert_thread", lambda *a: wrote.append(a))
+    monkeypatch.setattr(bots, "_set_alert_thread", lambda *a, **_k: wrote.append(a))
     vps["out"] = f"  pinned abc123\n{bots._PROMOTE_OK}"
     bots.promote_bot(
         "sos_fade_demo", BotPromoteRequest(pull=False, allow_dirty=False, restart=False)

@@ -119,11 +119,22 @@ Startup failed: <the exception>
 It is down and will stay down until someone looks at it.
 ```
 
-**TRADING OFF** — the account itself can no longer trade (margin call, broker restriction).
+**TRADING OFF** — the account itself can no longer trade (margin call, broker restriction, or the
+terminal has lost the broker's server). **Held 15 minutes and sent once per ACCOUNT** (2026-09-26):
+if trading comes back inside that, neither this nor its BACK ON is sent.
 ```
 ⛔ TRADING OFF · SOS Fade · LIVE
-Margin call on the account.
+The terminal has lost its connection to the broker's server.
 Every order it sends will be refused. If a trade triggers meanwhile it halts and needs a restart. It keeps watching and will say when trading is back.
+Held 15 min to see whether it cleared on its own - it has not. First seen 9:55 PM CDT. Account 34957946: one message for every bot on it.
+```
+
+**NOT BACK ONLINE** — a Command Center deploy, start or restart, three minutes on, and the bot has
+not come back (the box's watchdog, 2026-09-26). Never held.
+```
+⛔ NOT BACK ONLINE · SOS Fade · LIVE
+The command center deployed and restarted it at 2:02 PM CDT and it has not come back online in 3 minutes.
+It is not trading. Check its log - usually a version pin, the MT5 login or a startup error.
 ```
 
 **STILL HALTED** — trading came back on the account, but this bot had already halted.
@@ -242,10 +253,13 @@ lives.* Five failed re-sends: *Gave up after 5 re-sends. No order is resting. �
 *Not re-sent: the strategy already counts this trade as open … The bot will halt at the next check
 because the broker holds no position — look at the account.*
 
-**NO SETUP MESSAGES** — sent once per start by a bot whose strategy cannot report setups (2026-09-16).
-Plain text, no header.
+**NO SETUP MESSAGES** — a bot whose strategy cannot report setups (2026-09-16). In the house shape
+with the version since 2026-09-26, and sent **once per bot per strategy version** (it came on every
+restart).
 ```
-Realign (demo): no setup messages. Its strategy (RealignStrategy) does not report its setups yet, so the signals room will stay silent for this bot. Trades and health messages are unaffected.
+⚠️ NO SETUP MESSAGES · Realign · demo
+Its strategy (RealignStrategy, v12) does not report its setups yet, so the signals room will stay silent for this bot.
+Trades and health messages are unaffected. Said once per version.
 ```
 
 **STALLED** — the process is alive but has not moved through bars.
@@ -272,10 +286,11 @@ Reason: <the exception>
 **SETTINGS NOT APPLIED** — a config change on disk was refused.
 ```
 ⚠️ SETTINGS NOT APPLIED · SOS Fade · LIVE
-Its config changed on disk but the new values were refused, so it is still trading the ones it started with.
-Refused: <the field(s) and why>
-Restart it to take them.
+Its config changed on disk in ways a running bot cannot take, so it is still trading the settings it started with.
+25 settings need a restart: exec_risk_pct, exec_sl_deep, fib_e1 and 22 more.
+Restart it to apply them.
 ```
+(A count and the first three names since 2026-09-26 — it listed every field with both values.)
 
 **ORPHAN ORDERS** — resting orders at the broker under this bot's magic with no record here.
 ```
@@ -336,6 +351,44 @@ Broker now: long -80.54 · short +32.67
 Backtests (puprime_ecn) — long: lab holds -79.60, 1.2% away · short: lab holds +31.29, 4.2% away
 Nothing changed here — re-pricing the lab is a separate, deliberate commit.
 ```
+
+### 📦 One message per Command Center action (2026-09-26)
+
+The Command Center sends one message BEFORE it touches the bot, and the bot EDITS it into the
+outcome once it is online — no STOPPED, no separate ONLINE. If it does not come back in three
+minutes the watchdog sends NOT BACK ONLINE (above).
+```
+📦 PROMOTED · SOS Fade · LIVE          →   📦 DEPLOYED · SOS Fade · LIVE
+v397 → v399 · deployed                     v397 → v399, back online
+Restarting it now.                         Trading live · XAUUSD.p M15 · $10,752.18
+                                           v399 (abcd1234) · account 34957946
+
+▶️ STARTING · SOS Fade · LIVE          →   ✅ ONLINE · SOS Fade · LIVE
+Requested from the command center.         Started from the command center.
+This message will say when it is online.   Trading live · XAUUSD.p M15 · $10,752.18 …
+
+🔄 RESTARTING · SOS Fade · LIVE        →   ✅ RESTARTED · SOS Fade · LIVE
+Requested from the command center.         Restarted from the command center — back online. …
+```
+A Command Center STOP is one ℹ️ STOPPED — the bot's own when it shut down cleanly, the Command
+Center's when it had to be terminated.
+
+### What is HELD rather than sent (2026-09-26)
+
+Nothing below is lost: each is one `held` line in the box's send log, and the daily summary counts
+it. The rules and the reasoning are in `notes/telegram-and-notifications.md` → *Stage 2*.
+
+- A repeat of the same fault about the same bot (the 17 Sep startup loop: 17 WILL NOT START → 1).
+- OFFLINE / STALLED / NO MT5 LINK that recover inside 5 minutes, with their RESTARTED / BACK ONLINE /
+  RECOVERED / RECONNECTED, and the bot's own ONLINE after such a restart.
+- TRADING OFF that comes back inside 15 minutes, with its BACK ON; the other bots' copies of an
+  account's OFF; any BACK ON whose OFF was never sent.
+- The chat bot's own RESTARTED and COMMANDS ONLINE.
+- A bot's STOPPED during a Command Center deploy or restart.
+- NO SETUP MESSAGES after the first for a version; TRADE SHRUNK at 100% (not sent at all).
+
+**Never held:** HALTED and anything with HALT in it, FLEET HALT, ACCOUNT MISMATCH, CLOSE FAILED,
+ORDER REFUSED / REJECTED, NOT BACK ONLINE, CANNOT SEE THE BOTS, every REMINDER.
 
 ### ✅ OK — a CRITICAL or WARNING state just resolved
 

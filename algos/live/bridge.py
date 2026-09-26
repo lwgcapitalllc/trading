@@ -3111,6 +3111,14 @@ class OrderBridge:
             self._ledger.event("budget_cut", **fields)
         else:
             self._ledger.event("budget_shrunk", **fields)
+        # 🔴 **A "shrink" that kept all of its size is not news (2026-09-26).** The account logs a
+        # shrink whenever the grant is below the ask by more than one part in a billion
+        # (`account._GRANT_EPS`), so a grant of 99.7% is a shrink there — and the message rendered
+        # it as "it took 100% of its intended size", which is a warning about nothing. The ledger
+        # row above still records it; the message waits for a cut a reader could see. Checked
+        # BEFORE the episode signature, so a real cut later in the same episode still speaks.
+        if not blocked and wanted and round(granted / wanted * 100.0) >= 100:
+            return
         signature = f"{'blocked' if blocked else 'shrunk'}:{reason}"
         if self._budget_alerted.get(direction) == signature:
             return

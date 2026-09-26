@@ -26,6 +26,7 @@ except ImportError:
     _requests = None
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import alert_policy  # noqa: E402
 import notify_log  # noqa: E402
 from credentials import get as _cred  # noqa: E402
 from credentials import telegram_credentials
@@ -531,6 +532,72 @@ def send_with_outcome(
         )
         return None, notify_log.DROPPED
 
+    # ── the health policy (2026-09-26) — see `alert_policy`. Trades and setups are never held.
+    decision = alert_policy.decide(kind, text, account=account, bot=bot) if kind == HEALTH else None
+    if decision is not None and decision.action == alert_policy.HOLD:
+        notify_log.record(
+            kind,
+            notify_log.HELD,
+            text=text,
+            account=account,
+            room=dest,
+            bot=bot,
+            reason=decision.reason,
+            covered=True if decision.covered else None,
+            **(decision.extra or {}),
+        )
+        return None, notify_log.HELD
+    if decision is not None and decision.action == alert_policy.DEFER:
+        ident = notify_log.enqueue(
+            purpose=notify_log.DEFERRED,
+            kind=kind,
+            chat=dest,
+            text=text,
+            account=account,
+            bot=bot,
+            token_key=token_key,
+            reply_to=reply_to,
+            markdown=markdown,
+            not_before=decision.until,
+            policy_key=decision.episode,
+            reason=decision.reason,
+            suffix=decision.suffix,
+        )
+        if ident:
+            alert_policy.attach(decision, ident)
+            notify_log.record(
+                kind,
+                notify_log.QUEUED,
+                text=text,
+                account=account,
+                room=dest,
+                bot=bot,
+                reason=decision.reason,
+                deferred=True,
+            )
+            return None, notify_log.QUEUED
+        # The outbox could not be written, so nothing would deliver it later: send it NOW, and let
+        # the memory record it as sent — a hold that cannot be kept is not a hold.
+        decision.action = alert_policy.SEND
+
+    message_id, outcome = _send_now(
+        kind,
+        text,
+        token,
+        dest,
+        token_key,
+        reply_to,
+        markdown,
+        account=account,
+        bot=bot,
+        extra=(decision.extra if decision is not None else None),
+    )
+    alert_policy.note_outcome(decision, outcome)
+    return message_id, outcome
+
+
+def _send_now(kind, text, token, dest, token_key, reply_to, markdown, *, account, bot, extra=None):
+    """Deliver once, log the outcome, and queue a transient failure. `(message_id, outcome)`."""
     message_id, failure, mode = _deliver(token, dest, text, reply_to, markdown)
     if failure is None:
         notify_log.record(
@@ -541,6 +608,7 @@ def send_with_outcome(
             room=dest,
             bot=bot,
             message_id=message_id,
+            **(extra or {}),
         )
         if kind == SIGNAL:
             # A second room may read the setups — see the copies block above. Deliberately after
@@ -583,11 +651,64 @@ def send_with_outcome(
     return None, notify_log.DROPPED
 
 
+def edit_telegram(
+    chat_id: str,
+    message_id,
+    text: str,
+    *,
+    kind: str = HEALTH,
+    token_key: str = "",
+    account=None,
+    bot=None,
+) -> bool:
+    """Rewrite a message already in a room — Telegram's `editMessageText`. True when it took.
+
+    For a Command Center action (a deploy, a start, a restart): its one message says what was
+    ASKED, and the bot edits it into what HAPPENED once it is online, so the room carries one
+    message per action rather than three (2026-09-26). An edit makes no new notification — the
+    ask already did — which is the point.
+
+    ⚠ The edit is logged `sent` with `edit_of`, and is shown to the health policy so a start clears
+    the faults it answers (a WILL NOT START, a held OFFLINE) exactly as a new message would. It is
+    never itself held: it replaces a message the reader has already seen. NEVER raises.
+    """
+    try:
+        token = _token(token_key)
+        if not token or not chat_id or not message_id or _requests is None:
+            return False
+        if kind == HEALTH:
+            alert_policy.decide(kind, text, account=account, bot=bot)
+        r = _requests.post(
+            f"https://api.telegram.org/bot{token}/editMessageText",
+            json={"chat_id": chat_id, "message_id": int(message_id), "text": text},
+            timeout=5,
+        )
+        ok = r.status_code == 200
+        if not ok:
+            print(f"notify: Telegram refused the edit ({r.status_code}): {r.text[:200]}")
+        notify_log.record(
+            kind,
+            notify_log.SENT if ok else notify_log.DROPPED,
+            text=text,
+            account=account,
+            room=chat_id,
+            bot=bot,
+            message_id=int(message_id),
+            edit_of=int(message_id),
+            reason=None if ok else f"edit refused ({r.status_code})",
+        )
+        return ok
+    except Exception as e:  # noqa: BLE001
+        print(f"notify: edit failed: {e}")
+        return False
+
+
 def flush_outbox(now=None) -> dict:
     """Deliver every outbox entry that is due — the MONITOR's job, once a minute. NEVER raises.
 
     Also stamps the flusher heartbeat FIRST, so a monitor that runs this is known to be alive
-    even on a pass with nothing to send (`notify_log.flusher_alive`).
+    even on a pass with nothing to send (`notify_log.flusher_alive`). A DEFERRED fault the policy
+    was holding goes out here once its deadline passes, and the policy is told it was sent.
     """
     notify_log.mark_flusher_alive(now)
 
@@ -604,4 +725,6 @@ def flush_outbox(now=None) -> dict:
         )
         return message_id, failure
 
-    return notify_log.flush(_send, now=now)
+    return notify_log.flush(
+        _send, now=now, on_delivered=lambda entry, _mid: alert_policy.delivered(entry, now)
+    )

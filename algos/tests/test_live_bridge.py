@@ -4415,6 +4415,21 @@ def test_a_trade_SHRUNK_to_fit_says_how_much_of_its_size_it_took():
     assert "event:budget_shrunk" in ledger.kinds()
 
 
+def test_a_SHRINK_that_kept_all_its_size_is_recorded_but_NOT_announced():
+    """A grant of 99.6% is a shrink to the account (it compares at one part in a billion) and the
+    message rendered it as "it took 100% of its intended size" — a warning about nothing, seen in
+    the health room in September 2026. The ledger row stays; the message waits for a real cut.
+
+    Mutation run RED 2026-09-26: removing the `>= 100` guard in `_on_contention` sent it.
+    """
+    b, _, ledger, notes, acct = _armed_bridge(market=True)
+    assert _ask(acct, 500.0, room=498.0) == 498.0
+    assert not [n for n in notes if "TRADE SHRUNK" in n]
+    assert "event:budget_shrunk" in ledger.kinds()
+    assert _ask(acct, 500.0, room=300.0) == 300.0
+    assert [n for n in notes if "TRADE SHRUNK" in n], "a real cut in the same episode still speaks"
+
+
 def test_a_size_that_FITS_says_nothing_at_all():
     """The alert must fire on the cut, never on the asking — or every bar is an alert."""
     b, _, _, notes, acct = _armed_bridge()

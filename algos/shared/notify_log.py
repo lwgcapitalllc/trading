@@ -230,6 +230,7 @@ def enqueue(
     not_before: Optional[float] = None,
     policy_key: Optional[str] = None,
     reason: Optional[str] = None,
+    suffix: str = "",
     now: Optional[float] = None,
 ) -> Optional[str]:
     """Write one outbox entry and return its id, or `None` if it could not be written. NEVER raises.
@@ -260,6 +261,7 @@ def enqueue(
                 "policy_key": policy_key,
                 "attempts": 0,
                 "reason": reason,
+                "suffix": suffix,
             },
         )
         return ident
@@ -412,6 +414,8 @@ def flush(
                         print(f"notify_log: after-delivery hook failed ({e})")
                 continue
             if failure == "transient":
+                # A deferred message that then fails keeps the line saying why it was held.
+                entry["text"] = text if purpose == DEFERRED else entry.get("text", "")
                 entry["purpose"] = RETRY
                 entry["first_tried"] = first
                 entry["attempts"] = int(entry.get("attempts") or 0) + 1

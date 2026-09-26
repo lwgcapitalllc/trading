@@ -540,6 +540,59 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
     return bot_state
 
 
+# ── A Command Center action that never came back ─────────────────────────────────────────────
+#
+# 🔴 **Since 2026-09-26 a deploy, start or restart is ONE message**: the Command Center sends it and
+# the bot EDITS it into the outcome once it is online (`runner._finish_action`), and the bot's own
+# STOPPED is held. That removes the ONLINE a reader used to wait for — so the silence after a
+# failed restart has to be broken by something that is still running. This is it: the record the
+# Command Center writes (`<instance>/alert_thread.json`) is consumed by the bot's ONLINE, so a record
+# still there three minutes after it was written is a bot that did not come back.
+#
+# ⚠ Never held (`alert_policy.NEVER_HOLD`), and said once per action (the message id is remembered).
+# ⚠ An older Command Center writes no `sent_at`; the send time is recovered from the 15-minute
+# expiry it always wrote. An expired or unreadable record says nothing — the watchdog's own OFFLINE
+# and the bot's WILL NOT START still cover a bot that is down.
+ACTION_GRACE_SECONDS = 180
+_ACTION_TTL_SECONDS = 900
+_ACTION_VERB = {"promote": "deployed and restarted", "restart": "restarted", "start": "started"}
+
+
+def check_action(bot_key: str, bot_state: dict, account, name: str, now=None) -> dict:
+    """Send NOT BACK ONLINE when a Command Center action's record outlives its grace. NEVER raises."""
+    now = time.time() if now is None else now
+    try:
+        path = _bot_state.BOT_INSTANCES[bot_key] / "alert_thread.json"
+        rec = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(rec, dict) or float(rec.get("expires_at", 0)) < now:
+            return bot_state
+        sent_at = float(rec.get("sent_at") or float(rec["expires_at"]) - _ACTION_TTL_SECONDS)
+        mid = rec.get("message_id")
+    except (OSError, ValueError, TypeError, KeyError):
+        return bot_state
+    if now - sent_at < ACTION_GRACE_SECONDS or bot_state.get("action_alerted") == mid:
+        return bot_state
+    from alert_format import when
+
+    verb = _ACTION_VERB.get(str(rec.get("action") or ""), "restarted")
+    send_alert(
+        alert(
+            CRITICAL,
+            "NOT BACK ONLINE",
+            name,
+            f"The command center {verb} it at "
+            f"{when(datetime.fromtimestamp(sent_at, tz=ZoneInfo('UTC')))} and it has not come back "
+            f"online in {int((now - sent_at) // 60)} minutes.",
+            "It is not trading. Check its log - usually a version pin, the MT5 login or a startup "
+            "error.",
+        ),
+        account,
+        bot=bot_key,
+    )
+    bot_state["action_alerted"] = mid
+    return bot_state
+
+
 def check_telegram_bot(state: dict) -> dict:
     """
     Watchdog for SYS_TELEGRAM — most critical system process.
@@ -674,6 +727,13 @@ def main():
                 continue
             try:
                 state[bot_key] = check_bot(bot_key, state, today)
+                account = _bot_state.read_account(bot_key)
+                state[bot_key] = check_action(
+                    bot_key,
+                    state[bot_key],
+                    account,
+                    _bot_state.labelled(BOTS[bot_key]["name"], account),
+                )
             except Exception as e:
                 print(f"Error checking {bot_key}: {e}")
     finally:
