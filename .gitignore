@@ -172,6 +172,10 @@ algos/telegram_launcher.lock
 algos/ledgersync_alert_state.json
 # The log reviewer's bookmark. Per-machine runtime state, written on the trading box.
 algos/log_review_state.json
+# The Telegram SEND LOG, the outbox and the health policy's memory (`algos/shared/notify_log.py`,
+# `alert_policy.py`). Per machine: the box and each laptop keep their own, and a pull must never
+# carry one machine's pending messages onto another.
+algos/logs/
 
 # MT5 lock
 algos/mt5_connect.lock

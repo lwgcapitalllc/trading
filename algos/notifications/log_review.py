@@ -101,8 +101,8 @@ sys.path.insert(0, str(ALGOS_ROOT / "notifications"))
 import bot_state as _bot_state  # noqa: E402
 from alert_format import CRITICAL, WARNING, alert, when  # noqa: E402
 from alert_format import OK as OK_ICON  # noqa: E402 — this file's own OK is a finding verdict
-from credentials import telegram_credentials  # noqa: E402
-from notify import HEALTH, chat_for  # noqa: E402
+from notify import HEALTH, chat_for, send_with_outcome  # noqa: E402
+from notify_log import QUEUED, SENT  # noqa: E402
 
 # How far back a run looks. Two days so a problem late yesterday is still reported this morning,
 # and so a run that crosses midnight sees the record either side of the roll.
@@ -930,8 +930,8 @@ def write_flag(instance_dir: Path, bot_key: str, findings: List[Finding]) -> Non
         print(f"  ! could not write the review flag for {bot_key} ({e})")
 
 
-def health_chat(account=None) -> tuple[str, str, bool]:
-    """(token, chat_id, is_dedicated). Falls back to the main group and says which it used.
+def health_chat(account=None) -> tuple[str, bool]:
+    """(chat_id, is_dedicated) — where a finding about this account would go. For the dry run.
 
     ⚠ The lookup goes through `notify.chat_for`, NOT a direct read of `credentials.json`. It read
     the file itself until 2026-08-05, which silently ignored the environment override — one this
@@ -942,35 +942,28 @@ def health_chat(account=None) -> tuple[str, str, bool]:
     channel gets its bots' findings there (2026-09-13). An account that names none keeps the
     shared room, live accounts included.
     """
-    token, _group, _admin = telegram_credentials()
-    chat, dedicated = chat_for(HEALTH, account=account)
-    return token, chat, dedicated
+    return chat_for(HEALTH, account=account)
 
 
-def send(text: str, dry_run: bool = False, account=None) -> bool:
-    token, chat, dedicated = health_chat(account)
-    where = "health chat" if dedicated else "main group (set a health channel to split)"
+def send(text: str, dry_run: bool = False, account=None, bot=None) -> bool:
+    """Send one finding. True when it was delivered OR queued for re-delivery — either way it
+    WILL be read, so it must be remembered as said.
+
+    🔴 **Through `notify.send_with_outcome` since 2026-09-26**, never its own request: the old
+    body posted straight to Telegram, so no finding reached the send log, none was retried after a
+    network blip, and a finding lost in a blip was simply re-sent next hour — the one sender
+    whose whole job is catching what the others missed was itself uncounted.
+    """
     if dry_run:
+        chat, dedicated = health_chat(account)
+        where = "health chat" if dedicated else "main group (set a health channel to split)"
         print(f"  [dry run] would send to the {where}:\n{text}\n")
         return True
-    if not token or not chat:
-        print("  ! no Telegram credentials — finding not sent")
+    _mid, outcome = send_with_outcome(text, HEALTH, account=account, bot=bot, markdown=False)
+    if outcome not in (SENT, QUEUED):
+        print(f"  ! finding not sent ({outcome})")
         return False
-    try:
-        import requests
-
-        r = requests.post(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            data={"chat_id": chat, "text": text, "parse_mode": "Markdown"},
-            timeout=10,
-        )
-        if r.status_code != 200:
-            print(f"  ! Telegram refused ({r.status_code}): {r.text[:200]}")
-            return False
-        return True
-    except Exception as e:
-        print(f"  ! Telegram send failed ({e})")
-        return False
+    return True
 
 
 def main(argv=None) -> int:
@@ -1040,7 +1033,7 @@ def main(argv=None) -> int:
                 text = alert(
                     OK_ICON, "REVIEW", name, f.title, f.detail, f"Nothing to do: {f.resolved}"
                 )
-            if send(text, args.dry_run, account):
+            if send(text, args.dry_run, account, bot_key):
                 total_new += 1
                 if not args.dry_run:
                     seen.append(f.key)

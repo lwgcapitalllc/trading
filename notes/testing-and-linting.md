@@ -304,3 +304,8 @@ the other on every commit.
 - The root `conftest.py` ignores every file under `backtest/tools/`. That folder holds study scripts, and two named `*_test.py` were being collected and replaying six years of bars against the trading box's data agent — 24 errors in `scripts/run_all_tests.sh`.
 - The whole folder is ignored, not the two files, so the next script named after what it studies cannot do it again. A tool's real tests go in `backtest/tests/`.
 - ⚠ Naming one of those files directly on the pytest command line still collects it — that is pytest's own behaviour and not a gap in this rule.
+
+## Every test gets its own Telegram send log (2026-09-26)
+
+- The root `conftest.py` (and the backend's) point `LWG_NOTIFY_DIR` at a folder inside each test's `tmp_path`. `algos/shared/notify_log.py` writes one line per Telegram send there, the outbox lives under it, and the health policy keeps its memory beside it.
+- Without it a test sending through the real notifier writes into the checkout's own log — and one test's remembered alert would HOLD an identical alert in the next, so the suite would pass or fail on the order it ran in.

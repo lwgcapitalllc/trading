@@ -339,7 +339,9 @@ def test_an_alert_about_a_bot_goes_to_ITS_ACCOUNTS_health_channel(monkeypatch):
         lambda path, n: _acct(telegram_health_chat="@lwg_health") if n == _LIVE else None,
     )
     sent = []
-    monkeypatch.setattr(r, "send_telegram_id", lambda text, kind, chat_id="": sent.append(chat_id))
+    monkeypatch.setattr(
+        r, "send_telegram_id", lambda text, kind, chat_id="", **_kw: sent.append(chat_id)
+    )
     r._notify_telegram("PROMOTED", bot_key="sos_fade_demo")
     assert sent == ["@lwg_health"]
 
@@ -352,7 +354,9 @@ def test_an_alert_about_an_ACCOUNT_needs_no_bot_to_route_it(monkeypatch):
         lambda path, n: _acct(telegram_health_chat="@lwg_health"),
     )
     sent = []
-    monkeypatch.setattr(r, "send_telegram_id", lambda text, kind, chat_id="": sent.append(chat_id))
+    monkeypatch.setattr(
+        r, "send_telegram_id", lambda text, kind, chat_id="", **_kw: sent.append(chat_id)
+    )
     r._notify_telegram("GONE LIVE", account=_LIVE)
     assert sent == ["@lwg_health"]
 
@@ -362,7 +366,9 @@ def test_an_alert_about_the_BOX_keeps_the_shared_room(monkeypatch):
     account and falls back — which is where every one of these went before this existed.
     MUTATION: default the account to anything → red."""
     sent = []
-    monkeypatch.setattr(r, "send_telegram_id", lambda text, kind, chat_id="": sent.append(chat_id))
+    monkeypatch.setattr(
+        r, "send_telegram_id", lambda text, kind, chat_id="", **_kw: sent.append(chat_id)
+    )
     r._notify_telegram("All bots STOPPED")
     assert sent == [""]
 
@@ -374,7 +380,9 @@ def test_an_account_naming_no_health_channel_falls_back_to_the_shared_room(monke
         r.bot_account_registry, "account_by_number", lambda path, n: _acct(telegram_health_chat="")
     )
     sent = []
-    monkeypatch.setattr(r, "send_telegram_id", lambda text, kind, chat_id="": sent.append(chat_id))
+    monkeypatch.setattr(
+        r, "send_telegram_id", lambda text, kind, chat_id="", **_kw: sent.append(chat_id)
+    )
     r._notify_telegram("STARTING", bot_key="sos_fade_demo")
     assert sent == [""]
 
@@ -390,7 +398,9 @@ def test_the_ROUTING_can_never_break_an_alert(monkeypatch):
     monkeypatch.setattr(r, "_read_instance_config", boom)
     monkeypatch.setattr(r.bot_account_registry, "account_by_number", boom)
     sent = []
-    monkeypatch.setattr(r, "send_telegram_id", lambda text, kind, chat_id="": sent.append(chat_id))
+    monkeypatch.setattr(
+        r, "send_telegram_id", lambda text, kind, chat_id="", **_kw: sent.append(chat_id)
+    )
     r._notify_telegram("HALTED", bot_key="sos_fade_demo")
     assert sent == [""], "it must still send, into the shared room"
 
@@ -401,7 +411,9 @@ def test_every_send_from_this_backend_is_still_HEALTH(monkeypatch):
     opened a way to."""
     monkeypatch.setattr(r, "_read_instance_config", lambda key: None)
     kinds = []
-    monkeypatch.setattr(r, "send_telegram_id", lambda text, kind, chat_id="": kinds.append(kind))
+    monkeypatch.setattr(
+        r, "send_telegram_id", lambda text, kind, chat_id="", **_kw: kinds.append(kind)
+    )
     r._notify_telegram("anything", bot_key="sos_fade_demo")
     assert kinds == [r.notify.HEALTH]
 

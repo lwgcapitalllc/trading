@@ -958,3 +958,67 @@ Still open: the scheduled task on the box (it runs on demand until then), the `e
 the pinned post explaining the add sizing.
 
 Tests: `algos/tests/test_rev_setup_feed.py` (18; five mutations watched RED, listed in its docstring).
+
+---
+
+## The health room's noise, and what may never go quiet (2026-09-26)
+
+**Why.** A hand count of the health room over 4–25 Sep 2026: about 800 messages, about 30 needing
+anybody to act. The biggest blocks: deploy and restart lifecycle ~520 (every promote was PROMOTED +
+STOPPED + ONLINE per bot, a Command Center stop said STOPPED twice, STARTING/RESTARTING was always
+followed by ONLINE); TRADING OFF / TRADING BACK ON ~94, sent per BOT for an account-level event that
+was usually over in 2–10 minutes; one missing file on 17 Sep produced 17 WILL NOT START + 5 OFFLINE
++ 3 RESTARTED in 7 minutes; the hourly review re-announcing every real-time HALTED as two more
+messages; the watchdog's quick OFFLINE/RESTARTED/BACK ONLINE ~38; the chat bot's nightly restart ~16.
+
+**The rule the whole design answers to (Aaron approved exactly this):** nothing important may become
+invisible. Every real problem reaches the user at least once, a LIVE one keeps reminding until it
+clears, and anything held back is COUNTED in a daily summary. Four stages, one commit each.
+
+### Stage 1 — the send log and the outbox (`shared/notify_log.py`)
+
+- ✅ **Every send outcome is one JSON line** in `algos/logs/notify/<UTC date>.jsonl` (never committed;
+  one folder per machine): time, kind, account, room, label and subject parsed off the house-shape
+  first line, bot key, and `outcome` = `sent` | `queued` | `held` | `dropped`, with Telegram's
+  message id when sent. TRADE, SIGNAL and HEALTH all log.
+- ✅ **A TRANSIENT failure is re-sent, not lost.** No answer at all (network error, timeout), HTTP 429
+  or any 5xx goes to `algos/logs/notify/outbox/` as one atomic JSON file. The every-minute monitor
+  (`notify.flush_outbox`, first thing each pass) re-sends it with a last line
+  `(delayed, first tried 3:04 PM CDT)`, and gives up after 24 hours — logged `dropped` with
+  `gave_up`, and counted by the daily summary. A PERMANENT 4xx (after the existing reply and
+  Markdown rescues) is logged `dropped` and never retried.
+- ⚠ **The outbox holds the NAME of the credential (`token_key`), never the token.** It is resolved
+  again at delivery.
+- ⚠ **A queued send still returns None to its caller** — it has not been delivered, and nothing may
+  thread a reply under a message that does not exist yet. The one caller that needs the difference
+  (the reviewer: a queued finding WILL arrive, so it must be remembered as said) reads
+  `notify.send_with_outcome`.
+- 🔴 **Three senders built their own Telegram request and are now routed through `notify`**: the
+  watchdog (`monitor.send_alert` — still with Markdown on, which the catalog said was gone), the
+  hourly reviewer (`log_review.send`) and the chat bot's startup ping. None of their messages reached
+  a log, none was retried, and the policy in stage 2 could not have seen the one sender that makes
+  OFFLINE, RESTARTED and STALLED. `test_notify_send_log.py` greps `algos/` for any other `sendMessage`
+  so a fourth cannot appear unseen. The chat bot's command REPLY path is the one exception — it
+  answers the chat a person typed in and is not a broadcast.
+- ⚠ **Never raises, never blocks for long.** One `write()` of one line per outcome, atomic
+  `os.replace` for outbox files, a broad `except` everywhere — the same contract `send_telegram_id`
+  always had. An unwritable log folder costs the log line, never the message (tested).
+- ⚠ **The Command Center writes the same line format** (`command-center/backend/services/notify.py
+  → log_send`) into the LAPTOP's `algos/logs/notify/`, so the box's daily summary never sees the
+  laptop's lines. No outbox there — a Command Center action has a person looking at the page.
+- ⚠ **Tests never write the checkout's log**: the root `conftest.py` and the backend's point
+  `LWG_NOTIFY_DIR` at a per-test folder.
+
+🔴 **Root cause of 19 Sep's "TRADING BACK ON with no OFF" (20 of them, zero OFF):** the ledger shows
+every `trading_disabled` paired with a `trading_restored` 30–60 s later — 4 episodes × 5 bots, on TWO
+accounts (34957946 and 700152905, two terminals) in the SAME second each time. So each OFF alert was
+attempted and did not arrive, and each BACK ON a minute later did. The code marked the OFF as "said"
+whether or not Telegram took it, and had no retry. Both halves are fixed: the send is now retried
+(this stage), and a BACK ON is sent only if its OFF was actually sent (stage 2). ⚠ **Why the OFF
+sends failed is INFERRED, not measured** — two accounts, two terminals, one box, ~40 s each, points at
+the box's own network dropping (the terminals losing the broker and Telegram unreachable at once).
+The bots' text logs on the box would show `notify: send failed` at 21:55 UTC and would settle it; they
+were not read here (no box access for this change).
+
+Tests: `algos/tests/test_notify_send_log.py` (16 — six mutations watched RED, listed in its
+docstring); the backend's `test_notification_routing.py` pins its log line to the algos format.

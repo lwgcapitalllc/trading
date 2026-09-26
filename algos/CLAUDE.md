@@ -293,6 +293,7 @@ Most-cited code: `live/setup_alerts.py`, `live/alerts.py`, `live/bridge.py`, `sh
 - ✅ Setup messages are ON for every bot; the extreme-leg bot now sends them, and a bot whose strategy cannot says so in the health room (2026-09-16)
 - ✅ A trade's thread now says how it is being MANAGED — breakeven, trail, tighten, size banked, size added — and EVERY bot gets it because the bridge sends it from prices, not from a strategy's stages. The trail is throttled to 0.5R of fresh profit per message; the breakeven crossing always sends. A restart keeps the thread and the 1R yardstick (2026-09-22)
 - ✅ A second room may get a COPY of an account's SETUPS — `markets/fx/signal_copies.json`, setups only, never fills, and it takes effect at the bot's next PROMOTE (2026-09-23)
+- ✅ Every Telegram send is logged (`algos/logs/notify/`) and a transient failure is re-sent by the monitor for 24h with a "(delayed…)" line; the watchdog, reviewer and chat bot now send through `shared/notify.py` (2026-09-26)
 - ✅ The REV SETUP student feed — `tools/rev_setup_feed.py` renders the bot's own decision records for a students' channel from a per-event WHITELIST, so no lot size, dollar risk or P&L can be published; off until switched on (2026-09-23)
 
 ### `notes/telegram-message-catalog.md` — Every Telegram message this suite can send, by room

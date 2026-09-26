@@ -48,6 +48,17 @@ message is about, not how severe it is — and is not part of the severity syste
 | 🚫 | A setup was blocked by one of your own rules |
 | 👋 | A setup died with no trade |
 
+**A message that could not be delivered the first time** (no answer from Telegram, HTTP 429 or 5xx)
+is re-sent by the every-minute monitor for up to 24 hours, with one extra last line (2026-09-26):
+```
+⛔ TRADING OFF · SOS Fade · LIVE
+Margin call on the account.
+Every order it sends will be refused. …
+(delayed, first tried 3:04 PM CDT)
+```
+Every send, delivered or not, is also one line in the box's send log — see
+`notes/telegram-and-notifications.md` → *The health room's noise*.
+
 **Every message in every room is plain text — no Markdown, ever.** A bot label, a symbol or a
 traceback path is full of underscores, and Telegram's Markdown parser opens an italic on a lone
 underscore and either eats the rest of the name silently (even count) or rejects the whole

@@ -725,7 +725,11 @@ def _notify_telegram(text: str, *, bot_key: str = "", account=None):
     thread is the only thing that says they are one event.
     """
     return send_telegram_id(
-        text, notify.HEALTH, chat_id=_account_health_chat(bot_key=bot_key, account=account)
+        text,
+        notify.HEALTH,
+        chat_id=_account_health_chat(bot_key=bot_key, account=account),
+        bot=bot_key or None,
+        account=account,
     )
 
 

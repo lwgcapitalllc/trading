@@ -132,7 +132,7 @@ def test_a_broken_balance_read_does_not_swallow_the_heartbeat(monkeypatch):
 def watch(monkeypatch):
     """Drive `check_bot` with a scripted bot state, capturing alerts instead of sending."""
     sent = []
-    monkeypatch.setattr(monitor, "send_alert", lambda msg, account=None: sent.append(msg))
+    monkeypatch.setattr(monitor, "send_alert", lambda msg, account=None, **kw: sent.append(msg))
     monkeypatch.setattr(monitor, "is_bot_running", lambda key, fresh=False: True)
     monkeypatch.setattr(monitor._bot_state, "set_status", lambda *a, **k: None)
 
@@ -165,7 +165,7 @@ def test_a_watchdog_alert_says_WHICH_ACCOUNT_it_is_about(monkeypatch):
     MUTATION: drop the `account` argument at any `send_alert` call in `check_bot` -> red.
     """
     seen = []
-    monkeypatch.setattr(monitor, "send_alert", lambda msg, account=None: seen.append(account))
+    monkeypatch.setattr(monitor, "send_alert", lambda msg, account=None, **kw: seen.append(account))
     monkeypatch.setattr(monitor, "is_bot_running", lambda key, fresh=False: True)
     monkeypatch.setattr(monitor._bot_state, "set_status", lambda *a, **k: None)
     monkeypatch.setattr(monitor._bot_state, "read_account", lambda k: 34957946)
@@ -263,7 +263,7 @@ def test_a_bot_whose_stamp_AND_start_are_both_old_is_still_stalled(watch):
 def down(monkeypatch):
     """Drive `check_bot` against a bot whose process is gone, capturing the restart attempt."""
     sent, attempts = [], []
-    monkeypatch.setattr(monitor, "send_alert", lambda msg, account=None: sent.append(msg))
+    monkeypatch.setattr(monitor, "send_alert", lambda msg, account=None, **kw: sent.append(msg))
     monkeypatch.setattr(monitor, "is_bot_running", lambda key, fresh=False: False)
     monkeypatch.setattr(monitor._bot_state, "set_status", lambda *a, **k: None)
     monkeypatch.setattr(monitor._bot_state, "read_bot", lambda k: {})
@@ -690,7 +690,7 @@ def test_a_bot_is_not_restarted_on_an_answer_we_never_got(monkeypatch):
     live broker account. The cost of doing nothing is 60 seconds of not knowing.
     """
     sent, attempts = [], []
-    monkeypatch.setattr(monitor, "send_alert", lambda msg, account=None: sent.append(msg))
+    monkeypatch.setattr(monitor, "send_alert", lambda msg, account=None, **kw: sent.append(msg))
     monkeypatch.setattr(monitor, "is_bot_running", lambda key, fresh=False: None)
     monkeypatch.setattr(monitor, "restart_bot", lambda k: attempts.append(k) or True)
     monkeypatch.setattr(monitor._bot_state, "set_status", lambda *a, **k: None)
@@ -707,7 +707,7 @@ def test_a_bot_is_not_restarted_on_an_answer_we_never_got(monkeypatch):
 def test_the_chat_bot_is_not_restarted_on_an_answer_we_never_got(monkeypatch):
     """🔴 This is the exact path that produced the duplicate. It must fire nothing at all."""
     sent, ran = [], []
-    monkeypatch.setattr(monitor, "send_alert", lambda msg, account=None: sent.append(msg))
+    monkeypatch.setattr(monitor, "send_alert", lambda msg, account=None, **kw: sent.append(msg))
     monkeypatch.setattr(monitor, "is_running", lambda script: None)
     monkeypatch.setattr(monitor.subprocess, "run", lambda *a, **k: ran.append(a) or None)
 
@@ -822,7 +822,7 @@ def test_a_requested_stop_is_honoured_on_the_FIRST_sighting_too(monkeypatch, tmp
     fresh monitor_state.json, a new bot, the file deleted. The flag is never set on that pass, so
     the restart guard has to read the record itself rather than trust a previous pass."""
     sent, attempts = [], []
-    monkeypatch.setattr(monitor, "send_alert", lambda m, account=None: sent.append(m))
+    monkeypatch.setattr(monitor, "send_alert", lambda m, account=None, **kw: sent.append(m))
     monkeypatch.setattr(monitor, "is_bot_running", lambda key, fresh=False: False)
     monkeypatch.setattr(monitor, "restart_bot", lambda k: attempts.append(k) or True)
     monkeypatch.setattr(monitor._bot_state, "set_status", lambda *a, **k: None)

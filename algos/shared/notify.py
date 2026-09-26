@@ -26,6 +26,7 @@ except ImportError:
     _requests = None
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import notify_log  # noqa: E402
 from credentials import get as _cred  # noqa: E402
 from credentials import telegram_credentials
 from repo_paths import ALGOS_ROOT  # noqa: E402
@@ -340,6 +341,7 @@ def send_telegram(
     markdown=True,
     *,
     account=None,
+    bot=None,
 ) -> bool:
     """Send `text` to the chat this `kind` routes to. Returns True on success.
 
@@ -369,56 +371,41 @@ def send_telegram(
     for its whole session.
     """
     return (
-        send_telegram_id(text, kind, chat_id, token_key, reply_to, markdown, account=account)
+        send_telegram_id(
+            text, kind, chat_id, token_key, reply_to, markdown, account=account, bot=bot
+        )
         is not None
     )
 
 
-def send_telegram_id(
-    text: str,
-    kind: str,
-    chat_id: str = "",
-    token_key: str = "",
-    reply_to=None,
-    markdown=True,
-    *,
-    account=None,
-):
-    """Same send, but returns Telegram's `message_id` (or None on failure).
-
-    The id is what lets a later message REPLY to this one — the trade exit replies to the trade
-    entry, so both halves of a trade sit in one thread and an outcome is never read apart from
-    the setup it came from.
-
-    `reply_to` is best-effort by design: if the message being replied to has been deleted,
-    Telegram refuses the send outright. A missing thread link is not a reason to lose a trade
-    alert, so that case retries as a standalone message.
-    """
-    global _warned
+def _token(token_key: str = "") -> str:
+    """The Telegram token to send with: the named one when set, else the default — and SAY so
+    once when a named one is missing."""
     token, _group, _admin = telegram_credentials()
     if token_key:
         named = _cred(token_key)
         if named:
-            token = named
-        elif token_key not in _warned_keys:
+            return named
+        if token_key not in _warned_keys:
             _warned_keys.add(token_key)
             print(
                 f"notify: credential {token_key!r} is not set - falling back to the default "
                 f"Telegram bot. Add it to algos/credentials.json, or clear telegram_token_key "
                 f"in this bot's instance config."
             )
-    dest, _dedicated = chat_for(kind, chat_id, account)
-    if not token or not dest:
-        if not _warned:
-            _warned = True
-            print(
-                "notify: Telegram is not configured (see algos/credentials.template.json) - "
-                "messages will be dropped for the rest of this run"
-            )
-        return None
+    return token
+
+
+def _deliver(token: str, dest: str, text: str, reply_to=None, markdown=False):
+    """One message to one chat, with the two rescues. Returns `(message_id, failure, mode)`.
+
+    `failure` is `None` when Telegram took it, `"transient"` when the same request would likely
+    succeed later (no answer at all, HTTP 429, HTTP 5xx — `notify_log.is_transient`) and
+    `"permanent"` otherwise. `mode` is the parse mode that DELIVERED it. NEVER raises.
+    """
     if _requests is None:
-        print(f"notify: requests not installed, dropping message: {text}")
-        return None
+        print("notify: requests not installed, dropping message")
+        return None, "permanent", None
     url = f"https://api.telegram.org/bot{token}/sendMessage"
 
     def _post(parse_mode, reply):
@@ -456,17 +443,165 @@ def send_telegram_id(
             # "MT5_FFT" alone was enough. Retry unformatted rather than lose it.
             print(f"notify: Markdown rejected, resending as plain text - {r.text[:160]}")
             # Reassigned, not passed inline: this is now the mode that DELIVERED, and the setups
-            # copy below reuses it rather than repeating a request Telegram has just refused.
+            # copy reuses it rather than repeating a request Telegram has just refused.
             mode = None
             r = _post(mode, reply_to)
         if r.status_code != 200:
             print(f"notify: Telegram returned {r.status_code}: {r.text[:200]}")
-            return None
+            failure = "transient" if notify_log.is_transient(r.status_code) else "permanent"
+            return None, failure, mode
+        try:
+            return (r.json().get("result") or {}).get("message_id"), None, mode
+        except Exception:  # noqa: BLE001 — delivered; only the id is unreadable
+            return None, None, mode
+    except Exception as e:  # noqa: BLE001 — no answer at all: the network, a timeout
+        print(f"notify: send failed: {e}")
+        return None, "transient", mode
+
+
+def send_telegram_id(
+    text: str,
+    kind: str,
+    chat_id: str = "",
+    token_key: str = "",
+    reply_to=None,
+    markdown=True,
+    *,
+    account=None,
+    bot=None,
+):
+    """Same send, but returns Telegram's `message_id` (or None when it was not delivered now).
+    `send_with_outcome` is the same call answering WHAT happened as well."""
+    return send_with_outcome(
+        text, kind, chat_id, token_key, reply_to, markdown, account=account, bot=bot
+    )[0]
+
+
+def send_with_outcome(
+    text: str,
+    kind: str,
+    chat_id: str = "",
+    token_key: str = "",
+    reply_to=None,
+    markdown=True,
+    *,
+    account=None,
+    bot=None,
+):
+    """The send itself: `(message_id, outcome)`, where `outcome` is one of `notify_log.OUTCOMES`.
+
+    A caller that remembers what it has already said (the log reviewer) needs `queued` apart
+    from `dropped`: a queued message WILL arrive, so announcing it again next hour would say it
+    twice. Everyone else wants only the id, and reads `send_telegram_id`.
+
+    The id is what lets a later message REPLY to this one — the trade exit replies to the trade
+    entry, so both halves of a trade sit in one thread and an outcome is never read apart from
+    the setup it came from.
+
+    `reply_to` is best-effort by design: if the message being replied to has been deleted,
+    Telegram refuses the send outright. A missing thread link is not a reason to lose a trade
+    alert, so that case retries as a standalone message.
+
+    `bot` is the bot KEY the message is about, when there is one. It names the message in the
+    send log and keys the health policy's memory; routing never reads it.
+
+    **Every outcome is written to the send log** (`notify_log`), and a send that fails for a
+    TRANSIENT reason is written to the OUTBOX, which the every-minute monitor re-sends with a
+    *(delayed, first tried …)* line for up to 24 hours. It still returns None here — the message
+    has not been delivered, and a caller threading replies under it must not believe otherwise.
+    """
+    global _warned
+    token = _token(token_key)
+    dest, _dedicated = chat_for(kind, chat_id, account)
+    if not token or not dest:
+        if not _warned:
+            _warned = True
+            print(
+                "notify: Telegram is not configured (see algos/credentials.template.json) - "
+                "messages will be dropped for the rest of this run"
+            )
+        notify_log.record(
+            kind,
+            notify_log.DROPPED,
+            text=text,
+            account=account,
+            room=dest,
+            bot=bot,
+            reason="no token" if not token else "no room to send it to",
+        )
+        return None, notify_log.DROPPED
+
+    message_id, failure, mode = _deliver(token, dest, text, reply_to, markdown)
+    if failure is None:
+        notify_log.record(
+            kind,
+            notify_log.SENT,
+            text=text,
+            account=account,
+            room=dest,
+            bot=bot,
+            message_id=message_id,
+        )
         if kind == SIGNAL:
             # A second room may read the setups — see the copies block above. Deliberately after
             # the primary has succeeded, and it cannot change what this returns.
             _copy_signal(text, account, dest, token, mode)
-        return (r.json().get("result") or {}).get("message_id")
-    except Exception as e:
-        print(f"notify: send failed: {e}")
-        return None
+        return message_id, notify_log.SENT
+    if failure == "transient":
+        ident = notify_log.enqueue(
+            purpose=notify_log.RETRY,
+            kind=kind,
+            chat=dest,
+            text=text,
+            account=account,
+            bot=bot,
+            token_key=token_key,
+            reply_to=reply_to,
+            markdown=markdown,
+        )
+        notify_log.record(
+            kind,
+            notify_log.QUEUED if ident else notify_log.DROPPED,
+            text=text,
+            account=account,
+            room=dest,
+            bot=bot,
+            reason="transient failure - will be re-sent"
+            if ident
+            else "transient failure and the outbox could not be written",
+        )
+        return None, notify_log.QUEUED if ident else notify_log.DROPPED
+    notify_log.record(
+        kind,
+        notify_log.DROPPED,
+        text=text,
+        account=account,
+        room=dest,
+        bot=bot,
+        reason="Telegram refused it",
+    )
+    return None, notify_log.DROPPED
+
+
+def flush_outbox(now=None) -> dict:
+    """Deliver every outbox entry that is due — the MONITOR's job, once a minute. NEVER raises.
+
+    Also stamps the flusher heartbeat FIRST, so a monitor that runs this is known to be alive
+    even on a pass with nothing to send (`notify_log.flusher_alive`).
+    """
+    notify_log.mark_flusher_alive(now)
+
+    def _send(entry: dict, text: str):
+        token = _token(entry.get("token_key") or "")
+        if not token or not entry.get("chat"):
+            return None, "permanent"
+        message_id, failure, _mode = _deliver(
+            token,
+            str(entry["chat"]),
+            text,
+            entry.get("reply_to"),
+            bool(entry.get("markdown")),
+        )
+        return message_id, failure
+
+    return notify_log.flush(_send, now=now)

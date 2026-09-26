@@ -29,12 +29,6 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-try:
-    import requests
-except ImportError:
-    print("pip install requests")
-    sys.exit(1)
-
 # DERIVED, not hardcoded — same reason as algos/shared/bot_state.py. A literal
 # "C:/trading/algos" is correct on the VPS and silently wrong everywhere else, which makes
 # this file untestable off the box.
@@ -49,11 +43,8 @@ import bot_state as _bot_state
 from alert_format import CRITICAL, OK, WARNING, alert  # noqa: E402
 
 # Telegram credentials are resolved from the environment or the git-ignored
-# algos/credentials.json — never pasted here. See algos/shared/credentials.py.
-from credentials import telegram_credentials  # noqa: E402
-from notify import HEALTH, chat_for  # noqa: E402
-
-TELEGRAM_TOKEN, GROUP_CHAT, ADMIN_CHAT = telegram_credentials()
+# algos/credentials.json — never pasted here, and read by `notify` itself on every send.
+from notify import HEALTH, flush_outbox, send_telegram_id  # noqa: E402
 
 # Bots emit a log line roughly every ~60s. Some branches (SMC outside kill zone,
 # "manage trades only") can sleep up to ~2-3 min. 5 min is a safe floor.
@@ -86,7 +77,7 @@ BOTS = {
 MAX_BOT_RESTARTS = 3
 
 
-def send_alert(message: str, account=None):
+def send_alert(message: str, account=None, bot=None):
     """Every message this watchdog sends is HEALTH — offline, restarted, stalled, recovered.
 
     Not one of them is a trade, which is the whole reason the routing exists: this module alone
@@ -100,17 +91,14 @@ def send_alert(message: str, account=None):
     alerts about the box itself — the chat bot being down, an unreadable bot list — which belong
     to nobody's account. An account with no health channel of its own keeps the shared room, live
     accounts included.
+
+    🔴 **Through `notify.send_telegram_id` since 2026-09-26, never its own request.** It posted
+    straight to Telegram (with Markdown parsing on, which the catalog already said was gone), so
+    none of its messages reached the send log, none was retried after a network blip, and the
+    health policy could not see the one sender that produces OFFLINE, RESTARTED and STALLED.
+    `bot` is the bot KEY, for the log and the policy's memory.
     """
-    dest, _dedicated = chat_for(HEALTH, account=account)
-    if not TELEGRAM_TOKEN or not dest:
-        print(f"Alert dropped (Telegram not configured): {message[:80]}")
-        return
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    data = {"chat_id": dest, "text": message, "parse_mode": "Markdown"}
-    try:
-        requests.post(url, json=data, timeout=10)
-    except Exception as e:
-        print(f"Alert failed: {e}")
+    send_telegram_id(message, HEALTH, account=account, bot=bot, markdown=False)
 
 
 def load_state() -> dict:
@@ -393,6 +381,7 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                 send_alert(
                     alert(CRITICAL, "OFFLINE", name, "The process is gone. Restarting it now."),
                     account,
+                    bot=bot_key,
                 )
             _bot_state.set_status(bot_key, "offline")
         else:
@@ -400,6 +389,7 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                 send_alert(
                     alert(OK, "BACK ONLINE", name, "It is running again. Nothing to do."),
                     account,
+                    bot=bot_key,
                 )
             bot_state["stop_suppressed"] = False
             bot_state["restart_tries"] = 0
@@ -450,6 +440,7 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                         "Worth checking the log for why it stopped.",
                     ),
                     account,
+                    bot=bot_key,
                 )
                 _bot_state.set_status(bot_key, "running")
             else:
@@ -470,6 +461,7 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                     "— check its log.",
                 ),
                 account,
+                bot=bot_key,
             )
         return bot_state
 
@@ -503,6 +495,7 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                     "Restart it from the command center, or check its log.",
                 ),
                 account,
+                bot=bot_key,
             )
             bot_state["stale_alerted"] = True
             _bot_state.set_status(bot_key, "stalled")
@@ -517,6 +510,7 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                     "Nothing to do.",
                 ),
                 account,
+                bot=bot_key,
             )
             _bot_state.set_status(bot_key, "running")
         bot_state["stale_alerted"] = False
@@ -538,6 +532,7 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                     "Fix the watchlist in config.json.",
                 ),
                 account,
+                bot=bot_key,
             )
             alerted_today[sym] = today
     bot_state["unresolved_symbols_alerted"] = alerted_today
@@ -648,6 +643,13 @@ def _say_if_the_bots_cannot_be_seen(state: dict) -> None:
 def main():
     state = load_state()
     today = datetime.now(TEXAS).date().isoformat()
+
+    # FIRST, before anything this pass might add: deliver what is already due — messages that
+    # failed for a transient reason, and faults the health policy has been holding to see whether
+    # they clear. Stamps the heartbeat that tells the policy a deliverer is alive. Never raises.
+    counts = flush_outbox()
+    if counts.get("sent") or counts.get("retry") or counts.get("dropped"):
+        print(f"Outbox: {counts}")
 
     # One process list for the whole pass — see `_PASS`.
     _PASS.clear()

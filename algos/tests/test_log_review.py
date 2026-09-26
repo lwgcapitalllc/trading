@@ -1283,7 +1283,9 @@ def test_a_finding_carries_the_ACCOUNT_so_it_can_reach_that_accounts_channel(tmp
     MUTATION: drop the account from the `send(...)` call in `main` -> red.
     """
     seen = []
-    monkeypatch.setattr(lr, "send", lambda text, dry_run=False, account=None: seen.append(account))
+    monkeypatch.setattr(
+        lr, "send", lambda text, dry_run=False, account=None, bot=None: seen.append(account)
+    )
     monkeypatch.setattr(lr._bot_state, "read_account", lambda k: 34957946)
     _run_main(tmp_path, monkeypatch, _halted_last())
     assert seen and set(seen) == {34957946}

@@ -1075,3 +1075,15 @@ The rows now read this route once, every minute.
   keeps every git answer and every `trees_for` result while the repo's STATE — HEAD, upstream and
   `git status --porcelain` — is unchanged, so a repeat read is ~2.6–3s for the fleet. A `fetch`
   clears the memo, because it can bring in a commit an earlier answer said was missing.
+
+### Every Telegram send from this app is written to the send log (2026-09-26)
+
+- `services/notify.py → log_send` writes one JSON line per send — `sent` with its message id, or
+  `dropped` with why — in the SAME format the box writes (`algos/shared/notify_log.py`), under this
+  machine's `algos/logs/notify/`. `_notify_telegram` passes the bot key and account so a line says
+  which bot it was about.
+- ⚠ It is the LAPTOP's log. The box's daily summary reads the box's folder only, so a Command
+  Center message is never counted there. No outbox on this side: an action here has a person
+  looking at the page.
+- Pinned by `tests/test_notification_routing.py::test_every_send_is_written_to_the_send_log_in_the_algos_format`,
+  which reads the algos file for the field names rather than restating them.
