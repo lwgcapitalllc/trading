@@ -47,7 +47,9 @@ fills. So a room is a property of the ACCOUNT — `telegram_trade_chat`, `telegr
 `telegram_health_chat` on its row in `markets/fx/accounts.json` — and `notify.chat_for(kind,
 override, account)` routes by the account a message is ABOUT. 34957946 carries the two channels that
 were in the retired file; 35710389's owner entered its own trades and signals channels on
-2026-09-14, so no live account is waiting for its rooms now.
+2026-09-14, so no live account is waiting for its rooms now. **34957946 got its own HEALTH room on
+2026-09-26** (Aaron: the shared room was too noisy with live and demo mixed); a test message was
+delivered to it before it was wired. 35710389 still falls back to the shared room.
 
 - 🔴 **A LIVE account never borrows a room.** A trade or signal for a live account that names no
   room of its own is NOT SENT (empty chat id) and says so once per account and kind. Until
