@@ -5716,3 +5716,58 @@ same trade. Scratch harnesses are session-local; the numbers are the record.
   H4 H/L. Its whole contribution is small (+5.2R in 6.7 years) and that is the point — it is the
   version that protects winners. ⚠ Python only, no Pine, no parity gate; live needs a 1-minute fast
   feed on the bot and a promote, so live adds stay OFF until that ships.
+
+## Run 51 — 2026-09-26: between the first and second target — 32 exit rules, 9 splits, nothing adopted
+
+**The question (Aaron):** the give-back map put the biggest leak in main trades that reach the first
+target and never the second. Find things to act on there — one rule or several, per kind of price
+structure, closing all or banking part; cutting some runners is acceptable because another strategy
+can re-enter them.
+
+**Basis:** XAUUSD.p 15m, PU Prime Demo bars, trades 2020-01-01 → 2026-09-24, `puprime_ecn` charged,
+`--no-regime`, fill clock at the shipped default. **251 trades / +172.64R / 7.49R max drawdown**,
+halves +75.6R / +97.0R split at 2023-05-14. ⚠ **This is not Run 50's 167.4R**: the working tree
+carried uncommitted `sos_fade` edits when it was replayed. Every arm below is scored against this
+one replay, so the comparison holds; the absolute figures do not reproduce from a clean checkout.
+**Method:** one observation replay logged every 5m bar of every open trade; each rule was then
+walked over those bars (armed the 5m bar after the best price reaches the first target, disarmed for
+good at the second, the trade's own stop wins any bar it is touched on, a market exit fills at the
+next 5m open, shorts buy back at the ask). A screen, not a replay — it would only pick what to
+replay, and nothing got that far. Scratch harnesses are session-local; the numbers are the record.
+**Pass rule, stated before any result:** net > +3R, positive in both halves, positive without its
+single biggest gain, drawdown no deeper than baseline.
+
+**The population:** 108 main trades reached the first target. **43 stalled, netting −0.9R. The 65
+that ran made +178.0R.**
+
+| Rule (close 100% / bank 50%) | Fired | Net R | Runners (>2R) cut | Max DD |
+|---|---|---|---|---|
+| Stall 30m / 1h / 2h / 4h / 8h / 16h | 93–43 | −34.3 to −17.5 / half that | 23–15 | 5.9–6.0 |
+| Give back 38% / 50% of the open gain | 83 / 75 | −26.8 / −27.7 | 18 / 15 | 6.0 |
+| Give back 62% / 75% | 61 / 54 | −7.6 / −8.7 | 7 / 6 | 6.0 / 6.2 |
+| 5m shift against → out | 32 | −15.7 / −7.8 | 9 | 7.49 |
+| 5m shift against → give back 38–62% | 29–22 | −16.8 to −13.9 | 9–5 | 7.49 |
+| 5m close back under the first target | 88 | −28.3 / −14.1 | 20 | 6.0 |
+| 5m close back under half-way to it | 54 | **−2.8 / −1.4** | 5 | 6.4 / 7.0 |
+
+- 🔴 **All 32 fail the pass rule on net R.** Every one cuts 5–23 of the trades that go on to make more
+  than 2R, and the stalls it saves are worth −0.9R in total — there is almost nothing to save.
+- 🔴 **The drawdown cuts are the 2022-06-09 trade again** — the same one Run 40's half-bank, the give-back guard
+  and the no-entry window caught. Several rules lift return per drawdown (baseline 23.0; give back
+  62% 27.6), but put that one trade back and every one falls BELOW baseline (19.1–21.9). Not an edge.
+- **Splits at the moment the first target is reached** — stall rate, then R, then first half / second
+  half. Every group is positive in both halves, so no group is safe to cut:
+
+| Split | Highest stall rate | Lowest stall rate |
+|---|---|---|
+| Session | late NY 60% (10 trades, +4.4R, +0.7 / +3.7) | London 27% |
+| Weekday | Monday 61% (18, +11.4R, +6.6 / +4.8) | Thursday 23% |
+| First-target distance | ≤0.76R 46% | >0.76R 28% (+110.6R) |
+| Gap between targets | 0.88–1.18R 56% (+27.3R, +11.8 / +15.5) | <0.88R 17% |
+| Time to reach the target, shift against before it, our own breaks, closed beyond it, bar range | 36–48% | 37–40% — no signal |
+
+- ⚠ **The strongest separators (weekday, gap between targets) are one feature slice each out of
+  nine tried, on 18–36 trades** — below what a rule could be built on even if the group were negative.
+- ✅ **Decision: leave this stage alone.** The stalls are the price of the runners — about 1R to keep
+  +178R. Aaron's plan fits: a separate strategy that re-enters after a stall costs the runners nothing,
+  where every exit rule here pays for its saves out of them.
