@@ -5432,3 +5432,71 @@ precomputed, 1m the live fast feed. Trail gated at its 15m-close placement; "1m 
   removes 5 adds and makes every column worse, scratched winners 5 → 8.
 - **Adding 5m on top of the shipped 1m gate buys nothing** — the same 8 trades made worse, 2 adds
   and 3.5R fewer, Sharpe 1.32 → 1.34 is noise. Not worth a third feed. The shipped rule stays.
+
+## Run 47 — 2026-09-25: stop and trail by R reached, bank-half re-run, and the reserved 2018-19 window SPENT
+
+**The question (Aaron):** stop giving back so much open profit — move to breakeven or start the
+trail at different R levels, and leave when price is "clearly reversing".
+
+**Basis:** `backtest/tools/run_report.py --strategy sos_fade --symbol XAUUSD.p --server PUPrime_Demo
+--cost-profile puprime_ecn --no-regime`, dual 15m+5m, shipped defaults otherwise, 2020-01-01 →
+2026-09-20 unless named. Scored in R on exit order (scratch `score.py`). Baseline **249 trades /
++227.5R / 8.42R max drawdown / 27.0 return per drawdown**. Trail start at X R is the give-back guard
+at a 0.01% hand-back with "Hand to the trail", which hands over on the first bar past X R.
+
+| Change | R | Max DD (R) | R / DD |
+|---|---|---|---|
+| Baseline | 227.5 | 8.42 | 27.0 |
+| Trail from 3R / 2.5R / 4R | 210.1 / 207.1 / 206.2 | 6.03 / 6.03 / 8.42 | **34.8** / 34.3 / 24.5 |
+| Trail from 2R / 1R / 1R tight (0.5%) | 174.1 / 148.9 / 105.1 | 7.16 / 6.03 / 6.03 | 24.3 / 24.7 / 17.4 |
+| Breakeven at 1R / 0.75R / 0.5R | 190.2 / 164.0 / 155.1 | 6.66 / 7.86 / 6.72 | 28.6 / 20.9 / 23.1 |
+| Breakeven at 2.5R and 3R | 227.5 | 8.42 | 27.0 (inert — TP1 already moved it) |
+| Half the risk left at 1.5R | 219.3 | 7.62 | 28.8 |
+| Breakeven + trail combinations | 167–173 | | worse than either alone |
+| Bank 25% at fib target 1 | 210.6 | 7.15 | 29.5 |
+| Bank 50% at fib target 1 | 193.7 | 6.18 | 31.3 |
+| Bank 50% + trail from 3R | 177.8 | 5.84 | 30.5 |
+
+- 🔴 **Early breakeven and early trailing lose outright.** Everything armed below 2.5R costs 37–122R.
+- ⚠ **Trail from 3R is the best return per drawdown here, and it rests on a handful of trades**:
+  2025-10-21 (+24.94R → +3.60R), 2023-04-03 (−7.02R), 2020-08-27 (−3.93R) against 2022-06-09 (+2.91R)
+  and 2021-02-10 (+3.76R). The same shape the give-back guard showed on 2026-09-22 (one 2022 stretch).
+  Not adopted.
+- **Bank 50% re-run on today's code: −33.8R, and not one trade's doing** — the largest single hit
+  is 2024-11-08 (−11.8R); without it, still −22.1R. It buys drawdown (8.42 → 6.18R) with the runners.
+  Run 40's verdict (33.6 vs 31.8) does not survive the current book: 31.3 vs 27.0 is still ahead on
+  R/DD, at 15% of total R. Not adopted.
+- 🔴 **Reversal signals, 42 signal × frame × arm rows, all lose** — `backtest/notes/tools.md` →
+  *`exit_study.py --separation`*. Nothing seen in real time tells a pause from a turn on this book.
+
+### 🔴 The reserved window, 2018-09-14 → 2019-12-31 — spent, and the strategy LOSES there
+
+Pass rule stated before the run: a candidate passes only if its R/DD is at least the baseline's and
+its total R is positive.
+
+| Reserved window | Trades | R | Max DD (R) |
+|---|---|---|---|
+| Baseline | 27 | **−13.0** | 13.04 |
+| Trail from 3R / 2.5R | 27 | −13.0 | 13.04 (inert — no trade reached 2.5R) |
+| Bank 50% (± trail 3R) | 27 | −11.1 | 11.17 |
+| Baseline, no costs | 27 | −10.4 | |
+| Baseline, dead-market floor off | 36 | −11.8 | |
+
+- 🔴 **27 trades, 5 wins, none above ~1.2R.** In 2020–2026 no run of 27 consecutive trades lost more
+  than 7.3R (223 windows), and every one held a winner above 1.5R. This is outside anything the
+  explore window contains.
+- **Not costs, not the dead-market floor** (rows above).
+- 🔴 **Not checkable against a second broker: Vantage and PU Prime serve BYTE-IDENTICAL M15 bars
+  before 2020** (100% of 2018–19 rows equal, volume included; 43% in 2020, ~0 from 2021). Both
+  carry the same back-filled history, so a Vantage replay is the same test — it returned the same
+  27 trades to the cent.
+- **The bars are clean**: ~75.7 bars per trading day, no zero-range bars, no outsized gaps.
+- **It is the quietest gold in the data**: median daily range 0.73% (2018) and 0.85% (2019) against
+  0.99–2.03% for every later year; median 15m bar 0.073% against ≥0.085%.
+- ⚠ **Quiet is a fit, not a proof**: 2023 was nearly as quiet (0.99%) and made +35.4R, while 2021–22
+  (1.06–1.15%) made ~0. The market-condition labels cannot help — 248 of 276 entries are TRENDING.
+- 🔴 **What it means for the book: 4 of 8 years are flat or losing (2018, 2019, 2021, 2022).** The
+  money is 2020 and 2023–26, gold's big trending years. Size and expectations should assume multi-
+  year flat stretches are normal for this strategy.
+- ⚠ **There is no untouched data left** on this broker. Any later choice is judged on data that has
+  already been looked at, so it needs a larger margin to count.

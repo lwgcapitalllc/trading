@@ -1883,3 +1883,15 @@ in Asian session at eight, eight fifteen, sometimes nine, nine thirty, ten".
 - ⚠ **11:30–15:30 New York is 48 trades for +7.0R, and 15.4R of that is ONE trade** — without it,
   45 trades for −8.4R. It looks like a dead zone and it is NOT yet a finding: refusing those entries
   frees the position slot, and only a replay can price what queues behind them.
+
+### `exit_study.py --separation` — does any reversal signal tell a real turn from a pause? No (2026-09-25)
+
+**The question.** The exit rules above all lost. This asks whether any signal SEPARATES: when it fires on a trade already up 1R (or 2R), is the turn real, or does the move carry on? Only the first armed fire per trade per signal counts. REAL = the trade never later beats its best-at-fire by 0.5R AND closes below what leaving at the next bar's open would have banked. Everything else is FALSE. Thresholds are the `SEP_*` constants, set before any result.
+
+**MEASURED 2026-09-25, XAUUSD.p M15, 2020-01-01 -> 2025-08-31, `puprime_ecn` charged, secondary off — 129 trades; 72 reached 1R (showed 286.2R, kept 153.9R), 50 reached 2R (showed 254.3R, kept 157.9R).** 42 rows: 12 signals on 1m / 5m / 15m, two arm levels.
+
+- 🔴 **No signal separates. Every row loses R, from −24.2R (a 2.5-ATR bar against the trade, 15m, armed at 2R) to −86.8R.** No row reaches 60% precision with a positive total.
+- 🔴 **The one row over 60% precision still loses 48.7R** — the 5m displacement bar armed at 2R is right 17 times in 28, saving 1.61R each, and the 11 misses cost 6.91R each. The misses are the runners: only 8 trades closed at 5R or more, and nearly every signal fires on all 8.
+- **The five new signals do no better than the old ones**: failed gap (5m, 15m), no new best for 8/16/32 bars, displacement bar (5m, 15m), 15m structure shift, 1m internal shift. All fire on 25–80% of armed trades, so none is dead or always-on.
+- ⚠ **The label is blunt on one side**: 363 of 951 FALSE fires still banked more than holding did — the move carried on by 0.5R, then gave it all back. A precision figure understates how often leaving helped; the net-R column does not, and it is negative everywhere.
+- ⚠ **Cheap mode**: one book re-walked, so nothing here is a replay.
