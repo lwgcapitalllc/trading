@@ -5771,3 +5771,47 @@ that ran made +178.0R.**
 - ✅ **Decision: leave this stage alone.** The stalls are the price of the runners — about 1R to keep
   +178R. Aaron's plan fits: a separate strategy that re-enters after a stall costs the runners nothing,
   where every exit rule here pays for its saves out of them.
+
+## Run 52 — 2026-09-26: before the first target — 36 exit rules on main trades, 46 on re-entries, nothing adopted
+
+**The question:** after Run 51, the stage before the first target — can a time stop, an early
+breakeven, a tighter stop or a structure exit cut the losers without costing the winners?
+
+**Basis:** Run 51's replay and method, unchanged (251 trades / +172.64R / 7.49R max drawdown, same
+uncommitted-tree caveat). Rules arm on the first 5m bar after entry and disarm for good once the best
+price reaches the trade's first target. Every trade passes through this stage, so a rule touches
+winners as well as losers. Same pass rule, stated before any result.
+
+**The population:** main trades — 52 never reached the first target (−49.95R, 47 full losers), 108
+did (+177.11R). Re-entries — 54 never reached theirs (−48.09R), 37 did (+93.57R). ⚠ A re-entry's
+first target sits about 3.25R out, so "before the first target" is a much longer stretch for it.
+
+**Main trades, 100% / 50%:**
+
+| Rule | Fired | Net R | Losers saved | Winners hurt |
+|---|---|---|---|---|
+| No progress after 1–8h (below 0.25R or 0.5R) → out | 110–50 | −64.5 to −31.9 / half | 34–15 | 31–13 |
+| Breakeven after 0.3 / 0.5 / 0.75R | 50 / 28 / 15 | −45.0 / −31.7 / −25.6 | 18 / 12 / 7 | 17 / 10 / 7 |
+| Stop to −0.5R after 0.3 / 0.5R | 31 / 20 | −29.3 / −13.3 | 18 / 12 | 6 / 5 |
+| 5m shift against → out (any / only underwater) | 43 / 37 | −25.9 / −9.9 | 18 / 18 | 10 / 7 |
+| 5m close past −0.5 / −0.75R → out | 70 / 44 | −52.5 / **−7.9** | 40 / 35 | 11 / 2 |
+
+- 🔴 **0 of 36 pass; every one loses on net R.** The closest, cutting at a −0.75R close, saves 35
+  losers and still loses 7.9R — more trades come back from −0.75R to finish flat or ahead than the
+  cut saves. The full 1R stop is earning its keep.
+
+**Re-entries** — the same rules plus breakeven and +0.5R locks after 1.0 / 1.5 / 2.0R:
+
+- 🔴 **0 of 46 pass.** Best nets: a −0.75R close cut +0.82R (drawdown deeper, 8.31R), a 5m shift
+  while underwater −0.73R. Everything else −1.8R to −33R.
+- 🔴 **The drawdown cuts are one half only.** Breakeven after 0.3R at half size takes max drawdown
+  7.49R → 5.24R for −14.5R, and several others lift return per drawdown, but all of it is in the
+  2020–2023 half (return per drawdown 10.1 → 12.3–14.8). In the later half every one is worse
+  (18.1 → 16.3–17.3). Not an edge.
+
+- ⚠ **Found on the way, not fixed:** 25 re-entries carry a "TP1" exit reason in the trade list but
+  closed at their own stop price, never having reached that target. Check the label before reading
+  the exit-reason column for re-entries.
+- ✅ **Decision: management before the first target stays as shipped.** The losses at this stage are
+  the cost of the entries, which Run 49 already examined; with Runs 51 and 52 no exit stage from entry
+  to the second target has a rule worth adopting.
