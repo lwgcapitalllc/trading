@@ -5542,3 +5542,116 @@ has already retraced all of it — so the share is of the whole trade's open pro
   Both existing goldens still pass with it off.
 - ⚠ A new field joins the position record — a live promote with an open position needs
   `algos/tools/migrate_position_record.py` first.
+
+## Run 49 — 2026-09-26: the anatomy of the entry and the runner — six studies, nothing adopted
+
+**The question (Aaron, from the 2022-07-14 and 2021-10-24 charts):** is the gap drawn right, should
+news spikes be skipped, should the order rest at the deeper gap, why do we never fill at the exact
+turn, and do AGGRESSIVE legs (a few big candles, stacked gaps) retrace deeper and give back the runner?
+
+**Basis, every study:** XAUUSD.p 15m (+5m fast clock) PU Prime ECN, shipped config, 5% risk, built
+through `backtest.replay.build_strategy`, 2020-01-01 → 2026-09-24, full replays unless named.
+Baseline **250 trades / +227.49R / 8.42R (29.00%) / 27.01 R per drawdown / halves +92.64 / +134.85
+(split 2023-05-14) / +86.48R with the top 5 removed**. Winner rule stated before every run: beat R
+per drawdown, beat R in both halves, keep the lead with the top 5 removed. Scratch harnesses and
+full tables are session-local and not kept; the numbers below are the record.
+
+### 1. The gap definition — the shipped one stays
+
+| Gap variant | Trades | R | Max DD (R) | R / DD | Top 5 off |
+|---|---|---|---|---|---|
+| Shipped (0.1% minimum, close to invalidate) | 250 | 227.49 | 8.42 | 27.01 | 86.48 |
+| 0.04% minimum | 392 | 191.50 | 27.56 | 6.95 | 50.49 |
+| Wick invalidates instead of close | 249 | 226.44 | 8.42 | 26.88 | 85.43 |
+| Size floor 0.3 x ATR(14) instead of 0.1% | 393 | 195.63 | 23.70 | 8.26 | 54.62 |
+| Shrink to the unfilled part, dies when filled | 254 | 147.81 | 7.35 | 20.12 | 35.21 |
+| Dies when a wick reaches its midpoint | 174 | 179.20 | 5.77 | 31.08 | 66.60 |
+| Dies on first touch | 132 | 107.92 | 4.70 | 22.99 | 36.59 |
+| Shrink, and dies below the 0.1% floor | 178 | 167.39 | 5.22 | 32.05 | 54.79 |
+
+- 🔴 **The two variants that beat R per drawdown do it by trading less** — they lose 48–60R and the
+  top-5-removed lead. None passes. 2022-07-14's two losses (−1.01R, −1.03R) were correct behaviour,
+  not a bug: the 15m chart had one bullish gap that day and the re-entry was a reclaim with no gap.
+
+### 2. Skip setups built on a news spike — fails (2021+ only, the news cache's floor)
+
+Baseline over 2021-01-01 → 2026-09-24: **218 trades / +164.70R / 8.12R / 20.29**.
+
+| Skip the setup when | Trades | R | R / DD | Top 5 off | Skipped (R) |
+|---|---|---|---|---|---|
+| A high-impact release is within 1h of the leg's start | 185 | 158.28 | 24.98 | 47.12 | 33 (+6.43) |
+| A release is within 1h of the shift | 170 | 140.80 | 23.33 | 29.86 | 48 (+23.91) |
+| Any release falls inside the leg | 117 | 108.94 | 21.08 | 4.78 | 101 (+55.76) |
+| A market-moving release falls inside the leg | 140 | 145.04 | 19.56 | 35.43 | 78 (+19.67) |
+
+- Every row fails the halves or the top-5 test; the skipped setups were net positive every time.
+
+### 3. Rest the order at the DEEPER gap — fails, and finds a defect
+
+- 0 of 250 trades had a smaller gap nested inside the one used. 59 had a second, deeper gap in the
+  zone (+41.68R); price reached its near edge on 35 (+11.62R) and never on 24 (+30.06R, 20 winners).
+
+| Entry at | Trades | R | Max DD | R / DD | Halves | Top 5 off |
+|---|---|---|---|---|---|---|
+| The nearest deeper gap | 236 | 195.91 | 11.05R / 40.66% | 17.73 | 82.27 / 113.65 | 54.90 |
+| The deepest gap | 232 | 192.05 | 11.05R / 42.11% | 17.38 | 77.96 / 114.08 | 51.04 |
+
+- 🔴 **Fill-conditional selection**: the deeper price is better only on the trades that come to it;
+  the strongest setups never do (22 and 26 setups lost, worth +14.79R and +24.68R).
+- ⚠ **Defect, not hit by the shipped book:** a re-entry's price and stop are frozen once placed, so
+  a price jump past both fills it on the wrong side of its own stop (seen in the variant:
+  2020-08-27 short limit 1949.09, stop 1955.02, filled 1974.32). Low priority, unfixed.
+
+### 4. Why the fill is never the exact turn — no level predicts it (1m paths)
+
+- Winners turn a median **0.38R past the fill** (middle half 0.16–0.57R), around fib 0.79, against a
+  median fill of 0.64. Only 19.6% turn within 0.1R of the fill. Median time to the turn 13 minutes.
+- Chance of reaching +1R falls with depth: 63% at the fill, 45% by 0.4R deeper, 20% by 0.7R, 5% by 0.9R.
+- Liquidity levels, sweeps, order blocks, equal highs/lows, the 0.618 / 0.702 / 0.786 fibs,
+  candlestick patterns, RSI divergence and session do not separate turns from failures once depth
+  is allowed for. 23 of 29 trades that reached an equal high/low stopped out; 14 of 20 at a prior-day level.
+- Waiting for a 1m or 5m confirmation loses R every way tried (+24.1R vs +61R; +2.9R vs +32R) —
+  it prints 0.7–1.0R off the turn.
+- The one candidate, the deeper gap's FAR edge (12 trades), fades at a wider tolerance and traded
+  makes +20.0R against +23.0R shipped on the same 91 setups. Parked.
+
+### 5. Aggressive leg + stacked gaps → deep retrace? — not on this book
+
+Pattern = 2+ consecutive leg-direction candles with body ≥ 1 x ATR(14), and 2+ live gaps from the
+leg in the 0.5–0.886 zone at the fill. The 2021-10-25 short qualifies (3-bar leg, filled 0.58,
+rallied to 0.88, scratched +0.05R).
+
+| | Trades | R | Loss rate | Mean R | Reached 0.786 | Reached 0.886 |
+|---|---|---|---|---|---|---|
+| Pattern | 34 | +54.80 | 26% | +1.61 | 50% | 9% |
+| Everything else | 216 | +172.69 | 42% | +0.80 | 64% | 25% |
+
+- Loss-rate difference p = 0.09 and points AGAINST the hypothesis; the halves disagree.
+- Limits at 0.702 / 0.786 on pattern trades would miss 13 / 17 setups worth +17.3R / +24.1R.
+- ⚠ **Compact legs are the exception on depth**: of the 8 trades with a leg of ≤ 15 bars and 2+
+  candles ≥ 1.5 x ATR, 7 retraced past 0.786 (the eighth, 2026-09-17 01:30, went deep on its
+  re-entry). They still made +10.9R with 2 stop-outs. Too few for a rule.
+
+### 6. Close 100% at the second target (or the 0 fib) on aggressive legs — fails
+
+Flag = 3+ consecutive candles ≥ 1 x ATR(14) in the leg, computed at entry, first entries only.
+The second target is the 0 fib only on shallow entries (78 of 160), so both were run.
+
+| Variant | Trades | R | Max DD | R / DD | Halves | Top 5 off | Tests |
+|---|---|---|---|---|---|---|---|
+| Close at the second target, flagged | 250 | 221.32 | 8.12R / 28.87% | 27.26 | 86.51 / 134.81 | 80.31 | pass / fail / fail |
+| Close at the 0 fib, flagged | 250 | 227.02 | 8.12R / 28.86% | 27.96 | 92.65 / 134.36 | 86.00 | pass / fail / fail |
+| Close at the second target, all trades | 249 | 114.06 | 8.91R / 29.20% | 12.80 | 52.43 / 61.63 | 87.25 | fail / fail / pass |
+
+- The drawdown pass is one trade (2021-09-27 short, +0.55R → +1.56R). The two sensitivity flags
+  and the compact-leg flag fail the same way.
+- **On the 7 flagged trades that reached the second target the trail added +6.17R** (+21.15R vs
+  +14.98R): three ran on for +9.6R (2020-08-18 +6.40R), three gave back 3.5R.
+- Across the 81 trades that reached their second target, the trail adds +110.85R (median −0.55R;
+  51 give back −57.3R, 25 run on +168.1R). By pattern: aggressive legs +3.07R each vs +1.10R.
+- ⚠ **Hypothesis only — legs of ≤ 15 bars:** the trail made −0.33R each (14 trades) vs +1.72R, the
+  one split of ~10 whose interval excludes zero; it crosses zero on first entries alone and the
+  pre-registered compact-leg exit still lost 3R. Needs another instrument or forward data.
+
+- **Verdict, all six: keep the gap definition, the entry and the exits as shipped** (Aaron,
+  2026-09-26). This agrees with Runs 1, 40, 47 and 48 — the runner is the edge.
