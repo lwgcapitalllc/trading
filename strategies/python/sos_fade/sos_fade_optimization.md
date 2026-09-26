@@ -5731,10 +5731,10 @@ structure, closing all or banking part; cutting some runners is acceptable becau
 can re-enter them.
 
 **Basis:** XAUUSD.p 15m, PU Prime Demo bars, trades 2020-01-01 → 2026-09-24, `puprime_ecn` charged,
-`--no-regime`, fill clock at the shipped default. **251 trades / +172.64R / 7.49R max drawdown**,
-halves +75.6R / +97.0R split at 2023-05-14. ⚠ **This is not Run 50's 167.4R**: the working tree
-carried uncommitted `sos_fade` edits when it was replayed. Every arm below is scored against this
-one replay, so the comparison holds; the absolute figures do not reproduce from a clean checkout.
+`--no-regime`, shipped defaults. **251 trades / +172.64R / 7.49R max drawdown**,
+halves +75.6R / +97.0R split at 2023-05-14. ⚠ **This is not Run 50's 167.4R because the "1m break"
+add is ON** — it was in the working tree when this was replayed and became the backtest default in
+7f783c34 (whose own figure is 172.6R), so these numbers reproduce from that commit onward.
 **Method:** one observation replay logged every 5m bar of every open trade; each rule was then
 walked over those bars (armed the 5m bar after the best price reaches the first target, disarmed for
 good at the second, the trade's own stop wins any bar it is touched on, a market exit fills at the
@@ -5783,8 +5783,8 @@ that ran made +178.0R.**
 **The question:** after Run 51, the stage before the first target — can a time stop, an early
 breakeven, a tighter stop or a structure exit cut the losers without costing the winners?
 
-**Basis:** Run 51's replay and method, unchanged (251 trades / +172.64R / 7.49R max drawdown, same
-uncommitted-tree caveat). Rules arm on the first 5m bar after entry and disarm for good once the best
+**Basis:** Run 51's replay and method, unchanged (251 trades / +172.64R / 7.49R max drawdown, the
+"1m break" add on as shipped since 7f783c34). Rules arm on the first 5m bar after entry and disarm for good once the best
 price reaches the trade's first target. Every trade passes through this stage, so a rule touches
 winners as well as losers. Same pass rule, stated before any result.
 
