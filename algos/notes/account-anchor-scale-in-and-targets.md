@@ -1125,3 +1125,8 @@ for, and M1 is a legal fill clock.
 ✅ **`sos_fade_1` (demo 700152905) runs it first, from 2026-09-26** — "1m break", 2 breaks, banked
 at the H4 high/low, fill clock 1. The live bot stays OFF until the demo has shown the first adds
 reach the broker and bank at their level. Values and measurement: its `_safe_add_on_2026_09_26`.
+
+🔴 **Same evening, Aaron's call: the LIVE bot `sos_fade_demo` (34957946) runs it too**, without
+waiting for the demo to show a broker add first — he heard that recommendation and chose not to
+wait. So the first "1m break" add on either account is the first anywhere. **Watch it.** Values:
+its `_safe_add_on_2026_09_26`.
