@@ -1139,3 +1139,25 @@ watched RED, named in the docstrings.
 
 Tests: `algos/tests/test_review_and_reminders.py` (16) and three updated in `test_log_review.py`;
 5 mutations watched RED, named in the docstring.
+
+### Stage 4 — the daily summary (`notifications/daily_summary.py`)
+
+- ✅ **One message per health room per day**, on the first watchdog pass at or after **08:00
+  America/Chicago**, for the 24 hours to that 08:00. Built ONLY from the send log, so the summary
+  and the record cannot disagree. It names: what was HELD, by label and bot, biggest first; the
+  longest time an account could not trade (off the `duration_s` the policy logs when a TRADING OFF
+  ends); auto-restarts by bot (held or sent), the chat bot's own separately; how many messages
+  arrived LATE and how many the outbox GAVE UP on; and anything Telegram refused or had no room for.
+- 🔴 **Rule 1, three ways**: `Nothing held.` only off a log that was READ; *The send log could not
+  be read (…)* when it was not — never a zero; *There is no send log for this period* when no file
+  exists — which is "nothing was written", not "nothing happened".
+- ⚠ **Rooms**: the shared health room plus every account's own (Aaron's live account has had one
+  since 2026-09-26). A HEALTH line counts in the room it went to; a TRADE or SIGNAL that arrived
+  late or was given up counts in its ACCOUNT's health room as a NUMBER only, never its content.
+- ⚠ **No new scheduled task.** It rides `SYS_MONITOR` (the watchdog, every minute), which records the
+  day it sent in `monitor_state.json` → `daily_summary.sent_for`. A monitor that is down at 08:00
+  sends it on its first pass after — late, never twice. The Command Center's own held lines are on
+  the laptop and are not in it.
+- The summary is itself logged (label `DAILY SUMMARY`) and never counted by the next one.
+
+Tests: `algos/tests/test_daily_summary.py` (11; 4 mutations watched RED, named in its docstring).

@@ -46,6 +46,9 @@ from alert_format import CRITICAL, OK, WARNING, alert  # noqa: E402
 # algos/credentials.json — never pasted here, and read by `notify` itself on every send.
 from notify import HEALTH, flush_outbox, send_telegram_id  # noqa: E402
 
+sys.path.insert(0, str(ALGOS_ROOT / "notifications"))
+from daily_summary import maybe_send as maybe_send_daily_summary  # noqa: E402
+
 # Bots emit a log line roughly every ~60s. Some branches (SMC outside kill zone,
 # "manage trades only") can sleep up to ~2-3 min. 5 min is a safe floor.
 LOG_STALE_SECS = 5 * 60
@@ -801,6 +804,9 @@ def main():
                 state[bot_key] = check_reminder(bot_key, state[bot_key], account, name)
             except Exception as e:
                 print(f"Error checking {bot_key}: {e}")
+        # Once a day at 08:00 Chicago: what the health rooms did NOT show — held, late, given up —
+        # built from the send log alone (`daily_summary.py`, 2026-09-26). Never raises.
+        state["daily_summary"] = maybe_send_daily_summary(state.get("daily_summary") or {})
     finally:
         _PASS.clear()
 

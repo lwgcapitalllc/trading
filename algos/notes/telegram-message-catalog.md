@@ -480,6 +480,13 @@ It was asked to close a trade and is not in one. Nothing changed.
 ℹ️ ONLINE · SOS Fade · LIVE
 Trading live · XAUUSD.p M15 · $10,752.18
 
+ℹ️ DAILY SUMMARY · Health room
+The 24 hours to 8:00 AM CDT, Sep 26.
+Held 21: WILL NOT START 16 (SOS Fade · LIVE 16); OFFLINE 5 (SOS Fade · LIVE 3, Extreme Leg · LIVE 2).
+Longest trading-off: 7 min (account 34957946).
+Auto-restarts: 2 (SOS Fade · LIVE 2).
+Delivered late: 1 · Given up after 24 h: 0.
+
 ℹ️ OVERNIGHT COST — FIRST READING · SOS Fade · LIVE · XAUUSD.p
 Per lot, per night.
 First reading on record — nothing to compare it against yet.
