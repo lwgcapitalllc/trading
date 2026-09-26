@@ -265,7 +265,7 @@ def test_the_export_scheme_has_NO_scale_in_column_so_this_gate_cannot_cover_one(
     exactly when the pin in `_write` has to come out and the encoder has to grow the five columns
     the SOS Fade fixture already carries. A comment cannot do that; a test can.
     """
-    p, _ = _write(tmp_path, BLegConfig(exec_scale_in=True))
+    p, _ = _write(tmp_path, BLegConfig(exec_scale_in=True, exec_scale_mode="Trail"))
     df = cb.load_export(p)
     assert "cfg_scale_in" not in df.columns
     # ...and the decoder therefore answers OFF whatever the chart actually did.

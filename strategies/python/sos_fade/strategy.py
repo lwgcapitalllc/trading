@@ -270,8 +270,8 @@ class SosFadeStrategy:
         `df15` / `df1m` are canonical frames (UTC DatetimeIndex, open/high/low/close) over the same
         window.
 
-        ⚠ THE SECOND FRAME'S TIMEFRAME IS THE CALLER'S CHOICE and is 5m by default since
-        2026-08-21 (`exec_sec_fill_tf_min`), not 1m — the parameter is still named `df1m` because
+        ⚠ THE SECOND FRAME'S TIMEFRAME IS THE CALLER'S CHOICE and is 1m by default since
+        2026-09-26 (`exec_sec_fill_tf_min`; 5m from 2026-08-21) — the parameter is still named `df1m` because
         renaming a public parameter moves every caller, and the name is the one thing here that
         cannot be trusted to say what the feed is. Nothing in this method assumes a minute.
 

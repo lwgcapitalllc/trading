@@ -1895,3 +1895,5 @@ in Asian session at eight, eight fifteen, sometimes nine, nine thirty, ten".
 - **The five new signals do no better than the old ones**: failed gap (5m, 15m), no new best for 8/16/32 bars, displacement bar (5m, 15m), 15m structure shift, 1m internal shift. All fire on 25–80% of armed trades, so none is dead or always-on.
 - ⚠ **The label is blunt on one side**: 363 of 951 FALSE fires still banked more than holding did — the move carried on by 0.5R, then gave it all back. A precision figure understates how often leaving helped; the net-R column does not, and it is negative everywhere.
 - ⚠ **Cheap mode**: one book re-walked, so nothing here is a replay.
+
+- 🔴 **2026-09-26: the fill clock default is 1m again (5m since 2026-08-21)**, because SOS Fade's new default add ("1m break") reads 1-minute structure off the same feed. `run_report.py` and the overlap audit now load 1-minute bars for SOS Fade by default; the overlap baseline was re-recorded the same day (`notes/strategy-overlap.md`).

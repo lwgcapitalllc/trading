@@ -1270,7 +1270,8 @@ def test_a_trade_that_never_added_carries_an_empty_add_ledger():
 # ── "1m break" scale-in (2026-09-25) ─────────────────────────────────────────────────────
 # Same trade as the fixtures below: bar 1 fills the long @103.82, bar 2 clears TP2 (stage 2,
 # floor 105) and SEEDS the best price at its high of 107. Bar 3 makes no new high, so the fast
-# breaks delivered inside bar 3's time are the ones that bar reads. The dual clock is not
+# breaks delivered inside bar 3's time are the ones that bar reads. Bar 3 CLOSES UP (the long's
+# way), because since 2026-09-26 an add is only decided on a 15m candle moving the trade's way. The dual clock is not
 # built here — the breaks are handed over exactly as it would hand them.
 _Q = 900_000
 
@@ -1302,12 +1303,12 @@ def test_a_1m_break_add_needs_a_bounce_and_then_the_SECOND_break_back():
     count lowered to one, which is the mutation that turns this into an add on every wiggle."""
     ex = _brk_to_bar2()
     _breaks(ex, 3, (-1, "bos"), (1, "sos"))
-    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.5), _seq_flat())
+    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.6), _seq_flat())
     assert ex._add_pending is None, "one break back after a bounce must not add"
 
     ex = _brk_to_bar2()
     _breaks(ex, 3, (-1, "bos"), (1, "sos"), (1, "bos"))
-    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.5), _seq_flat())
+    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.6), _seq_flat())
     assert ex._add_pending is not None and ex._add_pend_stop == ex._current_stop()
     ex.step(_sig(4, 106.5, 106.9, 106.2, 106.6), _seq_flat())
     assert len(ex._adds) == 1 and abs(ex._adds[0][0] - 106.5) < 1e-9, "fills at the next open"
@@ -1320,13 +1321,13 @@ def test_a_1m_break_add_waits_for_the_1m_trend_to_point_the_trades_way():
     trend check removed."""
     ex = _brk_to_bar2()
     _breaks(ex, 3, (-1, "bos"), (1, "sos"), (1, "bos"), trend=-1)
-    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.5), _seq_flat())
+    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.6), _seq_flat())
     assert ex._add_pending is None, "added while the 1m trend still pointed against the trade"
 
     ex = _brk_to_bar2()
     _breaks(ex, 3, (-1, "bos"), (1, "sos"), (1, "bos"), trend=-1)
     _breaks(ex, 3, (1, "bos"), trend=1)          # same bar, a later minute: the trend has turned
-    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.5), _seq_flat())
+    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.6), _seq_flat())
     assert ex._add_pending is not None
 
 
@@ -1335,7 +1336,7 @@ def test_a_1m_break_add_without_a_bounce_does_not_fire():
     end of a retracement — adding there is the shipped rule this mode replaces."""
     ex = _brk_to_bar2()
     _breaks(ex, 3, (1, "sos"), (1, "bos"), (1, "bos"))
-    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.5), _seq_flat())
+    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.6), _seq_flat())
     assert ex._add_pending is None
 
 
@@ -1344,7 +1345,7 @@ def test_a_1m_break_add_is_once_per_push_and_a_new_high_rearms_it():
     starts a new push and the next one adds. Watched RED with the per-push latch removed."""
     ex = _brk_to_bar2()
     _breaks(ex, 3, (-1, "bos"), (1, "sos"), (1, "bos"))
-    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.5), _seq_flat())
+    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.6), _seq_flat())
     ex.step(_sig(4, 106.5, 106.9, 106.2, 106.6), _seq_flat())      # fills; no new high (107)
     assert len(ex._adds) == 1
     _breaks(ex, 5, (-1, "bos"), (1, "sos"), (1, "bos"))
@@ -1361,8 +1362,59 @@ def test_a_1m_break_from_an_earlier_bar_is_not_read_by_a_later_one():
     next — otherwise a bounce seen before the trail existed would arm an add after it."""
     ex = _brk_to_bar2()
     _breaks(ex, 1, (-1, "bos"), (1, "sos"), (1, "bos"))            # inside bar 1, stale by bar 3
-    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.5), _seq_flat())
+    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.6), _seq_flat())
     assert ex._add_pending is None
+
+
+def test_a_1m_break_add_is_refused_on_a_15m_candle_not_closing_the_trades_way():
+    """Aaron, 2026-09-26: "you cannot scale in a candle that is not moving in the direction of
+    the trade." The same breaks that add on an up-closing bar are refused on a down-closing one
+    and on a doji. Watched RED with the candle check removed (both refusals then add)."""
+    for close in (106.4, 106.5):                                   # down candle, then a doji
+        ex = _brk_to_bar2()
+        _breaks(ex, 3, (-1, "bos"), (1, "sos"), (1, "bos"))
+        ex.step(_sig(3, 106.5, 106.8, 106.0, close), _seq_flat())
+        assert ex._add_pending is None, f"added on a 15m candle closing at {close} from 106.5"
+
+
+def test_a_candle_refusal_keeps_the_push_so_the_next_break_back_adds():
+    """A refused candle must NOT spend the push — the add keeps waiting and the next break back
+    on a candle closing the trade's way takes it. Watched RED with the check moved below the
+    push latch, which turns one bad candle into a lost add for the whole push."""
+    ex = _brk_to_bar2()
+    _breaks(ex, 3, (-1, "bos"), (1, "sos"), (1, "bos"))
+    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.4), _seq_flat())      # closes down: refused
+    assert ex._add_pending is None
+    _breaks(ex, 4, (1, "bos"))
+    ex.step(_sig(4, 106.4, 106.9, 106.3, 106.8), _seq_flat())      # closes up: adds
+    assert ex._add_pending is not None
+
+
+def test_the_number_of_1m_breaks_back_is_the_setting():
+    """`exec_scale_brk_n` decides how many breaks back fire the add: 3 refuses what 2 takes, and
+    1 takes what 2 refuses. Watched RED with the count hardcoded back to 2."""
+    ex = _brk_to_bar2(exec_scale_brk_n=3)
+    _breaks(ex, 3, (-1, "bos"), (1, "sos"), (1, "bos"))
+    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.6), _seq_flat())
+    assert ex._add_pending is None, "3 breaks asked for, 2 given"
+
+    ex = _brk_to_bar2(exec_scale_brk_n=1)
+    _breaks(ex, 3, (-1, "bos"), (1, "sos"))
+    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.6), _seq_flat())
+    assert ex._add_pending is not None, "1 break asked for, 1 given"
+
+    import pytest
+    with pytest.raises(ValueError, match="exec_scale_brk_n"):
+        _brk_cfg(exec_scale_brk_n=0)
+
+
+def test_the_shipped_add_is_the_1m_break_banked_at_h4_after_two_breaks():
+    """Run 50 (Aaron, 2026-09-26): the default add is the one measured to protect winners. A
+    default that drifts silently changes every default run in the lab, so it is pinned here."""
+    from sos_fade.config import SosFadeConfig
+    c = SosFadeConfig()
+    assert (c.exec_scale_mode, c.exec_scale_brk_n, c.exec_scale_tp_mode, c.exec_sec_fill_tf_min) \
+        == ("1m break", 2, "H4 H/L", 1)
 
 
 def test_the_1m_break_mode_refuses_a_run_that_cannot_see_1_minute_bars():

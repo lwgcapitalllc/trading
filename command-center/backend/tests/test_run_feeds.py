@@ -271,10 +271,10 @@ def test_the_reentry_fill_clock_matches_the_strategy_that_owns_it():
 # returned the DEFAULT whatever the run asked for.
 
 
-def test_a_run_that_states_a_faster_fill_clock_is_bounded_at_it():
+def test_a_run_that_states_a_coarser_fill_clock_than_the_default_is_bounded_at_it():
     assert run_feeds.required_timeframes(
-        "Minute", 15, {"exec_secondary": True, "exec_sec_fill_tf_min": 1}
-    ) == [1, 15]
+        "Minute", 15, {"exec_secondary": True, "exec_sec_fill_tf_min": 5}
+    ) == [5, 15]
 
 
 def test_a_run_that_states_a_slower_fill_clock_is_bounded_at_it():
@@ -288,7 +288,7 @@ def test_a_run_that_states_a_slower_fill_clock_is_bounded_at_it():
 def test_a_run_that_states_nothing_still_gets_the_default():
     """The whole reason the default stays: this module bounds the window before a strategy
     exists, so a run that never stated the setting has to be bounded at something."""
-    assert run_feeds.required_timeframes("Minute", 15, {"exec_secondary": True}) == [5, 15]
+    assert run_feeds.required_timeframes("Minute", 15, {"exec_secondary": True}) == [1, 15]
 
 
 def test_the_fill_clock_is_ignored_when_the_feed_itself_is_OFF():
@@ -305,24 +305,24 @@ def test_a_nonsense_fill_clock_falls_back_rather_than_raising():
     for bad in ("", "abc", None, 0, -3):
         assert (
             run_feeds.extra_feed_minutes(run_feeds.SECONDARY_FLAG, {"exec_sec_fill_tf_min": bad})
-            == 5
+            == 1
         )
 
 
 def test_a_built_config_object_answers_the_same_as_a_params_dict_for_the_clock():
     class Cfg:
         exec_secondary = True
-        exec_sec_fill_tf_min = 1
+        exec_sec_fill_tf_min = 5
 
-    assert run_feeds.required_timeframes("Minute", 15, Cfg()) == [1, 15]
+    assert run_feeds.required_timeframes("Minute", 15, Cfg()) == [5, 15]
 
 
 def test_the_picker_carries_the_VALUE_and_not_only_the_flag():
     """`flags` alone bounded every run at the default while the run loaded something else — the
     2026-08-15 defect one level down."""
-    params = run_feeds.feeds_from_flags(["exec_secondary"], ["exec_sec_fill_tf_min:1"])
-    assert params == {"exec_secondary": True, "exec_sec_fill_tf_min": 1}
-    assert run_feeds.required_timeframes("Minute", 15, params) == [1, 15]
+    params = run_feeds.feeds_from_flags(["exec_secondary"], ["exec_sec_fill_tf_min:5"])
+    assert params == {"exec_secondary": True, "exec_sec_fill_tf_min": 5}
+    assert run_feeds.required_timeframes("Minute", 15, params) == [5, 15]
 
 
 def test_the_picker_drops_numeric_params_no_feed_reads():
@@ -339,4 +339,4 @@ def test_a_malformed_value_pair_is_dropped_rather_than_breaking_the_picker():
         ["exec_secondary"], ["exec_sec_fill_tf_min", "exec_sec_fill_tf_min:x", ""]
     )
     assert params == {"exec_secondary": True}
-    assert run_feeds.required_timeframes("Minute", 15, params) == [5, 15]
+    assert run_feeds.required_timeframes("Minute", 15, params) == [1, 15]

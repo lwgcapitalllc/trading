@@ -510,7 +510,7 @@ def main(argv=None) -> int:
                 f"alone (it will set the flag False so the reported config matches the run)."
             )
         # WHICH feed the re-entry's resting order is filled against — the STRATEGY owns it
-        # (`exec_sec_fill_tf_min`, 5 by default since 2026-08-21), because it is the thing that
+        # (`exec_sec_fill_tf_min`, 1 by default since 2026-09-26), because it is the thing that
         # knows what its own order needs. Hardcoding 1 here loaded 2.8M bars for 1.3% of accuracy
         # over 5m, on every run, for as long as this tool existed. A strategy that does not
         # declare one keeps the old 1m behaviour rather than being quietly coarsened.

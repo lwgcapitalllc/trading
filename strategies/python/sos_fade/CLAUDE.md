@@ -426,10 +426,19 @@ base lot alone made that exact for ONE add and double-spent from the second onwa
 - ⚠ **Two live-side defects found with it and NOT fixed**: the bot buys each add a full bar
   after the lab does, and the ledger records the risk an add was SIZED at, not the risk it took.
 - Story, arithmetic, the grid and the mutation record: `notes/sizing_and_risk_history.md`.
-- 🟢 **`exec_scale_mode = "1m break"` (2026-09-25, NOT the default)** adds on the second 1-minute
-  break back after a bounce, once the 1m trend points the trade's way, shared stop, sized net of
-  costs — 8 trades hurt vs 46, no winner scratched vs 5, +18.3R vs +55.7R (Run 46). ⚠ Python only, no parity gate; needs the
-  re-entry's fast feed at 1 minute and refuses otherwise.
+- 🟢 **THE DEFAULT ADD IS `"1m break"` SINCE 2026-09-26 (Run 50, Aaron's call)**: after a bounce,
+  the second 1-minute break back (`exec_scale_brk_n` = 2) with the 1m trend agreeing, on a 15m
+  candle CLOSING the trade's way (a failed candle keeps waiting), shared stop, sized net of costs,
+  banked at the H4 high/low. Against no adds: +5.2R, 4 trades worse, 0 winners scratched,
+  drawdown unchanged — "Trail" was +55.7R with 46 worse and 54.4R of it from 5 trades.
+- ⚠ **It forced the fill clock default 5 → 1 minute**: the add reads 1-minute structure off the
+  re-entry's fast feed and refuses anything else. Default runs load 5x the bars. The reversal exit
+  and give-back stop were MEASURED at 5 — set the clock to 5 to reproduce them.
+- ⚠ **A one-frame `run()` and "Secondary re-entries" OFF both REFUSE on the defaults** — pick
+  "Trail" or switch adds off there. The Pine cannot run it, so its default stays "Trail", the gate
+  decodes an absent mode as "Trail", and the test fixtures standing in for an export pin it.
+- ⚠ **The live bot runs no adds (2026-09-26)** — `sos_fade_demo` config. This rule needs a
+  1-minute fast feed on the live bot and a promote before it can go there.
 
 ## Flat before the close — `flat_mode`, and it is NOT `flat_by_close` any more
 

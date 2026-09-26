@@ -4065,6 +4065,8 @@ class Execution:
         * a 1m internal break AGAINST the trade marks a bounce and resets the count;
         * after a bounce, the second 1m internal break (either kind) BACK in the trade's
           direction adds — but only once the 1m EXTERNAL trend points the trade's way too.
+          "Second" is `exec_scale_brk_n` (2; Run 50 measured 1, 2 and 3);
+        * and only on a 15m bar that CLOSES the trade's way — otherwise it keeps waiting.
 
         🔴 **EVERY LOT SHARES THE TRADE'S ONE TRAILING STOP.** Aaron, 2026-09-24: per-add stops
         behind the bounce are "bad because price could come back and hit those easily" — and
@@ -4116,10 +4118,18 @@ class Execution:
                 # price is going in the direction of the trade"). Not yet → keep waiting; a later
                 # break back re-checks. With it, adding never deepened the worst drawdown
                 # (5.98R, the same as no adds) — Run 46.
-                if self._brk_count >= 2 and fdir == d:
+                if self._brk_count >= int(cfg.exec_scale_brk_n) and fdir == d:
                     fire = True
                     break
         if not fire:
+            return
+        # 🔴 AND THE 15m CANDLE IT IS DECIDED ON MUST CLOSE THE TRADE'S WAY (Aaron, 2026-09-26:
+        # "you cannot scale in a candle that is not moving in the direction of the trade"). A
+        # failed candle does NOT spend the push — the next break back re-checks on a later bar.
+        # The 1m candle needs no rule of its own: a break only counts on a 1m CLOSE past the
+        # level, so the firing candle already closes the trade's way (0 of 23 adds changed).
+        # MEASURED (Run 50): 1 add of 23 blocked, trades made worse 5 -> 4 banked at H4 H/L.
+        if (sig.close - sig.open) * d <= 0:
             return
         self._brk_used = True                       # this push is spent, placed or refused
         pv, stop, level = self._pv(), self._current_stop(), sig.close

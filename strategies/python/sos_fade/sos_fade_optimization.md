@@ -5716,6 +5716,12 @@ same trade. Scratch harnesses are session-local; the numbers are the record.
   H4 H/L. Its whole contribution is small (+5.2R in 6.7 years) and that is the point — it is the
   version that protects winners. ⚠ Python only, no Pine, no parity gate; live needs a 1-minute fast
   feed on the bot and a promote, so live adds stay OFF until that ships.
+- ✅ **SHIPPED as the backtest default, 2026-09-26.** A run with no add settings now gets exactly this
+  add on a 1-minute fill clock. MEASURED through the real defaults on this run's basis: 251 trades,
+  172.6R, +5.2R over no adds, drawdown 7.49R, Sharpe 1.43. The fill clock moving 5m → 1m on its own
+  costs 5.3R (adds off: 172.7 → 167.4), all of it re-entries filling a few minutes apart. ⚠ A run on
+  one frame, or with re-entries off, now refuses under the default add and must turn adds off or
+  pick another add.
 
 ## Run 51 — 2026-09-26: between the first and second target — 32 exit rules, 9 splits, nothing adopted
 

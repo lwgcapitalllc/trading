@@ -22,8 +22,8 @@ runner receives them from two `BarFeed`s that poll independently, so it can hold
 a no-op for the lab. ⚠ **Neither driver may reorder bars itself**: push them in time order per
 frame and let `step_fast` decide.
 
-⚠ **THE SECOND FRAME IS NOT A MINUTE.** It is `exec_sec_fill_tf_min`, 5 minutes by default since
-2026-08-21 and the caller's choice. `run_dual`'s parameter is still named `df1m` because
+⚠ **THE SECOND FRAME IS NOT A MINUTE.** It is `exec_sec_fill_tf_min`, 1 minute by default since
+2026-09-26 (5 from 2026-08-21) and the caller's choice. `run_dual`'s parameter is still named `df1m` because
 renaming a public parameter moves every caller, and its own docstring says that name cannot be
 trusted. Nothing in this file assumes a minute, and nothing in it may start to — read
 `fast_tf_name` / `exec_sec_fill_tf_min`, never a hardcoded 60 seconds.

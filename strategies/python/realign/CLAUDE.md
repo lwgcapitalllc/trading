@@ -608,3 +608,5 @@ This strategy builds on the SOS Fade config, so it inherits three new exit-ladde
 nothing here moved. 🔴 **None was measured on this bot**; on SOS Fade's book the reversal exit
 lost on all six settings. Switching one on here is a new experiment, and neither has a Pine side.
 Evidence: `strategies/python/sos_fade/notes/exit_ladder_history.md`.
+
+⚠ **2026-09-26: SOS Fade's default add became the "1m break" add and its re-entry fill clock 5m → 1m.** This bot inherits the new add setting but never adds (adding stays off), so no trade moved; the settings list gained the inherited "Breaks back" control so the undocumented-settings check stays green. Record: `strategies/python/sos_fade/sos_fade_optimization.md` → Run 50.

@@ -10,6 +10,7 @@ require the tool to catch it at the right bar. This proves parse / unpack / conf
 
 from __future__ import annotations
 
+import dataclasses
 import sys
 from pathlib import Path
 
@@ -97,7 +98,7 @@ def _encode_cfg(cfg: SosFadeConfig) -> dict:
             # one, and the diff reported a real trade's closed R as a logic bug. **A default
             # that moves has to move every fixture pinned to it**, and the encoder is a fixture.
             "cfg_scale_in": int(cfg.exec_scale_in),
-            "cfg_scale_mode": 0 if cfg.exec_scale_mode == "Trail" else 1,
+            "cfg_scale_mode": {"Trail": 0, "BOS retest": 1}[_pine_add(cfg).exec_scale_mode],
             "cfg_scale_adds": cfg.exec_scale_max_adds,
             "cfg_scale_cap": cfg.exec_scale_cap_x,
             "cfg_scale_tp": _SCALETP[cfg.exec_scale_tp_mode],
@@ -137,8 +138,17 @@ def _fake_export(df, decisions, cfg) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _pine_add(cfg):
+    """The add the PINE would run for this config. The Pine has no "1m break" (Python only, the
+    default since 2026-09-26), so a fixture standing in for a Pine export runs the Pine's own
+    default add, "Trail" — otherwise it describes a chart no export can come from."""
+    if cfg.exec_scale_mode == "1m break":
+        return dataclasses.replace(cfg, exec_scale_mode="Trail")
+    return cfg
+
+
 def _write(tmp_path, cfg=None):
-    cfg = cfg or SosFadeConfig()
+    cfg = _pine_add(cfg or SosFadeConfig())
     df = synth_bars(10)
     strat = SosFadeStrategy(cfg).run(df, warmup=0)
     export = _fake_export(df, strat.decisions, cfg)

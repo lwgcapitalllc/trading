@@ -59,7 +59,8 @@ EXTRA_FEEDS: dict[str, FeedSpec] = {
     # merged clock via `strategy.run_dual`, so this feed's measured history floor bounds the run's
     # window just as hard as the chart's does.
     #
-    # 🔴 5, not 1, since 2026-08-21, and the OWNER of that number is the strategy
+    # 🔴 1 since 2026-09-26 (5 from 2026-08-21): the strategy's default add ("1m break") reads
+    # 1-minute structure off this same feed. The OWNER of that number is the strategy
     # (`sos_fade/config.py::exec_sec_fill_tf_min`) — this is a copy, and
     # `tests/test_run_feeds.py` fails if the two ever disagree. It is a copy rather than an import
     # because this module bounds the WINDOW before any strategy is constructed, and a value it
@@ -67,7 +68,7 @@ EXTRA_FEEDS: dict[str, FeedSpec] = {
     # ⚠ It is a measurement-accuracy figure, not a strategy one: live, the broker fills a resting
     # limit at the price that trades. MEASURED over 7.9 years — 1m +147.56R, 5m +145.61R (1/5 the
     # bars), 15m +136.36R. Full table in the strategy's config beside the field.
-    "exec_secondary": FeedSpec(param="exec_sec_fill_tf_min", default=5),
+    "exec_secondary": FeedSpec(param="exec_sec_fill_tf_min", default=1),
 }
 
 # The one extra feed the runner knows how to LOAD (`strategy.run_dual`). Adding a row to

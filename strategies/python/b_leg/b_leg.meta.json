@@ -262,6 +262,19 @@
       ]
     },
     {
+      "name": "exec_scale_brk_n",
+      "group": "Exit ladder",
+      "label": "1-minute breaks back before it adds",
+      "short": "Breaks back",
+      "min": 1,
+      "max": 5,
+      "step": 1,
+      "show_if": {
+        "exec_scale_in": true
+      },
+      "desc": "Inherited from SOS Fade and does nothing on this bot: it never adds to a winner. Leave it at 2."
+    },
+    {
       "name": "exec_giveback_arm_r",
       "group": "Exit ladder",
       "label": "Give-back guard: arm at (R)",

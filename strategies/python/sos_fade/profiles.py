@@ -238,7 +238,7 @@ UNTUNED = Profile(
 #   for that hazard. ⚠ The VALUE is gold's and must be re-measured per instrument; the
 #   MODE stays on while that happens.
 #
-# `exec_scale_tp_mode` ("Ride") and `exec_sec_once_per_setup` (True) — their originals
+# `exec_scale_tp_mode` and `exec_sec_once_per_setup` (True) — their originals
 #   were a shipped defect and a pre-bugfix behaviour respectively, not untuned values.
 #   Restoring a bug is not reverting a fit. Both are inert here regardless.
 

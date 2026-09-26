@@ -1043,3 +1043,5 @@ order blocks 17 s, structure 14 s, VWAP 4 s. Candle loading was 8 s.
 - ⚠ The remaining cost sits inside the canonical engines (the candlestick engine's per-bar
   lookups, the gap engine's exemption scan). Speeding those up is an engine change and needs its
   parity gate re-run on a real export — not done here.
+
+🔴 **2026-09-26: the copied fill-clock default is now 1, matching the strategy** (it moved 5 → 1 when SOS Fade's default add became "1m break"). The two must still move together.
