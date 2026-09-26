@@ -1112,3 +1112,30 @@ repo and change on a PULL. Every mixed state was checked by a test:
 Tests: `algos/tests/test_alert_policy.py` (38), `test_one_message_per_action.py` (13), one in
 `test_live_bridge.py`, and the backend's `tests/test_one_message_per_action.py` (6); 20 mutations
 watched RED, named in the docstrings.
+
+### Stage 3 — the reviewer stops repeating the room, and a LIVE problem keeps reminding
+
+- ✅ **One HALTED finding, not two.** A live halt was the bridge's own HALTED plus the reviewer's
+  *Bridge HALTED — placing nothing* and *Bridge is HALTED right now* an hour later. The latest halt
+  now gets ONE finding, *Bridge is HALTED right now — the bot is placing nothing*, under the halt's
+  own key `halted:<ts>` — unchanged, so a halt already announced is not announced again by the
+  merge. `halted_now:unknown` survives only for a halt whose event has left the window.
+- ✅ **A finding whose real-time alert is in the send log is not re-sent** (`log_review.
+  announced_in_real_time`, the `REALTIME_TWIN` table: halted→HALTED, startup_failed and
+  version_mismatch→WILL NOT START, mt5_outage→NO MT5 LINK, unclean→OFFLINE/RESTARTED,
+  config_refused→SETTINGS NOT APPLIED, bar_error→DROPPED A BAR). A line for that bot, that label,
+  from 10 min before to 30 min after the event, with outcome `sent`, `queued` or `held`, covers
+  it; it is remembered as said and still drawn on the Bots page chip.
+- 🔴 **`dropped`, no line at all, or an unreadable log covers NOTHING** — a lost real-time alert
+  is exactly what this reviewer is for, and a bot still on code older than the log writes no line,
+  so its findings are sent exactly as before. `--all` ignores the check.
+- ⚠ **`held` covers on purpose**: a quick-recovered OFFLINE the policy held would otherwise come
+  back an hour later as a REVIEW, undoing the hold. The daily summary is where it is counted.
+- ✅ **Hourly REMINDER for a LIVE bot that is halted or down** (`monitor.check_reminder`). Down means
+  the watchdog sees no process and nobody stopped it (`stop_suppressed`); halted is the bot's own
+  heartbeat saying `bridge_state: halted`. The first hour is the real-time alert's; then one
+  `⛔ REMINDER — HALTED` / `⛔ REMINDER — DOWN` an hour, saying for how long, until it clears. LIVE is
+  the account registry's `kind`; demo accounts get none. Never held.
+
+Tests: `algos/tests/test_review_and_reminders.py` (16) and three updated in `test_log_review.py`;
+5 mutations watched RED, named in the docstring.

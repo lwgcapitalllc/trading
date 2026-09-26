@@ -102,7 +102,7 @@ import bot_state as _bot_state  # noqa: E402
 from alert_format import CRITICAL, WARNING, alert, when  # noqa: E402
 from alert_format import OK as OK_ICON  # noqa: E402 — this file's own OK is a finding verdict
 from notify import HEALTH, chat_for, send_with_outcome  # noqa: E402
-from notify_log import QUEUED, SENT  # noqa: E402
+from notify_log import QUEUED, SENT, read_window  # noqa: E402
 
 # How far back a run looks. Two days so a problem late yesterday is still reported this morning,
 # and so a run that crosses midnight sees the record either side of the roll.
@@ -504,8 +504,26 @@ def review_bot(
     # updates the chip WITHOUT re-announcing it. This is the split `_ts` (the key) and `_at` (the
     # display) exist for — improving wording must never wake the channel up.
     tense = _halt_tense(pulses, supposed_to_run, now)
-    for row in _of("halted"):
-        if tense == HALT_NOW:
+    halt_rows = _of("halted")
+    for row in halt_rows:
+        if tense == HALT_NOW and row is halt_rows[-1]:
+            # 🔴 ONE finding for the halt that is live (2026-09-26). It was two — this one and
+            # `halted_now` below — and each hourly run announced both beside the bridge's own
+            # real-time HALTED: three messages for one halt. The key is the halt's own, unchanged,
+            # so an outstanding halt already announced is not announced again by the merge.
+            findings.append(
+                Finding(
+                    f"halted:{_ts(row)}",
+                    ALERT,
+                    "Bridge is HALTED right now — the bot is placing nothing",
+                    f"It stopped placing orders at {_at(row)}: "
+                    f"{row.get('reason', 'no reason recorded')}.\n"
+                    f"Its latest heartbeat, at {_at(pulses[-1])}, still says halted, while the "
+                    f"watchdog and the Bots page both read RUNNING. It will not resume until it is "
+                    f"restarted and agrees with the broker again — check the account.",
+                )
+            )
+        elif tense == HALT_NOW:
             findings.append(
                 Finding(
                     f"halted:{_ts(row)}",
@@ -553,7 +571,10 @@ def review_bot(
                 )
             )
 
-    if tense == HALT_NOW:
+    if tense == HALT_NOW and not halt_rows:
+        # ⚠ Only when no halt EVENT is in the window since 2026-09-26 — with one, the finding above
+        # already says it in the present tense, under the halt's own key.
+        #
         # 🔴 The key is the timestamp of the HALT, never of the pulse that reports it.
         #
         # It was `_ts(pulses[-1])` until 2026-08-07, and a pulse is written every 15 minutes —
@@ -966,6 +987,72 @@ def send(text: str, dry_run: bool = False, account=None, bot=None) -> bool:
     return True
 
 
+# ── a finding the room has already had in real time ──────────────────────────────────────────
+#
+# 🔴 **Since 2026-09-26 a finding is NOT re-announced when its real-time alert is in the send log**
+# (`shared/notify_log.py`). Every HALTED used to arrive three times — the bridge's own, then this
+# reviewer's two findings an hour later — and every WILL NOT START twice. The finding still lands in
+# `review.json` (the Bots page chip); only the Telegram repeat is dropped.
+#
+# ⚠ **A real-time alert that is NOT in the log is exactly what this reviewer exists to catch**, so
+# only `sent`, `queued` (it will be delivered) and `held` (the policy decided, and the daily summary
+# counts it) cover a finding. `dropped`, or no line at all — lost, never sent, or a bot on code that
+# predates the log — and the finding is sent as it always was.
+#
+# ⚠ Keyed on the finding's KIND (the part of its key before the colon); a kind not listed here has
+# no real-time twin and is always sent — the restart loop, the link storm, the pulse gaps.
+REALTIME_TWIN = {
+    "halted": ("HALTED",),
+    "startup_failed": ("WILL NOT START",),
+    "version_mismatch": ("WILL NOT START",),
+    "mt5_outage": ("NO MT5 LINK",),
+    "unclean": ("OFFLINE", "RESTARTED"),
+    "config_refused": ("SETTINGS NOT APPLIED",),
+    "bar_error": ("DROPPED A BAR",),
+}
+#: How far either side of the event a real-time alert may be logged and still be ITS alert. After:
+#: a deferred fault is logged when it is decided and again when it goes out, up to 15 minutes on.
+_TWIN_BEFORE = timedelta(minutes=10)
+_TWIN_AFTER = timedelta(minutes=30)
+_COVERING = ("sent", "queued", "held")
+
+
+def announced_in_real_time(bot_key: str, finding: Finding, rows) -> bool:
+    """Whether this finding's real-time alert is in the send log `rows`, about this bot, near the
+    event. `rows=None` means the log could not be read — then nothing is covered (rule 1)."""
+    if rows is None:
+        return False
+    kind, _, ts = finding.key.partition(":")
+    labels = REALTIME_TWIN.get(kind)
+    if not labels:
+        return False
+    try:
+        at = datetime.fromisoformat(ts)
+    except ValueError:
+        return False
+    for r in rows:
+        if r.get("bot") != bot_key or r.get("label") not in labels:
+            continue
+        if r.get("outcome") not in _COVERING:
+            continue
+        try:
+            logged = datetime.fromisoformat(str(r.get("ts")))
+        except ValueError:
+            continue
+        if at - _TWIN_BEFORE <= logged <= at + _TWIN_AFTER:
+            return True
+    return False
+
+
+def _send_log(now: datetime):
+    """The box's send log over the review window, or None when it could not be read."""
+    rows, problem, _found = read_window(now - timedelta(days=WINDOW_DAYS + 1), now + _TWIN_AFTER)
+    if problem:
+        print(f"  ! the send log could not be read ({problem}) — every finding will be sent")
+        return None
+    return rows
+
+
 def main(argv=None) -> int:
     # 🔴 A Windows console is cp1252 and cannot encode the arrows, dashes and icons these
     # findings are written with. Python does not degrade — it raises UnicodeEncodeError and
@@ -992,6 +1079,7 @@ def main(argv=None) -> int:
     total_new = 0
 
     running = running_keys(list(_bot_state.BOT_INSTANCES))
+    send_log = _send_log(now)
     for bot_key, instance_dir in _bot_state.BOT_INSTANCES.items():
         # Its name plus LIVE or demo (`bot_state.bot_label`): two copies of one strategy share a
         # name since 2026-09-11, and a REVIEW finding in the shared health room must say which.
@@ -1019,6 +1107,11 @@ def main(argv=None) -> int:
         print(f"{bot_key}: {len(findings)} finding(s), {len(fresh)} new")
 
         for f in fresh:
+            if not args.all and announced_in_real_time(bot_key, f, send_log):
+                # Already in the room from the thing that happened; the chip still shows it.
+                print(f"  {f.key}: its real-time alert is in the send log — not re-announced")
+                seen.append(f.key)
+                continue
             # The house shape (`shared/alert_format.py`): icon, LABEL, subject, then the facts,
             # then what to do. The old form put "needs review" on the header and the actual
             # finding on line two, so every message opened with the same four words and the

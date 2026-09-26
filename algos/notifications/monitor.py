@@ -593,6 +593,74 @@ def check_action(bot_key: str, bot_state: dict, account, name: str, now=None) ->
     return bot_state
 
 
+# ── A LIVE bot that is halted or down is said again every hour ──────────────────────────────
+#
+# 🔴 **Since 2026-09-26, the counterweight to every hold in `alert_policy`.** One HALTED or one
+# unrecovered OFFLINE at 3am is one line that scrolls away; on real money that is not enough. So a
+# bot on a LIVE account (the account registry's `kind`) that is halted, or down without anybody
+# having stopped it, gets one REMINDER an hour until it clears. The first hour is covered by the
+# real-time alert itself, so the first reminder comes an hour after the condition was first seen.
+#
+# ⚠ Demo accounts get none — Aaron's call. ⚠ A bot stopped on purpose (`stop_suppressed`) is not
+# down. ⚠ Never held (every REMINDER label is in `alert_policy`'s never-held set).
+REMINDER_EVERY_SECONDS = 3600
+
+
+def _span_words(seconds: float) -> str:
+    minutes = int(seconds // 60)
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours} h {minutes} min" if hours else f"{minutes} min"
+
+
+def check_reminder(bot_key: str, bot_state: dict, account, name: str, now=None) -> dict:
+    """Send the hourly REMINDER for a LIVE bot that is halted or down. NEVER raises."""
+    now = time.time() if now is None else now
+    try:
+        if _bot_state.account_kind(account) != "live":
+            bot_state.pop("reminder", None)
+            return bot_state
+        condition, why = None, ""
+        if bot_state.get("running") is False and not bot_state.get("stop_suppressed"):
+            condition = "down"
+        elif bot_state.get("running") is True:
+            live = _bot_state.read_bot(bot_key)
+            if str(live.get("bridge_state") or "").lower() == "halted":
+                condition, why = "halted", str(live.get("halt_reason") or "")
+        rem = bot_state.get("reminder") or {}
+        if condition is None:
+            bot_state.pop("reminder", None)
+            return bot_state
+        if rem.get("condition") != condition:
+            bot_state["reminder"] = {"condition": condition, "since": now, "last": now}
+            return bot_state
+        if now - float(rem.get("last", now)) < REMINDER_EVERY_SECONDS:
+            return bot_state
+        lasted = _span_words(now - float(rem.get("since", now)))
+        if condition == "halted":
+            text = alert(
+                CRITICAL,
+                "REMINDER — HALTED",
+                name,
+                f"Halted for {lasted}{f': {why}' if why else ''}. It is placing nothing.",
+                "Check the account, then restart it. This repeats every hour until it clears.",
+            )
+        else:
+            text = alert(
+                CRITICAL,
+                "REMINDER — DOWN",
+                name,
+                f"Down for {lasted}, and nobody stopped it. It is not trading.",
+                "Start it from the command center, or check its log. This repeats every hour "
+                "until it is back.",
+            )
+        send_alert(text, account, bot=bot_key)
+        rem["last"] = now
+        bot_state["reminder"] = rem
+    except Exception as e:  # noqa: BLE001 — a reminder may never stop the watchdog's pass
+        print(f"{bot_key}: reminder check failed ({e})")
+    return bot_state
+
+
 def check_telegram_bot(state: dict) -> dict:
     """
     Watchdog for SYS_TELEGRAM — most critical system process.
@@ -728,12 +796,9 @@ def main():
             try:
                 state[bot_key] = check_bot(bot_key, state, today)
                 account = _bot_state.read_account(bot_key)
-                state[bot_key] = check_action(
-                    bot_key,
-                    state[bot_key],
-                    account,
-                    _bot_state.labelled(BOTS[bot_key]["name"], account),
-                )
+                name = _bot_state.labelled(BOTS[bot_key]["name"], account)
+                state[bot_key] = check_action(bot_key, state[bot_key], account, name)
+                state[bot_key] = check_reminder(bot_key, state[bot_key], account, name)
             except Exception as e:
                 print(f"Error checking {bot_key}: {e}")
     finally:

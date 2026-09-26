@@ -207,11 +207,33 @@ The bot folders could not be read (<the error>), so no bot is being watched.
 Check the box's disk and the algos folder.
 ```
 
-**REVIEW** (alert level) — the hourly reviewer found something no live alert caught.
+**REVIEW** (alert level) — the hourly reviewer found something no live alert caught. ⚠ Since
+2026-09-26 it is NOT sent when the send log shows the real-time alert for the same event already
+reached the room (or was held on purpose) — it still shows on the Bots page.
 ```
 ⛔ REVIEW · SOS Fade · LIVE
 It refused to start — the code is not the promoted version
 At 6:06 PM CDT: <the recorded detail>
+```
+A live halt is ONE finding (it was two):
+```
+⛔ REVIEW · SOS Fade · LIVE
+Bridge is HALTED right now — the bot is placing nothing
+It stopped placing orders at 3:00 AM CDT: emulator and broker disagree.
+Its latest heartbeat, at 3:55 AM CDT, still says halted, while the watchdog and the Bots page both read RUNNING. It will not resume until it is restarted and agrees with the broker again — check the account.
+```
+
+**REMINDER — HALTED / REMINDER — DOWN** — a bot on a LIVE account, once an hour until it clears
+(2026-09-26). Demo accounts get none. Never held.
+```
+⛔ REMINDER — HALTED · SOS Fade · LIVE
+Halted for 2 h 0 min: emulator and broker disagree. It is placing nothing.
+Check the account, then restart it. This repeats every hour until it clears.
+```
+```
+⛔ REMINDER — DOWN · SOS Fade · LIVE
+Down for 1 h 0 min, and nobody stopped it. It is not trading.
+Start it from the command center, or check its log. This repeats every hour until it is back.
 ```
 
 **RE-ENTRY FAILED** — the re-entry watcher graded a trade and something did not check out.
