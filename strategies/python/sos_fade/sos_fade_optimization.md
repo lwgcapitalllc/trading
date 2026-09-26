@@ -5655,3 +5655,64 @@ The second target is the 0 fib only on shallow entries (78 of 160), so both were
 
 - **Verdict, all six: keep the gap definition, the entry and the exits as shipped** (Aaron,
   2026-09-26). This agrees with Runs 1, 40, 47 and 48 — the runner is the edge.
+
+## Run 50 — 2026-09-26: the "1m break" add, finished — start point, target, candle rule, break count; live adds turned OFF
+
+**The question (Aaron):** start adds at TP1 instead of TP2? Take profit on adds instead of letting
+them run ("I don't feel comfortable having scaling entries just running")? Only add on a candle
+moving the trade's way? One, two or three 1m breaks back? And how does all of it compare with the
+"Trail" rule the LIVE bot actually runs (which scratched the 2026-09-11 winner with three adds at
+the top)? His goal throughout: fewer winners hurt, less drawdown — not more R.
+
+**Basis, every arm:** XAUUSD.p 15m + 1m PU Prime Demo bars 2019-12-12 → 2026-09-24, trades from
+2020-01-01, `puprime_ecn` charged, `exec_secondary` on at a **1-minute** fill clock (the "1m break"
+rule refuses anything else), 3 adds x 0.5x, built through `backtest.replay.build_strategy`.
+**251 trades**. "Worse / better" = trades whose R moved against / towards the no-adds replay of the
+same trade. Scratch harnesses are session-local; the numbers are the record.
+
+| Arm | +R over no adds | Worse | Better | Max DD (R) | Sharpe (monthly) | Adds |
+|---|---|---|---|---|---|---|
+| No adds | 0 (167.4R) | 0 | 0 | 7.49 | 1.46 | 0 |
+| **LIVE "Trail", ride** | **+55.7** | **46** | 25 | **8.92** | 1.23 | 131 |
+| LIVE "Trail", banked at H4 H/L | +28.8 | 33 | 39 | 8.12 | 1.41 | 131 |
+| "1m break" from TP2, ride (Run 46) | +18.3 | 8 | 7 | 7.86 | 1.32 | 23 |
+| "1m break" from **TP1**, ride | +18.1 | 15 | 8 | 7.94 | — | 34 |
+| "1m break", bank at +1R of the add's own risk | +7.0 | 8 | 7 | 7.54 | 1.40 | 23 |
+| "1m break", bank at +1.5R / +2R | +9.7 / +10.9 | 8 | 7 | 7.86 | — | 23 |
+| "1m break", bank at the first swing past +1R | +11.8 | 8 | 7 | 7.86 | — | 23 |
+| "1m break", bank at prev-day H/L | +2.0 | 6 | 10 | 7.86 | 1.42 | 23 |
+| "1m break", bank at H4 H/L | +4.4 | 5 | 11 | 7.49 | 1.43 | 23 |
+| **"1m break" + 15m candle rule, bank at H4 H/L** | **+5.2** | **4** | 11 | **7.49** | 1.43 | 22 |
+| "1m break" + 15m candle rule, ride | +18.5 | 7 | 7 | 7.86 | 1.32 | 22 |
+
+- 🔴 **LIVE "Trail" is 5 trades.** 54.4R of its +55.7R comes from its best 5 trades (one alone
+  +25.8R); the other 68 trades it touches net +1.3R, and it costs −17.9R on the ones it hurts and
+  turns **8 winners into scratches or losses**. In the replay it hurt 3 of the last 4 trades —
+  2026-09-11 +1.29R → −0.01R, 2026-09-17 +0.44R → +0.24R, 2026-09-21 +0.59R → −0.02R.
+  **Decision: live adds OFF** (`sos_fade_demo` config, same commit as this run).
+- 🔴 **Starting at TP1 is a measured negative**: the 11 extra adds are tiny (the stop is only at
+  breakeven, so the flat-at-stop size is small), 8 of them land on scratch trades, and it doubles the
+  trades made worse for −0.2R.
+- 🔴 **A target does not reduce the damage — it only caps the upside.** The worst per-trade change is
+  −1.42R under every R-multiple target, because the adds that hurt are stopped before any target.
+  Only the H4 H/L bank cuts the trades made worse (8 → 5) and puts drawdown back at the no-adds 7.49R.
+- ⚠ **The 1m candle rule is a no-op by construction**: a 1m break back only counts on a candle that
+  CLOSES past the level, so the firing candle already closes the trade's way — 0 of 23 adds changed.
+  **The 15m candle rule** (the 15m bar the add is decided on must close the trade's way; failing it
+  keeps waiting, never spends the push) blocked 1 add (2020-09-28) and moved 2 later: 5 → 4 worse.
+
+**Break count, "1m break" + 15m candle rule:**
+
+| Breaks back | Banked at H4 H/L: +R / adds / grown / shrunk | Ride: +R / grown / shrunk |
+|---|---|---|
+| 1 | +7.3 / 58 / 15 (+14.8R) / 16 (−7.5R) | +22.4 / 13 / 18, 1 winner scratched |
+| **2** | **+5.2 / 22 / 11 (+7.4R) / 4 (−2.1R)** | +18.5 / 7 / 8 |
+| 3 | +0.8 / 7 / 5 (+1.0R) / 1 (−0.2R) | +1.3 / 4 / 2 |
+
+- ✅ **Two stays.** One buys 2R for four times the winners shrunk; three almost never adds. Every
+  H4-banked arm keeps 0 winners scratched, 0 losers worsened and drawdown at 7.49R — adds only exist
+  after TP2, so they cannot touch a loser.
+- **The recommended add, all four together:** "1m break", two breaks back, 15m candle rule, banked at
+  H4 H/L. Its whole contribution is small (+5.2R in 6.7 years) and that is the point — it is the
+  version that protects winners. ⚠ Python only, no Pine, no parity gate; live needs a 1-minute fast
+  feed on the bot and a promote, so live adds stay OFF until that ships.

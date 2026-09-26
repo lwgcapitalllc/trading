@@ -789,6 +789,19 @@ gap is however long it takes for the next deploy.
 ⚠ **RULE 9 IS NOT CLOSED BY SWITCHING IT ON.** No add has ever reached a broker and no parity gate
 covers the path. **Watch the first one.**
 
+### Scale-in is OFF again for `sos_fade_demo` (2026-09-26) — restart only, no promote
+
+Aaron's call, on a measurement: the "Trail" add bought at market whenever the trail moved, so on
+2026-09-11 it added three times near the top and a +1.29R winner closed as a scratch. **The
+numbers are in that bot's `config.json` (`_scale_in_off_2026_09_26`) and in
+`strategies/python/sos_fade/sos_fade_optimization.md` → Run 50, not restated here.**
+
+⚠ **No promote is needed** — switching an existing setting off asks nothing of the frozen code. It
+is not runtime-reloadable, so it takes effect on the restart. ⚠ **The demo copies (`sos_fade_1`,
+`sos_fade_2`) were left with adds ON** — only the live bot was asked for. ⚠ **The replacement ("1m
+break" + the 15m candle rule + banking at the H4 high/low) cannot go live as the bot stands**: it
+needs a 1-minute fast feed, and this bot runs its fast clock at M5.
+
 ### The whole-position target goes to the BROKER, so it fills at the target (2026-09-08)
 
 **`_sync_take_profit` puts the price on the position.** A rung that takes the whole position off
