@@ -43,6 +43,7 @@ Standing rules for anything recorded here:
 | 44 | 2026-09-23 | 🔴 **THE LEVEL MEMORY REPLAYED INSIDE THE BOT** — rest a limit again at the price a primary already entered at, once the setup is dead and price has travelled 1R away; half-width stop, 2R target, 3-day hold. Four replays, XAUUSD.p 15m+5m 2020-01-01 → 2026-09-21, PU Prime ECN costs | **Run 42's +16.35R screen did not survive the position slot.** The 65 trades it adds are worth **+0.85R in 6.5 years** (+0.80R without their best one) and 2025 carries all of it; one collision on 2023-01-12 cost a **+22.31R** primary. Replayed **215.7R vs 227.5R** with the re-entry on and **150.7R vs 168.1R** primary-only. Two defects found by RUNNING it: the memory resurrected itself (141 trades), and the report tool could not reach the fast clock with the re-entry off. | **MEASURED NEGATIVE — `exec_lvl_memory` ships Off and stays Off** |
 | 45 | 2026-09-23 | 🔴 **THREE PRE-REGISTERED FILTERS ON THE LEVEL MEMORY** — only while the original gap is still open, only after a liquidity sweep on the trade's side, or no limit at all and a market entry on a fast shift after the tap. Same window, bars and costs as Run 44 | **All three fail.** The gap filter beat the book with the re-entry on (+230.8R vs +227.5R, 22 trades +2.33R) and then LOST primary-only (166.1R vs 168.1R, first half −3.97R). The sweep filter hardly filters (66 trades vs 65) and hits the same +22.31R collision (+215.7R). The shift entry never fired — 2 chances in 2025, both wider than 1R. | **MEASURED NEGATIVE — `exec_lvl_confluence` stays None, `exec_lvl_memory` stays Off** |
 | 46 | 2026-09-25 | 🟢 **THE SCALE-IN REDESIGN — WHERE an add goes, judged on PROTECTING WINNERS, not on R** (Aaron: *"not to make more money... less drawdown on these scaling entries and less of my winners turn into losers or scratches"*). 15 placements, all sharing the trailing stop: today's market-on-trail, 15m/5m/1m structure breaks after a bounce, fib 38/50/62 limits, fib+gap, and limits at day/week/session/H4 levels. XAUUSD.p 15m 2020-01-01 → 2026-09-24, PU Prime ECN | **The SECOND 1-minute internal break back after a bounce wins on the goal**: built and replayed on the dual clock (251 trades, re-entries on, 1m fill clock): **16 trades made worse vs 46, NO winner scratched vs 5, worst drop 7.86R vs 8.92R** (7.49R with no adds), for **+26.8R over no adds vs +55.7R**. Per-add stops behind the bounce were REJECTED (3 in 4 stopped). Key levels never beat it; 5m/15m structure is too rare to fire. | **BUILT as `exec_scale_mode = "1m break"` — fixed the same day to also need the 1m trend agreeing (8 worse, 23 adds, +18.3R) — NOT the default — Python only, no parity gate possible (the Pine has no 1m feed)** |
+| 48 | 2026-09-26 | **THE 5m GIVE-BACK STOP AFTER THE SECOND TARGET** (Aaron, on the 2026-09-21 short) — after TP2, a 5m shift against the trade rests a stop at 50% (also 38.2 / 61.8) of the open profit handed back; optional break-first gate. Same basis as Run 47 | **Fires on 4 of 250 trades at 50%: +2.15R, +0.36R without the chart trade** — noise, because the shipped trail after TP2 is usually tighter already. Tracing it found a real defect: the fast path could close a trade after its own stop was hit, at a worse price — fixed. | **BUILT, OFF by default — kept as the first of a family of structure-specific scale-out rules. Python only.** |
 | 23 | 2026-08-19 | **THE SECONDARY (1m re-entry), END TO END** — 7 levers, 26 replays: the entry gates (swept-stop re-entry, zone depth) and then the exit ladder (depth cap, 1m direction filter, where breakeven fires, banking at TP1). | **The entry gates are already right and the exit ladder was not.** Every loosened door is worse, monotonically. Depth 2/3/5/unlimited are byte-identical (n=1 in 6.6 years). Banking part of a re-entry at TP1 is the first change in 26 replays that works — win/loss 1/1 → 4/1 — and it costs the tail. | measured, **nothing adopted** |
 | 24 | 2026-08-19 | 🔴 **THE LOSS-RECOVERY LEG** — nine stop placements and six exit ladders on the 25%-size counter-trade taken after every SOS Fade loss (`strategies/python/loss_recovery/`). Not a sweep of this bot's params; its population is SOS Fade's 62 real stop-outs. | **Nothing beat the shipped rule, and its best-looking challenger was five trades.** A stop on the CHoCH bar's own extreme scores +24.4R against +16.2R on a 7x tighter stop with lower drawdown — and **−7.4R once its best five are deleted**, where the shipped stop survives at +2.3R. `soft_stop_r=-0.3` is the one free change: same net R, avg loss −1.01R → −0.30R, win 58% → 37%. Everything else lost. | measured, **nothing adopted; `loss_recovery` still ships `enabled=False`** |
 
@@ -5500,3 +5501,44 @@ its total R is positive.
   year flat stretches are normal for this strategy.
 - ⚠ **There is no untouched data left** on this broker. Any later choice is judged on data that has
   already been looked at, so it needs a larger margin to count.
+
+## Run 48 — 2026-09-26: the 5m give-back stop after the second target — built, kept OFF
+
+**The question (Aaron, on the 2026-09-21 short):** *"we passed TP2, we did a break of structure and
+then there was a shift of structure... that shift in five minutes signals time to get out as soon as
+price retraces at least 50 percent... it won't be the only rule but it could be a rule."*
+
+**The rule as built** — "Reversal exit: what it does" = "Give-back stop", "Arm on" = "Target 2
+price": primary positions only; once the trade's best has reached its own second target, a 5m shift
+of structure against the trade rests a stop where the chosen share of the entry→best profit is handed
+back. It follows the best and only tightens; if price is already past it when the shift prints, the
+trade leaves at the next 5m open. "Need a break our way before the shift" adds a 5m break of
+structure in the trade's direction after arming. ⚠ 50% of the LAST LEG cannot be the rule — a shift
+has already retraced all of it — so the share is of the whole trade's open profit.
+
+**Basis:** same as Run 47 (dual 15m+5m, XAUUSD.p PU Prime ECN, 2020-01-01 → 2026-09-20). Baseline
+**250 trades / +227.49R / 8.42R max drawdown / 27.0**.
+
+| Arm | R | Max DD (R) | R / DD | Trades changed | Net | Net without its biggest |
+|---|---|---|---|---|---|---|
+| Give back 50% | 229.64 | 8.63 | 26.6 | 4 | +2.15 | +0.36 |
+| 50% + break first | 229.64 | 8.63 | 26.6 | 4 | identical — every shift already had its break |
+| Give back 38.2% | 227.64 | 8.12 | 28.0 | 10 | +0.15 | +3.95 (the −3.80 on 2020-08-18) |
+| Give back 61.8% | 228.49 | 9.15 | 25.0 | 3 | +0.99 | −0.16 |
+
+- **How often it applies:** 65 of 160 primaries reached their second target, 23 printed a 5m shift
+  after it, **6 handed back 50% before the shipped trail closed them**. After the second target the
+  shipped runner trail is usually already tighter, so the rule rarely binds.
+- **The chart trade does what Aaron saw:** 2026-09-21 short −0.02R → **+1.77R** (50%), +2.15R (38.2%).
+  It is most of the 50% arm's gain; the rest is noise either way. 2021-10-19 long lost 0.73R (ran to 4.9R).
+- 🔴 **Defect found by tracing it, and fixed:** the fast-clock path could close a trade AFTER its own
+  ladder stop had been hit on the same 15m bar, at a worse price (2022-08-03 long: stop hit 14:00,
+  shift 14:05, closed at the 14:10 open, +0.18R → −0.94R). The fast path now yields to the trade's own
+  stop. It affected the older reversal exits too; re-run after the fix, "Close" armed at 1R / 2R is
+  still **−23.2R / −17.9R** (2024-11-08 alone −17.1R), so their verdict stands.
+- **Kept, OFF by default** — Aaron's plan (2026-09-26) is a family of structure-specific scale-out
+  rules, each cutting only its own kind of trade, with other strategies re-entering what gets cut.
+  This is the first. Python only; the Pine has no counterpart, so no parity gate is possible for it.
+  Both existing goldens still pass with it off.
+- ⚠ A new field joins the position record — a live promote with an open position needs
+  `algos/tools/migrate_position_record.py` first.

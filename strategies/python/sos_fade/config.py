@@ -908,6 +908,20 @@ class SosFadeConfig:
     #   a Pine change as well as a Python one.
     exec_rev_level_touches: int = 2    # "↳ Rejections of the same level before it acts"
     #   Read only when the trigger is "Level rejected". 2 = the second failed visit.
+    exec_rev_arm_at: str = "R"         # "↳ Arm on"
+    #   ∈ {"R", "Target 2 price"}. "R" (default) is the measured rule: the best must reach
+    #   `exec_rev_arm_r`. "Target 2 price" arms once the trade's best fast-frame price has
+    #   reached its OWN second fib target — Aaron's arming point, 2026-09-25, off a live short
+    #   that ran past target 2, shifted against on 5m and gave most of it back. Default = inert.
+    exec_rev_giveback_pct: float = 50.0  # "↳ Give-back stop: share of the open profit handed back (%)"
+    #   Read only by the "Give-back stop" action. Once a shift against the trade fires it, a stop
+    #   rests where this share of the open profit (entry -> best so far) is gone: a short at 4370
+    #   with a best of 4291 at 50 rests at 4330.5. Re-priced off the best on every fast bar, so it
+    #   only ever tightens, and it never loosens the ladder's own stop. If price is already past it
+    #   when the shift prints, the trade leaves at the next fast bar's open.
+    exec_rev_need_bos: bool = False    # "↳ Need a break our way before the shift"
+    #   When on, the shift only counts if a fast-frame break of structure IN the trade's
+    #   direction printed after the rule armed and before the shift. Off = inert.
     exec_time_stop_hrs: float = 36.0   # "Time stop (hours)"
     #   Calendar hours since the FILL, weekends included — the same clock a swap is charged on, and
     #   the one a reader can check against a chart. Read only when the mode is not "Off".
@@ -2150,9 +2164,10 @@ class SosFadeConfig:
                 "exec_entry_block_from equals exec_entry_block_to — an empty window that reads "
                 "as a rule switched on. Leave both empty to mean off.")
         if self.exec_rev_exit not in (
-                "Off", "Bank half", "Tighten to the trail", "Close"):
+                "Off", "Bank half", "Tighten to the trail", "Close", "Give-back stop"):
             raise ValueError(
-                "exec_rev_exit is 'Off', 'Bank half', 'Tighten to the trail' or 'Close'. "
+                "exec_rev_exit is 'Off', 'Bank half', 'Tighten to the trail', 'Close' or "
+                "'Give-back stop'. "
                 f"Got {self.exec_rev_exit!r}. A typed value that is not a mode must never fall "
                 "through to a default — that replays a whole book against a rule nobody chose."
             )
@@ -2164,6 +2179,19 @@ class SosFadeConfig:
         if self.exec_rev_level_touches < 1:
             raise ValueError(
                 f"exec_rev_level_touches must be at least 1, got {self.exec_rev_level_touches}.")
+        if self.exec_rev_arm_at not in ("R", "Target 2 price"):
+            raise ValueError(
+                "exec_rev_arm_at is 'R' or 'Target 2 price'. "
+                f"Got {self.exec_rev_arm_at!r}. A typed value that is not a choice must never "
+                "fall through to a default.")
+        if not isinstance(self.exec_rev_need_bos, bool):
+            raise ValueError(
+                f"exec_rev_need_bos is True or False, got {self.exec_rev_need_bos!r}.")
+        if self.exec_rev_exit == "Give-back stop" and not (0 < self.exec_rev_giveback_pct < 100):
+            raise ValueError(
+                "exec_rev_giveback_pct must be above 0 and below 100 — at 0 the stop sits on the "
+                "best price and closes the trade on the next tick, at 100 it sits on the entry. "
+                f"Got {self.exec_rev_giveback_pct}.")
         if self.exec_rev_exit != "Off" and self.exec_rev_arm_r <= 0:
             raise ValueError(
                 "exec_rev_arm_r must be a positive number of R — at 0 the reversal exit arms on "

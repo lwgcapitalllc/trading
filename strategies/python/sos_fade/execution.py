@@ -792,6 +792,17 @@ class Execution:
         # reader. The give-back guard above CAN read them because it runs on the 15m path, where
         # `_manage_open` has just widened them on this same bar.
         self._rev_best: Optional[float] = None
+        # The "Give-back stop" action's state for THIS trade. `_rev_lock` is True once a shift
+        # against the trade has fired it: from then on a stop rests at the price that hands back
+        # `exec_rev_giveback_pct` of the open profit (entry -> `_rev_best`), re-priced off the
+        # best on every fast bar, so it only ever tightens. `_rev_bos_seen` is the optional
+        # "a break our way came first" gate: a fast-frame break of structure in the trade's
+        # direction printed AFTER the rule armed.
+        self._rev_lock: bool = False
+        self._rev_bos_seen: bool = False
+        # True once a fast bar has traded through the ladder's own stop: the 15m step owns the
+        # close from there, and the reversal exit stands down (see `step_reversal`, Phase 0).
+        self._rev_yield: bool = False
         # The level trigger's memory for THIS trade: one [price, visits, touched_last_bar] row per
         # major level seen AHEAD of price while it was open. A LIST of lists, not a dict keyed by
         # price, because it goes through the JSON position record and a float key comes back a
@@ -1091,7 +1102,7 @@ class Execution:
         "_rec_be_armed", "_exc_be_armed",
         "_trail_swing_hi", "_trail_swing_lo", "_ext_high", "_ext_low", "_legs",
         "_pending_close", "_pending_bank", "_gave_back",
-        "_pending_rev", "_rev_done", "_rev_best", "_rev_levels",
+        "_pending_rev", "_rev_done", "_rev_best", "_rev_levels", "_rev_lock", "_rev_bos_seen", "_rev_yield",
         # Scale-in lots, and they belong here for the reason the warning above gives: a
         # restored position that dropped them would carry the base's stop while the adds it
         # actually holds went unpriced and unclosed. `_add_stop` is the stop the last add was
@@ -3151,6 +3162,9 @@ class Execution:
         self._pending_rev = None
         self._rev_best = None
         self._rev_levels = []
+        self._rev_lock = False
+        self._rev_bos_seen = False
+        self._rev_yield = False
         self._filled_qty = 0.0
         # Snapshot the OPENING size and clear the add ledger. Every add sizes off `_base_qty`
         # rather than the live position: sizing off the live one would compound, so add #2
@@ -3714,6 +3728,9 @@ class Execution:
         self._pending_rev = None
         self._rev_best = None
         self._rev_levels = []
+        self._rev_lock = False
+        self._rev_bos_seen = False
+        self._rev_yield = False
         self._adds = []
         self._add_lots = []
         self._add_stop = None
@@ -5004,6 +5021,23 @@ class Execution:
         sink = Decision(index=sig_fast.index)
         self._stamp_account_clock(sig_fast)
 
+        # ── Phase 0: the trade's OWN stop comes first ──
+        # 🔴 The ladder's stop is filled on the 15m path, after every fast bar inside that 15m
+        # bar has already run. A fast bar that trades through that stop has hit it — the 15m
+        # step will fill it at the stop's own price — so nothing here may close the trade later
+        # in the same 15m bar at a WORSE price. Found 2026-09-26 on the 2022-08-03 long: the stop
+        # (1762.84) was hit at 14:00, a shift printed at 14:05, and this path closed at the 14:10
+        # open (1759.74), turning +0.18R into -0.94R. Once the stop is touched this path stands
+        # down for the rest of the trade, whose close the 15m step now owns.
+        if self._pos_dir != 0 and self._entry_kind == "primary" and not self._rev_yield:
+            d = self._pos_dir
+            stop = self._current_stop()
+            if (d > 0 and sig_fast.low <= stop) or (d < 0 and sig_fast.high + self._exit_adj() >= stop):
+                self._rev_yield = True
+        if self._rev_yield:
+            self._pending_rev = None
+            return
+
         # ── Phase A: the order decided last bar is a MARKET order the broker already has ──
         act, self._pending_rev = self._pending_rev, None
         if act is not None and self._pos_dir != 0 and self._entry_kind == "primary":
@@ -5025,6 +5059,12 @@ class Execution:
                     self._stage = 2
                 self._rev_done = True
 
+        # ── Phase A2: the give-back stop, if a shift has already set it ──
+        # A resting stop, so it fills at its own price, or at the open when the bar opens past
+        # it — the same rule every stop here uses. Priced off the best as of the LAST fast bar's
+        # close, never this bar's, because this bar's extreme may come after the touch.
+        self._rev_lock_hit(sig_fast, sink)
+
         # ── Phase B: decide at this bar's close ──
         # The high-water mark is carried on THIS frame, from this bar's own extreme, so a trade
         # that spikes and turns inside one 15m bar is armed by the move that actually happened.
@@ -5037,7 +5077,88 @@ class Execution:
             if self._cfg.exec_rev_trigger == "Level rejected":
                 self._rev_track_levels(sig_fast, levels)
         if self._reversal_due(m1):
-            self._pending_rev = self._cfg.exec_rev_exit
+            if self._cfg.exec_rev_exit == "Give-back stop":
+                self._set_rev_lock(sig_fast)
+            else:
+                self._pending_rev = self._cfg.exec_rev_exit
+        # The "a break our way first" gate is fed AFTER the decision, so a break and a shift on
+        # the same fast bar do not satisfy it — the break has to come BEFORE the shift.
+        if (self._pos_dir != 0 and self._entry_kind == "primary" and not self._rev_bos_seen
+                and self._rev_armed()):
+            ours = (getattr(m1, "new_bull_bos", False) if self._pos_dir > 0
+                    else getattr(m1, "new_bear_bos", False))
+            if ours:
+                self._rev_bos_seen = True
+
+    def _rev_lock_level(self) -> Optional[float]:
+        """Where the give-back stop sits: the price that hands back `exec_rev_giveback_pct` of
+        the open profit, measured from the ENTRY to the trade's best fast-frame price.
+
+        A short at 4370 whose best is 4291 at 50% -> 4330.5. None when there is no profit to
+        protect (best not yet in front of the entry), which is never a price to rest a stop at.
+        """
+        if self._rev_best is None:
+            return None
+        d = self._pos_dir
+        run = (self._rev_best - self._entry) * d
+        if run <= 0:
+            return None
+        return self._rev_best - d * run * self._cfg.exec_rev_giveback_pct / 100.0
+
+    def _set_rev_lock(self, sig_fast) -> None:
+        """A shift has fired the give-back stop. Rest it, or leave now if price is already past.
+
+        "Past" is judged on THIS bar's close, the moment the rule decided. A trade already back
+        through the level has no stop left to rest — it leaves at the next fast bar's open, the
+        one-bar delay every exit here is built on.
+        """
+        lvl = self._rev_lock_level()
+        self._rev_done = True
+        if lvl is None:
+            return
+        if (sig_fast.close - lvl) * self._pos_dir <= 0:
+            self._pending_rev = "Close"
+            return
+        self._rev_lock = True
+
+    def _rev_lock_hit(self, sig_fast, dec) -> None:
+        """Fill the give-back stop on this fast bar if price reached it.
+
+        ⚠ IT ONLY TIGHTENS. When the ladder's own stop is already tighter than this level, this
+        does nothing and the ladder's stop governs on its own clock, exactly as it would have.
+        """
+        if not self._rev_lock or self._pos_dir == 0 or self._entry_kind != "primary":
+            return
+        lvl = self._rev_lock_level()
+        if lvl is None:
+            return
+        d = self._pos_dir
+        if (lvl - self._current_stop()) * d <= 0:
+            return                        # the ladder's stop is tighter; leave it to the ladder
+        adj = self._exit_adj()
+        hit = sig_fast.low <= lvl if d > 0 else sig_fast.high + adj >= lvl
+        if not hit:
+            return
+        price = self._fill_price(lvl, sig_fast.open + adj, False)
+        self._close_at(sig_fast, price, "reversal", dec, tag="REV")
+
+    def _rev_armed(self) -> bool:
+        """Has the trade gone far enough in front for the reversal exit to watch it?
+
+        "R" (default): the best must be worth `exec_rev_arm_r` of the FROZEN entry risk.
+        "Target 2 price": the best must have reached the trade's own second fib target —
+        Aaron's arming point on the 2026-09-21 chart, a price rather than an R number.
+        """
+        cfg = self._cfg
+        if self._rev_best is None:
+            return False
+        d = self._pos_dir
+        if getattr(cfg, "exec_rev_arm_at", "R") == "Target 2 price":
+            return (self._rev_best - self._tp2) * d >= 0
+        dist = abs(self._entry - self._init_stop)
+        if dist <= 0:
+            return False
+        return (self._rev_best - self._entry) * d / dist >= cfg.exec_rev_arm_r
 
     def _rev_track_levels(self, bar, levels) -> None:
         """Count failed visits to each major level AHEAD of price; set this bar's answer.
@@ -5106,12 +5227,9 @@ class Execution:
             against = bool(m1.new_bear_sos) if d > 0 else bool(m1.new_bull_sos)
         if not against:
             return False
-        dist = abs(self._entry - self._init_stop)
-        if dist <= 0:
-            return False
-        if self._rev_best is None:
-            return False
-        return (self._rev_best - self._entry) * d / dist >= cfg.exec_rev_arm_r
+        if getattr(cfg, "exec_rev_need_bos", False) and not self._rev_bos_seen:
+            return False        # the break our way has not printed since the rule armed
+        return self._rev_armed()
 
     def _apply_giveback(self) -> None:
         """Do what the guard is set to do. Called only when it is both due and unspent.

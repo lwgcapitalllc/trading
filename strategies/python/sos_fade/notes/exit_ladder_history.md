@@ -1090,3 +1090,24 @@ exit stays Off. Both halves of Aaron's definition are now measured, and both los
 honest reading is that on this book the trailing stop's give-back is the price of the long
 runners, and every exit tried so far that trims give-back also trims them. Parity GREEN with it in
 the tree (19,668 bars, warm-up 468); it has no Pine side.
+
+## 2026-09-26 — the "Give-back stop" reversal exit, and the fast exit now yields to the trade's own stop
+
+**What it does:** "Reversal exit: what it does" = "Give-back stop" with "Arm on" = "Target 2 price".
+Once a primary's best has reached its own second target, a 5m shift of structure against it rests a
+stop where "Give-back stop: share of the open profit handed back (%)" of the entry→best profit is
+given back. It follows the best and only tightens; already past it when the shift prints means an
+exit at the next 5m open. "Need a break our way before the shift" gates it on a 5m break in the
+trade's direction after arming. Ships OFF. Measured in `../sos_fade_optimization.md` → Run 48
+(4 of 250 trades at 50%, +2.15R, +0.36R without the 2026-09-21 chart trade).
+
+🔴 **Stop first, then the fast path.** The 5m reversal path runs BEFORE the 15m bar that holds it, so
+it could close a trade whose own ladder stop had already been hit inside that 15m bar — at a worse
+price (2022-08-03 long, +0.18R → −0.94R). The fast path now checks the trade's own stop on each 5m
+bar and, once touched, hands the close to the 15m step and stands down. This applies to every
+reversal exit, not only the new one. Pinned by
+`tests/test_reversal_giveback_stop.py` → the fast-bar-through-the-ladder-stop test (watched red with
+the check removed).
+
+⚠ The position record gains three fields; a live promote with a position open needs
+`algos/tools/migrate_position_record.py` first.

@@ -59,6 +59,10 @@ class M1State:
     # INTERNAL breaks that fired on THIS fast bar, in the engine's own order: (+1/-1, "sos"/"bos").
     # Read only by the "1m break" scale-in. Additive — nothing that existed before reads it.
     internal_breaks: Tuple[Tuple[int, str], ...] = ()
+    # An EXTERNAL break of structure (continuation or shift) fired on THIS fast bar, per side.
+    # Read only by the reversal exit's "need a break our way first" gate. Additive.
+    new_bull_bos: bool = False
+    new_bear_bos: bool = False
 
 
 class Structure1m:
@@ -117,6 +121,7 @@ class Structure1m:
             direction=self._engine.dir, new_bull_sos=new_bull, new_bear_sos=new_bear,
             conf_high=self.conf_high, conf_low=self.conf_low,
             internal_breaks=tuple(breaks),
+            new_bull_bos=bool(ext.bull_bos), new_bear_bos=bool(ext.bear_bos),
         )
 
 
