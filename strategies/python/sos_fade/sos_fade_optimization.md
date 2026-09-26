@@ -5821,3 +5821,29 @@ first target sits about 3.25R out, so "before the first target" is a much longer
 - ✅ **Decision: management before the first target stays as shipped.** The losses at this stage are
   the cost of the entries, which Run 49 already examined; with Runs 51 and 52 no exit stage from entry
   to the second target has a rule worth adopting.
+
+## Run 53 — 2026-09-26: Run 40's half-bank at the first target, re-measured on today's defaults — no longer earns
+
+**The question:** Run 40 found banking 50% at fib target 1 the best return per drawdown (33.6 against
+31.8). That was measured with the old "Trail" adds on. Does it still hold now that the "1m break" add
+is the default (7f783c34)?
+
+**Basis:** `backtest/tools/run_report.py`, XAUUSD.p, PU Prime Demo bars, trades 2020-01-01 →
+2026-09-24, `puprime_ecn` charged, `--no-regime`, shipped defaults; only `exec_tp1_pct` varies.
+Ranked in R. Halves split at 2023-05-14.
+
+| Banked at target 1 | Total R | Max DD (R) | Return/DD | Return/DD by half | Without the 2022-06-09 trade | Top 10 winners |
+|---|---|---|---|---|---|---|
+| 0% (shipped) | 172.64 | 7.49 | 23.0 | 10.1 / 18.1 | 23.0 | 115.6R |
+| 25% | 155.72 | 6.52 | 23.9 | 11.2 / 15.4 | 21.2 | 98.4R |
+| 50% | 138.81 | 5.84 | 23.8 | 12.1 / 12.7 | 19.3 | 81.2R |
+
+- 🔴 **The gain is gone.** Return per drawdown moves 23.0 → 23.9 at a cost of 17–34R, and the whole of
+  the drawdown cut is the 2020–2023 half — the 2022 stretch again. In the later half both are worse,
+  and with the 2022-06-09 trade held at baseline both fall below shipped.
+- **Why it changed:** the "Trail" adds made the book lumpier, so banking had more to smooth. The
+  "1m break" add banks its own lots at the H4 high/low and leaves drawdown where it was without adds,
+  so there is little left for the bank to buy.
+- ✅ **Decision: bank nothing at target 1 stays.** Run 40's verdict describes the book with "Trail"
+  adds and must not be quoted for the shipped one. With Runs 51–53, no give-back fix that closes all
+  or part of the trade has survived; Aaron's re-entry strategy is the open route.
