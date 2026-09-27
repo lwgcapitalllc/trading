@@ -27,3 +27,4 @@
 2026-09-27 16:51:45,769 [INFO] Warmed 45000 bars (2026-08-12 03:18:00+00:00 → 2026-09-25 20:55:00+00:00) in 6.8s
 2026-09-27 16:51:45,784 [INFO] Equity re-anchored to the account after warm-up: 17,465.32 → 14,862.76
 2026-09-27 16:51:46,253 [INFO] Watching for closed M1 bars (poll 10s). Ctrl-C to stop.
+2026-09-27 18:22:02,135 [WARNING] Heartbeat write failed: [WinError 5] Access is denied: 'C:\\trading\\algos\\markets\\fx\\instances\\fft_1\\bot_state.json.24140.tmp' -> 'C:\\trading\\algos\\markets\\fx\\instances\\fft_1\\bot_state.json'
