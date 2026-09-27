@@ -5878,3 +5878,36 @@ the same way.
   same as a winner that has not started, and the winners are worth far more.
 - ✅ **Decision: the 36h clock stays.** Together with Run 52, a short time stop is closed —
   replay and simulation agree.
+
+## Run 55 — 2026-09-27: a take-profit per session — every one of 25 arms loses
+
+**The question (Aaron):** set a target per session; if the trade reaches it, get out. Pinned as:
+while a 15m bar is inside session S (New York time: Asia 19–03, London 03–08, NY morning 08–12,
+NY afternoon 12–17, rollover 17–19), if the trade is T R in profit (its own initial stop
+distance), the WHOLE trade, adds included, closes at the target as a resting limit would, or at
+the bar's open when the bar opens past it. Outside S nothing changes. A bar touching both the
+target and the stop is left to the shipped path.
+
+**Why it was asked:** a give-back split on the same basis put 392R of peak-to-exit give-back at
+Asia 25%, London 15%, NY morning 43%, NY afternoon 15%, rollover 2%.
+
+**Basis:** Run 50 (shipped defaults with the "1m break" add, PU Prime ECN, `run_dual(15m, 1m)`,
+trades from 2020-01-01), full replay per arm, one session at a time, T = 1 / 2 / 3 / 5 / 8R.
+
+| Session | Best arm | R (vs 172.6) | Max DD R (vs 7.49) | R/DD (vs 23.0) | Exits at target |
+|---|---|---|---|---|---|
+| Asia | 3R+ | 121.6 (−51.0) | 7.74 | 15.7 | 28 |
+| London | 8R | 124.4 (−48.2) | 7.49 | 16.6 | 12 |
+| NY morning | 8R | 127.3 (−45.3) | 7.49 | 17.0 | 6 |
+| NY afternoon | 3R+ | 135.5 (−37.1) | 6.03 | 22.5 | 27 |
+| Rollover | 5R+ | 150.6 (−22.1) | 7.49 | 20.1 | 10 |
+
+- 🔴 **All 25 arms lose 22–112R, and none beats the baseline on return over drawdown.** Tighter
+  targets lose most (Asia 1R: −111.5R). The combined arm was not run — five losers do not add up
+  to a winner.
+- **Why:** the book is made by a few runners that go 15–30R. A target in any session cuts
+  them, and even an 8R target costs 4–8R per exit. Give-back is the price of holding those runners.
+- **1R, 2R and 3R often cut the same trades** because many are already past all three when the
+  session opens, so they close at its first bar. That is the rule as dictated, not a harness fault.
+- ✅ **Decision: no session target.** Together with Runs 40, 47 and 51–54, taking profit earlier
+  in any form stays closed on this strategy.
