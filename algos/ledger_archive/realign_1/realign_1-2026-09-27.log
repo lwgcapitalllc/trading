@@ -15,3 +15,4 @@
 2026-09-27 03:24:01,408 [INFO] Warmed 15000 bars (2026-07-13 10:25:00+00:00 → 2026-09-25 20:50:00+00:00) in 4.6s
 2026-09-27 03:24:01,408 [INFO] Equity re-anchored to the account after warm-up: 14,808.95 → 14,862.76
 2026-09-27 03:24:01,877 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
+2026-09-27 04:20:06,176 [ERROR] Config changed in ways that CANNOT be applied to a running bot: exec_rev_arm_at: None → 'R', exec_rev_giveback_pct: None → 50.0, exec_rev_need_bos: None → False, exec_scale_brk_n: None → 2. Still running the settings loaded at startup. Restart the bot to take them (the version pin and the engine warmup are re-checked on restart).
