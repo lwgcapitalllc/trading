@@ -111,7 +111,14 @@ def test_the_config_that_killed_the_bot_now_STARTS(tmp_path):
     ok, detail = promote.verify(cfg, staging)
     assert ok, "it still IMPORTS and BUILDS — that was always the point"
     startup = json.loads(detail)["startup"]
-    assert startup["fast_feed_minutes"] == 5, "the strategy asks for its own fill clock"
+    # The fill clock is READ from the live config, never typed here: it said 5 until the 1m-break
+    # add went ON (1437a91c, 2026-09-26), which needs the re-entry's feed on 1 minute.
+    params = cfg.strategy_params
+    assert startup["fast_feed_minutes"] == params["exec_sec_fill_tf_min"], (
+        "the strategy asks for its own fill clock"
+    )
+    if params.get("exec_scale_in") and params.get("exec_scale_mode") == "1m break":
+        assert startup["fast_feed_minutes"] == 1, "the 1m-break add rides the 1-minute feed"
     assert startup["has_make_dual_clock"] is True, "and it can merge the two streams"
     # ⚠ This bot's config states the GAP trigger (`exec_sec_trigger = "FVG in zone"`), whose 50%
     # bank leaves a runner. An earlier comment here claimed it runs the RECLAIM. It does not, and

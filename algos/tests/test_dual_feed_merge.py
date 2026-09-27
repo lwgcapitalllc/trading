@@ -117,6 +117,9 @@ def _stub_strategy(secondary=False):
         execution=SimpleNamespace(
             step=lambda sig, seq: SimpleNamespace(),
             step_reversal=lambda sig_fast, m1, levels=(): None,
+            # Handed every fast bar's breaks since 2ae15b32 (the "1m break" add); the real one is a
+            # no-op without that mode AND an open trade, so this inert stub is no more capable.
+            observe_fast_breaks=lambda ts, breaks, direction=0: None,
         ),
     )
 
@@ -699,3 +702,27 @@ def test_the_REAL_shipped_strategy_config_cannot_go_live_until_scale_in_is_turne
         live_bridge.assert_supported(
             LAB_STRATEGY["config"](symbol="XAUUSD.p", exec_scale_mode="BOS retest")
         )
+
+
+def test_every_fast_bar_hands_its_breaks_to_the_1m_break_add_even_with_the_re_entry_OFF():
+    """The live SOS Fade bot adds on 1-minute breaks since 2026-09-26, and the breaks reach its
+    execution layer ONLY through this merge. The execution tests call the observer directly, so
+    nothing drove the wiring until this. Secondary OFF on purpose: the add must not switch off
+    with the re-entry.
+
+    MUTATION (run 2026-09-27): drop the `observe_fast_breaks` call from `DualClock.step_fast` ->
+    red (no bar observed)."""
+    seen = []
+    st = _stub_strategy(secondary=False)
+    st.execution.observe_fast_breaks = lambda ts, breaks, direction=0: seen.append(ts)
+    clock = _clock(st)
+    df15, df5 = _frames()
+    for b in _bars(df15):
+        clock.push_primary(b)
+    stepped = []
+    for b in _bars(df5):
+        clock.step_fast(b)
+        stepped.append(b.timestamp_ms)
+    assert seen, "no fast bar handed its breaks over"
+    assert seen == sorted(seen) and set(seen) <= set(stepped)
+    assert len(seen) == len(stepped), f"{len(stepped) - len(seen)} fast bars never observed"

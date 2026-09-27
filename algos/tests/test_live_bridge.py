@@ -1251,9 +1251,12 @@ def test_a_HALT_is_health_not_a_trade():
     assert notes and "HALTED" in notes[0]
 
 
-def test_closing_a_position_reports_pnl_and_r():
+def test_closing_a_position_reports_pnl_and_r(monkeypatch):
     """Risk is measured off the BROKER's fill and the stop actually attached — R has to
     describe the trade that happened, not the one that was intended."""
+    # The SIZED rendering, forced on: the trades room hides lots and dollars since 2026-09-24
+    # (`alerts.SHOW_SIZE`, pinned in test_follower_mode.py), which turned this red unnoticed.
+    monkeypatch.setattr(live_bridge.alerts, "SHOW_SIZE", True)
     ops = _FakeMt5Ops()
     ops.positions = [_Pos(901, 0, 3290.0, 0.42, 3280.0)]
     ex = _FakeExecution(pos_dir=1)
@@ -1270,6 +1273,24 @@ def test_closing_a_position_reports_pnl_and_r():
     assert closed["r_multiple"] == pytest.approx(3.0)
     # The exit alert leads with the OUTCOME, not the word "exit" — see algos/live/alerts.py.
     assert any("WIN" in n and "Made $1,260.00" in n for n in notes)
+
+
+def test_the_REAL_close_message_hides_dollars_in_follower_mode():
+    """The same close through the real bridge with the switch as SHIPPED: R, never dollars. The
+    formatters are pinned in test_follower_mode.py; this proves the bridge passes the switch."""
+    ops = _FakeMt5Ops()
+    ops.positions = [_Pos(901, 0, 3290.0, 0.42, 3280.0)]
+    ex = _FakeExecution(pos_dir=1)
+    b, ops, ledger, notes = _bridge(ex, mt5ops=ops)
+    b.sync(_Dec(stop=3280.0), _Sig())
+    ops.positions = []
+    ops.deal = (3320.0, 1260.0)
+    ex._pos_dir = 0
+    b.sync(_Dec(), _Sig())
+
+    win = [n for n in notes if "WIN" in n]
+    assert win and "+3.00R" in win[0]
+    assert "$" not in win[0] and "lot" not in win[0].lower()
 
 
 def test_a_position_cancels_any_leftover_resting_order():
@@ -5019,8 +5040,11 @@ def test_a_new_trade_does_not_inherit_the_last_trades_announced_R():
     assert b._stop_r_said is None and b._pos_stop0 == 0.0
 
 
-def test_a_banked_partial_is_announced_with_what_is_still_running():
+def test_a_banked_partial_is_announced_with_what_is_still_running(monkeypatch):
     """Size coming off is the trade being managed. It was recorded and never said."""
+    # The SIZED rendering, forced on: the trades room hides lots and dollars since 2026-09-24
+    # (`alerts.SHOW_SIZE`, pinned in test_follower_mode.py), which turned this red unnoticed.
+    monkeypatch.setattr(live_bridge.alerts, "SHOW_SIZE", True)
     b, ops, ledger, notes = _in_trade(lots=0.42)
     b._notify_partial_banked(banked=0.17, before=0.42, after=0.25)
     assert notes[-1].startswith("💰 PART BANKED")
@@ -5060,12 +5084,15 @@ def test_a_message_that_throws_cannot_cost_a_stop_move():
     assert b.state is not live_bridge.BridgeState.HALTED
 
 
-def test_BANKING_size_off_a_live_position_is_ANNOUNCED_at_its_call_site():
+def test_BANKING_size_off_a_live_position_is_ANNOUNCED_at_its_call_site(monkeypatch):
     """Rule 7: the ledger event proves nothing about the message. This drives the real
     reconciliation rather than the notifier, so a refactor that drops the send is caught here.
 
     MUTATION: remove the send from `_sync_partials` → red with only the entry message in the room.
     """
+    # The SIZED rendering, forced on: the trades room hides lots and dollars since 2026-09-24
+    # (`alerts.SHOW_SIZE`, pinned in test_follower_mode.py), which turned this red unnoticed.
+    monkeypatch.setattr(live_bridge.alerts, "SHOW_SIZE", True)
     b, ops, ledger, notes = _open_bank(qty=1.0, filled=0.5, held=1.0)
     notes.clear()
     b.sync(_Dec(stop=3280.0), _Sig())
@@ -5075,13 +5102,16 @@ def test_BANKING_size_off_a_live_position_is_ANNOUNCED_at_its_call_site():
     assert "Took 0.50 of 1.00 lots off · 0.50 still running" in banked[0]
 
 
-def test_ADDING_to_a_winner_is_ANNOUNCED_at_its_call_site_and_counts_the_BROKER_book():
+def test_ADDING_to_a_winner_is_ANNOUNCED_at_its_call_site_and_counts_the_BROKER_book(monkeypatch):
     """The entry message stated a size and a risk, and this makes both stale. Rule 3 is the other
     half: the figure is the difference between two reads of the broker's own book, so a refused
     or rejected add announces nothing rather than size the account does not hold.
 
     MUTATION: report `pend.qty` instead of the difference → red on the lots.
     """
+    # The SIZED rendering, forced on: the trades room hides lots and dollars since 2026-09-24
+    # (`alerts.SHOW_SIZE`, pinned in test_follower_mode.py), which turned this red unnoticed.
+    monkeypatch.setattr(live_bridge.alerts, "SHOW_SIZE", True)
     b, ops, ledger, notes = _scaled_bridge(base_qty=100.0, base_lots=1.0)
     b._ex._adds = [[3300.0, 20.0]]
     notes.clear()
