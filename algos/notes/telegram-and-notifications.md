@@ -1159,6 +1159,9 @@ Tests: `algos/tests/test_review_and_reminders.py` (16) and three updated in `tes
   sends it on its first pass after — late, never twice. The Command Center's own held lines are on
   the laptop and are not in it.
 - The summary is itself logged (label `DAILY SUMMARY`) and never counted by the next one.
+- ⚠ **"Auto-restarts" counts only the WATCHDOG's.** A restart somebody pressed in the Command Center
+  ends with the bot EDITING that action's message, logged with `edit_of`, and is excluded. The first
+  real summary (2026-09-27) counted Aaron's two deploys as auto-restarts, one per room.
 - 🔴 **Six copies reached the LIVE health room on its first evening (2026-09-27), and none came from
   the box.** Two watchdog tests ran a full pass on a laptop that holds the real bot token; after
   08:00 Chicago that pass sent a real summary on every suite run, each saying *there is no send

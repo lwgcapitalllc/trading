@@ -102,7 +102,13 @@ def summarise(rows, problem, found: int, start: datetime, end: datetime) -> str:
     late = [r for r in rows if r.get("outcome") == notify_log.SENT and r.get("delayed")]
     gave_up = [r for r in rows if r.get("outcome") == notify_log.DROPPED and r.get("gave_up")]
     refused = [r for r in rows if r.get("outcome") == notify_log.DROPPED and not r.get("gave_up")]
-    restarts = [r for r in rows if r.get("label") == "RESTARTED" and _who(r) != "Telegram bot"]
+    # An in-place edit (`edit_of`) is a bot finishing a restart somebody PRESSED in the Command
+    # Center, never the watchdog's — counting it called Aaron's own deploys "auto-restarts".
+    restarts = [
+        r
+        for r in rows
+        if r.get("label") == "RESTARTED" and _who(r) != "Telegram bot" and not r.get("edit_of")
+    ]
     chat_bot = [r for r in rows if r.get("label") == "RESTARTED" and _who(r) == "Telegram bot"]
     offs = [
         r

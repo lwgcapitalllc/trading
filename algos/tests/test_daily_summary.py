@@ -10,6 +10,8 @@ drive the real notifier and policy end to end for the counts.
   - the `found` branch removed                                          -> the no-log test red
   - held rows counted from `sent` instead                               -> the end-to-end test red
   - `due` ignoring `sent_for`                                           -> the once-a-day test red
+  - a Command Center restart (`edit_of`) counted as an auto-restart     -> the named-counts test red
+    (watched RED 2026-09-27 before the fix: it counted 3, not 2)
 """
 
 from __future__ import annotations
@@ -98,6 +100,9 @@ def test_the_longest_trading_off_the_restarts_and_the_late_and_lost_are_named():
         _r("RESTARTED"),
         _r("RESTARTED", outcome="sent"),
         _r("RESTARTED", subject="Telegram bot"),
+        # A restart somebody PRESSED: the bot edits the Command Center's own message. Not an
+        # auto-restart - on its first morning the summary counted Aaron's deploys as two.
+        _r("RESTARTED", outcome="sent", edit_of=15),
         _r("HALTED", outcome="sent", delayed=True),
         {**_r("ENTRY", outcome="dropped", gave_up=True), "kind": "trade"},
     ]
