@@ -348,4 +348,5 @@ listed below under the notes file that now holds it.
 
 - The bar loop reads COLUMN ARRAYS, never `df.iterrows()` (2026-08-26)
 - On the 1-minute feed the loop is walked 2.4M times; timestamps are boxed in one pass (2026-09-27)
+- `replay/recorded.py` stores a per-bar stream; only a FROZEN output may be recorded (2026-09-27)
 - 🔴 The Costs pill UNDER-CHARGED every trade that scaled in (2026-09-07)

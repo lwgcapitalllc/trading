@@ -125,6 +125,48 @@ class Structure1m:
         )
 
 
+class RecordingStructure1m(Structure1m):
+    """`Structure1m`, unchanged, keeping every `M1State` it returns so the lab can store the
+    stream (`backtest/replay/recorded.py`) and replay it next run instead of recomputing it."""
+
+    def __init__(self, major_length: int = 15) -> None:
+        super().__init__(major_length=major_length)
+        self.outputs: list = []
+
+    def update(self, index: int, o: float, h: float, l: float, c: float) -> M1State:
+        m = super().update(index, o, h, l, c)
+        self.outputs.append(m)
+        return m
+
+
+class PlayedStructure1m:
+    """`Structure1m`'s outputs replayed from a recording — the lab only, never the live bot.
+
+    Safe because an `M1State` is frozen plain values and never changes after its bar (checked
+    2026-09-27 on 87,985 bars), and because the dual clock reads nothing off the feed but the
+    returned state and `conf_high` / `conf_low`, which the state carries. The recording is keyed
+    on the exact bytes of the fast frame, so it is only ever handed the frame it was made from;
+    ⚠ it still REFUSES a bar out of sequence rather than serve a state recorded for another bar.
+    """
+
+    def __init__(self, outputs: list) -> None:
+        self._outputs = outputs
+        self._next = 0
+        self.conf_high: Optional[float] = None
+        self.conf_low: Optional[float] = None
+
+    def update(self, index: int, o: float, h: float, l: float, c: float) -> M1State:
+        if index != self._next or index >= len(self._outputs):
+            raise RuntimeError(
+                f"recorded 1m structure asked for bar {index}, expected {self._next} of "
+                f"{len(self._outputs)} - refusing to serve another bar's state"
+            )
+        m = self._outputs[index]
+        self._next += 1
+        self.conf_high, self.conf_low = m.conf_high, m.conf_low
+        return m
+
+
 
 @dataclass(frozen=True)
 class InternalShiftState:

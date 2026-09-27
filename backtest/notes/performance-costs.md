@@ -123,6 +123,19 @@ all 2,385,484 one-minute bars 27.9s → 13.3s. `replay_fingerprint.py compare` o
 (`command-center/backend/services/run_result_cache.py`). Skipping the 1-minute bookkeeping while
 nothing is armed is a strategy change and is parked until Aaron decides on it.
 
+### `replay/recorded.py` — a per-bar stream computed once and replayed (2026-09-27)
+
+A reusable store for any per-bar output that depends only on the bars and a few settings. Keyed
+on the frame's bytes, the settings, and the source of every file that can change the output;
+fails open; on disk under `backtest/cache/streams/` (5 GB cap, least recently used out first).
+First user: SOS Fade's fast structure stream (`strategies/python/sos_fade/notes/secondary_reentry.md`).
+
+🔴 **A producer may be recorded only if its output is FROZEN at the bar it was emitted.** The
+liquidity engine hands out a level object and marks it swept bars later, so a stored copy is
+either stale (frozen at emission) or the future (taken at the end), and neither shows in a result.
+That is why the 15-minute engine stack is NOT recorded — and on a 15-minute run it is a few
+percent of the time anyway (the 2026-08-27 table above).
+
 ## 🔴 The Costs pill UNDER-CHARGED every trade that scaled in (2026-09-07)
 
 `reprice.py` rebuilds a finished run's book at a different cost profile, and it rests on one
