@@ -708,7 +708,27 @@ health room's four severity icons are a separate, closed set and are not touched
 
 ---
 
-## Follower mode — the trades room states no sizes and no dollars (2026-09-24)
+## Sizes shown, in BOTH rooms, under ONE switch (2026-09-27) — supersedes the section below
+
+**Aaron's call:** *"make lot sizes show equally ... and yes show when we scale in ... make sure all
+messages are as equal as possible."* `alerts.SHOW_SIZE` is now **True**, and it governs the signals
+room too: the setup thread passes it at both of its sized messages (the resting limit's header and
+the moved-order lots line), so the two rooms can never again disagree about whether a size is stated.
+
+- **The add is announced either way.** With sizes on it is the sized message (`Added 0.20 lots at
+  about 3,300.00 · 1.20 lots now open · every lot on the same stop …`); with sizes off it says
+  `Added to the position at about 3,300.00 · Every lot on the same stop …`. Silence was wrong: a
+  follower whose thread never says the bot added is copying a trade the thread does not describe.
+- **One spelling per figure.** Lots are always two places (the entry printed `0.5 lots` while the
+  rest of its own thread printed `0.50`), and R is always two places (the hand-close header printed
+  `+0.7R` where WIN/LOSS prints `+0.70R`).
+- ⚠ **This reverses Kelly's 2026-09-24 request** for the rooms people follow. Hiding size again is
+  the one line — and now hides it in both rooms at once.
+- Proof: `test_follower_mode.py` (the OFF rendering of every message, and a structural pin that
+  both rooms read the switch — mutation-checked), `test_live_bridge.py` (an add is still announced
+  with sizes off — mutation-checked by restoring the old gate).
+
+## Follower mode — the trades room states no sizes and no dollars (2026-09-24) — SUPERSEDED above
 
 **Kelly's call:** *"I don't want the lot size to be shared, just details to follow the bot how it
 trades."* The trades room is read by people following the bot, so it now carries prices, stop moves

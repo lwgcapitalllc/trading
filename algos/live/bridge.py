@@ -2428,9 +2428,8 @@ class OrderBridge:
         # answers `[]` for both, and this path only runs with a base position already adopted —
         # so a zero read means the book could not be read, and the difference would then report
         # the WHOLE position as size just added. Rule 1, arriving through a subtraction.
-        # ⚠ An add posts nothing in follower mode — see `alerts.SHOW_SIZE`. The message's whole job
-        # is keeping a stated size current, and no size is stated, so there is nothing to correct.
-        if gained > 1e-9 and held_before > 0 and alerts.SHOW_SIZE:
+        # An add is announced whether or not sizes are shown (2026-09-27) — see `alerts.SHOW_SIZE`.
+        if gained > 1e-9 and held_before > 0:
             self._notify_scaled_in(
                 added=gained,
                 now=self._our_lots(positions),
@@ -4369,6 +4368,7 @@ class OrderBridge:
         try:
             self._notify(
                 alerts.format_scaled_in(
+                    show_size=alerts.SHOW_SIZE,
                     lots_added=added,
                     lots_now=now,
                     price=price,

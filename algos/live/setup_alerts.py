@@ -332,7 +332,10 @@ class SetupAlerts:
             self._order[snap.key] = now
             if self._on(ENTRY_ZONE_MSG):
                 lots = now.lots if now is not None else None
-                self._post(alerts.format_entry_zone(snap, self._digits, lots), reply_to=root)
+                self._post(
+                    alerts.format_entry_zone(snap, self._digits, lots, show_size=alerts.SHOW_SIZE),
+                    reply_to=root,
+                )
             self._save()
             return
         if now is None:
@@ -356,7 +359,11 @@ class SetupAlerts:
         if self._on(ENTRY_ZONE_MSG):
             self._post(
                 alerts.format_order_moved(
-                    snap, self._digits, now if asked else None, before if asked else None
+                    snap,
+                    self._digits,
+                    now if asked else None,
+                    before if asked else None,
+                    show_size=alerts.SHOW_SIZE,
                 ),
                 reply_to=root,
             )

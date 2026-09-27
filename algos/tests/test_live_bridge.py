@@ -1254,8 +1254,8 @@ def test_a_HALT_is_health_not_a_trade():
 def test_closing_a_position_reports_pnl_and_r(monkeypatch):
     """Risk is measured off the BROKER's fill and the stop actually attached — R has to
     describe the trade that happened, not the one that was intended."""
-    # The SIZED rendering, forced on: the trades room hides lots and dollars since 2026-09-24
-    # (`alerts.SHOW_SIZE`, pinned in test_follower_mode.py), which turned this red unnoticed.
+    # The SIZED rendering, forced: sizes were hidden 2026-09-24..27 and this went red unnoticed.
+    # Shown again as shipped; forcing it keeps this case about the counts whatever the switch says.
     monkeypatch.setattr(live_bridge.alerts, "SHOW_SIZE", True)
     ops = _FakeMt5Ops()
     ops.positions = [_Pos(901, 0, 3290.0, 0.42, 3280.0)]
@@ -1275,9 +1275,10 @@ def test_closing_a_position_reports_pnl_and_r(monkeypatch):
     assert any("WIN" in n and "Made $1,260.00" in n for n in notes)
 
 
-def test_the_REAL_close_message_hides_dollars_in_follower_mode():
-    """The same close through the real bridge with the switch as SHIPPED: R, never dollars. The
+def test_the_REAL_close_message_hides_dollars_in_follower_mode(monkeypatch):
+    """The same close through the real bridge with sizes switched OFF: R, never dollars. The
     formatters are pinned in test_follower_mode.py; this proves the bridge passes the switch."""
+    monkeypatch.setattr(live_bridge.alerts, "SHOW_SIZE", False)
     ops = _FakeMt5Ops()
     ops.positions = [_Pos(901, 0, 3290.0, 0.42, 3280.0)]
     ex = _FakeExecution(pos_dir=1)
@@ -4652,7 +4653,7 @@ def test_a_FULL_hand_close_is_booked_as_yours_and_the_bot_keeps_trading(tmp_path
     assert closed["price"] == 4291.98 and closed["ticket"] == ticket
     assert closed["r_multiple"] == pytest.approx(348.6 / (35.46 * 0.14 * 100), rel=1e-3)
     assert ex.close_requested == live_bridge.MANUAL_CLOSE_REASON
-    assert notes[-1].splitlines()[0] == "✋ CLOSED BY YOU · +0.7R"
+    assert notes[-1].splitlines()[0] == "✋ CLOSED BY YOU · +0.70R"
     from position_state import read as read_record
 
     assert read_record(tmp_path) is None
@@ -5042,8 +5043,8 @@ def test_a_new_trade_does_not_inherit_the_last_trades_announced_R():
 
 def test_a_banked_partial_is_announced_with_what_is_still_running(monkeypatch):
     """Size coming off is the trade being managed. It was recorded and never said."""
-    # The SIZED rendering, forced on: the trades room hides lots and dollars since 2026-09-24
-    # (`alerts.SHOW_SIZE`, pinned in test_follower_mode.py), which turned this red unnoticed.
+    # The SIZED rendering, forced: sizes were hidden 2026-09-24..27 and this went red unnoticed.
+    # Shown again as shipped; forcing it keeps this case about the counts whatever the switch says.
     monkeypatch.setattr(live_bridge.alerts, "SHOW_SIZE", True)
     b, ops, ledger, notes = _in_trade(lots=0.42)
     b._notify_partial_banked(banked=0.17, before=0.42, after=0.25)
@@ -5090,8 +5091,8 @@ def test_BANKING_size_off_a_live_position_is_ANNOUNCED_at_its_call_site(monkeypa
 
     MUTATION: remove the send from `_sync_partials` → red with only the entry message in the room.
     """
-    # The SIZED rendering, forced on: the trades room hides lots and dollars since 2026-09-24
-    # (`alerts.SHOW_SIZE`, pinned in test_follower_mode.py), which turned this red unnoticed.
+    # The SIZED rendering, forced: sizes were hidden 2026-09-24..27 and this went red unnoticed.
+    # Shown again as shipped; forcing it keeps this case about the counts whatever the switch says.
     monkeypatch.setattr(live_bridge.alerts, "SHOW_SIZE", True)
     b, ops, ledger, notes = _open_bank(qty=1.0, filled=0.5, held=1.0)
     notes.clear()
@@ -5109,8 +5110,8 @@ def test_ADDING_to_a_winner_is_ANNOUNCED_at_its_call_site_and_counts_the_BROKER_
 
     MUTATION: report `pend.qty` instead of the difference → red on the lots.
     """
-    # The SIZED rendering, forced on: the trades room hides lots and dollars since 2026-09-24
-    # (`alerts.SHOW_SIZE`, pinned in test_follower_mode.py), which turned this red unnoticed.
+    # The SIZED rendering, forced: sizes were hidden 2026-09-24..27 and this went red unnoticed.
+    # Shown again as shipped; forcing it keeps this case about the counts whatever the switch says.
     monkeypatch.setattr(live_bridge.alerts, "SHOW_SIZE", True)
     b, ops, ledger, notes = _scaled_bridge(base_qty=100.0, base_lots=1.0)
     b._ex._adds = [[3300.0, 20.0]]
@@ -5120,3 +5121,19 @@ def test_ADDING_to_a_winner_is_ANNOUNCED_at_its_call_site_and_counts_the_BROKER_
     assert len(added) == 1
     assert "Added 0.20 lots at about 3,300.00" in added[0]
     assert "1.20 lots now open" in added[0]
+
+
+def test_an_add_is_STILL_ANNOUNCED_with_sizes_switched_off(monkeypatch):
+    """2026-09-27 (Aaron: "show when we scale in"): with sizes off the add used to post nothing,
+    so a follower's thread stopped describing the trade. Now it says the bot added, without lots.
+
+    MUTATION: restore the `and alerts.SHOW_SIZE` gate at the bridge's add -> red (nothing sent)."""
+    monkeypatch.setattr(live_bridge.alerts, "SHOW_SIZE", False)
+    b, ops, ledger, notes = _scaled_bridge(base_qty=100.0, base_lots=1.0)
+    b._ex._adds = [[3300.0, 20.0]]
+    notes.clear()
+    _add_bar(b, [_add_intent(qty=20.0, price=3300.0)])
+    added = [n for n in notes if n.startswith("➕ ADDED TO POSITION")]
+    assert len(added) == 1, "the add was not announced"
+    assert "Added to the position at about 3,300.00" in added[0]
+    assert "lots" not in added[0]

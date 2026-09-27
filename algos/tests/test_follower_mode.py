@@ -1,4 +1,8 @@
-"""Follower mode: the trades room never states lot sizes or dollar amounts.
+"""Follower mode: with sizes OFF, neither room states lot sizes or dollar amounts.
+
+🔴 **Sizes are SHOWN as shipped since 2026-09-27** (Aaron: *"make lot sizes show equally"*), in
+BOTH rooms under ONE switch. Every case below drives the OFF rendering explicitly, so hiding them
+again is one line and still proven; the policy test pins what ships and that both rooms follow it.
 
 ⚠ **PROVEN BY MUTATION, not by watching it go red on a bug** (rule 12). The behaviour these assert
 shipped in the same change, so there was never a red state to observe. Instead each test is checked
@@ -36,8 +40,32 @@ EXIT = dict(
 )
 
 
-def test_policy_default_is_follower_mode():
-    assert alerts.SHOW_SIZE is False
+def test_sizes_are_SHOWN_and_both_rooms_follow_the_one_switch():
+    """MUTATION: drop `show_size=alerts.SHOW_SIZE` from either setup-thread call -> red."""
+    assert alerts.SHOW_SIZE is True
+    src = (ROOT / "algos" / "live" / "setup_alerts.py").read_text()
+    assert src.count("show_size=alerts.SHOW_SIZE") == 2, "the signals room ignores the switch"
+    bridge = (ROOT / "algos" / "live" / "bridge.py").read_text()
+    assert bridge.count("show_size=alerts.SHOW_SIZE") == 5, "a trade message ignores the switch"
+
+
+def test_an_add_is_ANNOUNCED_with_sizes_off_just_without_the_lots():
+    m = alerts.format_scaled_in(
+        lots_added=0.2, lots_now=1.2, price=3300.0, stop=3290.0, show_size=False
+    )
+    assert "ADDED TO POSITION" in m and "at about 3,300.00" in m and "3,290.00" in m
+    assert "lots" not in m and "0.20" not in m and "1.20" not in m
+
+
+def test_the_signals_room_hides_size_with_the_same_switch():
+    from types import SimpleNamespace
+
+    snap = SimpleNamespace(
+        side=1, entry=3290.0, stop=3280.0, targets=[3310.0], met=2, of=3, confluences=[]
+    )
+    on = alerts.format_entry_zone(snap, 2, 0.25, show_size=True)
+    off = alerts.format_entry_zone(snap, 2, 0.25, show_size=False)
+    assert "0.25 lots" in on and "lots" not in off and "BUY LIMIT RESTING" in off
 
 
 def test_entry_states_prices_and_no_size():
@@ -69,7 +97,7 @@ def test_manual_close_drops_dollars_keeps_r():
     m = alerts.format_manual_close(
         symbol="XAUUSD.p", exit_price=3300.0, pnl_usd=-50.0, r_multiple=-0.4, show_size=False
     )
-    assert "-0.4R" in m and "$" not in m
+    assert "-0.40R" in m and "$" not in m
 
 
 def test_stop_moves_are_untouched_they_never_carried_a_size():
