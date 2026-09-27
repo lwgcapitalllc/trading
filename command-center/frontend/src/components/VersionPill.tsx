@@ -1,7 +1,7 @@
 import { AlertTriangle, HelpCircle, Loader2, RotateCcw, Upload, WifiOff } from 'lucide-react'
 import type { BotDeployedVersion } from '@/types'
 import { Shimmer } from '@/components/Shimmer'
-import { deployableVersion, versionNeed, versionReadFailure } from '@/lib/botVersion'
+import { changeGroups, deployableVersion, versionNeed, versionReadFailure } from '@/lib/botVersion'
 
 /**
  * ONE pill for "what version of this bot is deployed", used everywhere a bot is listed — so the
@@ -147,8 +147,13 @@ export function VersionPill({
         data-state="behind"
         title={
           `Deployed ${label}, backtester on v${c.local_version} — ` +
-          `${behind} change${behind === 1 ? '' : 's'} to this bot's code waiting to go out. ` +
-          `Deploy it from Configure.`
+          `${behind} change${behind === 1 ? '' : 's'} to this bot's code waiting to go out` +
+          (c.changes.length
+            ? `: ${changeGroups(c.changes, version?.strategy_package ?? '')
+                .map((g) => `${g.changes.length} ${g.label.toLowerCase()}`)
+                .join(', ')}. `
+            : '. ') +
+          `Click to see them and deploy.`
         }
         className={`${BASE} ${TONE.warn}`}
       >

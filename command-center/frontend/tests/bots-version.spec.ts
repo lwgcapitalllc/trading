@@ -595,6 +595,43 @@ test('a setting that would move is listed, and a PINNED one is listed apart from
   await expect(banner(page).getByText(/Secondary re-entries \(1m SOS\) \(Off → On\)/)).toBeVisible()
 })
 
+test('the waiting changes are grouped by the area they landed in', async ({ page }) => {
+  // Aaron, 2026-09-26: his SOS Fade work marked every other bot behind, and the flat list of
+  // commit titles did not say why. Grouped, a borrowed strategy's work reads as borrowed.
+  // MUTATION: rank a borrowed package above the bot's own → red, the mixed commit moves group.
+  // MUTATION: drop the per-group toggle → red, the commit title never appears.
+  const ch = (commit: string, subject: string, areas: string[]) => ({
+    commit,
+    subject,
+    date: '2026-09-25',
+    areas,
+  })
+  await mockBot(
+    page,
+    compare({
+      versions_behind: 4,
+      changes: [
+        ch('a1', 'own and live', ['algos/live', 'strategies/python/sos_fade']),
+        ch('a2', 'borrowed one', ['strategies/python/b_leg']),
+        ch('a3', 'borrowed two', ['strategies/python/b_leg', 'algos/shared']),
+        ch('a4', 'telegram', ['algos/shared', 'strategies/python/live_contract.py']),
+      ],
+    })
+  )
+  await openConfigure(page)
+  const groups = banner(page).getByTestId('code-change-groups')
+  await expect(groups.getByText('4 code changes, by area')).toBeVisible()
+  const rows = groups.getByRole('button')
+  await expect(rows).toHaveText([
+    /Borrowed from B-Leg\s*· 2/,
+    /This bot's own strategy\s*· 1/,
+    /Live running code \(orders, Telegram\)\s*· 1/,
+  ])
+  await expect(groups.getByText('own and live')).toHaveCount(0)
+  await rows.nth(1).click()
+  await expect(groups.getByText('own and live')).toBeVisible()
+})
+
 test('a setting the deployed version never had says so — it does not claim it was Off', async ({
   page,
 }) => {

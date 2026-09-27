@@ -19,6 +19,7 @@ import {
   isRestartPending,
   restartReason,
   versionReadFailure,
+  changeGroups,
 } from '@/lib/botVersion'
 import { Shimmer } from '@/components/Shimmer'
 import { StepProgress, type Step } from '@/components/StepProgress'
@@ -220,7 +221,7 @@ export function VersionBanner({
   // the deploy is a claim about the thing that just changed, so the step label uses the intent.
   const [target, setTarget] = useState<number | null>(null)
   const [armed, setArmed] = useState(false)
-  const [showChanges, setShowChanges] = useState(false)
+  const [openGroup, setOpenGroup] = useState<string | null>(null)
   // A FINISHED deploy shows its output only on request — after a success it is forty lines of
   // confirmation under a line that already said so. A failure keeps it open; the reason lives there.
   const [showOutput, setShowOutput] = useState(false)
@@ -748,23 +749,38 @@ export function VersionBanner({
             </p>
           )}
 
-          <button
-            onClick={() => setShowChanges((s) => !s)}
-            className="inline-flex items-center gap-[4px] text-[10px] text-text-tertiary hover:text-text-secondary"
-          >
-            {showChanges ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-            {c.changes.length} code change{c.changes.length === 1 ? '' : 's'}
-          </button>
-          {showChanges && (
-            <div className="max-h-[200px] overflow-y-auto space-y-[3px] pl-[14px]">
-              {c.changes.map((ch) => (
-                <div key={ch.commit} className="text-[10px] leading-[1.45] text-text-secondary">
-                  <span className="text-text-tertiary font-mono mr-[6px]">{ch.date}</span>
-                  {ch.subject}
-                </div>
-              ))}
-            </div>
-          )}
+          {/* What changed, grouped by where it landed — so a bot marked behind by another
+              strategy's work says so on sight (Aaron, 2026-09-26). Each group opens its commits. */}
+          <div data-testid="code-change-groups">
+            <p className="text-[10px] uppercase tracking-[0.4px] text-text-tertiary mb-[5px]">
+              {c.changes.length} code change{c.changes.length === 1 ? '' : 's'}, by area
+            </p>
+            {changeGroups(c.changes, v?.strategy_package ?? '').map((g) => (
+              <div key={g.label}>
+                <button
+                  onClick={() => setOpenGroup((o) => (o === g.label ? null : g.label))}
+                  className="inline-flex items-center gap-[4px] text-[11px] text-text-secondary hover:text-text-primary py-[1px]"
+                >
+                  {openGroup === g.label ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+                  {g.label}
+                  <span className="text-text-tertiary">· {g.changes.length}</span>
+                </button>
+                {openGroup === g.label && (
+                  <div className="max-h-[200px] overflow-y-auto space-y-[3px] pl-[14px] pb-[4px]">
+                    {g.changes.map((ch) => (
+                      <div
+                        key={ch.commit}
+                        className="text-[10px] leading-[1.45] text-text-secondary"
+                      >
+                        <span className="text-text-tertiary font-mono mr-[6px]">{ch.date}</span>
+                        {ch.subject}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

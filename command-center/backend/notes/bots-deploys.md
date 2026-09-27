@@ -148,6 +148,16 @@ own banner and ledger keep the OLD stamp until its next deploy, while this page 
 count — expected for one deploy, not a fault. ⚠ **A change to a LOOSE MODULE names that module as
 its tree** (equality, not `startswith(tree + "/")`), or it named no tree and read as a merge.
 
+🔴 **RESEARCH SCRIPTS STOPPED SHIPPING AND COUNTING, 2026-09-26.** `backtest/` is copied wholesale,
+so every study script in `backtest/tools/` rode in every snapshot and every edit to one marked every
+bot behind. Aaron noticed after working only on SOS Fade and seeing every bot "8 behind" (7 were real
+and 1 was a study script). MEASURED: 58 of the 214 commits counted in the 30 days to that date
+touched nothing but those scripts. `package_deps.SKIP_TREES` drops them from the copier and the
+count together. It is matched by PATH, because a strategy's own `tools/` (its parity harness) still
+ships. All nine bots' snapshots were built without the folder that day, and the deploy's import
+check passed on each. ⚠ **EVERY VERSION NUMBER DROPPED A SECOND TIME** (Realign v414 → v326), and
+the bot's own stamp keeps the old number until its next deploy, as in 2026-09-10.
+
 ⚠ **Not the lab's own `strategy_versions` registry, and the reason is the whole design.** That
 table is content-addressed and monotonic and it hashes the **strategy package**, while a bot runs
 that package plus `engines/` and `backtest/` — which is where most of the logic lives, and is

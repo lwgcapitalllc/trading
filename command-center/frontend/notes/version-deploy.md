@@ -269,6 +269,18 @@ must never be described as having landed there — so it asserts the HEADER now,
 went. **Re-mutated to confirm it still bites**: rendering `local_version` as the deployed version
 turns it red.
 
+## The waiting changes are grouped by AREA (2026-09-26)
+
+Aaron worked only on SOS Fade and saw every bot "8 behind". The Configure deploy section listed
+the commits as one flat list behind a toggle, so it could not tell him that Realign, FFT and the
+extreme leg borrow SOS Fade's trade-management code. `lib/botVersion.changeGroups` groups them
+by the most specific area a commit touched: the bot's own strategy, a strategy it borrows, the
+engines, the backtest core, then the shared live code. The group lines show without a click, and
+each one opens its commits. The behind badge's hover gives the same breakdown in one line. ⚠ **An
+area is WHERE a change landed, never whether it moves trades**, because borrowed code behind a
+setting the bot leaves off changes nothing. The same day, research scripts stopped counting
+(`command-center/backend/notes/bots-deploys.md`).
+
 ## The fleet strip re-reads itself, and its labels are about the BOT (2026-08-28)
 
 🔴 **A DEPLOYMENT BADGE THAT NEVER RE-READS IS A BADGE THAT LIES.** Both version hooks had

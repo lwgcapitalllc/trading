@@ -56,6 +56,7 @@ __all__ = [
     "PYTHON_ROOT",
     "REPO_REL",
     "SKIP_DIRS",
+    "SKIP_TREES",
     "snapshot_sources",
     "local_dependencies",
     "version_pathspecs",
@@ -68,6 +69,32 @@ REPO_REL = "strategies/python"
 # here: a parity harness ships with its strategy, and it imports the same siblings the strategy
 # does, so excluding it would narrow the scan without narrowing the copy.
 SKIP_DIRS = frozenset({"tests", "__pycache__", ".pytest_cache", ".git"})
+
+REPO_ROOT = PYTHON_ROOT.parents[1]
+
+# Repo-relative folders inside a wholesale-copied tree that hold research scripts no bot runs.
+# 🔴 **ADDED 2026-09-26: they were shipped and COUNTED, so research read as bot code.** Every edit
+# to a study script bumped every bot's version and marked it behind — MEASURED: 58 of the 214
+# commits counted over the 30 days to 2026-09-26 touched nothing but these scripts. Nothing a bot
+# runs imports them (checked by grep the same day; the promote's own import check is the backstop).
+# ⚠ By PATH, not by name like `SKIP_DIRS`: a strategy's own `tools/` holds its parity harness and
+# ships on purpose, and `algos/markets/fx/tools/broker_clock.py` is order-path code.
+SKIP_TREES = frozenset({"backtest/tools"})
+
+
+def _skipped_parts(root: Path) -> List[Tuple[str, ...]]:
+    """`SKIP_TREES` that sit under `root`, as path parts relative to it."""
+    try:
+        base = root.resolve()
+    except OSError:
+        return []
+    out = []
+    for tree in SKIP_TREES:
+        try:
+            out.append((REPO_ROOT / tree).resolve().relative_to(base).parts)
+        except ValueError:
+            continue
+    return out
 
 
 class UnreadablePackage(RuntimeError):
@@ -83,9 +110,12 @@ def snapshot_sources(root: Path) -> Iterator[Tuple[Path, Path]]:
     if root.is_file():
         yield root, Path(root.name)
         return
+    skipped = _skipped_parts(root)
     for py in sorted(root.rglob("*.py")):
         rel = py.relative_to(root)
         if SKIP_DIRS & set(rel.parts):
+            continue
+        if any(rel.parts[: len(s)] == s for s in skipped):
             continue
         yield py, rel
 
@@ -118,6 +148,7 @@ def version_pathspecs(trees: Iterable[str]) -> List[str]:
         specs.append(f":(glob){t}" if t.endswith(".py") else f":(glob){t}/**/*.py")
     if specs:
         specs.extend(f":(exclude,glob)**/{d}/**" for d in sorted(SKIP_DIRS))
+        specs.extend(f":(exclude,glob){t}/**" for t in sorted(SKIP_TREES))
     return specs
 
 

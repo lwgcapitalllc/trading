@@ -193,6 +193,8 @@ def test_a_FILE_root_yields_itself(tmp_path):
 #   treat a loose module as a folder       -> the equivalence and the loose-module step
 #   drop the backslash normalisation       -> the Windows case
 #   emit exclusions with no trees          -> the no-trees case
+#   drop the SKIP_TREES pathspec           -> the equivalence and the research-script case
+#   drop the SKIP_TREES copier check       -> the equivalence case
 
 
 def _git(root: Path, *args: str) -> str:
@@ -213,7 +215,7 @@ def _commit(root: Path, message: str) -> None:
 
 
 # A package, a loose module and a shared tree, each holding files that ship AND files that do not.
-_TREES = ["strategies/python/pkg", "strategies/python/loose.py", "engines"]
+_TREES = ["strategies/python/pkg", "strategies/python/loose.py", "engines", "backtest"]
 _FILES = [
     "strategies/python/pkg/__init__.py",
     "strategies/python/pkg/execution.py",
@@ -228,13 +230,17 @@ _FILES = [
     "engines/me/tests/test_me.py",
     "engines/me/__pycache__/engine.cpython-39.py",
     "engines/tests/test_all.py",
+    "backtest/portfolio/account.py",  # ships: the bot sizes through it
+    "backtest/tools/exit_study.py",  # does not: a research script no bot runs
     "algos/live/runner.py",  # outside every tree
 ]
 
 
 @pytest.fixture
-def repo(tmp_path):
-    """A REAL git repo, because the claim is about what git's own pathspec matching selects."""
+def repo(tmp_path, monkeypatch):
+    """A REAL git repo, because the claim is about what git's own pathspec matching selects.
+    `SKIP_TREES` is repo-relative, so the copier is pointed at THIS repo's root."""
+    monkeypatch.setattr(pd, "REPO_ROOT", tmp_path)
     _git(tmp_path, "init", "-q")
     for rel in _FILES:
         _write(tmp_path, rel)
@@ -282,6 +288,21 @@ def test_a_commit_that_ships_NOTHING_does_not_move_the_version(repo):
     _write(repo, "strategies/python/loose.py", "x = 2\n")
     _commit(repo, "a loose module is a tree that is one file")
     assert _count(repo) == before + 2
+
+
+def test_a_RESEARCH_SCRIPT_is_neither_shipped_nor_counted(repo):
+    """🔴 Research scripts under `backtest/tools/` were copied and counted until 2026-09-26, so a
+    study edit marked every bot behind. The positive control is a backtest file a bot DOES run."""
+    shipped = {rel.as_posix() for _, rel in pd.snapshot_sources(repo / "backtest")}
+    assert "tools/exit_study.py" not in shipped
+    assert "portfolio/account.py" in shipped
+    before = _count(repo)
+    _write(repo, "backtest/tools/exit_study.py", "x = 2\n")
+    _commit(repo, "research")
+    assert _count(repo) == before
+    _write(repo, "backtest/portfolio/account.py", "x = 2\n")
+    _commit(repo, "sizing")
+    assert _count(repo) == before + 1
 
 
 def test_the_pathspecs_are_forward_slashed_for_a_Windows_caller():
