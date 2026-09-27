@@ -74,20 +74,29 @@ def iter_bars(df: pd.DataFrame) -> Iterator[ReplayBar]:
     #
     # ⚠ Proven on real bars, not by argument: `backtest/tools/replay_fingerprint.py` replays a
     # 2.5-year window and compares the bar stream digest AND every trade field before and after.
+    #
+    # 🔴 **THE TIMESTAMPS ARE BOXED IN ONE PASS, AND THE COLUMNS ARE READ AS PLAIN LISTS.**
+    # `idx[seq]` built each Timestamp through the index's single-item lookup, and each `opens[seq]`
+    # made a numpy scalar only for `float()` to unwrap it. MEASURED 2026-09-27 on the 2,385,484
+    # one-minute bars of 2020-01-01..2026-09-26: 27.9s to walk this loop, most of it that per-item
+    # boxing. `list(idx)` builds the SAME Timestamps (same value, tz and unit — checked element by
+    # element) in batches, and `.tolist()` hands back the stored values, which still go through the
+    # same `float(...)`. Proven by `backtest/tools/replay_fingerprint.py`: bar digest and trades
+    # unchanged on 2024-01-01..2026-09-26 with the 1-minute feed on.
     has_volume = "volume" in df.columns
-    idx = df.index
-    opens = df["open"].to_numpy()
-    highs = df["high"].to_numpy()
-    lows = df["low"].to_numpy()
-    closes = df["close"].to_numpy()
-    vols = df["volume"].to_numpy() if has_volume else None
+    stamps = list(df.index)
+    opens = df["open"].tolist()
+    highs = df["high"].tolist()
+    lows = df["low"].tolist()
+    closes = df["close"].tolist()
+    vols = df["volume"].tolist() if has_volume else None
 
-    for seq in range(len(idx)):
+    for seq in range(len(stamps)):
         vol = None
         if vols is not None:
             raw = vols[seq]
             vol = None if pd.isna(raw) else float(raw)
-        ts = idx[seq]
+        ts = stamps[seq]
         yield ReplayBar(
             index=seq,
             timestamp_ms=_epoch_ms(ts),

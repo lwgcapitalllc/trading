@@ -29,9 +29,9 @@ from typing import Any, Dict, Optional
 
 import config as cfg
 
-# Stdlib-only, imports nothing from services — safe at module scope despite this module sitting
+# None of these imports anything from services — safe at module scope despite this module sitting
 # inside the runner_dispatch import cycle.
-from services import run_feeds, strategy_import
+from services import run_feeds, run_result_cache, strategy_import
 
 _MONOREPO = Path(cfg.MONOREPO_ROOT)
 if str(_MONOREPO) not in sys.path:
@@ -487,6 +487,9 @@ def _execute(job_id: str, spec: dict) -> None:
                 f"[{spec['start_date']}, {spec['end_date']}] — check the broker serves {fill_tf}m "
                 f"history for this window (or turn the secondary off)."
             )
+        cache_key = run_result_cache.key(spec, (df, df1m), rate)
+        if _serve_cached(job_id, cache_key):
+            return
         _set(job_id, pct=2, message=f"Testing {len(df):,} × 15m + {len(df1m):,} × {fill_tf}m bars…")
 
         def _prog(i: int, n: int) -> None:
@@ -498,6 +501,9 @@ def _execute(job_id: str, spec: dict) -> None:
 
         strategy.run_dual(df, df1m, progress=_prog, should_cancel=lambda: _cancelled(job_id))
     else:
+        cache_key = run_result_cache.key(spec, (df,), rate)
+        if _serve_cached(job_id, cache_key):
+            return
         _set(job_id, pct=2, message=f"Testing {len(df):,} bars…")
         _replay(job_id, strategy, df, len(df))
 
@@ -530,6 +536,7 @@ def _execute(job_id: str, spec: dict) -> None:
         missed=getattr(strategy.execution, "misses", None),
         lot_capped=getattr(_acct, "lot_capped", None),
     )
+    run_result_cache.write(cache_key, results)
     _set(
         job_id,
         status="complete",
@@ -537,6 +544,25 @@ def _execute(job_id: str, spec: dict) -> None:
         results=results,
         message=f"{len(strategy.execution.trades)} trades",
     )
+
+
+def _serve_cached(job_id: str, cache_key: Optional[str]) -> bool:
+    """Finish the job off an identical earlier run's stored results, if there is one.
+
+    Only a run whose spec, bars, conversion rates and code all match byte for byte can hit — see
+    `services/run_result_cache.py`. Returns False (replay normally) on any miss."""
+    results = run_result_cache.read(cache_key)
+    if results is None:
+        return False
+    n = len(results.get("engine_trades") or [])
+    _set(
+        job_id,
+        status="complete",
+        pct=100,
+        results=results,
+        message=f"{n} trades (identical to an earlier run - reused its results)",
+    )
+    return True
 
 
 def _replay(job_id: str, strategy, df, total: int) -> None:

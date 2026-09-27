@@ -815,3 +815,27 @@ for ever. A test fails the day that route gains a model. `GET /stress-tests/runn
 The single-run runner hands the loaded frame's bar size to the strategy as it builds it (see
 `backtest/notes/architecture.md`), so FFT on 5m bars now fails with its own reason instead of
 completing on 0 trades (run 2db0e08a8ccc). Pinned in `tests/test_python_runner.py`, watched red.
+
+## An identical rerun is served from a cache — `services/run_result_cache.py` (2026-09-27)
+
+A backtest is a pure function of its inputs, and the lab reruns the same basis constantly — a
+retry, a comparison, a stress child, a sweep point already measured. `_execute` now fingerprints
+the run after its bars load and, on a match, finishes the job with the stored results and says so
+in the job message ("identical to an earlier run - reused its results").
+
+- 🔴 **The key is EVERY input:** the whole spec except `job_id`, the bytes of every bar frame
+  replayed, the conversion-rate series, the source of `backtest/`, `engines/`, `strategies/python/`
+  (tests and exports excluded), the news calendar, this runner, and the Python/numpy/pandas
+  versions. Any code edit is a miss on purpose — the app does not reload on a strategy edit (see
+  `command-center/CLAUDE.md`), so a cache keyed without the code would serve superseded answers.
+- ⚠ **Refuses rather than guesses.** An input it cannot fingerprint (an object-dtype column, an
+  unrecognised rate provider) gives no key and the run replays. A result that would not come back
+  from JSON exactly — a tuple, an int turned float — is not stored.
+- ⚠ **Fails open** — a corrupt or half-written file is a miss. Files live in `data/run_cache/`
+  (git-ignored), newest 2,000 kept.
+- ⚠ **Covers single runs and everything built on them (sweeps, stress children).** The native
+  optimizer grid (`_execute_opt`) is a separate path and is NOT cached.
+- MEASURED on run 7760823a639e's settings over 2025-01-01..2025-04-01: first run 15.8s, identical
+  rerun 6.2s (the rest is loading and fingerprinting the bars), results equal field for field; a
+  one-tick slippage change replayed in full. Tests: `tests/test_run_result_cache.py` (9), three
+  watched red by mutation.

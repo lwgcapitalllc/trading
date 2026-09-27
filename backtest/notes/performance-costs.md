@@ -103,6 +103,26 @@ candidate does, the answer is no.
 charges allocation pressure to whoever is running — the pivot fix returned four times its own
 profile share for exactly that reason, so a small entry here is not proof a change would be small.
 
+### The 1-minute feed changed the picture, and the bar loop boxes in one pass (2026-09-27)
+
+The table above is a 15-minute profile. **On the 1-minute re-entry feed the bar loop is walked
+2,385,484 times over 2020-01-01..2026-09-26 (against 159,286 fifteen-minute bars), and the profile
+is NOT flat.** MEASURED on 2025-01-01..2025-04-01 with run 7760823a639e's settings — 17.4s with the
+1-minute feed, 2.8s without: SOS Fade's own per-1-minute-bar bookkeeping (`dual_clock.py` +
+`secondary.py`) 35%, the canonical engines 25% (almost all of it the structure engine on the
+1-minute bars), the rest of the strategy 14%, pandas Timestamp boxing plus builtins ~20%,
+framework 5%. The full run took 976s.
+
+**Taken:** `iter_bars` now boxes the whole index with `list(df.index)` and reads the price columns
+with `.tolist()` instead of indexing one element at a time. Same Timestamps (value, tz and unit
+checked element by element) and the same `float(...)` on the same stored values. MEASURED: walking
+all 2,385,484 one-minute bars 27.9s → 13.3s. `replay_fingerprint.py compare` on
+2024-01-01..2026-09-26 with `--secondary`: bars 64,750 and trades 110, both IDENTICAL.
+
+**The larger lever is not here.** Identical reruns are served from the lab's result cache
+(`command-center/backend/services/run_result_cache.py`). Skipping the 1-minute bookkeeping while
+nothing is armed is a strategy change and is parked until Aaron decides on it.
+
 ## 🔴 The Costs pill UNDER-CHARGED every trade that scaled in (2026-09-07)
 
 `reprice.py` rebuilds a finished run's book at a different cost profile, and it rests on one
