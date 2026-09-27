@@ -40,7 +40,14 @@ from models import (
     StackStrategyLeg,
     StackSummary,
 )
-from services import chart_spec, history_limits, lab_db, portfolio_runner, stack_risk_budget
+from services import (
+    chart_spec,
+    history_limits,
+    lab_db,
+    portfolio_runner,
+    stack_combos,
+    stack_risk_budget,
+)
 from services.sweep_runner import run_sweep
 
 from routers import _costs
@@ -895,6 +902,25 @@ def get_stack_contention(stack_id: str) -> StackSharedReport:
             for e in events
         ],
     )
+
+
+def _combo_ids(ids: str) -> list[str]:
+    return [s for s in (ids or "").split(",") if s]
+
+
+@router.get("/stacks/{stack_id}/combos")
+def get_stack_combo(stack_id: str, ids: str) -> dict:
+    """One mix of a shared stack's legs: its replayed book, how far its replay is, or why not.
+
+    `ids` is the comma-separated strategy ids that are switched on. See `services/stack_combos`.
+    """
+    return stack_combos.status(stack_id, _combo_ids(ids))
+
+
+@router.post("/stacks/{stack_id}/combos")
+def request_stack_combo(stack_id: str, ids: str) -> dict:
+    """Replay this mix of legs on the stack's shared account (queued first), then report on it."""
+    return stack_combos.request(stack_id, _combo_ids(ids))
 
 
 @router.post("/stacks/{stack_id}/cancel", status_code=200)

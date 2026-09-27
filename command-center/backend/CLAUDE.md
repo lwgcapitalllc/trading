@@ -326,6 +326,7 @@ Most-cited code: `routers/_costs.py`, `routers/stacks.py`, `services/chart_spec.
 - 🔴 A rule that NEEDS A PARENT is refused at every endpoint that starts a job (2026-08-21)
 - 🔴 A stack's minimum is two LEGS, not two strategies (2026-08-21)
 - A stack leg runs on ITS OWN frame, and the stack asks the broker for the symbol it quotes (2026-09-03)
+- Any mix of a shared stack's legs — replayed, never sliced (2026-09-27)
 
 ### `notes/stack-grading.md` — Grading and stress-testing stacks, and promoting their settings
 

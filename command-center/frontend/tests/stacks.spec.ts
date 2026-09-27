@@ -640,7 +640,7 @@ test.describe('shared-account stacks', () => {
     const verdict = page.getByTestId('stack-verdict-card')
     await verdict.getByRole('button', { name: /SOS Fade/ }).click()
     await expect(verdict).toContainText('1 of 2 on')
-    await expect(page.getByTestId('basis-chip')).toContainText('never replayed')
+    await expect(page.getByTestId('basis-chip')).toContainText('not replayed yet')
     await expect(page.getByTestId('unmeasured-card')).toBeVisible()
     // ⚠ The toggles have to survive it. The Verdict card holds them, so hiding the panel with the
     // KPIs would strand the reader in a state they cannot click their way out of.
@@ -1452,5 +1452,88 @@ test.describe('a stack says what it was replayed with', () => {
     await toggleAll.click()
     await expect(legs.nth(0)).not.toHaveAttribute('open', '')
     await expect(legs.nth(1)).not.toHaveAttribute('open', '')
+  })
+})
+
+test.describe('any mix of a shared stack is its OWN replay (2026-09-27)', () => {
+  const REALIGN = { run_id: 'r_c', strategy_id: 'realign', strategy_name: 'Realign' }
+
+  /** Three legs, so two-of-three is a mix: not all on, and not one alone. */
+  async function threeLegs(page: Page) {
+    await mock(page, 'shared')
+    await page.route(
+      (u) => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname),
+      (r) => {
+        const d = stackDetail('shared')
+        return r.fulfill({
+          json: {
+            ...d,
+            total_strategies: 3,
+            completed_strategies: 3,
+            strategies: [...d.strategies, leg(REALIGN, 900, 4.5, 700)],
+          },
+        })
+      }
+    )
+  }
+
+  test('switching one of three off asks for the mix, waits, then shows ITS book', async ({
+    page,
+  }) => {
+    // MUTATION: drop the `combo` branch of `composeCombined` → red, the page stays on the waiting
+    // card for ever. MUTATION: compose the mix from the FULL book → red on the dollars, which is
+    // exactly the slicing this whole basis exists to refuse.
+    await expandPerformance(page)
+    await threeLegs(page)
+    let asked: string | null = null
+    let ready = false
+    await page.route(
+      (u) => u.pathname.endsWith('/combos'),
+      (r) => {
+        asked = new URL(r.request().url()).searchParams.get('ids')
+        const point = (profit: number, rr: number) => ({
+          trade_number: 1,
+          equity: 10000 + profit,
+          profit,
+          date: '2024-03-01',
+          direction: 'Long',
+          entry_ms: 1709251200000,
+          exit_ms: 1709254800000,
+          r: rr,
+        })
+        return r.fulfill({
+          json: ready
+            ? {
+                key: 'b_leg+sos_fade',
+                available: true,
+                strategy_ids: ['b_leg', 'sos_fade'],
+                legs: {
+                  sos_fade: {
+                    equity_curve: [point(4321, 20.04)],
+                    daily_pnl: [{ date: '2024-03-01', pnl: 4321 }],
+                  },
+                  b_leg: {
+                    equity_curve: [point(1234, 6.31)],
+                    daily_pnl: [{ date: '2024-03-01', pnl: 1234 }],
+                  },
+                },
+              }
+            : { key: 'b_leg+sos_fade', available: false, progress: { phase: 'shared', pct: 40 } },
+        })
+      }
+    )
+    await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
+    const verdict = page.getByTestId('stack-verdict-card')
+    await verdict.getByRole('button', { name: /Realign/ }).click()
+    await expect(verdict).toContainText('2 of 3 on')
+
+    await expect(page.getByTestId('unmeasured-card')).toContainText('40%')
+    expect(asked?.split(',').sort()).toEqual(['b_leg', 'sos_fade'])
+
+    ready = true
+    await expect(page.getByTestId('unmeasured-card')).toHaveCount(0, { timeout: 10_000 })
+    await expect(page.getByTestId('basis-chip')).toContainText('replayed together')
+    // The mix's own dollars (4,321 + 1,234), never the full book's legs (14,183 + 2,622).
+    await expect(page.locator('.text-\\[34px\\]').nth(1)).toContainText('5,555')
   })
 })

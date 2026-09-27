@@ -489,6 +489,7 @@ Most-cited code: `components/runSettings.ts`, `components/RegimeOverlayToggle.ts
 - The Strategies page — audited 2026-08-06
 - A stack renders a RUN's panel — same four cards, and the legs are the Verdict card's rows
 - A leg toggle swaps in the SOLO CONTROL — it does not slice the shared book
+- Any mix of strategies can be switched on — each mix is REPLAYED (2026-09-27)
 - A loss-recovery leg is a TICK BOX ON ITS PARENT, never a row in the picker (2026-08-21)
 - The stack form gained a BROKER, a COST SWITCH and PER-LEG RISK (2026-09-02)
 - A NEW stack is always a SHARED ACCOUNT — the mode picker is gone

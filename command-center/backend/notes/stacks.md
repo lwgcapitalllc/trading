@@ -195,6 +195,27 @@ must never be asked who something is.
 ✅ **`cost_layers` / `broker_profile` LANDED 2026-09-02** — see *A stack is CHARGED like a single
 run* below. Both modes resolve them from one call, which is what the note that stood here asked for.
 
+## Any mix of a shared stack's legs — replayed, never sliced (2026-09-27)
+
+`services/stack_combos.py`. A shared stack stores the full book and one solo control per leg; any
+mix of 2+ legs short of all of them is replayed through `portfolio_runner._build_and_run` on the
+stack's own window, costs, balance, cap and ceiling (legs rebuilt by `gradable.rebuild_legs`), with
+no solo controls, and written to `reports/lab/<stack_id>/combos/<a+b>/`. Aaron's ask: toggle any
+mix, at least one on.
+
+- 🔴 **It writes NO run rows and touches none of the stack's own artefacts** — a mix is not a lab
+  run, and nothing may overwrite the full book with a subset's.
+- ⚠ **Stamped with `shared_summary.json`'s `written_at`.** A mismatch reads as NOT STORED, so a
+  re-persisted stack never serves mixes replayed against its previous self.
+- ⚠ **One worker thread, one queue.** A mix the page asks for jumps the queue; a finished launch
+  queues every missing mix when the stack has ≤ `MAX_AUTO_LEGS` (5) legs — 2^n − n − 2 replays.
+- ⚠ **It does NOT take the per-platform lock.** It runs no run rows, so the lock could not see it,
+  and refusing a toggle while a stress test runs would be the old dead end again.
+- ⚠ **A dependent leg without its parent is refused**, as everywhere else.
+- ⚠ **Progress and failures are in memory.** A restart loses an in-flight mix; the page's next
+  request queues it again. A failure writes no book, so it can be asked again.
+- Routes: `GET` / `POST /backtests/stacks/{id}/combos?ids=a,b`.
+
 ## A stack is CHARGED like a single run — `routers/_costs.py` (2026-09-02)
 
 🔴 **EVERY STACK THIS APP RAN BEFORE THIS DATE IS GROSS, AND ITS PAGE SHOWED A COST ROW THE WHOLE

@@ -2320,6 +2320,22 @@ export interface StackStrategyLeg {
   solo_daily_pnl?: Array<{ date: string; pnl: number }> | null
 }
 
+/** One mix of a shared stack's legs, REPLAYED on the stack's account — never sliced out of the
+ *  full book (`backend/services/stack_combos.py`). `available` = its book is stored; otherwise
+ *  `progress` while it replays, `refused` when it cannot exist, `error` when the replay failed. */
+export interface StackCombo {
+  key: string
+  available: boolean
+  strategy_ids?: string[]
+  legs?: Record<
+    string,
+    { equity_curve: EquityPoint[]; daily_pnl: Array<{ date: string; pnl: number }> }
+  >
+  progress?: { phase: string; pct: number; message?: string } | null
+  refused?: string
+  error?: string
+}
+
 export interface StackDetail {
   stack_id: string
   instrument: string

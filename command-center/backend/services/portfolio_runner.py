@@ -203,6 +203,12 @@ def _execute(stack_id: str, legs: list[dict], settings: dict) -> None:
         stack_id, phase="complete", pct=100, message=f"{len(run.trades)} trades on one account"
     )
 
+    # Every smaller mix of these legs, replayed for real in the background so the page can
+    # switch strategies off without composing a book nobody ran. See `services/stack_combos`.
+    from services import stack_combos
+
+    stack_combos.replay_all_missing(stack_id)
+
 
 def _build_and_run(
     legs: list[dict],
@@ -378,8 +384,10 @@ def _build_and_run(
     # frames in one stack it is no longer any single frame's length. A progress bar reading one
     # frame's count would sit at 100% for the second half of the replay.
     total_ticks = sum(len(s.df.index) for s in specs) or len(df.index)
-    phases = 1 + len(specs)  # the shared replay, then one solo control per leg
-    phase_names = ["shared"] + [f"solo:{s.name}" for s in specs]
+    # The shared replay, then one solo control per leg — when there are any. A replay without
+    # them counted phases it never ran, so its bar stopped at a third and then jumped to done.
+    phase_names = ["shared"] + ([f"solo:{s.name}" for s in specs] if solo_control else [])
+    phases = len(phase_names)
 
     def _progress(phase: str, i: int) -> None:
         if on_progress is None:

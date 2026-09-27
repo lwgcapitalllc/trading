@@ -17,6 +17,7 @@ import type {
   BacktestRunRequest,
   BacktestSummary,
   BacktestDetail,
+  StackCombo,
   RunNewsReport,
   HistoryLimit,
   BrokerProfile,
@@ -877,6 +878,48 @@ export function useStack(stackId: string | null) {
       if (!data) return 5_000
       return data.status === 'running' ? 3_000 : false
     },
+  })
+}
+
+// One mix of a shared stack's legs. Pass `null` to ask nothing (all on, one on, or a screen).
+//
+// 🔴 A mix nobody has replayed is REQUESTED here, not composed on the page: the GET reports what is
+// stored, and only when there is no book, no replay in flight, no refusal and no failure does it
+// POST — which queues the replay first in line. It polls only while a replay is in flight, so a
+// failed or refused mix stops asking.
+export function useStackCombo(stackId: string | null, ids: string[] | null) {
+  const key = ids ? [...ids].sort().join(',') : null
+  return useQuery({
+    queryKey: ['lab', 'stack-combo', stackId, key],
+    queryFn: async () => {
+      const path = `/backtests/stacks/${stackId}/combos?ids=${encodeURIComponent(key!)}`
+      const s = await api.get<StackCombo>(path)
+      if (s.available || s.refused || s.progress || s.error) return s
+      return api.post<StackCombo>(path)
+    },
+    enabled: !!stackId && !!key,
+    refetchInterval: (query) => {
+      const data = query.state.data as StackCombo | undefined
+      return data?.progress ? 3_000 : false
+    },
+    staleTime: (query) => ((query.state.data as StackCombo | undefined)?.available ? Infinity : 0),
+  })
+}
+
+// Ask again for a mix whose replay FAILED. Separate from the read above on purpose: the read never
+// re-queues a failure by itself, or a mix that fails every time would replay on every window focus.
+export function useRetryStackCombo() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ stackId, ids }: { stackId: string; ids: string[] }) =>
+      api.post<StackCombo>(
+        `/backtests/stacks/${stackId}/combos?ids=${encodeURIComponent([...ids].sort().join(','))}`
+      ),
+    onSuccess: (data, { stackId, ids }) => {
+      toast.success('Replaying this mix again')
+      qc.setQueryData(['lab', 'stack-combo', stackId, [...ids].sort().join(',')], data)
+    },
+    onError: () => toast.error('Could not start the replay'),
   })
 }
 
