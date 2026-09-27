@@ -285,6 +285,19 @@ eq(
   'a main-entry short already in order keeps its names'
 )
 eq(names(rungNames([4630.0, 4640.0], undefined, -1)), 'TP1,TP2', 'no entry → ladder order')
+// A ladder priced off a target ALREADY BEHIND the entry: Realign long T115 on stack st_6b6b71a5d5,
+// 2026-09-18 — entry 4377.69, ladder [4372.605 (TP1, halfway), 4367.52 (TP2, the old high)]. Both
+// rungs sit behind the fill, so "nearest first" measured backwards and swapped the two names.
+eq(
+  names(rungNames([4372.605, 4367.52], 4377.69, 1)),
+  'TP1,TP2',
+  'a LONG whose rungs are behind its entry keeps the ladder names'
+)
+eq(
+  names(rungNames([3343.88, 3351.48], 3336.28, -1)),
+  'TP1,TP2',
+  'the SHORT mirror (2025-07-28) keeps the ladder names'
+)
 
 console.log(failed ? `\n  ${failed} of ${n} FAILED\n` : `  trade geometry: ${n} cases green`)
 process.exit(failed ? 1 : 0)

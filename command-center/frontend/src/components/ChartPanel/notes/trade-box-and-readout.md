@@ -202,3 +202,10 @@ the stop instead of contradicting it.
 
 Proof: `scripts/check_trade_geometry.mjs`, four `rungNames` cases on the real trade; the old
 ladder-position rule and a forgotten short-mirror each turn exactly two red.
+
+⚠ **Only when EVERY rung is on the profit side of the entry (fixed the same day).** A Realign trade
+in market mode can buy above a target the setup had already passed — long T115 on stack
+`st_6b6b71a5d5`, 2026-09-18: entry 4377.69, TP1 4372.605 (halfway), TP2 4367.52 (the old high).
+"Nearest first" measured those backwards and printed `TP1` at the old high and `TP2 / Exit` at the
+halfway rung. With any rung behind the entry, ladder order stands. Two more cases (the long and the
+2025-07-28 short mirror), red before the fix; 8 of the 115 Realign trades on that stack are this shape.

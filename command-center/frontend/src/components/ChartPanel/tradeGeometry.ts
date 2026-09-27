@@ -157,11 +157,17 @@ export function fmtPips(pips: number): string {
  * ⚠ Only the NAMES move. The strategy's own ladder order, and which rung banks what, are
  * untouched. With no entry price there is no distance to measure, so ladder order stands.
  * ⚠ A tie keeps ladder order — the sort is stable.
+ * 🔴 **Only when EVERY rung is on the profit side of the entry.** A rung behind the entry is not
+ * reached by price moving in the trade's favour, so "nearest first" measures it backwards: Realign
+ * long T115 on st_6b6b71a5d5 (2026-09-18) bought above a target the setup had already passed, and
+ * the chart named its halfway rung TP2 and the old high TP1. Ladder order stands there.
  */
 export function rungNames(prices: number[], entryPrice: number | undefined, sign: Sign): string[] {
   const order = prices.map((_, i) => i)
-  if (typeof entryPrice === 'number') {
-    order.sort((a, b) => (prices[a] - entryPrice) * sign - (prices[b] - entryPrice) * sign)
+  const allAhead =
+    typeof entryPrice === 'number' && prices.every((p) => (p - entryPrice) * sign >= 0)
+  if (allAhead) {
+    order.sort((a, b) => (prices[a] - entryPrice!) * sign - (prices[b] - entryPrice!) * sign)
   }
   const names: string[] = new Array(prices.length)
   order.forEach((ladderIdx, rank) => {
