@@ -1,0 +1,48 @@
+2026-09-27 16:54:13,138 [INFO] Extreme Leg | ExtremeLegStrategy v322 | hash 8db1e72207cb | commit b12025a3 | frozen | LIVE
+2026-09-27 16:54:13,748 [INFO] Connected | #35710389 | $0.00 | PUPrime-Live
+2026-09-27 16:54:13,764 [INFO] MT5 connection lock released
+2026-09-27 16:54:13,904 [ERROR] Startup failed: MT5 reports a balance of $0.00 for this account, and initial_capital is 0 — the strategy would size every trade off nothing.
+Traceback (most recent call last):
+  File "C:\trading\algos\markets\fx\instances\extreme_leg_2\deployed\algos\live\runner.py", line 2252, in _run
+    self.strategy, scfg = self._build_strategy()
+                          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\trading\algos\markets\fx\instances\extreme_leg_2\deployed\algos\live\runner.py", line 910, in _build_strategy
+    raise RuntimeError(
+RuntimeError: MT5 reports a balance of $0.00 for this account, and initial_capital is 0 — the strategy would size every trade off nothing.
+
+2026-09-27 16:55:03,309 [INFO] Extreme Leg | ExtremeLegStrategy v322 | hash 8db1e72207cb | commit b12025a3 | frozen | LIVE
+2026-09-27 16:55:03,828 [INFO] Connected | #35710389 | $0.00 | PUPrime-Live
+2026-09-27 16:55:03,828 [INFO] MT5 connection lock released
+2026-09-27 16:55:03,966 [ERROR] Startup failed: MT5 reports a balance of $0.00 for this account, and initial_capital is 0 — the strategy would size every trade off nothing.
+Traceback (most recent call last):
+  File "C:\trading\algos\markets\fx\instances\extreme_leg_2\deployed\algos\live\runner.py", line 2252, in _run
+    self.strategy, scfg = self._build_strategy()
+                          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\trading\algos\markets\fx\instances\extreme_leg_2\deployed\algos\live\runner.py", line 910, in _build_strategy
+    raise RuntimeError(
+RuntimeError: MT5 reports a balance of $0.00 for this account, and initial_capital is 0 — the strategy would size every trade off nothing.
+
+2026-09-27 16:56:03,357 [INFO] Extreme Leg | ExtremeLegStrategy v322 | hash 8db1e72207cb | commit b12025a3 | frozen | LIVE
+2026-09-27 16:56:03,873 [INFO] Connected | #35710389 | $0.00 | PUPrime-Live
+2026-09-27 16:56:03,873 [INFO] MT5 connection lock released
+2026-09-27 16:56:04,029 [ERROR] Startup failed: MT5 reports a balance of $0.00 for this account, and initial_capital is 0 — the strategy would size every trade off nothing.
+Traceback (most recent call last):
+  File "C:\trading\algos\markets\fx\instances\extreme_leg_2\deployed\algos\live\runner.py", line 2252, in _run
+    self.strategy, scfg = self._build_strategy()
+                          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\trading\algos\markets\fx\instances\extreme_leg_2\deployed\algos\live\runner.py", line 910, in _build_strategy
+    raise RuntimeError(
+RuntimeError: MT5 reports a balance of $0.00 for this account, and initial_capital is 0 — the strategy would size every trade off nothing.
+
+2026-09-27 16:57:03,281 [INFO] Extreme Leg | ExtremeLegStrategy v322 | hash 8db1e72207cb | commit b12025a3 | frozen | LIVE
+2026-09-27 16:57:03,799 [INFO] Connected | #35710389 | $0.00 | PUPrime-Live
+2026-09-27 16:57:03,799 [INFO] MT5 connection lock released
+2026-09-27 16:57:03,937 [ERROR] Startup failed: MT5 reports a balance of $0.00 for this account, and initial_capital is 0 — the strategy would size every trade off nothing.
+Traceback (most recent call last):
+  File "C:\trading\algos\markets\fx\instances\extreme_leg_2\deployed\algos\live\runner.py", line 2252, in _run
+    self.strategy, scfg = self._build_strategy()
+                          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\trading\algos\markets\fx\instances\extreme_leg_2\deployed\algos\live\runner.py", line 910, in _build_strategy
+    raise RuntimeError(
+RuntimeError: MT5 reports a balance of $0.00 for this account, and initial_capital is 0 — the strategy would size every trade off nothing.
+

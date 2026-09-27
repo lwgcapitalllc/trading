@@ -13,3 +13,17 @@
 2026-09-27 03:24:01,971 [INFO] Warmed 45000 bars (2026-08-12 03:18:00+00:00 → 2026-09-25 20:55:00+00:00) in 6.2s
 2026-09-27 03:24:01,971 [INFO] Equity re-anchored to the account after warm-up: 17,465.32 → 14,862.76
 2026-09-27 03:24:02,471 [INFO] Watching for closed M1 bars (poll 10s). Ctrl-C to stop.
+2026-09-27 16:51:29,023 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-27 16:51:29,023 [INFO] Stop requested — shutting down.
+2026-09-27 16:51:29,023 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-27 16:51:29,023 [INFO] MT5 disconnected.
+2026-09-27 16:51:34,813 [INFO] FFT | FftStrategy v325 | hash 8ee69d10b91f | commit b12025a3 | frozen | LIVE
+2026-09-27 16:51:34,828 [INFO] Waiting for MT5 lock (held by extreme_leg_1_700152905, 1s)...
+2026-09-27 16:51:38,347 [INFO] Connected | #700152905 | $14,862.76 | PUPrime-Demo
+2026-09-27 16:51:38,347 [INFO] MT5 connection lock released
+2026-09-27 16:51:38,487 [INFO] Sizing against account balance $14,862.76
+2026-09-27 16:51:38,487 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-27 16:51:38,487 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared signals channel
+2026-09-27 16:51:45,769 [INFO] Warmed 45000 bars (2026-08-12 03:18:00+00:00 → 2026-09-25 20:55:00+00:00) in 6.8s
+2026-09-27 16:51:45,784 [INFO] Equity re-anchored to the account after warm-up: 17,465.32 → 14,862.76
+2026-09-27 16:51:46,253 [INFO] Watching for closed M1 bars (poll 10s). Ctrl-C to stop.

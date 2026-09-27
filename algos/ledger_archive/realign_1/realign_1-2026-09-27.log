@@ -16,3 +16,16 @@
 2026-09-27 03:24:01,408 [INFO] Equity re-anchored to the account after warm-up: 14,808.95 → 14,862.76
 2026-09-27 03:24:01,877 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
 2026-09-27 04:20:06,176 [ERROR] Config changed in ways that CANNOT be applied to a running bot: exec_rev_arm_at: None → 'R', exec_rev_giveback_pct: None → 50.0, exec_rev_need_bos: None → False, exec_scale_brk_n: None → 2. Still running the settings loaded at startup. Restart the bot to take them (the version pin and the engine warmup are re-checked on restart).
+2026-09-27 16:51:29,585 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-27 16:51:29,585 [INFO] Stop requested — shutting down.
+2026-09-27 16:51:29,585 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-27 16:51:29,585 [INFO] MT5 disconnected.
+2026-09-27 16:51:35,750 [INFO] Realign | RealignStrategy v334 | hash cb975434e258 | commit b12025a3 | frozen | LIVE
+2026-09-27 16:51:36,272 [INFO] Connected | #700152905 | $14,862.76 | PUPrime-Demo
+2026-09-27 16:51:36,272 [INFO] MT5 connection lock released
+2026-09-27 16:51:36,422 [INFO] Sizing against account balance $14,862.76
+2026-09-27 16:51:36,438 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 2.5% per trade).
+2026-09-27 16:51:36,438 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared signals channel
+2026-09-27 16:51:41,206 [INFO] Warmed 15000 bars (2026-07-13 10:25:00+00:00 → 2026-09-25 20:50:00+00:00) in 4.6s
+2026-09-27 16:51:41,206 [INFO] Equity re-anchored to the account after warm-up: 14,808.95 → 14,862.76
+2026-09-27 16:51:41,643 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
