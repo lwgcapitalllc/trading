@@ -44,6 +44,8 @@ Standing rules for anything recorded here:
 | 45 | 2026-09-23 | 🔴 **THREE PRE-REGISTERED FILTERS ON THE LEVEL MEMORY** — only while the original gap is still open, only after a liquidity sweep on the trade's side, or no limit at all and a market entry on a fast shift after the tap. Same window, bars and costs as Run 44 | **All three fail.** The gap filter beat the book with the re-entry on (+230.8R vs +227.5R, 22 trades +2.33R) and then LOST primary-only (166.1R vs 168.1R, first half −3.97R). The sweep filter hardly filters (66 trades vs 65) and hits the same +22.31R collision (+215.7R). The shift entry never fired — 2 chances in 2025, both wider than 1R. | **MEASURED NEGATIVE — `exec_lvl_confluence` stays None, `exec_lvl_memory` stays Off** |
 | 46 | 2026-09-25 | 🟢 **THE SCALE-IN REDESIGN — WHERE an add goes, judged on PROTECTING WINNERS, not on R** (Aaron: *"not to make more money... less drawdown on these scaling entries and less of my winners turn into losers or scratches"*). 15 placements, all sharing the trailing stop: today's market-on-trail, 15m/5m/1m structure breaks after a bounce, fib 38/50/62 limits, fib+gap, and limits at day/week/session/H4 levels. XAUUSD.p 15m 2020-01-01 → 2026-09-24, PU Prime ECN | **The SECOND 1-minute internal break back after a bounce wins on the goal**: built and replayed on the dual clock (251 trades, re-entries on, 1m fill clock): **16 trades made worse vs 46, NO winner scratched vs 5, worst drop 7.86R vs 8.92R** (7.49R with no adds), for **+26.8R over no adds vs +55.7R**. Per-add stops behind the bounce were REJECTED (3 in 4 stopped). Key levels never beat it; 5m/15m structure is too rare to fire. | **BUILT as `exec_scale_mode = "1m break"` — fixed the same day to also need the 1m trend agreeing (8 worse, 23 adds, +18.3R) — NOT the default — Python only, no parity gate possible (the Pine has no 1m feed)** |
 | 48 | 2026-09-26 | **THE 5m GIVE-BACK STOP AFTER THE SECOND TARGET** (Aaron, on the 2026-09-21 short) — after TP2, a 5m shift against the trade rests a stop at 50% (also 38.2 / 61.8) of the open profit handed back; optional break-first gate. Same basis as Run 47 | **Fires on 4 of 250 trades at 50%: +2.15R, +0.36R without the chart trade** — noise, because the shipped trail after TP2 is usually tighter already. Tracing it found a real defect: the fast path could close a trade after its own stop was hit, at a worse price — fixed. | **BUILT, OFF by default — kept as the first of a family of structure-specific scale-out rules. Python only.** |
+| 55 | 2026-09-27 | 🔴 **A TAKE-PROFIT PER SESSION** (Aaron) — while inside a session, close the whole trade at T R. 5 sessions x 1/2/3/5/8R, full replay, Run 50 basis | **All 25 arms lose 22–112R; none beats R/DD 23.0.** Best: rollover 5R, 150.6R vs 172.6R. The runners that go 15–30R make the book, and any target cuts them. | **MEASURED NEGATIVE — no session target** |
+| 56 | 2026-09-27 | 🔴 **CUT AN ADD AT ITS OWN ENTRY** (Aaron, on the 2026-09-21 short) — once an add has moved our way by 0 / 0.25 / 0.5 / 1R of its own risk, close that lot if price returns to its entry; base untouched. Run 50 basis | **No gain.** 0R: 169.0R vs 172.6R (14 cut, 7 trades worse); 0.25R: 171.3R; 0.5R and 1R: 172.8R (+0.2R, 1 cut). Drawdown 7.49R in every arm. | **MEASURED NEGATIVE — adds keep the shared stop** |
 | 23 | 2026-08-19 | **THE SECONDARY (1m re-entry), END TO END** — 7 levers, 26 replays: the entry gates (swept-stop re-entry, zone depth) and then the exit ladder (depth cap, 1m direction filter, where breakeven fires, banking at TP1). | **The entry gates are already right and the exit ladder was not.** Every loosened door is worse, monotonically. Depth 2/3/5/unlimited are byte-identical (n=1 in 6.6 years). Banking part of a re-entry at TP1 is the first change in 26 replays that works — win/loss 1/1 → 4/1 — and it costs the tail. | measured, **nothing adopted** |
 | 24 | 2026-08-19 | 🔴 **THE LOSS-RECOVERY LEG** — nine stop placements and six exit ladders on the 25%-size counter-trade taken after every SOS Fade loss (`strategies/python/loss_recovery/`). Not a sweep of this bot's params; its population is SOS Fade's 62 real stop-outs. | **Nothing beat the shipped rule, and its best-looking challenger was five trades.** A stop on the CHoCH bar's own extreme scores +24.4R against +16.2R on a 7x tighter stop with lower drawdown — and **−7.4R once its best five are deleted**, where the shipped stop survives at +2.3R. `soft_stop_r=-0.3` is the one free change: same net R, avg loss −1.01R → −0.30R, win 58% → 37%. Everything else lost. | measured, **nothing adopted; `loss_recovery` still ships `enabled=False`** |
 
@@ -5911,3 +5913,26 @@ trades from 2020-01-01), full replay per arm, one session at a time, T = 1 / 2 /
   session opens, so they close at its first bar. That is the rule as dictated, not a harness fault.
 - ✅ **Decision: no session target.** Together with Runs 40, 47 and 51–54, taking profit earlier
   in any form stays closed on this strategy.
+
+## Run 56 — 2026-09-27: cut an add when price returns to its own entry — no gain
+
+**The question (Aaron, on the 2026-09-21 short):** if an add went our way, then came back to its
+own entry, why keep it on the shared stop? Pinned as: once an add has moved in our favour by more
+than A x its own risk (add entry to the shared stop), close THAT lot if price returns to its entry.
+The base position and the other adds are untouched.
+
+**Basis:** Run 50 (shipped "1m break" add, PU Prime ECN, `run_dual(15m, 1m)`, trades from
+2020-01-01), full replay per arm; 22 adds in 251 trades.
+
+| Arm | Total R | vs no adds (167.4) | Max DD R | Lots cut | Trades worse / better |
+|---|---|---|---|---|---|
+| Shipped (shared stop) | 172.6 | +5.2 | 7.49 | 0 | 4 / 11 |
+| Cut after any move (0R) | 169.0 | +1.6 | 7.49 | 14 | 7 / 5 |
+| Cut after 0.25R | 171.3 | +3.9 | 7.49 | 3 | 4 / 10 |
+| Cut after 0.5R | 172.8 | +5.4 | 7.49 | 1 | 3 / 11 |
+| Cut after 1R | 172.8 | +5.4 | 7.49 | 1 | 3 / 11 |
+
+- 🔴 **Cutting early loses; cutting late does almost nothing.** Most adds that dip back to entry go
+  on to pay, and the +0.2R at 0.5R is one lot.
+- The 2026-09-21 chart trade is unchanged in every arm (+0.59R).
+- ✅ **Decision: adds keep the shared stop.**
