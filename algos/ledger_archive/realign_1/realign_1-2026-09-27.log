@@ -29,3 +29,10 @@
 2026-09-27 16:51:41,206 [INFO] Warmed 15000 bars (2026-07-13 10:25:00+00:00 → 2026-09-25 20:50:00+00:00) in 4.6s
 2026-09-27 16:51:41,206 [INFO] Equity re-anchored to the account after warm-up: 14,808.95 → 14,862.76
 2026-09-27 16:51:41,643 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
+2026-09-27 22:05:03,785 [WARNING] 589 bars missed — re-warming the engines rather than resuming with a hole in the stream.
+2026-09-27 22:05:03,785 [INFO] Sizing against account balance $14,862.76
+2026-09-27 22:05:13,459 [INFO] Warmed 15000 bars (2026-07-13 10:35:00+00:00 → 2026-09-27 22:00:00+00:00) in 9.3s
+2026-09-27 22:05:13,475 [INFO] Equity re-anchored to the account after warm-up: 14,808.95 → 14,862.76
+2026-09-27 22:10:04,357 [INFO] Priority 3 on this account: waiting 16s for the bots above
+2026-09-27 22:15:00,867 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-27 22:20:00,790 [INFO] Priority 3 on this account: waiting 19s for the bots above
