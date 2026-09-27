@@ -8,6 +8,8 @@ Proven by mutation, 2026-09-27: dropping the source digest from `key()` turns
 `test_a_code_edit_misses` red; dropping the frame digest turns `test_one_changed_bar_misses` red;
 removing the type check in `_same()` turns `test_a_result_that_would_come_back_different_is_not_stored`
 red.
+Storing a cache hit's own timing into the cache turns `test_a_hit_finishes_the_job_with_the_stored_results`
+red.
 """
 
 import numpy as np
@@ -92,10 +94,28 @@ def test_a_hit_finishes_the_job_with_the_stored_results(tree):
     rc.write(k, results)
     python_runner._JOBS["cache_hit_test"] = {"job_id": "cache_hit_test", "status": "running"}
     try:
-        assert python_runner._serve_cached("cache_hit_test", k) is True
+        clock = python_runner._RunClock()
+        assert python_runner._serve_cached("cache_hit_test", k, clock) is True
         job = python_runner._JOBS["cache_hit_test"]
         assert job["status"] == "complete"
-        assert rc._same(job["results"], results)
-        assert python_runner._serve_cached("cache_hit_test", None) is False
+        served = dict(job["results"])
+        # The hit carries ITS OWN timing, marked as served from the cache...
+        assert served.pop("replay_timing")["served_from_cache"] is True
+        assert rc._same(served, results)
+        # ...and the stored payload never picks one up, so the next hit cannot inherit it.
+        assert "replay_timing" not in rc.read(k)
+        assert python_runner._serve_cached("cache_hit_test", None, clock) is False
     finally:
         python_runner._JOBS.pop("cache_hit_test", None)
+
+
+def test_the_run_clock_separates_computing_from_waiting():
+    """A starved run shows a CPU share well under 1; a busy one near 1. Sleeping is waiting."""
+    import time
+
+    clock = python_runner._RunClock()
+    time.sleep(0.6)
+    stamp = clock.stamp(served_from_cache=False)
+    assert stamp["wall_seconds"] >= 0.6
+    assert stamp["cpu_share"] is not None and stamp["cpu_share"] < 0.5
+    assert stamp["cpu_count"] and stamp["served_from_cache"] is False

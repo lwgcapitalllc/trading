@@ -57,7 +57,7 @@ the field. ⚠ **The basis is READ OFF the request contract, not chosen** — `c
 decides whether it changes what the run is measured on. ✅ **It caught a real one on
 2026-08-25**: a run input that OVERWRITES a basis field is request-time, not basis, and a tool
 handing over the resolved field must PIN it or the lab re-resolves it and a copied basis is
-silently measured differently. Story: `HISTORY.md` → *The switch that overwrote the basis*. ⚠ **Net dollars are reported under the
+silently measured differently. Story: `HISTORY.md` → *The switch that overwrote the basis*. ⚠ **`start_backtest`'s `source_run_id` is a provenance LABEL and copies nothing** (2026-09-27) — a run started with only it took the lab's defaults (145 settings and the broker) and read as a copy. Its schema now says so and points at `copy_run_basis`, which is the copy. ⚠ **Net dollars are reported under the
 unit-free numbers, never above** (rule 6), and the breakeven-scratch count always travels with
 the win rate. ✅ **The VENUE LOT CEILING joined the basis on 2026-09-03, and it is the case that
 shows why the check is read off the contract rather than curated by hand: R is IDENTICAL either

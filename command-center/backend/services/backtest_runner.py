@@ -721,6 +721,16 @@ async def _handle_complete(
     else:
         capped_path.write_text(json.dumps(capped, default=str))
 
+    # How long the replay took and how much of it was spent computing — see `_RunClock` in
+    # `services/python_runner.py`. Python runs only; a stale file from an earlier attempt goes.
+    timing = result.get("replay_timing")
+    timing_path = run_dir / "replay_timing.json"
+    if timing is None:
+        if timing_path.exists():
+            timing_path.unlink()
+    else:
+        timing_path.write_text(json.dumps(timing, default=str))
+
     # Regime tagging — happens BEFORE DB update so the run stays "running" during tagging,
     # letting the frontend show the Tagging milestone step in the progress bar.
     if daily_pnl:

@@ -845,3 +845,20 @@ in the job message ("identical to an earlier run - reused its results").
   was replaying, so the code key had changed. ⚠ While two people edit the replay code daily, expect
   misses — every edit resets the cache, by design. ⚠ The same run took 976s in the lab server on
   2026-09-27 (run 7760823a639e) and 335s here; why is unmeasured.
+
+## Every python run saves how long it took AND how much of that was computing (2026-09-27)
+
+`reports/lab/<run_id>/replay_timing.json`, written by `_RunClock` in `services/python_runner.py`:
+elapsed seconds, the run thread's own CPU seconds, their ratio, the machine's load average at both
+ends, the core count, and whether the result came from the rerun cache.
+
+- 🔴 **Why:** run 7760823a639e took 976s in the lab; the identical replay took 335s standalone, and
+  a 3-month run the same afternoon took 20s in the lab against 16-19s standalone. Nothing recorded
+  what the machine was doing, so the 976s could not be explained after the fact. **A CPU share well
+  under 1 means the run was WAITING (other load, the GIL), not computing** — slow code shows a
+  share near 1.
+- ⚠ **A cache hit carries its own timing, never the stored run's**, and timing is never written
+  into the cache — the next hit would inherit a stranger's numbers.
+- ⚠ Python runs only; the file is removed on a rerun that carries none. Not shown on the page —
+  read the file.
+- MEASURED live, run f4d596d79a0f: 13.5s elapsed, 11.5s computing, share 0.853.

@@ -20,6 +20,7 @@ would be inventing a durability guarantee the rest of the lab doesn't make.
 
 from __future__ import annotations
 
+import os
 import sys
 import threading
 import time
@@ -440,6 +441,7 @@ def _execute(job_id: str, spec: dict) -> None:
     from backtest.output import build_results
     from backtest.replay import build_strategy, frame_minutes
 
+    clock = _RunClock()
     class_name = spec.get("strategy_class")
     found = _resolve(class_name)
     if found is None:
@@ -522,7 +524,7 @@ def _execute(job_id: str, spec: dict) -> None:
                 f"history for this window (or turn the secondary off)."
             )
         cache_key = run_result_cache.key(spec, (df, df1m), rate)
-        if _serve_cached(job_id, cache_key):
+        if _serve_cached(job_id, cache_key, clock):
             return
         _set(job_id, pct=2, message=f"Testing {len(df):,} × 15m + {len(df1m):,} × {fill_tf}m bars…")
 
@@ -536,7 +538,7 @@ def _execute(job_id: str, spec: dict) -> None:
         strategy.run_dual(df, df1m, progress=_prog, should_cancel=lambda: _cancelled(job_id))
     else:
         cache_key = run_result_cache.key(spec, (df,), rate)
-        if _serve_cached(job_id, cache_key):
+        if _serve_cached(job_id, cache_key, clock):
             return
         _set(job_id, pct=2, message=f"Testing {len(df):,} bars…")
         _replay(job_id, strategy, df, len(df))
@@ -570,7 +572,8 @@ def _execute(job_id: str, spec: dict) -> None:
         missed=getattr(strategy.execution, "misses", None),
         lot_capped=getattr(_acct, "lot_capped", None),
     )
-    run_result_cache.write(cache_key, results)
+    run_result_cache.write(cache_key, results)  # stored WITHOUT this attempt's timing
+    results = {**results, "replay_timing": clock.stamp(served_from_cache=False)}
     _set(
         job_id,
         status="complete",
@@ -580,7 +583,46 @@ def _execute(job_id: str, spec: dict) -> None:
     )
 
 
-def _serve_cached(job_id: str, cache_key: Optional[str]) -> bool:
+class _RunClock:
+    """How long a run took AND how much of that time it actually spent computing.
+
+    🔴 Written because run 7760823a639e took 976s in the lab while the identical replay took 335s
+    in a standalone process and 20s-for-3-months matched standalone the same afternoon — and
+    nothing recorded why. Wall time alone cannot tell slow code from a starved run. This thread's
+    own CPU time can: a run whose CPU share is well under 1.0 was WAITING (other processes on the
+    machine, other threads holding the GIL), not computing. The machine's load average at both
+    ends names the likely culprit. Written to `reports/lab/<run_id>/replay_timing.json`.
+    """
+
+    def __init__(self) -> None:
+        self._wall0 = time.time()
+        self._cpu0 = time.thread_time()
+        self._load0 = _load_avg()
+
+    def stamp(self, served_from_cache: bool) -> dict:
+        wall = time.time() - self._wall0
+        cpu = time.thread_time() - self._cpu0
+        return {
+            "served_from_cache": served_from_cache,
+            "wall_seconds": round(wall, 2),
+            "thread_cpu_seconds": round(cpu, 2),
+            # None, not 0, for an instant run — a share of nothing is not a measurement.
+            "cpu_share": round(cpu / wall, 3) if wall > 0.5 else None,
+            "load_avg_start": self._load0,
+            "load_avg_end": _load_avg(),
+            "cpu_count": os.cpu_count(),
+            "started_at": self._wall0,
+        }
+
+
+def _load_avg() -> Optional[list]:
+    try:
+        return [round(x, 2) for x in os.getloadavg()]
+    except OSError:  # not every platform has one; unknown is None, never zeros
+        return None
+
+
+def _serve_cached(job_id: str, cache_key: Optional[str], clock: "_RunClock") -> bool:
     """Finish the job off an identical earlier run's stored results, if there is one.
 
     Only a run whose spec, bars, conversion rates and code all match byte for byte can hit — see
@@ -589,6 +631,7 @@ def _serve_cached(job_id: str, cache_key: Optional[str]) -> bool:
     if results is None:
         return False
     n = len(results.get("engine_trades") or [])
+    results = {**results, "replay_timing": clock.stamp(served_from_cache=True)}
     _set(
         job_id,
         status="complete",

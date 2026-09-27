@@ -290,3 +290,30 @@ def test_retry_clears_every_derived_artefact(client, fresh_db, tmp_path):
 
     assert r.status_code == 202
     assert not run_dir.exists(), f"left behind: {[p.name for p in run_dir.iterdir()]}"
+
+
+def test_a_python_runs_timing_is_saved_with_the_run(fresh_db, tmp_path, monkeypatch):
+    """`replay_timing` is the only record of WHY a run was slow (run 7760823a639e: 976s in the
+    lab, 335s standalone, nothing kept to say which). It must land in the run's folder, and a
+    rerun that carries none must not keep the previous attempt's file. Watched red 2026-09-27 with
+    the stale-file removal taken out."""
+    from services import backtest_runner, lab_db
+
+    monkeypatch.setattr(backtest_runner, "_LAB_RESULTS_DIR", tmp_path)
+    run_id = _running_run(lab_db, "timing12345")
+    timing = {"wall_seconds": 976.0, "thread_cpu_seconds": 330.0, "cpu_share": 0.338}
+    results = {"kpis": {}, "equity_curve": [], "daily_pnl": [], "replay_timing": timing}
+    with patch("services.runner_dispatch.job_results", return_value=results):
+        asyncio.run(
+            backtest_runner._handle_complete(run_id, run_id, "stop_strategy", "XAUUSD", [], 0.0)
+        )
+    path = tmp_path / run_id / "replay_timing.json"
+    assert json.loads(path.read_text()) == timing
+
+    results.pop("replay_timing")
+    lab_db.update_run_status(run_id, "running", None)  # a rerun puts the row back to running
+    with patch("services.runner_dispatch.job_results", return_value=results):
+        asyncio.run(
+            backtest_runner._handle_complete(run_id, run_id, "stop_strategy", "XAUUSD", [], 0.0)
+        )
+    assert not path.exists()
