@@ -1159,5 +1159,12 @@ Tests: `algos/tests/test_review_and_reminders.py` (16) and three updated in `tes
   sends it on its first pass after — late, never twice. The Command Center's own held lines are on
   the laptop and are not in it.
 - The summary is itself logged (label `DAILY SUMMARY`) and never counted by the next one.
+- 🔴 **Six copies reached the LIVE health room on its first evening (2026-09-27), and none came from
+  the box.** Two watchdog tests ran a full pass on a laptop that holds the real bot token; after
+  08:00 Chicago that pass sent a real summary on every suite run, each saying *there is no send
+  log* because the test's own log folder was empty. The box sent one per room. Fixed twice: both
+  tests stub the summary, and the suite-wide guard (`scripts/testing/vps_guard.py`) now refuses any
+  lookup of Telegram's API host in any test process, so the next leak fails its test instead of
+  posting.
 
 Tests: `algos/tests/test_daily_summary.py` (11; 4 mutations watched RED, named in its docstring).

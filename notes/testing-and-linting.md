@@ -309,3 +309,13 @@ the other on every commit.
 
 - The root `conftest.py` (and the backend's) point `LWG_NOTIFY_DIR` at a folder inside each test's `tmp_path`. `algos/shared/notify_log.py` writes one line per Telegram send there, the outbox lives under it, and the health policy keeps its memory beside it.
 - Without it a test sending through the real notifier writes into the checkout's own log — and one test's remembered alert would HOLD an identical alert in the next, so the suite would pass or fail on the order it ran in.
+
+## No test may post to the real Telegram rooms (2026-09-27)
+
+🔴 **The suite-wide guard (`scripts/testing/vps_guard.py`, armed by the root `conftest.py` in every
+test process and every process a test starts) refuses a lookup of Telegram's API host, beside the
+live box's tunnel ports and ssh.** A laptop holds the real bot token because the Command Center
+sends from it, so a test that reaches the real notifier posts to the real rooms. Two watchdog tests
+did exactly that: after 08:00 Chicago each suite run sent a real daily summary to the LIVE health
+room — six in one evening. The refusal is a `BaseException`, so a sender that catches `Exception`
+cannot swallow it: a leaking test goes red instead of posting. Stub the send.

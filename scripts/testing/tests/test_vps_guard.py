@@ -106,3 +106,29 @@ def test_this_process_refuses_ssh_too():
     with pytest.raises(BaseException) as caught:
         subprocess.run(["ssh", "-V"], capture_output=True)
     assert type(caught.value).__name__ == "LiveVpsCall"
+
+
+# ── the Telegram door (2026-09-27) ────────────────────────────────────────────
+# A broken guard fails these with a real DNS LOOKUP only - nothing is posted, since no request is
+# made. Watched RED: before the door existed, two watchdog tests posted a real DAILY SUMMARY to the
+# live health room on every suite run, and adding it turned them red with LiveTelegramCall.
+# MUTATION (run 2026-09-27): drop `socket.getaddrinfo = getaddrinfo` -> both refuse cases red.
+
+
+def test_this_process_refuses_a_telegram_lookup():
+    with pytest.raises(BaseException) as caught:
+        socket.getaddrinfo("api.telegram.org", 443)
+    assert type(caught.value).__name__ == "LiveTelegramCall"
+    assert not isinstance(caught.value, Exception), "a swallowing sender would eat it"
+
+
+def test_a_child_process_refuses_a_telegram_lookup():
+    code = "import socket; socket.getaddrinfo('API.telegram.org.', 443)"
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert proc.returncode != 0 and "LiveTelegramCall" in proc.stderr, proc.stderr[-400:]
+
+
+def test_only_telegram_is_refused():
+    assert vps_guard.refuses_host(b"api.telegram.org")
+    assert not vps_guard.refuses_host("example.org")
+    assert socket.getaddrinfo("localhost", 80)

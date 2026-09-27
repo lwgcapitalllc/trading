@@ -418,6 +418,9 @@ def test_one_process_list_serves_the_whole_pass(monkeypatch):
     monkeypatch.setattr(
         monitor, "check_bot", lambda key, state, today: monitor.is_bot_running(key) or {}
     )
+    # A full pass sends the real DAILY SUMMARY after 08:00 Chicago; it posted to the LIVE room on
+    # every suite run until 2026-09-27. The suite-wide Telegram guard now fails it loudly.
+    monkeypatch.setattr(monitor, "maybe_send_daily_summary", lambda state: state)
 
     monitor.main()
     assert len(queries) == 1, f"{len(queries)} process-list queries for one pass"
