@@ -136,6 +136,18 @@ either stale (frozen at emission) or the future (taken at the end), and neither 
 That is why the 15-minute engine stack is NOT recorded — and on a 15-minute run it is a few
 percent of the time anyway (the 2026-08-27 table above).
 
+### Skipping SOS Fade's 1-minute re-entry arming while no setup is live — MEASURED, NOT BUILT (2026-09-27)
+
+⚠ **Do not re-propose this without a new measurement.** Jan–Mar 2025, 87,970 one-minute bars, the
+fast structure replayed: the run is 12.6s against 4.9s with no 1-minute feed. The re-entry's arm
+state machine costs 2.5s on the 58,964 bars where neither side has a live 15m setup and 1.2s on
+the 29,006 where one does. Skipping the idle bars saves ~18% of a first run (~35-40s on the full
+2020-2026 window, 189s), and nothing on a rerun, which the rerun cache already serves in ~10s.
+Rejected: that state machine's own notes record two "tidy" gatings that each moved re-entries and
+were caught only by a control replay. The rest of the 1-minute cost (bar iteration, the scale-in
+break feed, the reversal exit) needs every bar by design. If a first run is still too slow, the
+lever that scales is running optimizer combos in parallel, not trimming strategy logic.
+
 ## 🔴 The Costs pill UNDER-CHARGED every trade that scaled in (2026-09-07)
 
 `reprice.py` rebuilds a finished run's book at a different cost profile, and it rests on one
