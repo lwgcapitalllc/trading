@@ -279,6 +279,10 @@ def _cost_profile(spec: dict):
             f"account, so it must be one of: {sorted(PROFILES)}"
         )
     base = PROFILES[broker]
+    if spec.get("instrument"):
+        # Every run path refuses a spec with no instrument before it gets here (`_execute`, the
+        # stack runner reads `settings["instrument"]`), so an absent one is a unit test's spec.
+        _refuse_other_instrument(base, spec["instrument"])
 
     bid_ask = "bid_ask_fills" in on
     return AccountProfile(
@@ -292,6 +296,36 @@ def _cost_profile(spec: dict):
         spread=base.spread if ("spread" in on or bid_ask) else 0.0,
         bid_ask_fills=bid_ask,
     )
+
+
+def _refuse_other_instrument(base, symbol: str) -> None:
+    """Refuse to charge one instrument's measured costs on another's run.
+
+    🔴 A profile is picked by broker ACCOUNT, and every account has a gold profile. Until
+    2026-09-27 nothing checked the pairing, so the lab's only GBPJPY run was billed gold's spread
+    (12 pips instead of 1.5), gold's swap and gold's 100-unit lot. See `AccountProfile.instrument`.
+    """
+    suffix = base.symbol_suffix or ""
+    bare = symbol[: -len(suffix)] if suffix and symbol.endswith(suffix) else symbol
+    if not base.instrument or bare.upper() != base.instrument.upper():
+        from backtest.fills import PROFILES
+
+        fits = sorted(
+            k
+            for k, p in PROFILES.items()
+            if p.instrument.upper() == bare.upper() and p.server == base.server
+        )
+        raise ValueError(
+            f"broker profile {base.name!r} holds costs measured on "
+            f"{base.instrument or 'an unrecorded instrument'}, and this run is on {symbol}. "
+            f"Charging them would bill one market's spread, swap and lot size on another. "
+            + (
+                f"Use {', '.join(fits)}."
+                if fits
+                else f"No profile on {base.server or 'this broker'} is measured on {bare} yet — "
+                f"measure it (algos/notes/broker-cost-measurement.md) or run with costs off."
+            )
+        )
 
 
 def _timeframe_minutes(spec: dict) -> int:

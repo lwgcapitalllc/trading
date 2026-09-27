@@ -34,15 +34,16 @@ class _Exec:
 
 
 class _Convertible:
-    def __init__(self, config, initial_capital=10_000.0):
+    def __init__(self, config, initial_capital=10_000.0, account=None, leg="strat"):
         self.config = config
+        self.account = account
         self.execution = _Exec()
 
 
 class _NoSeam:
     """A strategy written before the conversion existed: nowhere to install a rate."""
 
-    def __init__(self, config, initial_capital=10_000.0):
+    def __init__(self, config, initial_capital=10_000.0, account=None, leg="strat"):
         self.config = config
         self.execution = object()
 
@@ -92,3 +93,56 @@ def test_a_non_pair_name_keeps_its_configured_constant_at_build():
     """An index or future predates this rule. The LAB path refuses those in rate_provider_for."""
     s = build_strategy(_Convertible, _Cfg("US30"), initial_capital=1.0)
     assert s.execution.installed is None
+
+
+# ── the lot ceiling counts THIS instrument's lots (2026-09-27) ────────────────
+# RED BY MUTATION (watched): with `_contract_size` answering the account default, the yen tests
+# see 100 units a lot — a 100-lot ceiling of 10,000 units, 0.1 of a real currency lot.
+
+
+class _Profile:
+    def __init__(self, contract_size):
+        self.contract_size = contract_size
+
+
+class _Costed(_Convertible):
+    def __init__(
+        self, config, initial_capital=10_000.0, cost_profile=None, account=None, leg="strat"
+    ):
+        super().__init__(config, initial_capital, account, leg)
+
+
+def test_a_currency_pair_with_no_ceiling_stated_still_counts_a_lot_as_100000_units():
+    s = build_strategy(
+        _Convertible,
+        _Cfg("GBPJPY.p", 0.0064),
+        initial_capital=1.0,
+        rate_provider=constant_rate(0.0064),
+    )
+    assert s.account.contract_size == 100_000.0
+    assert s.account.max_lots == 100.0
+
+
+def test_a_stated_ceiling_counts_the_instruments_lots_too():
+    s = build_strategy(_Convertible, _Cfg("GBPUSD.p"), initial_capital=1.0, max_lots=50.0)
+    assert s.account.contract_size == 100_000.0
+    assert s.account.max_lots == 50.0
+
+
+def test_the_cost_profiles_measured_lot_size_wins():
+    s = build_strategy(
+        _Costed,
+        _Cfg("GBPJPY.p", 0.0064),
+        initial_capital=1.0,
+        cost_profile=_Profile(100_000.0),
+        rate_provider=constant_rate(0.0064),
+    )
+    assert s.account.contract_size == 100_000.0
+
+
+def test_gold_with_no_ceiling_stated_builds_NO_account_exactly_as_before():
+    """The strategy keeps building its own, which is what every stored gold run was made on."""
+    s = build_strategy(_Convertible, _Cfg("XAUUSD"), initial_capital=1.0)
+    assert s.account is None
+    s = build_strategy(_Convertible, _Cfg("XAUUSD.p"), initial_capital=1.0, max_lots=100.0)
+    assert s.account.contract_size == 100.0

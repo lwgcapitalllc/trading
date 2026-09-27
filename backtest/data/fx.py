@@ -42,6 +42,7 @@ __all__ = [
     "UnknownQuoteCurrency",
     "constant_rate",
     "conversion_symbol",
+    "fx_contract_size",
     "quote_currency",
     "rate_provider_for",
     "series_for",
@@ -239,6 +240,23 @@ def quote_currency(symbol: str) -> str:
             f"rather than assuming it is {ACCOUNT_CURRENCY}."
         )
     return m.group(2)
+
+
+#: Units in one standard lot of a currency pair. MEASURED 100,000 on PU Prime's GBPJPY.p and
+#: GBPUSD.p (2026-09-17), and the market convention for every currency pair.
+FX_CONTRACT_SIZE = 100_000.0
+
+
+def fx_contract_size(symbol: str) -> Optional[float]:
+    """100,000 for a currency pair ("GBPJPY.p"), None for anything else (gold, an index).
+
+    None is "not a currency pair", never "100": gold's lot is 100 ounces and silver's 5,000, and
+    this function has no business answering for either.
+    """
+    m = _PAIR.match(symbol or "")
+    if m and m.group(1) in _KNOWN_QUOTES and m.group(2) in _KNOWN_QUOTES:
+        return FX_CONTRACT_SIZE
+    return None
 
 
 def conversion_symbol(symbol: str) -> Optional[tuple]:

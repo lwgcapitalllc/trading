@@ -318,6 +318,16 @@ class AccountProfile:
     #: appearing in another account's Market Watch is not evidence of what the Cent account
     #: quotes. Log into it with `broker_facts.py` and record what it answers.
     symbol_suffix: Optional[str] = None
+    #: The instrument this profile's spread, swap and contract size were MEASURED on, as the bare
+    #: name ("XAUUSD", "GBPJPY"). Identity, never a cost.
+    #:
+    #: 🔴 **Added 2026-09-27 because a GBPJPY lab run was charged GOLD's costs and nothing
+    #: noticed.** The lab picks a profile by BROKER ACCOUNT, and "puprime_ecn" is that account's
+    #: gold profile: a 0.12 spread that is 12 cents on gold and 12 pips on a yen pair, gold's swap
+    #: table, and a 100-unit lot on a 100,000-unit contract. `python_runner._cost_profile` now
+    #: refuses a run whose symbol is not this one. ⚠ **`""` means UNRECORDED and refuses too** —
+    #: a blank must never read as "any instrument".
+    instrument: str = ""
 
     def __post_init__(self) -> None:
         if self.commission_per_side_per_lot == SENTINEL:
@@ -591,6 +601,7 @@ PROFILES = {
         server="PUPrime-Demo",
         account=700119432,
         symbol_suffix=".s",
+        instrument="XAUUSD",
     ),
     # Swap MEASURED on each of these two tiers 2026-08-08 and found identical to Standard's — see
     # the block above `_XAUUSD_SWAP`. The SPREAD is still refused: the only readings taken were the
@@ -638,6 +649,7 @@ PROFILES = {
         server="PUPrime-Demo",
         account=700152904,
         symbol_suffix=".p",
+        instrument="XAUUSD",
     ),
     # The account is recorded because the SERVER cannot separate this tier from Prime — both
     # logins live on PUPrime-Demo, and 700152905 is the ECN one (it is also the live bot's).
@@ -649,6 +661,7 @@ PROFILES = {
         server="PUPrime-Demo",
         account=700152905,
         symbol_suffix=".p",
+        instrument="XAUUSD",
     ),
     "puprime_cent": AccountProfile(
         # ⚠ `symbol_suffix` is deliberately absent — nobody has logged into this tier, so its
@@ -658,6 +671,7 @@ PROFILES = {
         swap=UNMEASURED_SWAP,
         spread=SPREAD_UNMEASURED,
         server="PUPrime-Demo",
+        instrument="XAUUSD",
     ),
     # ── GBPUSD on PU Prime ECN — MEASURED 2026-09-17, demo 700152905 ────────────────────
     #   commission  $1.00/side/lot — read off a real filled round trip (2 deals, 0.02 lots,
@@ -677,6 +691,7 @@ PROFILES = {
         server="PUPrime-Demo",
         account=700152905,
         symbol_suffix=".p",
+        instrument="GBPUSD",
     ),
     # ── GBPJPY on PU Prime ECN — the first NON-USD-QUOTED profile in this file ──────────
     # 🔴 EVERY FIGURE HERE WAS MEASURED ON 2026-09-17 off demo 700152905 (C:\MT5_Demo), and this
@@ -708,6 +723,7 @@ PROFILES = {
         server="PUPrime-Demo",
         account=700152905,
         symbol_suffix=".p",
+        instrument="GBPJPY",
     ),
     "vantage_demo": AccountProfile(
         "vantage_demo",
@@ -717,6 +733,7 @@ PROFILES = {
         server="VantageMarkets-Demo",
         account=25893735,
         symbol_suffix="",
+        instrument="XAUUSD",
     ),
 }
 

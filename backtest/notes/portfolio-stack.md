@@ -553,6 +553,28 @@ watched RED**, each reddening its own named test while a control stayed green �
 reddened everything were re-aimed rather than kept, because a mutation that breaks the module
 proves nothing.
 
+## 🔴 The ceiling counted GOLD's lots on every instrument (fixed 2026-09-27)
+
+A lot is 100 units on gold and 100,000 on a currency pair, and every account here defaulted to
+gold's 100. So a GBPJPY run's "100 lots" was 10,000 units — **0.1 of a real lot** — and every
+trade above it was silently resized. R could not see it (a resized trade keeps its R); balance,
+drawdown and compounding could.
+
+`replay.build_strategy` now counts the ceiling in the run's own lots: the cost profile's measured
+contract size, else 100,000 when the config names a currency pair (`fx.fx_contract_size`), else
+the default. With no ceiling stated on a non-gold symbol it builds the solo account itself, because
+the strategy's own fallback would use gold's lot. **Gold builds exactly as before** — no account is
+built for it unless a ceiling is stated.
+
+MEASURED after: the extreme leg on GBPJPY.p M5, 2020-01-01 → 2026-09-25, 503,359 bars, PU Prime
+ECN GBPJPY costs, per-bar USDJPY — 178 trades, sized 0.27 to 3.78 lots (median 1.23), the first
+trade risking exactly 5.00% of $10,000. Before, anything above 0.10 lot was cut to 0.10.
+
+⚠ **A STACK's shared account still takes ONE contract size from its caller**, and the stack
+runner does not yet pass a conversion rate either — so a GBPJPY stack REFUSES at
+`build_strategy` rather than running wrong. Wiring stacks needs `LegSpec.rate_provider` filled and
+the account's contract size taken from the stack's instrument, in `portfolio_runner`.
+
 ## Three tools for asking whether a SECOND leg is worth having (2026-08-24)
 
 Built to answer one question — *can the setups the gap requirement refuses be traded for a small,

@@ -135,9 +135,39 @@ def _install_rate(strategy, rate_provider) -> None:
     install(rate_provider)
 
 
+def _contract_size(config, cost_profile) -> float:
+    """Units in one lot of the run's instrument — what the venue lot ceiling counts in.
+
+    The run's cost profile when it has one (measured off the broker's Specification), else the
+    currency-pair standard when the config names a pair, else the account's default (gold's 100).
+    """
+    from backtest.data.fx import fx_contract_size
+    from backtest.portfolio.account import DEFAULT_CONTRACT_SIZE
+
+    size = getattr(cost_profile, "contract_size", None) if cost_profile is not None else None
+    if size:
+        return float(size)
+    return fx_contract_size(str(getattr(config, "symbol", "") or "")) or DEFAULT_CONTRACT_SIZE
+
+
 def _construct(strategy_cls, config, *, initial_capital, cost_profile, account, leg, max_lots):
+    from backtest.portfolio.account import DEFAULT_CONTRACT_SIZE, DEFAULT_MAX_LOTS
+
     own_account = False
-    if max_lots is not UNSTATED:
+    # 🔴 THE CEILING COUNTS LOTS, AND A LOT IS NOT THE SAME SIZE ON EVERY INSTRUMENT. Every
+    # account here defaulted to gold's 100 units, so a GBPJPY run's "100 lots" was 10,000 units —
+    # 0.1 of a real lot — and every trade above that was silently resized (2026-09-27).
+    contract = _contract_size(config, cost_profile)
+    if max_lots is UNSTATED and account is None and contract != DEFAULT_CONTRACT_SIZE:
+        # No ceiling stated, so the strategy would build its own account with gold's lot size.
+        # Build it here instead, with the default ceiling counted in THIS instrument's lots.
+        from backtest.portfolio.account import SoloAccount
+
+        account = SoloAccount(
+            balance=initial_capital, max_lots=DEFAULT_MAX_LOTS, contract_size=contract
+        )
+        own_account = True
+    elif max_lots is not UNSTATED:
         # A stated venue lot ceiling. It lives on the ACCOUNT, which is the one seam every
         # strategy's sizing already passes through, so honouring it here costs no per-strategy
         # wiring and cannot drift between them. See `backtest/portfolio/account.py`.
@@ -149,7 +179,7 @@ def _construct(strategy_cls, config, *, initial_capital, cost_profile, account, 
             )
         from backtest.portfolio.account import SoloAccount
 
-        account = SoloAccount(balance=initial_capital, max_lots=max_lots)
+        account = SoloAccount(balance=initial_capital, max_lots=max_lots, contract_size=contract)
         own_account = True
 
     if cost_profile is None and account is None:

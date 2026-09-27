@@ -471,3 +471,10 @@ dollars. Detail: `backtest/notes/broker-data.md` → *WIRED*.
 
 ⚠ **Stored GBPJPY runs made before this date re-run to different dollar figures** — they priced at a
 fixed 2026-09-17 rate. Their R is unaffected.
+
+## The profile must be measured on the run's instrument (2026-09-27)
+
+A GBPJPY run must pick **puprime_ecn_gbpjpy**, not puprime_ecn. `_cost_profile` refuses the
+pairing when a profile's recorded instrument is not the run's symbol, and the message names the
+profile that fits. Run 778b7389b0bf, the only GBPJPY run stored before this, was charged gold's
+costs and its figures should not be quoted. Detail: `backtest/notes/broker-data.md`.

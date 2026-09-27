@@ -433,6 +433,15 @@ MEASURED — gold is byte-identical: the extreme leg on XAUUSD.p M5, 2024-01-01 
 189,331 bars, PU Prime ECN costs, before and after: 51 trades, $15,536.083396, 21.812949R,
 costs -$331.099416, identical to the last digit.
 
+## A profile says which instrument it was measured on — `AccountProfile.instrument` (2026-09-27)
+
+The lab chooses a cost profile by broker ACCOUNT, and every account has a gold profile. Nothing
+checked the pairing, so the lab's only GBPJPY run (778b7389b0bf) was billed **gold's** costs:
+a 0.12 spread (12 cents on gold, 12 pips on a yen pair against a measured 1.5), gold's swap table,
+and a 100-unit lot. Every profile now names its instrument explicitly, and
+`python_runner._cost_profile` refuses a run on any other symbol, naming the profile that fits —
+or saying none is measured yet. `""` refuses too; a blank never means "any".
+
 ## `puprime_ecn_gbpjpy` — the first non-USD-quoted profile (2026-09-17)
 
 Every figure MEASURED on 2026-09-17 off demo 700152905:
