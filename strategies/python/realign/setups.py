@@ -56,7 +56,10 @@ class RealignSetupWatch:
         for k, a in list(self._open.items()):
             if k in now:
                 continue
-            if rs.trigger_dir == a.dir:
+            if getattr(a, "m1_entered", False):
+                # Consumed by the early 1m trigger between two 5m bars (`realign_early_1m`).
+                self._end(strat, a, FILLED, "entered at market on the 1m realignment")
+            elif rs.trigger_dir == a.dir:
                 if not was_in_position and ex._pos_dir == a.dir:
                     self._end(strat, a, FILLED, "entered at market on the 5m realignment")
                 elif was_in_position:

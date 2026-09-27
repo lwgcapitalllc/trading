@@ -88,6 +88,17 @@
       "desc": "When the order goes in once the setup fires: at market on the confirming bar's close, or as a limit waiting for price to come back and retest the break."
     },
     {
+      "name": "realign_early_1m",
+      "group": "Entry",
+      "label": "Enter early on the 1-minute realignment",
+      "widget": "toggle",
+      "options": {
+        "off": "No",
+        "on": "Yes"
+      },
+      "desc": "Also watches the 1-minute chart while the setup waits: after the 5-minute dip, a 1-minute shift of structure back the trade's way followed by a break the same way enters at market on that 1-minute close, with the stop past the dip. Same gates, target and exits as the 5-minute entry, which still fires if this one has not. Needs a 1-minute feed beside the 5-minute chart: a lab run, sweep or stack REFUSES it until the lab loads that feed for it. Off by default; measured in realign_optimization.md Run 16."
+    },
+    {
       "name": "realign_retest_at",
       "group": "Entry",
       "label": "Retest price",

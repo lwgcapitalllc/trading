@@ -39,6 +39,9 @@ class Armed:
     step: int = 0                 # how far through the internal pattern we are
     counter_bar: Optional[int] = None   # newest counter-direction internal break
     counter_ext: Optional[float] = None  # running extreme since that break — the stop
+    # ── the early 1m trigger (`realign_early_1m`, `early.py`) — untouched while it is off ──
+    m1_sos_seen: bool = False     # a trade-direction 1m shift has printed since the last 1m counter break
+    m1_entered: bool = False      # consumed by a 1m entry — REPORTING, read by `setups.py` only
 
 
 @dataclass
@@ -62,6 +65,9 @@ class RealignState:
     """
     long_armed: bool = False
     short_armed: bool = False
+    trigger_armed_ms: Optional[int] = None
+    """When the setup that fired this bar was armed. REPORTING ONLY — it lets a study tell which
+    setup a trade came from, so an early-entry row can be matched trade by trade to the 5m one."""
 
     # ── REPORTING ONLY — the parity gate's decision stream ───────────────────────
     # 🔴 NOTHING BELOW IS READ BY ANY DECISION. They exist so `compare_realign.py` can diff
@@ -182,6 +188,7 @@ class RealignTracker:
                 out.trigger_dir = a.dir
                 out.trigger_stop = a.counter_ext
                 out.trigger_target = a.target
+                out.trigger_armed_ms = a.armed_ms
                 # The level the realignment itself broke. The final pattern step is always a
                 # WITH-TREND break, so a long's realignment is bullish and took out a high.
                 # Read off the same `stream` the trigger was detected on, so a side reading
@@ -196,6 +203,16 @@ class RealignTracker:
         out.short_armed = any(a.dir < 0 for a in self._armed)
         self._report(out)
         return out
+
+    def consume(self, a: Armed) -> None:
+        """Retire one setup because the early 1m trigger ENTERED on it (`early.py`).
+
+        A setup fires once, whichever frame fires it — the 5m trigger does the same thing by not
+        carrying it into `alive`. Called only after a position actually opened: a refused 1m
+        trigger leaves the setup armed, so the 5m trigger still fires as it does today.
+        """
+        a.m1_entered = True
+        self._armed = [x for x in self._armed if x is not a]
 
     def _report(self, out: RealignState) -> None:
         """Fill the reporting half of the state. Reads nothing, decides nothing."""

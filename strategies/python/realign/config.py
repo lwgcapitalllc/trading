@@ -308,6 +308,10 @@ class RealignConfig(SosFadeConfig):
     refused setup FREES the slot and a different setup takes it, which is how the
     minimum-stop guard's cheap estimate got its SIGN wrong (+1.84R estimated, -1.84R
     replayed).
+
+    MEASURED 2026-09-27 (`realign_optimization.md` → Run 15, full replay 2020-2026 charged): 0.0
+    removes exactly the 8 target-behind trades and costs 2.96R (+88.53R → +85.57R), worse in both
+    halves and without the best trade, drawdown unchanged — so the default stays `None`.
     """
 
     realign_trend_minutes: Optional[int] = None
@@ -350,6 +354,34 @@ class RealignConfig(SosFadeConfig):
     2026-09-16**, after its TradingView export (filter at 20, 8 setups refused) passed the parity
     gate. 🔴 Every realign figure before that date was measured with it OFF — pass `None` to
     reproduce one.
+    """
+
+    realign_early_1m: bool = False
+    """Enter EARLIER, off the 1-minute chart, when it realigns before the 5-minute does. Off by default.
+
+    Aaron's idea, 2026-09-27. Inside the same window the 5m trigger waits in — after the 5m has
+    gone counter and set the dip extreme, before the 5m trigger or the setup's expiry — a CLOSED
+    1m bar that completes a trade-direction shift of structure followed by a trade-direction
+    break of structure enters at market on that 1m close. Any counter-direction 1m break resets
+    the count. The stop is the dip extreme known at that moment (the tracker's counter extreme
+    as of the last closed 5m bar, lowered/raised by the closed 1m bars since) plus the same
+    `realign_sl_buf_tk`. Every entry gate is the 5m trigger's own: the N-day momentum, the
+    reward floor, the minimum stop, one position, the account cap. Same target, same exit ladder,
+    managed on the 5m bars as today. A 1m trigger that is refused does NOT consume the setup, so
+    the 5m trigger still fires as it does today if no 1m entry was made.
+
+    🔴 **ON NEEDS A SECOND BAR STREAM (`run_dual`), AND EVERY SINGLE-STREAM PATH REFUSES IT.**
+    Replayed on 5m bars alone the switch would do nothing and report itself on — so `run()` and
+    `step()` raise. The 1m structure is the canonical `engines/market_structure` engine at this
+    bot's own swing length; the merge is `realign/dual.py`.
+
+    ⚠ Market entry only — the retest entry rests a limit at a 5m level, and an early 1m market
+    order under that mode would be a blend of the two. Refused at construction.
+
+    ⚠ No Pine counterpart exists; every figure is a lab finding. MEASURED 2026-09-27
+    (`realign_optimization.md` → Run 16), fitting window charged: FAILS — +80.01R → +78.15R, worse
+    first half and without the best trade, drawdown 5.07R → 6.30R. The earlier price on 45 setups
+    is worth +14.83R; the 19 setups the 5m never triggers lose −16.69R (16 full stops). Ships OFF.
     """
 
     # ── inherited defaults this fork must REFUSE ─────────────────────────────────
@@ -444,6 +476,13 @@ class RealignConfig(SosFadeConfig):
             # something false — that a minimum was chosen. Refuse rather than accept it.
             raise ValueError(
                 f"realign_min_rr must be >= 0 or None, got {self.realign_min_rr!r}")
+        if self.realign_early_1m and self.realign_entry_mode != "market":
+            # The early entry is a MARKET order on a 1m close. Under the retest mode it would
+            # enter at market on part of the book and rest limits on the rest — a row measuring
+            # a blend of two entries it exists to tell apart.
+            raise ValueError(
+                "realign_early_1m needs realign_entry_mode='market'; got "
+                f"{self.realign_entry_mode!r}")
         if self.exec_secondary:
             # Refuse rather than silently produce a primary-only book — the distinction
             # this repo has been bitten by twice.

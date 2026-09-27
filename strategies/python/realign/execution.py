@@ -33,12 +33,32 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Optional
 
 _PYPKGS = Path(__file__).resolve().parents[1]
 if str(_PYPKGS) not in sys.path:
     sys.path.insert(0, str(_PYPKGS))
 
-from sos_fade.execution import Execution, _Pending  # noqa: E402
+from sos_fade.execution import Decision, Execution, _Pending  # noqa: E402
+
+
+class _AfterEntry:
+    """A 5m bar seen only from the moment an early 1m entry filled inside it.
+
+    Every field is the real bar's except the three the exit path prices against: `open` is the
+    first 1m bar after the entry, `high` / `low` the extremes of the 1m bars after it. The part
+    of the bar BEFORE the entry is price the trade never held — letting a target or the stop
+    fill on it would book a move from before the position existed.
+    """
+
+    __slots__ = ("_sig", "open", "high", "low")
+
+    def __init__(self, sig, o: float, h: float, lo: float) -> None:
+        self._sig = sig
+        self.open, self.high, self.low = o, h, lo
+
+    def __getattr__(self, name):
+        return getattr(self._sig, name)
 
 
 class RealignExecution(Execution):
@@ -104,6 +124,11 @@ class RealignExecution(Execution):
         """One bar of the SOS Fade order layer, with this fork's setup state. Called by the strategy."""
         self._state = state
         dec = super().step(sig, seq)
+        # The 5m bar an early entry was made inside has now been managed on its post-entry part;
+        # from here on every bar is wholly the trade's.
+        if self._early_bucket_ms is not None and sig.time_ms >= self._early_bucket_ms:
+            self._early_bucket_ms = None
+            self._early_after = None
         # 🔴 AFTER the parent's Phase A, and the order is the whole correctness argument.
         # Cancelling a resting limit on the bar its stop was breached, BEFORE that bar has
         # been offered to the fill path, deletes exactly the trades that would have lost —
@@ -113,6 +138,67 @@ class RealignExecution(Execution):
         self._expire_retest(sig)
         self._arm_weekend_flat(sig)
         return dec
+
+    # ── the early 1m trigger (`realign_early_1m`) ─────────────────────────────
+    #: Open time of the 5m bar an early 1m entry was made INSIDE. None = no such bar pending.
+    _early_bucket_ms = None
+    #: (open, high, low) of the 1m bars AFTER that entry and inside that 5m bar. None = none yet —
+    #: the entry was on the bar's last minute, and the 5m bar then carries nothing of the trade.
+    _early_after = None
+
+    def enter_early(self, sig1m, d: int, stop_ext: float, target: float,
+                    bucket_ms: int) -> Optional[str]:
+        """Try the early 1m trigger through the SAME entry path as the 5m one (`_enter`).
+
+        `sig1m` is the closed 1m bar (its `index` is the 5m bar it sits inside, so the trade
+        record numbers bars on one frame). Returns None when a position opened, else why not.
+        ⚠ Refuses while a position is open or a limit rests — one slot, as for the 5m trigger —
+        and the caller leaves the setup armed on ANY refusal, so the 5m trigger still fires.
+        """
+        if self._pos_dir != 0 or self._pend_long is not None or self._pend_short is not None:
+            return "a trade is already open"
+        self._stamp_account_clock(sig1m)
+        why = self._enter(sig1m, Decision(index=sig1m.index), d, stop_ext, target, None)
+        if why is None and self._pos_dir != 0:
+            self._early_bucket_ms = int(bucket_ms)
+            self._early_after = None
+        return why
+
+    def observe_after_early(self, bucket_ms: int, o: float, h: float, lo: float) -> None:
+        """Fold one CLOSED 1m bar that came after an early entry, inside the same 5m bar."""
+        if self._early_bucket_ms != bucket_ms or self._pos_dir == 0:
+            return
+        if self._early_after is None:
+            self._early_after = (o, h, lo)
+        else:
+            o0, h0, l0 = self._early_after
+            self._early_after = (o0, max(h0, h), min(l0, lo))
+
+    def _early_view(self, sig):
+        """The bar the exit path may see: the whole bar, the post-entry part of it, or None."""
+        if self._early_bucket_ms is None or sig.time_ms != self._early_bucket_ms:
+            return sig
+        if self._early_after is None:
+            return None
+        return _AfterEntry(sig, *self._early_after)
+
+    def _manage_open(self, sig, dec) -> None:
+        # 🔴 On the 5m bar an early entry filled inside, the brackets are tested against the
+        # post-entry minutes only. Tested against the whole bar they could fill a target on a
+        # high printed BEFORE the entry; skipped altogether they would miss a stop hit AFTER it
+        # — the flattering error, since the next 5m bar never revisits those minutes.
+        view = self._early_view(sig)
+        if view is None:
+            return            # entered on the bar's last minute — the bar holds none of the trade
+        return super()._manage_open(view, dec)
+
+    def _advance_stage(self, sig) -> None:
+        # Same post-entry view, same reason: a favourable extreme from before the fill is not a
+        # move the trade made, and staging off it would lift the stop for nothing.
+        view = self._early_view(sig)
+        if view is None:
+            return
+        return super()._advance_stage(view)
 
     #: 1 — this fork's flat exit is a market order filled at the NEXT bar's open, so the window
     #: must leave a bar of room. See `_arm_weekend_flat`.
@@ -176,18 +262,28 @@ class RealignExecution(Execution):
             self._retest_bar = None
 
     def _place_entries(self, sig, seq, dec, long_edge, short_edge) -> None:
-        cfg = self._cfg
         st = self._state
         # REPORTING ONLY — why this bar's trigger did not become a trade, for the signals room
-        # (`setups.py`). Written before each refusal below and read by nothing that decides.
+        # (`setups.py`). Written from `_enter`'s answer and read by nothing that decides.
         self.refusal = None
         if st is None or st.trigger_dir == 0:
             return
+        self.refusal = self._enter(sig, dec, st.trigger_dir, st.trigger_stop,
+                                   st.trigger_target, st.trigger_level)
 
-        d = st.trigger_dir
+    def _enter(self, sig, dec, d: int, trigger_stop: float, target: float,
+               trigger_level) -> Optional[str]:
+        """Every entry gate, the price, the stop, the size and the order — for ONE trigger.
+
+        Returns None when an order was opened (market) or rested (retest), else the refusal in
+        words. 🔴 **The ONE entry path for both triggers**: the 5m realignment calls it from
+        `_place_entries`, and the early 1m trigger (`enter_early`) calls it with a 1m bar as
+        `sig`. A second copy of these gates for the early trigger is how "every existing gate
+        applies unchanged" would stop being true the first time one of them moves.
+        """
+        cfg = self._cfg
         if (d > 0 and not cfg.realign_longs) or (d < 0 and not cfg.realign_shorts):
-            self.refusal = "that side is switched off"
-            return
+            return "that side is switched off"
 
         # ── the slower-trend gate ────────────────────────────────────────────────
         # ⚠ `trend_dir == 0` means the slow frame has not spoken yet, NOT "no trend".
@@ -197,8 +293,7 @@ class RealignExecution(Execution):
         #   attribute at all, so nothing is gated.
         if cfg.realign_trend_minutes is not None:
             if getattr(self, "trend_dir", 0) != d:
-                self.refusal = "the slower trend is not with the trade"
-                return
+                return "the slower trend is not with the trade"
 
         # ── the N-day momentum gate ──────────────────────────────────────────────
         # Refuses a trade WITH the bigger move. `None` = not enough completed days yet, and is
@@ -206,11 +301,10 @@ class RealignExecution(Execution):
         if cfg.realign_mom_days is not None:
             m = getattr(self, "mom_dir", None)
             if m is None or m == d:
-                self.refusal = (f"the {cfg.realign_mom_days}-day momentum is with the trade — "
-                                "this setup only fades it" if m == d
-                                else f"not enough days yet for the {cfg.realign_mom_days}-day "
-                                "momentum read")
-                return
+                return (f"the {cfg.realign_mom_days}-day momentum is with the trade — "
+                        "this setup only fades it" if m == d
+                        else f"not enough days yet for the {cfg.realign_mom_days}-day "
+                        "momentum read")
 
         # ── where the order goes ─────────────────────────────────────────────────
         if cfg.realign_entry_mode == "market":
@@ -218,43 +312,38 @@ class RealignExecution(Execution):
             entry = sig.close
         else:
             if cfg.realign_retest_at == "level":
-                if st.trigger_level is None:
+                if trigger_level is None:
                     # No attributable structure level, so no price to rest at. Counted and
                     # refused rather than substituted with the close: a silent fallback
                     # would make this a market entry on part of the book and the row would
                     # be measuring a blend of the two things it exists to tell apart.
                     self.retest_no_level += 1
-                    self.refusal = "no structure level to rest the retest at"
-                    return
-                entry = st.trigger_level
+                    return "no structure level to rest the retest at"
+                entry = trigger_level
             else:
-                entry = (st.trigger_stop + sig.close) / 2.0
+                entry = (trigger_stop + sig.close) / 2.0
             # A limit only rests if price still has to come BACK to it. One already at or
             # through the market is not a retest — it would fill at the next bar's open and
             # quietly re-become the market entry, at a worse price and under another name.
             if (entry - sig.close) * d >= 0:
-                self.refusal = "price is already past the retest level"
-                return
+                return "price is already past the retest level"
 
-        sl = st.trigger_stop - d * cfg.realign_sl_buf_tk * cfg.mintick
+        sl = trigger_stop - d * cfg.realign_sl_buf_tk * cfg.mintick
         dist = (entry - sl) * d
         if dist <= 0:
-            self.refusal = "the stop is not behind the entry"
-            return
+            return "the stop is not behind the entry"
 
         # The minimum-stop guard is inherited and is the reason it matters here: qty is
         # risk / dist, so a stop collapsing onto the entry balloons the position. This
         # fork's stops are structural and can be genuinely tight.
         if not self._min_stop_ok(dist, entry):
-            self.refusal = "the stop is tighter than the minimum-stop setting"
-            return
+            return "the stop is tighter than the minimum-stop setting"
 
         qty = (self.equity * cfg.exec_risk_pct / 100.0) / dist
 
         # TP1 / TP2 off the DEVIATION leg: the pre-deviation extreme is the far end, the
         # stop side is the near end. TP2 = the extreme itself (the setup's own claim),
         # TP1 = the midpoint. The runner rides past TP2 on the inherited trail.
-        target = st.trigger_target
         if cfg.realign_tp_r is not None:
             # A FIXED take-profit: bank the whole trade at N x its own risk. The config
             # refuses unless `exec_tp1_pct` is 100, so nothing survives the first rung —
@@ -277,8 +366,7 @@ class RealignExecution(Execution):
             #    retest whose limit sat EXACTLY on the target — a trade with no reward, which the
             #    third parity export caught on 2026-08-07 08:30 (limit and target both 4304.13).
             if reward <= 0 or reward < cfg.realign_min_rr * dist:
-                self.refusal = "the reward-to-risk is below the floor"
-                return
+                return "the reward-to-risk is below the floor"
 
         pend = _Pending(dir=d, edge=entry, qty=qty, sl=sl, tp1=tp1, tp2=tp2,
                         sos_bar=None, fib=None)
@@ -290,9 +378,8 @@ class RealignExecution(Execution):
                 # position. Left unset, the bridge refuses the order for having no stop and the
                 # bot halts. Reporting only on a replay: nothing reads `dec.stop` back.
                 dec.stop = self._current_stop()
-            else:
-                self.refusal = "the order was refused — no size, or no room under the account's risk cap"
-            return
+                return None
+            return "the order was refused — no size, or no room under the account's risk cap"
         # Rest the limit and let the INHERITED fill path take it — `_try_entry_fill` already
         # prices a limit against the bar, pays the ask on a long, and gives a gap the better
         # fill. A second fill path here would be a second implementation of the one thing in
@@ -304,6 +391,7 @@ class RealignExecution(Execution):
         else:
             self._pend_short, self._pend_long = pend, None
         self._retest_bar = sig.index
+        return None
 
     def _min_stop_ok(self, dist: float, price: float) -> bool:
         """The inherited minimum-stop floor, read through this fork's own entry path.

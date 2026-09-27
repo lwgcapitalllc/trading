@@ -234,9 +234,11 @@ def test_the_fork_does_not_add_to_winners_its_pine_cannot():
     assert "execScaleIn" not in _PINE.read_text(encoding="utf-8")
 
 
-def test_run_dual_is_refused_because_this_strategy_is_single_frame():
-    with pytest.raises(NotImplementedError, match="single-frame"):
-        RealignStrategy(RealignConfig()).run_dual(None, None)
+def test_a_second_bar_frame_is_used_only_by_the_early_1m_trigger():
+    """`run_dual` exists since 2026-09-27 for `realign_early_1m` alone (`tests/test_early_1m.py`).
+    Everything else is still single-frame: off, no second stream is wanted."""
+    assert RealignStrategy(RealignConfig()).fast_feed_minutes() is None
+    assert RealignStrategy(RealignConfig(realign_early_1m=True)).fast_feed_minutes() == 1
 
 
 # ── the tracker's arming rule ────────────────────────────────────────────────────

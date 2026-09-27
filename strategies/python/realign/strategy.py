@@ -11,8 +11,10 @@ It SUBCLASSES `SosFadeStrategy` for the fill-model plumbing and the engine pins,
 same way `BLegStrategy` does, and overrides construction and the step loop.
 
 ⚠ SINGLE-FRAME BY CONSTRUCTION. The 15m structure is aggregated from the 5m stream inside
-`HtfStructure`, so the runner hands this one frame and `run_sweep` can replay it. A
-dual-frame build would be refused by the optimizer outright.
+`HtfStructure`, so the runner hands this one frame and `run_sweep` can replay it.
+⚠ **The ONE exception is `realign_early_1m`** (off by default): the early 1m trigger needs a real
+1m stream, so with it on the bot runs through `run_dual` / `make_dual_clock` (`dual.py`) and every
+single-stream path REFUSES rather than replaying a book with the switch silently doing nothing.
 
 ⚠ `show_internal` MUST be True here — the parent pins it False (its Pine hides internal
 structure), and this fork's SHORT trigger reads the internal stream. Inheriting the
@@ -42,6 +44,7 @@ from daily_momentum import DailyMomentum  # noqa: E402
 from live_contract import PassThroughSequence, PassThroughSignals  # noqa: E402
 
 from .config import RealignConfig  # noqa: E402
+from .early import EarlyTrigger1m  # noqa: E402
 from .execution import RealignExecution  # noqa: E402
 from .htf import MAJOR_LENGTH, HtfStructure  # noqa: E402
 from .setups import RealignSetupWatch  # noqa: E402
@@ -85,6 +88,10 @@ class RealignStrategy(SosFadeStrategy):
         # The signals room's setups (`setups.py`). REPORTING ONLY — fed after each bar's decision.
         self.setup_watch = RealignSetupWatch(self.config)
         self.execution.setup_key_scheme = RealignSetupWatch.key_scheme
+        # The early 1m trigger, only when switched on — off builds nothing and runs nothing, so the
+        # shipped book cannot move. REPORTING: one (entry_ms, armed_ms, dir) per early entry.
+        self.early = EarlyTrigger1m(self.config) if self.config.realign_early_1m else None
+        self.early_entries: List[tuple] = []
 
     @staticmethod
     def engine_config():
@@ -171,28 +178,81 @@ class RealignStrategy(SosFadeStrategy):
             rs.pend_age = (None if ex._retest_bar is None
                            else int(sig.index) - int(ex._retest_bar))
 
+    def _refuse_single_stream(self) -> None:
+        """The early 1m trigger reads a 1m stream; one frame alone would leave it silently off."""
+        if self.config.realign_early_1m:
+            raise ValueError(
+                "realign_early_1m is on and this path replays ONE bar frame — the early 1m trigger "
+                "would never fire while the run reports it on. Run it through run_dual (the lab "
+                "does when the setting is on), or switch it off.")
+
     def step(self, bar_state) -> Decision:
-        dec = self._step_core(bar_state, bar_state.bar.timestamp_ms)
+        self._refuse_single_stream()
+        return self._step_primary_bar(bar_state, bar_state.bar.timestamp_ms)
+
+    def _step_primary_bar(self, bar_state, time_ms: int) -> Decision:
+        """One 5m bar through the strategy, recorded. The single-stream `step` and the dual clock
+        both come through here, so the two cannot record a bar differently."""
+        dec = self._step_core(bar_state, time_ms)
         self.decisions.append(dec)
         self.states.append(self._last_state)
+        if self.early is not None:
+            self.early.on_primary_closed()
         return dec
+
+    # ── the early 1m trigger (`realign_early_1m`) ─────────────────────────────────
+    def fast_feed_minutes(self):
+        """Does this configuration need a SECOND bar stream, and how fast? `None` = no.
+
+        ⚠ `None` is *not wanted*, never *unavailable*. The parent answers off `exec_secondary`,
+        which this fork pins off; the only second stream here is the early trigger's 1m.
+        """
+        return 1 if self.config.realign_early_1m else None
+
+    def make_dual_clock(self, stack, *, tf_primary_ms: int, engine_config=None):
+        """The merge for a caller that owns the engine stack — a shared stack's `DualFeedLeg`."""
+        from .dual import RealignDualClock
+
+        self._check_frame_ms(tf_primary_ms)
+        return RealignDualClock(self, stack, tf_primary_ms=tf_primary_ms)
+
+    def _on_fast_bar(self, sig1m, bucket_ms: int) -> None:
+        """One CLOSED 1m bar, stepped after every 5m bar that closed by its open (`dual.py`)."""
+        if self.early is None:
+            return
+        ex = self.execution
+        # BEFORE this bar's own trigger: a bar cannot be "after" an entry made on its own close.
+        ex.observe_after_early(bucket_ms, sig1m.open, sig1m.high, sig1m.low)
+        fires = self.early.update(sig1m.time_ms, sig1m.open, sig1m.high, sig1m.low,
+                                  sig1m.close, self.tracker._armed, bucket_ms)
+        for f in fires:
+            if ex._pos_dir != 0:
+                break                   # one slot — a fire that finds it taken leaves its setup armed
+            if ex.enter_early(sig1m, f.dir, f.stop_ext, f.target, bucket_ms) is None:
+                self.tracker.consume(f.armed)
+                self.early_entries.append((sig1m.time_ms, f.armed.armed_ms, f.dir))
+
+    def _check_frame_ms(self, tf_ms: int) -> None:
+        # 🔴 REFUSE a chart frame that is not FASTER than the false-break frame. The setup is a
+        # 15m break read against the chart frame's own breaks; on 15m bars the aggregator is 1:1
+        # with the chart and the two reads collapse into one, so the run completed GREEN with
+        # ZERO trades (run 57514f2bb21c, 2026-09-16) — an answer, not a refusal.
+        tf_seconds = int(tf_ms) // 1000
+        htf_seconds = self.config.realign_htf_minutes * 60
+        if tf_seconds >= htf_seconds:
+            raise ValueError(
+                f"Realign needs bars faster than its {self.config.realign_htf_minutes}-minute "
+                f"trend frame, and these are {tf_seconds // 60}-minute bars — it would never "
+                f"find a setup. Run it on 5-minute bars.")
 
     def run(self, df, engine_config=None, warmup: int = 0) -> "RealignStrategy":
         from backtest.replay import EngineStack, iter_bars
 
+        self._refuse_single_stream()
         if len(df.index) > 1:
             tf_seconds = int(df.index.to_series().diff().min().total_seconds())
             self.execution.bar_ms = tf_seconds * 1000
-            # 🔴 REFUSE a chart frame that is not FASTER than the false-break frame. The setup is a
-            # 15m break read against the chart frame's own breaks; on 15m bars the aggregator is
-            # 1:1 with the chart and the two reads collapse into one, so the run completed GREEN
-            # with ZERO trades (run 57514f2bb21c, 2026-09-16) — an answer, not a refusal.
-            htf_seconds = self.config.realign_htf_minutes * 60
-            if tf_seconds >= htf_seconds:
-                raise ValueError(
-                    f"Realign needs bars faster than its {self.config.realign_htf_minutes}-minute "
-                    f"trend frame, and these are {tf_seconds // 60}-minute bars — it would never "
-                    f"find a setup. Run it on 5-minute bars.")
+            self._check_frame_ms(tf_seconds * 1000)
 
         stack = EngineStack(engine_config or self.engine_config())
         for bar in iter_bars(df):
@@ -203,6 +263,52 @@ class RealignStrategy(SosFadeStrategy):
                 self.states.append(self._last_state)
         return self
 
-    def run_dual(self, *args, **kwargs):
-        raise NotImplementedError(
-            "RealignStrategy is single-frame — the 15m is aggregated internally. Use run().")
+    def run_dual(self, df, df_fast, engine_config=None, warmup: int = 0,
+                 progress=None, should_cancel=None) -> "RealignStrategy":
+        """Replay the 5m chart and a 1m stream on one merged clock (`dual.py`).
+
+        For `realign_early_1m`. With the switch OFF the 1m bars are merged and ignored, and the
+        5m path is the same calls in the same order as `run()` — so the book is identical (pinned
+        by test). `df_fast` must be 1-minute bars over the same window; the 5m frame must be
+        faster than the 15m false-break frame, exactly as `run()` requires.
+
+        ⚠ `warmup` is honoured as `run()` honours it — decisions before it are still stepped and
+        simply not recorded — and `progress(i, n)` / `should_cancel()` follow the lab's contract.
+        """
+        from backtest.replay import EngineStack, iter_bars
+
+        from .dual import RealignDualClock
+
+        if len(df.index) > 1:
+            tf_ms = int(df.index.to_series().diff().min().total_seconds() * 1000)
+            self.execution.bar_ms = tf_ms
+            self._check_frame_ms(tf_ms)
+        else:
+            tf_ms = 300_000
+        if len(df_fast.index) > 1:
+            fast_s = int(df_fast.index.to_series().diff().min().total_seconds())
+            if fast_s != 60:
+                raise ValueError(
+                    f"the early trigger reads 1-minute structure and the fast frame is "
+                    f"{fast_s // 60}-minute bars")
+
+        stack = EngineStack(engine_config or self.engine_config())
+        clock = RealignDualClock(self, stack, tf_primary_ms=tf_ms)
+        for b in iter_bars(df):
+            clock.push_primary(b)
+        n = len(df_fast.index)
+        every = max(1, n // 100)
+        for b1 in iter_bars(df_fast):
+            if b1.index % every == 0:
+                if should_cancel is not None and should_cancel():
+                    return self
+                if progress is not None:
+                    progress(b1.index, n)
+            clock.step_fast(b1)
+        clock.drain_primary()
+        if warmup:
+            # `run()` records only bars at or past `warmup`; the clock records every bar, so trim
+            # the same prefix. Nothing decides off these lists — they are the per-bar record.
+            self.decisions = self.decisions[warmup:]
+            self.states = self.states[warmup:]
+        return self

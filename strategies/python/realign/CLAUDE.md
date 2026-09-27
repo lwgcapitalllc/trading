@@ -44,6 +44,8 @@ the book re-measured and reproduced exactly. 2026-08-13 — first commit.
 
 ## Setups: notes/setup_alerts.md
 
+## The early 1m trigger (`realign_early_1m`, OFF) — measured and FAILED: notes/early_1m.md
+
 ## Flat before the close — one field now, spelled as this fork's Pine spells it
 
 🔴 **`realign_flat_before_weekend` IS GONE. Use the inherited `flat_mode`** (`"Off"` /
@@ -263,7 +265,8 @@ runs on the 5m stream and builds its own 15m bars in `HtfStructure`.
 
 That is not a stylistic choice. **`backtest.optimizer.run_sweep` REFUSES dual-frame strategies** —
 it replays one frame — so a `run_dual` build is locked out of the optimizer, every sweep and the
-stress test's sensitivity pass. `run_dual` therefore raises here, by test.
+stress test's sensitivity pass. ⚠ **Since 2026-09-27 `run_dual` exists for ONE switch only, the
+early 1m trigger (off)** — with it on every single-stream path refuses; see *The early 1m trigger*.
 
 Two correctness properties, both tested, both silent if broken:
 
@@ -515,7 +518,8 @@ exists to settle.** It is green as of Run 8, narrowly.
 | `htf.py` | `HtfStructure` — the 15m aggregator, and the no-lookahead argument |
 | `tracker.py` | `RealignTracker` — arming on the false break, walking the realignment |
 | `execution.py` | `RealignExecution` — the market and retest entries, sizing, the stop |
-| `strategy.py` | `RealignStrategy` — wiring, `engine_config()`, `run_dual` refusal |
+| `strategy.py` | `RealignStrategy` — wiring, `engine_config()`, `run_dual` (early 1m trigger only) |
+| `early.py`, `dual.py` | the early 1m trigger and its 5m/1m merge (`realign_early_1m`, off) |
 | `tests/test_realign.py` | 32 tests, weighted toward the silent failures |
 | `tools/compare_realign.py` | the parity gate — **green 2026-09-16, narrow** (Runs 7-8) |
 | `exports/golden/` | the committed passing export + `golden.json`; step 15 of the full test run replays it |
@@ -559,28 +563,9 @@ bot and a 15m bot on one account meant one of the two was replayed on a frame no
 measured it on — and the combined table said *portfolio*. Rules for the lab side:
 `command-center/backend/CLAUDE.md` → *A stack leg runs on its own frame*.
 
-## The 5-minute-only arm — researched 2026-09-11, measured NEGATIVE, parked off main
+## The 5-minute-only arm — measured NEGATIVE, parked off main: notes/five_minute_arm.md
 
-Aaron's question: on the 5m ALONE — a trend (SOS, then BOS), one counter shift, the shift back —
-which version is worth entering? An arm reading the whole sequence on one frame was built and a
-36-combination study run, pre-declared, with costs, a split and matched random-entry controls.
-
-- 🔴 **All 36 lose after ECN costs, none is positive in both halves, and the four that differ from
-  random past the family-wise bar are all WORSE than random.** Entering on the next break after the
-  realignment is worse per trade in all 18 pairs. Full table: `realign_optimization.md` → Run 1.
-- ⚠ **This line said the shipped two-frame setup "does not clear the bar either: z 1.85" and that is
-  SUPERSEDED as of 2026-09-16 — it clears it.** That 1.85 came from a TRIGGER SCAN on a different
-  basis (ECN, 1% risk, full window), and this repo's own standing rule is that a trigger prior is
-  not a strategy result. Replayed through the real strategy and the real exit ladder
-  (`backtest/tools/realign_control.py`, 20 reps, `puprime_standard`, 2020-01-02 → 2025-08-05):
-  **z +3.58 on the shipped setup with the 15m trail** (Run 10; +2.36 on the old 5m trail). The
-  higher frame setting the trap is the version worth proving, and it is now the version that has
-  been proven.
-- **The code is on branch `research/realign-chart-frame`, not here** — five settings with no
-  TradingView inputs, for an arm with no edge. Check it out to re-run the study; do not merge it.
-- ⚠ **Two facts it measured about the engine stream hold on main too** (467,352 5m bars, 5,265
-  breaks, at swing length 15 and 10): no bar ever breaks both ways, and once a run has printed its
-  first break every counter break is flagged SOS. The first break itself can be a plain BOS.
+Read it before re-opening a one-frame arm. The code is on `research/realign-chart-frame`.
 
 ## Risk per trade is PINNED at 10 (2026-09-13)
 
