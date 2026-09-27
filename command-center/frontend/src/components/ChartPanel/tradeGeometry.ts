@@ -142,3 +142,30 @@ export function fmtPips(pips: number): string {
   if (r === 0) return '0.0p'
   return `${r > 0 ? '+' : '\u2212'}${Math.abs(r).toFixed(1)}p`
 }
+
+/**
+ * The chart NAME of each exit rung, by the order price REACHES them — `names[i]` names the rung
+ * at ladder position `i`. The nearest to the entry is `TP1`, the next `TP2`, and so on.
+ *
+ * 🔴 **Ladder position is not reach order, and the chart used to name by ladder position.** A
+ * re-entry prices its first rung off RISK and its second off the 15m fib, so the second can sit
+ * nearer — the short of 2026-08-26 on run 7760823a639e drew `TP2 / Exit` above `TP1`. The stop
+ * already climbs by distance (`execution.py` → `_stage_rungs`: breakeven at the NEARER rung, the
+ * floor at that nearer rung's price once the further one is reached), so naming by distance makes
+ * `TP1` / `TP2` mean on the chart what they mean to the stop. Aaron's call, 2026-09-27.
+ *
+ * ⚠ Only the NAMES move. The strategy's own ladder order, and which rung banks what, are
+ * untouched. With no entry price there is no distance to measure, so ladder order stands.
+ * ⚠ A tie keeps ladder order — the sort is stable.
+ */
+export function rungNames(prices: number[], entryPrice: number | undefined, sign: Sign): string[] {
+  const order = prices.map((_, i) => i)
+  if (typeof entryPrice === 'number') {
+    order.sort((a, b) => (prices[a] - entryPrice) * sign - (prices[b] - entryPrice) * sign)
+  }
+  const names: string[] = new Array(prices.length)
+  order.forEach((ladderIdx, rank) => {
+    names[ladderIdx] = `TP${rank + 1}`
+  })
+  return names
+}

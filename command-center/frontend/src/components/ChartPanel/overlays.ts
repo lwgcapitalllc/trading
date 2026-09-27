@@ -14,6 +14,7 @@ import {
   exitSide,
   fmtPips,
   pipsFrom,
+  rungNames,
   stoppedOut,
   type Sign,
 } from './tradeGeometry'
@@ -563,14 +564,15 @@ export function registerChartOverlays(): void {
       // profitable rungs, so defaulting to false would repaint every historical profit-take as a
       // plain exit — a claim about size that nobody measured.
       const legs = (d.profitLegs ?? [])
-        .map((l, i, a): { price: number; label: string; banked: boolean } =>
+        .map((l, i, a): { price: number; label: string; banked: boolean; bare: boolean } =>
           typeof l === 'number'
             ? {
                 price: l,
                 label: i === a.length - 1 && a.length > 1 ? 'Exit' : `TP${i + 1}`,
                 banked: true,
+                bare: true,
               }
-            : { ...l, banked: l?.banked !== false }
+            : { ...l, banked: l?.banked !== false, bare: false }
         )
         .filter((l) => l && typeof l.price === 'number')
       const legPrices = legs.map((l) => l.price)
@@ -803,9 +805,25 @@ export function registerChartOverlays(): void {
       // line, just update the label to say TP2 / Exit, so I could know."* Without it the reader
       // cannot tell "it exited AT its target" from "it exited somewhere the ladder never named",
       // which is the question the whole layer exists to answer.
+      // Every rung is NAMED by the order price reaches it, not by its ladder position — see
+      // `tradeGeometry.ts::rungNames`. One name list, read by all three places below that print a
+      // rung, so a chip and the fill it stands beside can never disagree.
+      const names = rungNames(
+        targets.map((t) => t.price),
+        typeof entryP === 'number' ? entryP : undefined,
+        sign
+      )
       const rungAt = (price: number): string | null => {
         const i = targets.findIndex((t) => Math.abs(t.price - price) < 1e-9)
-        return i < 0 ? null : `TP${i + 1}`
+        return i < 0 ? null : names[i]
+      }
+      // A fill's `TPn` comes from its ORDER id, which counts in ladder position; rename it through
+      // the same list. A bare-number leg (older cached spec) was numbered in exit order, not
+      // ladder order, so it is left as it came.
+      const legName = (label: string, bare: boolean): string => {
+        const m = /^TP(\d)$/.exec(label)
+        if (!m || bare) return label
+        return names[Number(m[1]) - 1] ?? label
       }
       // Each real profit-take: a thin dotted mint line + a dot + its label (TP1/TP2/TP3/Exit). A
       // plain win with no per-rung detail draws one "Exit" at the banked price.
@@ -825,7 +843,7 @@ export function registerChartOverlays(): void {
       }
       const drawnLegs: { price: number; label: string; color: string }[] = legs.map((l) => ({
         price: l.price,
-        label: l.label,
+        label: legName(l.label, l.bare),
         // A fill that BANKED is mint whichever way it sits; one that banked nothing is coloured by
         // where it landed against the entry, because that is the only thing it says.
         color: l.banked ? profitColor : sideColor(l.price),
@@ -962,16 +980,17 @@ export function registerChartOverlays(): void {
       // is slightly incomplete** — the earlier reasoning optimised for a claim nobody was making.
       // ⚠ `banks` is still carried on the data and is still never defaulted (see `types.ts`); this
       // layer simply does not spend a chip on it.
-      // ⚠ Numbering is by LADDER POSITION, which is the strategy's order and not nearest-first: a
-      // re-entry prices its first rung off risk and its second off a fib, so `TP2` can legitimately
-      // sit nearer the entry than `TP1` (23 of the 45 re-entries on run 687c8df2a523; every main
-      // entry is correctly ordered). Sorting them here would renumber the strategy's own rungs.
+      // 🔴 Numbering is by the order price REACHES the rungs, nearest first, since 2026-09-27 —
+      // `names` above. It was ladder position until then, and a re-entry (first rung priced off
+      // risk, second off a fib) drew `TP2` nearer the entry than `TP1` on 23 of 45 re-entries of
+      // run 687c8df2a523. The stop steps by distance, so the old names contradicted it. Aaron:
+      // *"if TP2 is before TP1 then just flip flop the pills."*
       for (let i = 0; i < targets.length; i++) {
         const { price } = targets[i]
         if (drawnPrices.some((p) => Math.abs(p - price) < 1e-9)) continue
         crossLine(price, withAlpha(profitColor, 0.5))
         dot(price, withAlpha(profitColor, 0.5))
-        addLabel(price, `TP${i + 1}`, withAlpha(profitColor, 0.7))
+        addLabel(price, names[i], withAlpha(profitColor, 0.7))
       }
 
       // De-collide the labels top→down (min 15px apart), then draw each as a compact rounded chip

@@ -181,3 +181,24 @@ raw bytes, so a build-time field would reach no run built before it. See the bac
 Proof: `scripts/check_trade_geometry.mjs` (the pip cases, killed by three mutations) and
 `backend/tests/test_chart_spec_pip_size.py`. Driven on run `ab08dc6c90c7` (a short from 4369.93):
 `DD 4376.14 · −62.1p`, `Exit 4356.86 · +130.7p`, `Best 4291.69 · +782.4p`, each checked by hand.
+
+## 🔴 `TP1` / `TP2` are named by the order price REACHES them, not by ladder position (2026-09-27)
+
+Aaron, on the re-entry short of 2026-08-26 (run `7760823a639e`): *"how can TP2 / Exit be before
+TP1?"* A re-entry prices its first rung off RISK (1.25R, 4630.27) and its second off the 15m fib
+(4640.23), so the second sat NEARER the entry and the chart drew `TP2 / Exit` above `TP1`. His call:
+*"if TP2 is before TP1 then just flip flop the pills."*
+
+`tradeGeometry.ts::rungNames` names the nearest rung `TP1`, the next `TP2`. One name list feeds all
+three places a rung is printed — the faint unhit pill, the `TP2 / Exit` merge, and a fill's own
+`TPn` (which the backend numbers by ORDER id, i.e. ladder position, and is renamed through the same
+list). A bare-number leg from an older cached spec was numbered in exit order and is left alone.
+
+⚠ **DISPLAY ONLY.** The spec still carries rungs in the strategy's ladder order, and nothing about
+what the trade did changed. The STOP already stepped by distance before this
+(`strategies/python/sos_fade/execution.py` → `_stage_rungs`): breakeven at the nearer rung, and
+the floor at the nearer rung's price once the further one is reached — so the names now agree with
+the stop instead of contradicting it.
+
+Proof: `scripts/check_trade_geometry.mjs`, four `rungNames` cases on the real trade; the old
+ladder-position rule and a forgotten short-mirror each turn exactly two red.

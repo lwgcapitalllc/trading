@@ -336,6 +336,7 @@ listed below under the notes file that now holds it.
 - 🔴 The adverse band ends where price WENT, and every trade draws its exit (2026-08-25)
 - The pinned readout follows the WINDOW, and carries no date (2026-08-23)
 - Pips on `Best`, `DD` and the exit — behind a toggle; the pip size comes from the backend (2026-09-26)
+- 🔴 `TP1` / `TP2` are named by the order price REACHES them, not by ladder position (2026-09-27)
 
 ### `notes/status.md` — Status
 

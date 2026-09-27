@@ -61,9 +61,8 @@ const SRC = join(HERE, '..', 'src', 'components', 'ChartPanel', 'tradeGeometry.t
 const js = transformSync(readFileSync(SRC, 'utf8'), { loader: 'ts', format: 'esm' }).code
 const out = join(mkdtempSync(join(tmpdir(), 'tradegeom-')), 'tradeGeometry.mjs')
 writeFileSync(out, js)
-const { adverseFloor, exitMarker, exitSide, fmtPips, pipsFrom, stoppedOut } = await import(
-  pathToFileURL(out).href
-)
+const { adverseFloor, exitMarker, exitSide, fmtPips, pipsFrom, rungNames, stoppedOut } =
+  await import(pathToFileURL(out).href)
 
 let failed = 0
 let n = 0
@@ -243,10 +242,15 @@ eq(stoppedOut(undefined, 1879.72, 1), false, 'a trade with no exit price cannot 
 //   mutation: treat a missing pip size as 1 ...... the null cases go red
 //   mutation: drop the sign from the formatter ... the − case goes red
 
-const near = (got, want, what) => eq(got != null && Math.abs(got - want) < 1e-6 ? want : got, want, what)
+const near = (got, want, what) =>
+  eq(got != null && Math.abs(got - want) < 1e-6 ? want : got, want, what)
 near(pipsFrom(1901.71, 1916.94, 1, 0.1), 152.3, 'a long 15.23 in profit on gold is +152.3 pips')
 near(pipsFrom(1901.71, 1882.36, 1, 0.1), -193.5, 'the 2020-10-13 long drew down 193.5 pips')
-near(pipsFrom(1904.93, 1895.40058, -1, 0.1), 95.2942, 'a short BELOW its entry reads + (favourable)')
+near(
+  pipsFrom(1904.93, 1895.40058, -1, 0.1),
+  95.2942,
+  'a short BELOW its entry reads + (favourable)'
+)
 near(pipsFrom(1904.93, 1912.55354, -1, 0.1), -76.2354, 'a short ABOVE its entry reads − (adverse)')
 near(pipsFrom(1.085, 1.0862, 1, 0.0001), 12, 'EURUSD: 0.0012 is 12 pips')
 eq(pipsFrom(1901.71, 1916.94, 1, null), null, 'no pip convention → no reading, not a guess')
@@ -255,6 +259,32 @@ eq(pipsFrom(1901.71, 1916.94, 1, 0), null, 'a zero pip size is refused, never di
 eq(fmtPips(152.3), '+152.3p', 'favourable prints a plus')
 eq(fmtPips(-193.54), '\u2212193.5p', 'adverse prints a real minus, one decimal')
 eq(fmtPips(0.01), '0.0p', 'a move that rounds to nothing carries no sign')
+
+// ── rungNames ───────────────────────────────────────────────────────────────
+// A rung is NAMED by the order price reaches it. The flipped case is the real re-entry short of
+// 2026-08-26 on run 7760823a639e: entry 4661.41, ladder [4630.26805 (1.25R), 4640.22772 (fib)] —
+// the chart drew `TP2 / Exit` ABOVE `TP1`.
+//   mutation: name by ladder position (the OLD rule) .. the two flipped cases go red
+//   mutation: forget a short is the mirror ............ the short cases go red
+//   mutation: ignore the missing entry ................ nothing — a NaN compare keeps ladder order,
+//                                                       so that case is a SHAPE check only
+const names = (a) => a.join(',')
+eq(
+  names(rungNames([4630.26805, 4640.22772], 4661.41, -1)),
+  'TP2,TP1',
+  'a flipped re-entry SHORT: the nearer (higher) rung is TP1'
+)
+eq(
+  names(rungNames([1850.0, 1840.0], 1830.0, 1)),
+  'TP2,TP1',
+  'a flipped LONG: the nearer (lower) rung is TP1'
+)
+eq(
+  names(rungNames([4640.22772, 4605.29], 4661.5, -1)),
+  'TP1,TP2',
+  'a main-entry short already in order keeps its names'
+)
+eq(names(rungNames([4630.0, 4640.0], undefined, -1)), 'TP1,TP2', 'no entry → ladder order')
 
 console.log(failed ? `\n  ${failed} of ${n} FAILED\n` : `  trade geometry: ${n} cases green`)
 process.exit(failed ? 1 : 0)
