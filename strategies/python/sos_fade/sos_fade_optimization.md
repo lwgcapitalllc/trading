@@ -5847,3 +5847,34 @@ Ranked in R. Halves split at 2023-05-14.
 - ✅ **Decision: bank nothing at target 1 stays.** Run 40's verdict describes the book with "Trail"
   adds and must not be quoted for the shipped one. With Runs 51–53, no give-back fix that closes all
   or part of the trade has survived; Aaron's re-entry strategy is the open route.
+
+## Run 54 — 2026-09-27: the time stop at 2h / 4h / 8h, by full replay — every one loses
+
+**The question:** what do the losers share, and does a short clock cut them? Run 1 of the time
+stop swept 24–48h only, and Run 52 tested "no progress → out" by simulation, not by replay.
+
+**What the losers share** (run `ab08dc6c90c7`, 245 trades: 100 lost / 92 won / 53 scratch):
+they fail fast (median hold 1.9h against 13.3h for winners), 45 of 100 never reached +0.25R, and
+almost all are a clean −1R at the stop. Re-entries lose 60% of decided trades against 46% for
+main entries, and are still net positive. 15 losers were past +1R first — Run 52's give-back.
+⚠ Depth reached, best excursion and hold time are OUTCOMES, not predictors.
+
+**Basis:** copied field for field from `ab08dc6c90c7` — XAUUSD.p M15, 2020-01-01 → 2026-09-26,
+`puprime_ecn` (bid/ask fills + commission 1.0/side + swap), consistent sizing, shipped defaults;
+only the clock's hours vary ("Before TP1 only"). Halves split 2023-05-01. R is from entry/exit/stop
+price only (adds and partials not counted) — the lab's profit factor counts everything and ranks
+the same way.
+
+| Clock | Run | Cut by clock | Total R | First half | Second half | PF | Max DD % | Worst streak |
+|---|---|---|---|---|---|---|---|---|
+| **36h (shipped)** | `8790c4dd2fb6` | 5 | **183.6** | 84.2 | 99.4 | **4.65** | 26.85 | 5 |
+| 8h | `47ec61fd6465` | 32 | 142.6 | 51.3 | 91.4 | 3.65 | 27.14 | 7 |
+| 4h | `00311c5f769f` | 59 | 104.4 | 32.8 | 71.6 | 2.59 | 26.48 | 7 |
+| 2h | `d14efbdc9d94` | 82 | 104.4 | 36.7 | 67.7 | 2.24 | 30.09 | 8 |
+
+- 🔴 **Every shorter clock loses, in both halves, and the loss grows as the clock shortens.** No
+  drawdown is bought either. The fresh 36h control reproduced `ab08dc6c90c7` exactly.
+- **Why:** a loser that fails fast is only visible after the fact. In its first hours it looks the
+  same as a winner that has not started, and the winners are worth far more.
+- ✅ **Decision: the 36h clock stays.** Together with Run 52, a short time stop is closed —
+  replay and simulation agree.
