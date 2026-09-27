@@ -233,6 +233,7 @@ turn re-reads the whole conversation**, so cost is roughly conversation size x t
   under whoever else is in it.
 - `research/realign-chart-frame` — **a measured negative, parked 2026-09-11, never to be
   merged**; kept so the result can be re-run. Record: `strategies/python/realign/realign_optimization.md` → Run 1.
+- `research/realign-early-1m` — measured negative, never merge; Realign `realign_optimization.md` Run 16.
 - `research/nogap-shift-entry` — **the SOS Fade no-gap shift entry, parked 2026-09-16; Aaron
   intends to return to it.** Measured no edge (Runs 27–30 in
   `strategies/python/sos_fade/sos_fade_optimization.md`). ⚠ It adds three settings the live
