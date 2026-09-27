@@ -37,6 +37,7 @@ _ROOT = Path(__file__).resolve().parents[3]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+from backtest.data.fx import QuoteConversion  # noqa: E402
 from backtest.portfolio.account import SoloAccount  # noqa: E402
 from live_contract import LiveDecision, LivePositionMixin  # noqa: E402
 from sos_fade.execution import Trade  # noqa: E402
@@ -172,6 +173,9 @@ class ExtremeLegExecution(LivePositionMixin):
         self._account = account if account is not None else SoloAccount(balance=initial_capital)
         self._leg = leg
         self._profile = profile
+        # Quote-to-account conversion: the configured constant until a run installs a rate. Every
+        # money figure reads it AT ITS OWN MOMENT — see `backtest.data.fx.QuoteConversion`.
+        self._fx = QuoteConversion(config.point_value)
         if profile is not None and getattr(profile, "bid_ask_fills", False):
             # Refusing, rather than charging the spread twice or ignoring the flag. `bid_ask_fills`
             # MOVES FILLS — it tests a long's entry against bid+spread — so honouring it changes
@@ -489,8 +493,17 @@ class ExtremeLegExecution(LivePositionMixin):
         return None
 
     # ── sizing ───────────────────────────────────────────────────────────────
-    def _qty(self, risk: float) -> float:
+    def set_rate_provider(self, fn) -> None:
+        """Install a `time_ms -> rate` conversion for this run, or None for the constant."""
+        self._fx.install(fn)
+
+    def _qty(self, risk: float, time_ms: int) -> float:
         """Pine `f_qty`. `risk` is the stop distance in price.
+
+        🔴 **Divided by the conversion as well as the distance.** `risk` is in the symbol's quote
+        currency and equity is in dollars. Until 2026-09-27 this divided by `risk` alone, which is
+        right only at a factor of 1.0 — gold — and sized a yen trade at about 1/156th of its
+        stated risk. At 1.0 the division changes nothing, so every gold result stands.
 
         ⚠ Returns NaN where the Pine would compute one, so the caller refuses rather than
         inventing a size. See `BLK_ATR_NOT_READY`.
@@ -498,7 +511,7 @@ class ExtremeLegExecution(LivePositionMixin):
         cfg = self._cfg
         if cfg.size_mode == "Fixed contracts" or risk <= 0:
             return cfg.fixed_qty
-        return (self.equity * cfg.exec_risk_pct / 100.0) / risk
+        return (self.equity * cfg.exec_risk_pct / 100.0) / (risk * self._fx.at(time_ms))
 
     # ── costs ────────────────────────────────────────────────────────────────
     def _nights(self, entry_ms: int, exit_ms: int) -> List[datetime]:
@@ -529,18 +542,21 @@ class ExtremeLegExecution(LivePositionMixin):
         p = self._profile
         if p is None:
             return 0.0
-        cost = p.commission(pos.qty) * 2.0
+        cost = p.commission(pos.qty) * 2.0     # already in dollars — never converted
+        pv = self._fx.at(exit_ms)
         if p.spread_measured and p.spread > 0:
             # One spread on the round trip, charged flat. This is the market-order reading of the
             # cost; the alternative (moving the fills) is refused in __init__ because it changes
             # which trades exist. `backtest.fills.AccountProfile` documents why the two disagree.
-            cost += p.spread * pos.qty * self._cfg.point_value
+            cost += p.spread * pos.qty * pv
         if market_exit and p.slippage_ticks:
             # Charged on a STOP only. A take-profit is a resting limit: it fills at its price or
             # better or not at all, so it cannot slip against you.
-            cost += p.slippage_ticks * p.mintick * pos.qty * self._cfg.point_value
+            cost += p.slippage_ticks * p.mintick * pos.qty * pv
         for roll in self._nights(pos.entry_ms, exit_ms):
-            cost -= p.swap_charge(pos.dir, pos.qty, roll.date())
+            # The broker charges swap in the quote currency, converted at the rollover itself.
+            roll_ms = int(roll.timestamp() * 1000)
+            cost -= p.swap_charge(pos.dir, pos.qty, roll.date(), self._fx.at(roll_ms))
         return cost
 
     # ── the bar ──────────────────────────────────────────────────────────────
@@ -635,16 +651,17 @@ class ExtremeLegExecution(LivePositionMixin):
     def _close(self, pos: _Open, index: int, ts_ms: int, price: float,
                reason: str, *, market_exit: bool) -> None:
         costs = self._charge(pos, ts_ms, market_exit)
-        gross = (price - pos.entry_price) * pos.dir * pos.qty * self._cfg.point_value
+        # P&L converts at the EXIT, when the broker books it; risk at the ENTRY, where it was sized.
+        pv = self._fx.at(ts_ms)
+        gross = (price - pos.entry_price) * pos.dir * pos.qty * pv
         pnl = gross - costs
-        risk_usd = abs(pos.entry_price - pos.open_stop) * pos.qty * self._cfg.point_value
+        risk_usd = abs(pos.entry_price - pos.open_stop) * pos.qty * self._fx.at(pos.entry_ms)
         # Realized onto the SHARED balance as it happens, so a leg entering later in the same bar
         # sizes off the result rather than off a stale number.
         self._account.book_pnl(self._leg, pnl)
         # Resolved by DIRECTION, not by which number is larger: a short's best price is the low.
         mfe_price = pos.ext_high if pos.dir > 0 else pos.ext_low
         mae_price = pos.ext_low if pos.dir > 0 else pos.ext_high
-        pv = self._cfg.point_value
         self.trades.append(
             Trade(
                 dir=pos.dir,
@@ -704,7 +721,7 @@ class ExtremeLegExecution(LivePositionMixin):
             if not go:
                 continue
             risk = abs(entry - stop)
-            qty = self._qty(risk)
+            qty = self._qty(risk, state.ts_ms)
             if not math.isfinite(qty) or qty <= 0 or not math.isfinite(stop):
                 # See BLK_ATR_NOT_READY. Recorded rather than skipped: a bar where this side
                 # diverges from the Pine must be visible in the output, not inferred from a gap.
@@ -719,7 +736,7 @@ class ExtremeLegExecution(LivePositionMixin):
             # there is no resting order and nothing reserves room before this moment. The account
             # scales this leg's OWN desired size down to the room it has; solo it grants the lot.
             granted = self._account.request_fill(
-                self._leg, direction, entry, stop, qty, self._cfg.point_value
+                self._leg, direction, entry, stop, qty, self._fx.at(state.ts_ms)
             )
             if granted <= 0.0:
                 # Refused: no room, or the grant fell under the stack's entry floor. Take nothing

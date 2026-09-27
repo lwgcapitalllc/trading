@@ -15,7 +15,17 @@ import datetime as dt
 import pandas as pd
 import pytest
 
-from backtest.data.fx import FxRateUnavailable, RateSeries, constant_rate, series_for
+from backtest.data.fx import (
+    FxRateUnavailable,
+    QuoteConversion,
+    RateSeries,
+    UnknownQuoteCurrency,
+    constant_rate,
+    conversion_symbol,
+    quote_currency,
+    rate_provider_for,
+    series_for,
+)
 
 
 def _ms(iso: str) -> int:
@@ -121,13 +131,25 @@ def test_a_constant_rate_must_be_SAID_and_must_be_positive():
 # ── building from a frame / a source ──────────────────────────────────────────
 
 
-def test_from_frame_reads_the_index_as_UTC_bar_OPEN_timestamps():
-    df = _frame(["2026-09-14", "2026-09-15"], [149.0, 155.10])
+def test_from_frame_keys_each_close_at_its_bar_CLOSE_not_its_open():
+    """RED BEFORE 2026-09-27: keyed at the OPEN, the 15th's daily close (155.10) answered at
+    00:00 on the 15th — a rate nobody could know until that evening. That is lookahead."""
+    df = _frame(["2026-09-14", "2026-09-15", "2026-09-16"], [149.0, 155.10, 156.0])
     s = RateSeries.from_frame(df, invert=True, label="USDJPY")
-    assert len(s) == 2
-    assert s.at(_ms("2026-09-15")) == pytest.approx(1.0 / 155.10)
-    # Still inside the first bar's life.
-    assert s.at(_ms("2026-09-14") + 3_600_000) == pytest.approx(1.0 / 149.0)
+    assert len(s) == 3
+    # Midday on the 15th the 15th has not closed, so the rate in force is the 14th's close.
+    assert s.at(_ms("2026-09-15") + 12 * 3_600_000) == pytest.approx(1.0 / 149.0)
+    assert s.at(_ms("2026-09-16")) == pytest.approx(1.0 / 155.10)
+    # Before any bar has closed there is no rate, and it refuses rather than reaching forward.
+    with pytest.raises(FxRateUnavailable):
+        s.at(_ms("2026-09-14") + 3_600_000)
+
+
+def test_from_frame_refuses_to_guess_the_spacing_of_a_single_bar():
+    with pytest.raises(ValueError):
+        RateSeries.from_frame(_frame(["2026-09-14"], [149.0]))
+    s = RateSeries.from_frame(_frame(["2026-09-14"], [149.0]), bar_minutes=1440)
+    assert s.at(_ms("2026-09-15")) == 149.0
 
 
 def test_no_bars_REFUSES_rather_than_defaulting_to_1():
@@ -140,7 +162,7 @@ def test_no_bars_REFUSES_rather_than_defaulting_to_1():
 
 
 def test_series_for_asks_the_source_for_exactly_the_window_it_was_given():
-    src = FakeSource(_frame(["2026-09-14"], [149.0]))
+    src = FakeSource(_frame(["2026-09-14", "2026-09-15"], [149.0, 150.0]))
     series_for(src, "USDJPY.p", 1440, "2020-01-01", "2026-09-16", invert=True)
     assert src.calls == [("USDJPY.p", 1440, "2020-01-01", "2026-09-16")]
 
@@ -153,3 +175,86 @@ def test_the_provider_is_the_shape_set_rate_provider_takes():
     assert callable(fn)
     assert fn(0) == pytest.approx(0.01)
     assert fn(1_500) == pytest.approx(0.005)
+
+
+# ── which symbols convert, and through what ──────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "symbol, quote",
+    [
+        ("GBPJPY.p", "JPY"),
+        ("XAUUSD.p", "USD"),
+        ("XAUUSD", "USD"),
+        ("EURGBP", "GBP"),
+        ("GBPJPYm", "JPY"),
+        ("USDCAD.p", "CAD"),
+    ],
+)
+def test_the_quote_currency_is_the_second_three_letters(symbol, quote):
+    assert quote_currency(symbol) == quote
+
+
+@pytest.mark.parametrize("symbol", ["US30", "USTEC", "MNQ 06-26", "GBPJPYX", "", "ABCXYZ"])
+def test_a_name_that_is_not_a_readable_pair_REFUSES_rather_than_meaning_dollars(symbol):
+    with pytest.raises(UnknownQuoteCurrency):
+        quote_currency(symbol)
+
+
+def test_the_conversion_pair_carries_the_traded_symbols_broker_suffix_and_direction():
+    assert conversion_symbol("GBPJPY.p") == ("USDJPY.p", True)  # dollars per yen: invert
+    assert conversion_symbol("EURGBP.p") == ("GBPUSD.p", False)  # dollars per pound: as quoted
+    assert conversion_symbol("AUDCAD") == ("USDCAD", True)
+    assert conversion_symbol("XAUUSD.p") is None  # already dollars
+
+
+def test_a_dollar_quoted_run_gets_NO_provider_and_asks_the_feed_for_nothing():
+    """None is what keeps every gold run byte-identical — nothing is installed."""
+    src = FakeSource(_frame(["2026-09-14"], [149.0]))
+    assert rate_provider_for(src, "XAUUSD.p", "2020-01-01", "2026-09-01") is None
+    assert src.calls == []
+
+
+def test_a_yen_run_converts_through_hourly_USDJPY_starting_BEFORE_the_run():
+    """The pad is what gives the run's first bar a closed rate behind it."""
+    src = FakeSource(_frame(["2019-12-30 00:00", "2019-12-30 01:00"], [108.0, 109.0]))
+    fn = rate_provider_for(src, "GBPJPY.p", "2020-01-01", "2026-09-01")
+    assert src.calls == [("USDJPY.p", 60, "2019-12-18", "2026-09-01")]
+    assert fn(_ms("2020-01-01")) == pytest.approx(1.0 / 109.0)
+
+
+def test_an_unreadable_symbol_refuses_at_the_run_rather_than_pricing_in_dollars():
+    with pytest.raises(UnknownQuoteCurrency):
+        rate_provider_for(FakeSource(None), "US30", "2020-01-01", "2026-09-01")
+
+
+# ── the holder each strategy's execution layer carries ────────────────────────
+
+
+def test_quote_conversion_with_nothing_installed_is_the_configured_constant():
+    q = QuoteConversion(1.0)
+    assert not q.installed
+    assert q.at(123) == 1.0
+    assert q.at(None) == 1.0  # a constant needs no moment
+
+
+def test_quote_conversion_reads_an_installed_rate_at_the_moment_asked():
+    q = QuoteConversion(0.0064)
+    q.install(lambda t: 0.01 if t < 1_000 else 0.005)
+    assert q.at(0) == 0.01
+    assert q.at(1_000) == 0.005
+
+
+def test_quote_conversion_REFUSES_a_non_positive_rate_rather_than_falling_back():
+    """Falling back would present a snapshot as a measured rate; sizing divides by it."""
+    q = QuoteConversion(0.0064)
+    q.install(lambda t: 0.0)
+    with pytest.raises(FxRateUnavailable):
+        q.at(0)
+
+
+def test_quote_conversion_REFUSES_a_figure_that_did_not_say_when_it_happened():
+    q = QuoteConversion(0.0064)
+    q.install(lambda t: 0.01)
+    with pytest.raises(FxRateUnavailable):
+        q.at(None)

@@ -154,6 +154,11 @@ class RepricedRun:
 _SHUT_WEEKDAYS = frozenset({4, 5})
 
 
+def rollover_ms(day: date, close_hour_ny: int) -> int:
+    """The epoch-ms instant of `day`'s rollover — the one `rollovers_between` books a night at."""
+    return int(datetime.combine(day, time(close_hour_ny), tzinfo=_NY).timestamp() * 1000)
+
+
 def rollovers_between(entry_ms: int, exit_ms: int, close_hour_ny: int) -> list[date]:
     """Every daily rollover a position open over `(entry_ms, exit_ms]` was charged for.
 
@@ -186,7 +191,7 @@ def rollovers_between(entry_ms: int, exit_ms: int, close_hour_ny: int) -> list[d
     day = start - timedelta(days=1)  # a position can span the boundary on its entry day
     while day <= end:
         if day.weekday() not in _SHUT_WEEKDAYS:
-            roll_ms = int(datetime.combine(day, time(close_hour_ny), tzinfo=_NY).timestamp() * 1000)
+            roll_ms = rollover_ms(day, close_hour_ny)
             if entry_ms < roll_ms <= exit_ms:
                 out.append(day)
         day += timedelta(days=1)

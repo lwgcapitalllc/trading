@@ -459,3 +459,15 @@ Cost profiles are per tier AND per instrument: ECN has gold, GBPJPY and GBPUSD p
 login (700152905), so all three come back attached when that login is connected. The rule is the
 LOGIN, never "exactly one" — `tests/test_run_symbol.py` asserted one and went red when the GBP
 profiles landed. The tier's own profile sorts first, which is the one the run forms default to.
+
+## A run on a non-dollar symbol converts per bar (2026-09-27)
+
+`python_runner` asks `backtest.data.fx.rate_provider_for` for the run's conversion, off the SAME
+broker server as its bars, and hands it to `build_strategy` — the single run and every sweep combo.
+A dollar-quoted symbol gets `None` and runs exactly as before. A yen pair converts through hourly
+`USDJPY` from that broker, so **the conversion pair's bars must be in the cache or reachable**, the
+same as the run's own. A strategy that cannot convert refuses the run rather than pricing yen as
+dollars. Detail: `backtest/notes/broker-data.md` → *WIRED*.
+
+⚠ **Stored GBPJPY runs made before this date re-run to different dollar figures** — they priced at a
+fixed 2026-09-17 rate. Their R is unaffected.

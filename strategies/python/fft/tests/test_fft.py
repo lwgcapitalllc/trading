@@ -503,3 +503,33 @@ def test_the_equal_level_label_matches_the_study_that_found_it():
     got = [u.eq_target for u in touches]
     assert len(got) > 100 and any(got), "the comparison must cover labels of both values"
     assert got == list(study.feat_5m(clean, tb).EQT)
+
+
+# ── the quote-to-dollar conversion (a yen-quoted symbol) ─────────────────────
+# RED BY MUTATION (watched, 2026-09-27): with `size` reading the configured constant instead of
+# the installed rate, both tests fail — the size is off by 0.01/0.0064 and nothing refuses.
+
+
+def _yen_ex(rate):
+    from backtest.portfolio.account import SoloAccount
+
+    ex = FftExecution(FftConfig(point_value=0.0064), initial_capital=10_000.0,
+                      account=SoloAccount(balance=10_000.0, max_lots=None))
+    ex.set_rate_provider(rate)
+    return ex
+
+
+def test_the_size_uses_the_rate_AT_PLACEMENT_not_the_configured_snapshot():
+    ex = _yen_ex(lambda t: 0.01 if t < 1_000 else 0.02)
+    # 5% of $10,000 over a 10.0 stop, in dollars per unit of price
+    want = 10_000.0 * FftConfig().exec_risk_pct / 100.0 / 10.0
+    assert ex.size(100.0, 90.0, time_ms=0) == pytest.approx(want / 0.01)
+    assert ex.size(100.0, 90.0, time_ms=5_000) == pytest.approx(want / 0.02)
+
+
+def test_an_installed_rate_REFUSES_a_size_that_did_not_say_when():
+    from backtest.data.fx import FxRateUnavailable
+
+    ex = _yen_ex(lambda t: 0.01)
+    with pytest.raises(FxRateUnavailable):
+        ex.size(100.0, 90.0)

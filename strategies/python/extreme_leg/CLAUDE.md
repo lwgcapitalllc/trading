@@ -118,6 +118,9 @@ moving those numbers.
   and the reason a filter pays here is that refusing a setup genuinely buys the next one.
 - Fork `engines/liquidity/` or `engines/sessions/` to make this side agree with a Pine. When they
   disagree, one of them is wrong and the gate says which — see the table above for how that went.
+- Read `self._cfg.point_value` for a money figure. Read `self._fx.at(<the moment it happened>)` —
+  on a non-dollar symbol the constant is a one-day snapshot of an exchange rate. Sizing divides
+  by it too (it did not until 2026-09-27). See `backtest/notes/broker-data.md` → *WIRED*.
 - Add a field to `ExtremeLegConfig` that has no Pine input behind it. No `cfg_*` column can carry
   it, so the gate would leave it at this side's default and never see a disagreement about it.
 

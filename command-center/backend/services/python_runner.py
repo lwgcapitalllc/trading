@@ -433,12 +433,20 @@ def _execute(job_id: str, spec: dict) -> None:
 
     config = _build_config(entry["config"], spec.get("params") or {}, symbol)
     capital = float(spec.get("deposit") or _DEFAULT_CAPITAL)
+    # The quote-to-dollar conversion, per bar, off the SAME broker's feed — None for a symbol
+    # already in dollars, which installs nothing. See `backtest.data.fx.rate_provider_for`.
+    from backtest.data.fx import rate_provider_for
+
+    rate = rate_provider_for(
+        BarSource(server=bar_server(spec)), symbol, spec["start_date"], spec["end_date"]
+    )
     strategy = build_strategy(
         entry["strategy"],
         config,
         initial_capital=capital,
         cost_profile=_cost_profile(spec),
         max_lots=_max_lots(spec),
+        rate_provider=rate,
         # The spacing of the bars that CAME BACK, so a strategy that cannot read this frame
         # refuses here rather than finishing on 0 trades (FFT on 5m did, 2026-09-22).
         timeframe_minutes=frame_minutes(df),
@@ -785,6 +793,7 @@ def _run_opt(job_id: str, spec: dict) -> None:
 
 
 def _execute_opt(job_id: str, spec: dict) -> None:
+    from backtest.data.fx import rate_provider_for
     from backtest.data.source import BarSource
     from backtest.optimizer import Combo, run_sweep
 
@@ -888,6 +897,10 @@ def _execute_opt(job_id: str, spec: dict) -> None:
         should_cancel=lambda: _cancelled(job_id),
         cost_profile=_cost_profile(spec),
         fast_df=fast_df,
+        # Every combo converts through the same per-bar rate a single run would — see _execute.
+        rate_provider=rate_provider_for(
+            BarSource(server=bar_server(spec)), symbol, spec["start_date"], spec["end_date"]
+        ),
     )
 
     if _cancelled(job_id):

@@ -6,7 +6,7 @@ sys.path.insert(0, "/Users/alwg/trading/strategies/python")
 from sos_fade import SosFadeStrategy
 from sos_fade.profiles import GBPJPY_PUPRIME, UNTUNED, XAUUSD_VANTAGE
 
-from backtest.data.fx import series_for
+from backtest.data.fx import rate_provider_for
 from backtest.data.source import BarSource
 from backtest.fills import PROFILES
 from backtest.replay.build import build_strategy
@@ -23,10 +23,8 @@ def run(facts, label, costs, rate_sym=None):
         cfg,
         initial_capital=10_000.0,
         cost_profile=PROFILES[cfg.account_profile] if costs else None,
+        rate_provider=rate_provider_for(src, cfg.symbol, START, END),
     )
-    if rate_sym:
-        r = series_for(src, rate_sym, 1440, "2019-12-01", END, invert=True, label=rate_sym)
-        strat.execution.set_rate_provider(r.provider())
     strat.run(df, warmup=500)
     tr = strat.execution.trades
     rs = [t.r for t in tr]
