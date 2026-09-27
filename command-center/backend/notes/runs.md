@@ -839,3 +839,9 @@ in the job message ("identical to an earlier run - reused its results").
   rerun 6.2s (the rest is loading and fingerprinting the bars), results equal field for field; a
   one-tick slippage change replayed in full. Tests: `tests/test_run_result_cache.py` (9), three
   watched red by mutation.
+- MEASURED on the full 2020-01-01..2026-09-27 window, same settings, driven through
+  `start_backtest`: fresh run 335.0s, 246 trades; identical rerun 10.0s, same 246 trades. A second
+  fresh run in between also missed, correctly: another session edited `backtest/` while the first
+  was replaying, so the code key had changed. ⚠ While two people edit the replay code daily, expect
+  misses — every edit resets the cache, by design. ⚠ The same run took 976s in the lab server on
+  2026-09-27 (run 7760823a639e) and 335s here; why is unmeasured.
