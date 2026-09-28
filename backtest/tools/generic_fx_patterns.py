@@ -49,7 +49,8 @@ END, WARMUP, HORIZON = "2026-09-26", 500, 2880
 DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sun")
 
 
-def collect(symbol, m15):
+def collect(symbol, m15, on_signal=None):
+    """Every setup that tagged the zone. `on_signal(sig)`, if given, sees every bar's signals."""
     cfg = SosFadeGenericConfig(symbol=symbol, exec_min_stop_mode="Fixed $", exec_min_stop_val=1e12)
     strat = SosFadeGenericStrategy(cfg)
     ex = strat.execution
@@ -61,6 +62,15 @@ def collect(symbol, m15):
         return orig(sig, seq, dec, le, se)
 
     ex._record_misses = hooked
+    if on_signal is not None:
+        upd = strat.signals.update
+
+        def watched(state):
+            sig = upd(state)
+            on_signal(sig)
+            return sig
+
+        strat.signals.update = watched
     strat.run(m15, warmup=WARMUP)
     assert not ex.trades, "the impossible stop floor let a trade through"
     out = []
@@ -219,5 +229,6 @@ def main(arg):
         )
 
 
-for a in sys.argv[1:]:
-    main(a)
+if __name__ == "__main__":
+    for a in sys.argv[1:]:
+        main(a)

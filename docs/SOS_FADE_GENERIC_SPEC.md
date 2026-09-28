@@ -155,3 +155,27 @@ usable as a filter**: GBPUSD 18-21 NY 37.8% (82, z -1.4, low in both halves); GB
 50.3% (366, z +1.9, 50.3% in both halves); GBPUSD H4-level sweeps 38-41% (z -1.0 / -1.4); GBPJPY
 H4 High sweeps 35.4% (48, z -1.8). Long vs short, sweep vs sweep+divergence, gap vs no gap and leg
 size: all flat.
+
+### Does a 1-5 minute structure shift call the turn? (2026-09-27, `backtest/tools/generic_ltf_trigger.py`)
+
+Aaron: *"After price turned from the zone, was it a 1-5 min SOS then BOS, or internal structure?"*
+Setups whose zone touch is on or after 2020-01-01. The canonical structure engine runs on the
+1-minute or 5-minute bars; a pattern counts only if it completes after price reaches the 0.5 and
+before any touch of the 0.0 or 1.0. The TRADE enters at that bar's close, stop 1.0, target 0.0,
+**gross R, no costs**. GBPUSD has no 1-minute bars in the cache.
+
+| | seen in turners | seen in failers | trades | win vs needed | R/trade | z |
+|---|---|---|---|---|---|---|
+| GBPJPY 1m ext SOS → BOS | 65.7% | 24.8% | 184 | 71.7% vs 56.1% | +0.30 | +3.6 |
+| GBPJPY 1m int SOS → BOS | 47.8% | 16.2% | 130 | 73.8% vs 55.9% | +0.33 | +3.4 |
+| GBPJPY 1m any internal | 86.6% | 51.9% | 283 | 61.5% vs 47.1% | +0.30 | +3.6 |
+| GBPJPY 5m any internal | 62.2% | 15.7% | 158 | 79.1% vs 61.4% | +0.31 | +4.3 |
+| GBPUSD 5m int SOS → BOS | 14.9% | 1.6% | 34 | 88.2% vs 68.5% | +0.33 | +2.8 |
+| GBPUSD 5m any internal | 47.0% | 17.6% | 139 | 68.3% vs 56.9% | +0.22 | +2.3 |
+| **control: enter at zone touch** | — | — | 402-448 | at break-even | +0.06 to +0.14 | +0.7 to +1.4 |
+
+Every pattern row is positive and the same side in both date halves; the structure-blind control
+is not. **Read: the FIRST lead in this whole FX thread that is not noise** — the 15-minute zone is
+a coin flip, but a lower-timeframe shift inside it is not. ⚠ Gross only; rows share trades, so they
+are not independent; the 5-minute patterns fire rarely at the engine's default swing length. The
+first run let a pattern count after price had already touched the 1.0; fixing it moved nothing.
