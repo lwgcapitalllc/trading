@@ -102,7 +102,15 @@ _ENUM_ORDER = [
     ("realign_retest_at", ["level", "mid"]),
     ("__flat_mode", ["Off", "Friday only", "Every day"]),
     ("realign_trail_frame", ["external", "chart"]),
+    # Added 2026-09-27. An older export has no digit here, which decodes as 0 = "Ticks" — the only
+    # mode its Pine had — so it replays at ticks rather than at this side's new default.
+    ("exec_be_buf_mode", ["Ticks", "Fraction of stop"]),
 ]
+
+# The fraction-mode breakeven buffer's two numbers. Read OUTSIDE `_CFG_NUM` because an export in
+# "Ticks" mode — every export before 2026-09-27 — never needed them; one in "Fraction of stop"
+# mode that lacks them is reported like any other missing setting.
+BE_FRACTION_CFG = {"cfg_be_buf_r": "exec_be_buf_r", "cfg_be_cap_pct": "exec_be_cap_pct"}
 
 _CFG_NUM = {
     "cfg_htf_min": ("realign_htf_minutes", int),
@@ -200,6 +208,14 @@ def config_from_export(df: pd.DataFrame) -> Tuple[RealignConfig, List[str]]:
             missing.append(col)
         else:
             vals[field] = cast(round(v)) if cast is int else cast(v)
+
+    if vals.get("exec_be_buf_mode") == "Fraction of stop":
+        for col, field in BE_FRACTION_CFG.items():
+            v = get(col)
+            if v is None:
+                missing.append(col)
+            else:
+                vals[field] = v
 
     # The momentum filter: the Pine's 0 is "off", which is `None` here. 🔴 An export older than
     # the filter carries no column, and its Pine could not run the filter — so it is set OFF

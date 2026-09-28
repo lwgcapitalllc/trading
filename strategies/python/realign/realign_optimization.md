@@ -1152,6 +1152,56 @@ Held back (14 trades, median stop $32): 20 → +0.72R, 50 → +0.58R, 75 → +0.
 
 Scripts: `run.py`, `sweep.sh`, `score.py` in the session scratch folder `full2018/`.
 
+### Run 19 — the breakeven buffer as a share of the trade's risk — ADOPTED at 10% (2026-09-27)
+
+**Question (Aaron):** cover the cost of scratches — find the safest, widest breakeven buffer. This
+is the buffer the stop moves to at TP1, not Run 18's stop buffer, which never touches a scratch.
+
+**Starting point:** scratches already covered their costs at the shipped 30 ticks — 28 scratches
+averaging +0.016R each, 6 of them small losses.
+
+**Basis:** as Run 18 (fit 2018-09-14 → 2025-08-05, held back 2025-08-06 → 2026-09-25, paired
+against the shipped 30-tick run, same pre-declared rule). Three shapes: fixed ticks, a fraction
+of the trade's frozen entry risk, and that fraction floored at the trade's accrued cost.
+
+| buffer | W/L/S | sum R | PF | maxDD R | 1st half | 2nd half | ex-best | @5% | maxDD % | ret/DD | scratch R | vs 30 tk | P |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **30 ticks (was shipped)** | 35/46/28 | +81.59 | 3.11 | 5.77 | +34.23 | +47.36 | +44.97 | 14.9x | 25.6 | 54.4 | +0.44 | — | — |
+| 60 ticks | 34/44/31 | +79.90 | 3.08 | 7.13 | +31.79 | +48.10 | +43.28 | 13.8x | 30.6 | 41.8 | +0.76 | −1.69 ± 2.24 | 0.28 |
+| 100 ticks | 38/43/28 | +81.38 | 3.14 | 6.66 | +32.61 | +48.77 | +44.76 | 14.8x | 28.9 | 47.8 | +1.13 | −0.21 ± 2.23 | 0.52 |
+| 150 ticks | 43/44/22 | +78.51 | 3.06 | 6.45 | +31.08 | +47.43 | +41.89 | 13.0x | 28.2 | 42.5 | +1.04 | −3.07 ± 3.39 | 0.18 |
+| 200 ticks | 48/43/18 | +77.51 | 3.04 | 6.25 | +29.28 | +48.23 | +40.89 | 12.4x | 27.4 | 41.7 | +0.47 | −4.07 ± 4.37 | 0.18 |
+| 300 ticks | 52/43/14 | +80.59 | 3.12 | 5.84 | +30.97 | +49.62 | +43.97 | 14.5x | 26.0 | 51.9 | +0.31 | −1.00 ± 4.32 | 0.44 |
+| 5% of risk | 35/45/29 | +82.14 | 3.14 | 5.75 | +34.24 | +47.90 | +45.52 | 15.3x | 25.5 | 56.1 | +0.74 | +0.55 ± 0.26 | 1.00 |
+| **10% of risk (shipped)** | 35/44/30 | **+82.74** | 3.16 | **5.70** | +34.04 | +48.70 | +46.12 | 15.8x | 25.3 | **58.4** | +1.56 | **+1.15 ± 0.62** | **0.95** |
+| 12.5% of risk | 35/44/30 | +80.37 | 3.10 | 5.68 | +31.29 | +49.08 | +43.75 | 14.2x | 25.2 | 52.2 | +2.04 | −1.22 ± 3.03 | 0.37 |
+| 15% of risk | 35/43/31 | +79.16 | 3.08 | 5.48 | +31.82 | +47.34 | +42.54 | 13.4x | 24.5 | 50.6 | +2.38 | −2.43 ± 3.68 | 0.29 |
+| 17.5% of risk | 51/43/15 | +77.58 | 3.03 | 6.72 | +29.86 | +47.72 | +40.96 | 12.4x | 29.1 | 39.3 | +0.08 | −4.01 ± 4.22 | 0.18 |
+| 20% of risk | 54/43/12 | +78.18 | 3.05 | 6.67 | +30.08 | +48.10 | +41.56 | 12.8x | 28.9 | 40.8 | −0.27 | −3.41 ± 4.21 | 0.22 |
+| 30% of risk | 54/43/12 | +77.90 | 3.05 | 6.48 | +29.69 | +48.21 | +41.28 | 12.7x | 28.3 | 41.3 | +0.10 | −3.69 ± 4.36 | 0.21 |
+| 5% + cost floor | 32/43/34 | +78.43 | 3.07 | 6.68 | +32.09 | +46.34 | +41.81 | 12.9x | 29.0 | 40.9 | +1.25 | −3.16 ± 2.82 | 0.13 |
+| 10% + cost floor | 33/43/33 | +79.66 | 3.10 | 6.63 | +32.47 | +47.18 | +43.04 | 13.7x | 28.8 | 44.0 | +2.31 | −1.93 ± 2.81 | 0.29 |
+
+Held back (14 trades, 3 scratches): 30 ticks +0.72R, 5% +0.84R, **10% +0.99R**, 12.5% +1.07R,
+15% +1.14R — every fraction row +0.13 to +0.43R, no scratch lost.
+
+- **Adopt 10% of risk: +1.15R ± 0.62, P 0.95**, drawdown 5.77R → 5.70R, first half flat
+  (−0.19R), held back +0.28R. The widest row passing the rule on every count.
+- **12.5-15%: Reject — not proven.** Held back likes them, the fit does not (−1.2R to −2.4R ±
+  3-4, first half −2.4R to −2.9R).
+- **17.5% and up: Reject — not proven, drawdown worse (6.5-6.7R).** The buffer turns scratches
+  into wins (W 35 → 54) by stopping runners early.
+- **Fixed ticks above 30 and the cost floor: Reject — not proven**, every one with a WORSE
+  drawdown. A fixed distance is the wrong shape on an instrument that went $1,200 → $4,300.
+- ⚠ **Small, by construction** — about +1R over seven years; scratches were already paying for
+  themselves. The value is that the buffer now scales with the stop.
+
+**Shipped:** `RealignConfig` pins "Fraction of stop" / 0.10; `realign_strategy.pine` gains the
+same three inputs (mode, fraction, cap at 75%) with the same default, and `compare_realign.py`
+decodes the mode from an export (an older export reads as "Ticks"). ⚠ The Pine's fraction branch
+has no export yet, so it is ungated; the four goldens are all "Ticks" and stay PARITY OK.
+Scripts: `sweep_be.sh`, `sweep_be2.sh`, `score_be.py` beside Run 18's.
+
 ---
 
 # Flat before the close — Aaron's no-weekend-holds switch (2026-09-19)

@@ -335,3 +335,20 @@ and the decision to build it: `strategies/python/realign/realign_optimization.md
   the trap the export block warns about.
 - ⚠ **The input is the LAST `int` declared.** Adding it anywhere earlier would reset every later
   int input on a chart already running this script.
+
+## [23] The breakeven buffer — fixed ticks, or a share of the trade's own risk
+
+**Added 2026-09-27, input "Breakeven buffer mode"; the default is "Fraction of stop" at 0.10.**
+When TP1 is touched the stop moves to the entry plus a buffer. "Ticks" is the old fixed distance
+("Breakeven buffer (ticks)"). "Fraction of stop" is that share of THIS trade's frozen entry risk,
+capped at "Breakeven buffer cap" (75%) of the way to the nearer target so it cannot close the trade
+at the rung that moved it. The same buffer feeds the "Breakeven" floor past TP2. Measured and why:
+`strategies/python/realign/realign_optimization.md` → Run 19.
+
+- **Risk is `posSl`, the stop frozen at the fill**, never the live stop — otherwise the cushion
+  shrinks as the trail tightens. The Python twin is `_be_buffer` in `sos_fade/execution.py`.
+- **The cap is measured against the NEARER of TP1 and TP2**, exactly as the port's
+  `_stage_rungs()[0]`.
+- ⚠ **The three inputs are the LAST string and floats declared**, for the saved-values reason in
+  [22]. They sit in section 6 of the panel.
+- ⚠ **The port's third mode, "Fraction of stop + cost", has no Pine twin.** Not offered here.

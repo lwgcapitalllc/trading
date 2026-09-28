@@ -525,10 +525,10 @@ def test_every_config_column_the_gate_reads_is_plotted():
     defaults while claiming it came from the export — the one thing the decoder forbids."""
     from realign.tools.compare_realign import _CFG_NUM
 
-    from realign.tools.compare_realign import MOM_CFG, MOM_PX
+    from realign.tools.compare_realign import BE_FRACTION_CFG, MOM_CFG, MOM_PX
 
     titles = _plot_titles()
-    missing = [c for c in [*_CFG_NUM, MOM_CFG, MOM_PX] if c not in titles]
+    missing = [c for c in [*_CFG_NUM, *BE_FRACTION_CFG, MOM_CFG, MOM_PX] if c not in titles]
     assert not missing, f"the gate reads cfg columns the export block never plots: {missing}"
 
 
@@ -580,3 +580,49 @@ def test_the_enum_decoder_covers_every_digit_the_block_packs():
     assert len(_ENUM_ORDER) == len(places), (
         f"the block packs {len(places)} enum digits and the decoder names "
         f"{len(_ENUM_ORDER)}")
+
+
+# ── the breakeven buffer as a share of the trade's own risk (Run 19, 2026-09-27) ────────────────
+
+
+def test_the_breakeven_buffer_default_is_a_tenth_of_risk_on_both_sides():
+    """Pinned in Python AND the Pine, so a reset chart and a default lab run trade the same
+    stop. Goes red if either side drifts back to fixed ticks."""
+    cfg = RealignConfig()
+    assert (cfg.exec_be_buf_mode, cfg.exec_be_buf_r, cfg.exec_be_cap_pct) == ("Fraction of stop", 0.10, 75.0)
+    pine = (_ROOT / "strategies" / "tradingview" / "realign_strategy.pine").read_text(encoding="utf-8")
+    assert 'beBufMode   = input.string("Fraction of stop", "Breakeven buffer mode"' in pine
+    assert 'beBufR      = input.float(0.10,' in pine
+    assert 'beCapPct    = input.float(75.0,' in pine
+
+
+def test_an_export_older_than_the_mode_replays_at_ticks():
+    """🔴 Every golden export predates the mode and its Pine could only do ticks. Its enum has no
+    digit for it, which must decode as "Ticks" — never this side's new default."""
+    import pandas as pd
+
+    from realign.tools.compare_realign import config_from_export
+
+    cfg, missing = config_from_export(pd.DataFrame({"cfg_bits": [3.0], "cfg_enum1": [11011111.0]}))
+    assert cfg.exec_be_buf_mode == "Ticks"
+    assert "cfg_be_buf_r" not in missing and "cfg_be_cap_pct" not in missing
+
+
+def test_a_fraction_export_configures_its_own_share_and_cap():
+    import pandas as pd
+
+    from realign.tools.compare_realign import config_from_export
+
+    df = pd.DataFrame({"cfg_bits": [3.0], "cfg_enum1": [111011111.0], "cfg_be_buf_r": [0.25], "cfg_be_cap_pct": [60.0]})
+    cfg, missing = config_from_export(df)
+    assert (cfg.exec_be_buf_mode, cfg.exec_be_buf_r, cfg.exec_be_cap_pct) == ("Fraction of stop", 0.25, 60.0)
+    assert "cfg_be_buf_r" not in missing
+
+
+def test_a_fraction_export_without_its_numbers_is_reported_narrower():
+    import pandas as pd
+
+    from realign.tools.compare_realign import config_from_export
+
+    _cfg, missing = config_from_export(pd.DataFrame({"cfg_bits": [3.0], "cfg_enum1": [111011111.0]}))
+    assert "cfg_be_buf_r" in missing and "cfg_be_cap_pct" in missing

@@ -302,9 +302,13 @@ broke a new fork.
   default, and `realign_strategy.pine` has no scale-in. With it the book read **162 / +61.27R free,
   +49.29R charged** — a candidate, not a result: nobody chose it for this setup and no chart can
   confirm it. Turn it on only in a run that says so, after this bot has a gate.
-- ⚠ **The breakeven buffer is a KNOWN chart/Python difference, left alone**: the Pine moves the
-  stop to breakeven at 0 ticks, the Python at the parent's 30. The ladder is inherited on purpose
-  (below); the parity gate is what settles which is right.
+- ✅ **The breakeven buffer is 10% of the trade's OWN entry risk on both sides since 2026-09-27**
+  ("Breakeven buffer mode" = Fraction of stop, capped at 75% of the way to TP1) — Run 19,
+  +1.15R ± 0.62, P 0.95, held back +0.28R. It retires the old chart/Python difference (Pine 0
+  ticks, Python 30), which now applies only to an export taken in "Ticks" mode.
+  ⚠ **The Pine's fraction branch is UNGATED until a fresh export is taken in that mode** — every
+  golden predates it and decodes as "Ticks". ⚠ **`realign_1` pins "Ticks" / 30** in its own
+  config, so this default does not reach the demo bot until that file changes.
 - **The entry-side SOS Fade fields are left alone deliberately** (`exec_fib_nearest`, `exec_deep_fib`,
   `exec_fvg_pre_zone`, `exec_fib_overlap`, `exec_fib_deep_edge`, `exec_sl_deep`). This fork places
   no fib-priced order, so nothing reads them. Pinning them would imply they mean something here.
