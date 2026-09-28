@@ -1114,6 +1114,44 @@ and every 1m entry that changed came before that.
 
 Scripts: `oracle8.py` and `cut.py` beside Run 16's in the same scratch folder.
 
+### Run 18 — how wide can the stop buffer go before it costs? (`realign_sl_buf_tk`) — stays 20 (2026-09-27)
+
+**Question (Aaron):** the stop sits a buffer beyond the counter-move extreme. Stretch that buffer
+as far as it goes before it hurts profit.
+
+**Basis:** shipped main-branch Realign (momentum filter on, 5% risk), PU Prime `XAUUSD.p` 5m.
+Fitting window 2018-09-14 → 2025-08-05; held back 2025-08-06 → 2026-09-25, checked once.
+**Rule declared before the run:** the widest buffer whose total R, return per drawdown and
+total-without-the-best-trade all stay at or above the 20-tick run. Paired difference by entry day
+and direction, bootstrap chance of being better.
+
+| buffer | trades | W/L/S | sum R | PF | maxDD R | 1st half | 2nd half | ex-best | @5% | maxDD % | ret/DD | vs 20 | P(better) |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **20 ($0.20, shipped)** | 109 | 35/46/28 | **+81.59** | 3.11 | 5.77 | +34.23 | +47.36 | +44.97 | 14.9x | 25.6 | 54.4 | — | — |
+| 50 | 109 | 36/45/28 | +83.01 | 3.24 | 5.35 | +31.72 | +51.30 | +48.55 | 17.3x | 23.9 | 68.3 | +1.43 ± 6.98 | 0.55 |
+| 75 | 109 | 36/45/28 | +78.86 | 3.14 | 5.26 | +29.64 | +49.22 | +46.01 | 15.3x | 23.6 | 60.6 | −2.73 ± 7.76 | 0.34 |
+| 100 | 109 | 36/45/28 | +75.04 | 3.04 | 5.18 | +27.76 | +47.28 | +43.66 | 13.6x | 23.3 | 54.2 | −6.54 ± 8.74 | 0.21 |
+| 150 | 109 | 36/44/29 | +68.51 | 2.89 | 5.06 | +24.50 | +44.01 | +39.70 | 11.2x | 22.9 | 44.4 | −13.08 ± 10.86 | 0.10 |
+| 200 | 109 | 36/43/30 | +62.51 | 2.73 | 5.06 | +21.76 | +40.75 | +35.87 | 9.2x | 23.4 | 35.0 | −19.08 ± 12.90 | 0.05 |
+| 300 | 109 | 35/42/32 | +53.93 | 2.56 | 5.05 | +18.44 | +35.49 | +30.80 | 7.1x | 22.8 | 26.5 | −27.66 ± 16.48 | 0.02 |
+| 500 | 109 | 36/38/35 | +43.47 | 2.41 | 4.93 | +13.29 | +30.18 | +25.16 | 5.2x | 22.9 | 18.3 | −38.12 ± 21.75 | 0.01 |
+| 750 | 109 | 37/31/41 | +38.39 | 2.62 | 4.47 | +9.77 | +28.62 | +23.87 | 4.7x | 20.9 | 17.7 | −43.19 ± 26.17 | 0.02 |
+| 1000 | 109 | 36/30/43 | +32.42 | 2.54 | 4.84 | +7.52 | +24.90 | +20.38 | 3.8x | 22.3 | 12.7 | −49.17 ± 29.04 | 0.02 |
+
+Held back (14 trades, median stop $32): 20 → +0.72R, 50 → +0.58R, 75 → +0.47R, 100 → +0.37R.
+
+- **50 ticks is the widest that passes the rule, and its gain is noise** (+1.4R ± 7.0, 55%), with
+  a LOWER first half and a slightly worse held-back window. **Reject — not proven.**
+- **Past ~75 ticks it costs; from 200 it is Reject — proven harmful** (≤ 5% chance better).
+- **Why:** the same setups fire either way. A wider stop only shrinks the position, so every
+  winner pays fewer R and more trades end as scratches; losses barely fall. Drawdown improves
+  only 5.8R → ~5R however wide it goes.
+- ⚠ The buffer is fixed dollars while gold went $1,200 → $4,300: median stop $9.37 in the fit
+  window vs $32 held back, so the buffer matters less every year. A volatility-scaled buffer is
+  the only open follow-up here, and nothing above suggests it would help.
+
+Scripts: `run.py`, `sweep.sh`, `score.py` in the session scratch folder `full2018/`.
+
 ---
 
 # Flat before the close — Aaron's no-weekend-holds switch (2026-09-19)
