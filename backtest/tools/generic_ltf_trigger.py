@@ -24,7 +24,11 @@ TRADE       the one that could be taken: at the close of the LTF bar the FIRST s
             completes, if price is still between the M15 1.0 and 0.0, enter at that close; stop
             1.0, target 0.0, walked on LTF bars (a bar touching both = loss, 30 days).
             Win rate vs its break-even (entry-to-stop / stop-to-target); z on the whole window and
-            the same side in both date halves. Gross R, no costs.
+            the same side in both date halves. Gross R, then NET R.
+COSTS       PU Prime ECN, as measured in backtest/fills.py and charged the way the lab's bar mode
+            charges them: one full spread per round trip, $1/side/lot commission, and the swap at
+            every 17:00-New-York rollover held through (Saturday books none, Wednesday three).
+            Yen figures convert at the hourly USDJPY rate through the lab's own conversion.
 CONTROL     the same trade entered at the close of the first LTF bar in the zone — knows nothing
             about structure; if it beat break-even the study would be biased.
             ⚠ A "random bar of the live window" control was tried and dropped: the window ENDS at
@@ -35,7 +39,9 @@ Usage: python3 backtest/tools/generic_ltf_trigger.py GBPJPY.p:M1 GBPJPY.p:M5 GBP
 
 import math
 import sys
+from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT), str(ROOT / "strategies/python"), str(ROOT / "backtest/tools")]
@@ -44,6 +50,9 @@ import numpy as np  # noqa: E402
 from generic_fx_patterns import END, collect, walk  # noqa: E402
 
 from backtest.data.cache import BarCache  # noqa: E402
+from backtest.data.fx import rate_provider_for  # noqa: E402
+from backtest.data.source import BarSource  # noqa: E402
+from backtest.fills import PROFILES  # noqa: E402
 from engines.fibonacci.geometry import fib_level  # noqa: E402
 from engines.market_structure.engine import StructureEngine  # noqa: E402
 from engines.market_structure.types import Bar  # noqa: E402
@@ -73,6 +82,29 @@ def scan(eng_out, d):
     return first
 
 
+def rollovers(t0_ms, t1_ms):
+    """Dates of the 17:00-New-York rollovers in (t0, t1], Saturday skipped — the lab's rule."""
+    ny = ZoneInfo("America/New_York")
+    day = datetime.fromtimestamp(t0_ms / 1000, tz=timezone.utc).astimezone(ny).date()
+    out = []
+    while True:
+        roll = datetime.combine(day, time(17), tzinfo=ny)
+        ms = roll.timestamp() * 1000
+        if ms > t1_ms:
+            return out
+        if ms > t0_ms and day.weekday() != 5:
+            out.append(day)
+        day += timedelta(days=1)
+
+
+def cost_in_price(profile, rate, d, t0_ms, t1_ms):
+    """Round-trip cost of one unit, in PRICE units (the quote currency). Positive = a cost."""
+    qta = rate(t0_ms) if rate else 1.0  # account currency per unit of quote currency
+    commission = 2 * profile.commission(1.0) / qta
+    swap = sum(profile.swap.charge(d, profile.lots(1.0), day) for day in rollovers(t0_ms, t1_ms))
+    return profile.spread_or_refuse() + commission - swap
+
+
 def main(arg):
     symbol, tf = arg.split(":")
     cache = BarCache(ROOT / "backtest/cache/PUPrime_Demo")
@@ -85,6 +117,8 @@ def main(arg):
     step = int(tf[1:]) * 60_000
     horizon = LTF_HORIZON_MIN * 60_000 // step
     ltf_end = tl[-1]
+    profile = PROFILES["puprime_ecn_" + symbol[:6].lower()]
+    rate = rate_provider_for(BarSource(server="PUPrime-Demo"), symbol, LOAD_FROM, END)
 
     rows = []
     for s in collect(symbol, m15):
@@ -146,7 +180,9 @@ def main(arg):
                     win = True
                     break
             if win is not None:
-                trades[p] = (win, abs(p0 - e) / abs(e - p1), abs(e - p1) / abs(p0 - p1))
+                risk = abs(e - p1)
+                cost = cost_in_price(profile, rate, d, int(tl[k]) + step, int(tl[m]) + step)
+                trades[p] = (win, abs(p0 - e) / risk, risk / abs(p0 - p1), cost / risk)
         rows.append(dict(t=s["t"], turn=res == "TURN", seen=set(first), trades=trades))
 
     mid = rows[len(rows) // 2]["t"]
@@ -160,6 +196,7 @@ def main(arg):
         st = 100 * sum(p in r["seen"] for r in rows if r["turn"]) / max(nt, 1)
         sf = 100 * sum(p in r["seen"] for r in rows if not r["turn"]) / max(len(rows) - nt, 1)
         tr = [(r["t"], *r["trades"][p]) for r in rows if p in r["trades"]]
+        net = [(x[2] if x[1] else -1.0) - x[4] for x in tr]
         if not tr:
             print(f"  {p:16s}   {st:5.1f}%            {sf:5.1f}%          |  no trades")
             continue
@@ -184,6 +221,18 @@ def main(arg):
             f"{100 * w:5.1f}% vs {100 * be:4.1f}% needed (halves {100 * np.mean(wa):4.1f}/"
             f"{100 * ba:4.1f}, {100 * np.mean(wb):4.1f}/{100 * bb:4.1f})  R/trade {r:+.3f}  "
             f"z {z:+5.1f}  {tag}"
+        )
+        na = [v for x, v in zip(tr, net) if x[0] < mid]
+        nb = [v for x, v in zip(tr, net) if x[0] >= mid]
+        rn = float(np.mean(net))
+        zn = rn / ((float(np.std(net)) or 1.0) / math.sqrt(n))
+        same_n = np.sign(np.mean(na)) == np.sign(np.mean(nb)) == np.sign(rn) if na and nb else False
+        tag_n = "EDGE +" if same_n and zn >= 2 else "HARM -" if same_n and zn <= -2 else "noise"
+        costs = sorted(x[4] for x in tr)
+        print(
+            f"  {'':16s}   {'':34s}|  NET: cost {np.mean(costs):.3f}R mean, "
+            f"{costs[len(costs) // 2]:.3f}R median  R/trade {rn:+.3f} (halves "
+            f"{np.mean(na):+.3f} / {np.mean(nb):+.3f})  z {zn:+5.1f}  {tag_n}"
         )
 
 

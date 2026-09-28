@@ -179,3 +179,27 @@ is not. **Read: the FIRST lead in this whole FX thread that is not noise** — t
 a coin flip, but a lower-timeframe shift inside it is not. ⚠ Gross only; rows share trades, so they
 are not independent; the 5-minute patterns fire rarely at the engine's default swing length. The
 first run let a pattern count after price had already touched the 1.0; fixing it moved nothing.
+
+**With costs, and GBPUSD on 1-minute (2026-09-27, same tool).** PU Prime ECN as measured in
+`backtest/fills.py`, charged as the lab's bar mode does: one spread per round trip, $1/side/lot,
+the swap at every 17:00-New-York rollover held (yen converted at the hourly USDJPY rate). GBPUSD
+1-minute bars were fetched for 2020-01-01 → 2026-09-25 (~373k a year, full density), so its
+1-minute row is a replication the GBPJPY result had not seen.
+
+| | trades | cost/trade | net R/trade | halves | net z |
+|---|---|---|---|---|---|
+| GBPJPY 1m ext SOS → BOS | 184 | 0.037R | **+0.26** | +0.31 / +0.20 | +3.2 |
+| GBPJPY 1m int SOS → BOS | 130 | 0.037R | +0.30 | +0.36 / +0.23 | +3.0 |
+| GBPJPY 1m any internal | 283 | 0.050R | +0.25 | +0.22 / +0.28 | +3.0 |
+| GBPJPY 5m any internal | 158 | 0.030R | +0.28 | +0.37 / +0.20 | +3.9 |
+| **GBPUSD 1m ext SOS → BOS** | 176 | 0.016R | **+0.19** | +0.23 / +0.15 | +2.4 |
+| GBPUSD 1m int SOS → BOS | 124 | 0.015R | +0.17 | +0.17 / +0.17 | +1.9 |
+| GBPUSD 1m any internal | 290 | 0.022R | +0.16 | +0.09 / +0.23 | +1.8 |
+| GBPUSD 5m int SOS → BOS | 34 | 0.011R | +0.32 | +0.39 / +0.27 | +2.7 |
+| **control: enter at zone touch** | 402-454 | 0.025-0.060R | +0.03 to +0.11 | mixed | +0.4 to +0.9 |
+
+**Read: costs take about 0.04R on GBPJPY and 0.02R on GBPUSD, and the 1-minute SOS → BOS edge
+survives on both pairs**, with every row positive in both halves. GBPUSD's is smaller (+0.19R vs
++0.26R) but it is the first time an FX result here has held on a pair it was not found on.
+⚠ Still a screen: every setup is taken, with no one-position slot, no sizing and no minimum stop —
+a real lab run of the entry is what decides it.
