@@ -130,3 +130,28 @@ on gold, where both are negative. It does not find the turn. ⚠ GBPJPY at 0.886
 ⚠ **No fixed entry depth has an edge on its own, on any of the three.** Stop at 1.0 and target at
 0.0 is roughly break-even gross everywhere; what makes SOS Fade pay on gold is the selection and
 trade management this bot strips out.
+
+### Where, when and which days do FX setups turn? (2026-09-27, `backtest/tools/generic_fx_patterns.py`)
+
+Aaron: *"Where does price reject from, where not, which times of day and days to avoid?"* Every
+setup that tagged the zone, M15, measured alone, gross, TURN = new high/low before the 1.0. Each
+bucket is compared with the pair's own turn rate; a "pattern" must be ≥ 2 standard errors off it
+AND on the same side in both date halves. ~35 buckets per pair, so ~1 false hit per pair is
+expected by luck. GBPUSD 2000 → 2026 (1,606 setups, baseline 45.4%); GBPJPY 2016 → 2026 (653,
+baseline 48.2%).
+
+**Verdict: no bucket on either pair passes.** Zero patterns in ~70 tests.
+
+| Depth reached | GBPUSD turned | GBPJPY turned | break-even for an entry there |
+|---|---|---|---|
+| 0.618 | 36.1% | 37.2% | 38.2% |
+| 0.702 | 27.5% | 30.7% | 29.8% |
+| 0.786 | 19.5% | 20.7% | 21.4% |
+| 0.886 | 9.7% | 11.1% | 11.4% |
+
+**Read:** the chance of turning from each depth is what a random walk gives (b/(a+b)) — there is
+no fib level price rejects from on these pairs at M15. Strongest leads, all under z 2, **none
+usable as a filter**: GBPUSD 18-21 NY 37.8% (82, z -1.4, low in both halves); GBPUSD Wednesday
+50.3% (366, z +1.9, 50.3% in both halves); GBPUSD H4-level sweeps 38-41% (z -1.0 / -1.4); GBPJPY
+H4 High sweeps 35.4% (48, z -1.8). Long vs short, sweep vs sweep+divergence, gap vs no gap and leg
+size: all flat.
