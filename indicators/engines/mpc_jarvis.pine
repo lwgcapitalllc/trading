@@ -551,13 +551,35 @@ color eqlColor    = color.new(color.black, 0)
   // SOS FADE SEQUENCE INPUTS
 //============================================================
 // SOS FADE logic is LOCKED to the tuned defaults — the inputs were removed so the
-// sequence can't be altered from the panel (matches the FVG/EQ detection lock). Values
-// are exactly the screenshot defaults: sweeps allowed to arm, SOS time-window ignored,
-// divergence arm valid 3 days, sweep arm valid 1 day.
-bool aplusDivOnly      = false
-bool aplusIgnoreWindow = true
+// sequence can't be altered from the panel (matches the FVG/EQ detection lock).
+//
+// ONE CLOCK, THREE DAYS, AND IT IS THE BOT'S (2026-09-27, Kelly's call). An arm —
+// sweep or divergence — stays live 4320 minutes with no SOS and then dies. That is
+// exactly what the SOS Fade bot enforces, so this table and the money side now answer
+// the same question.
+//
+// WHAT IT WAS, AND WHY IT WAS WRONG: two clocks, with a sweep arm capped at 1440
+// minutes and the arm→SOS window switched OFF. So this table dropped a sweep after ONE
+// day while the bot went on trading it for THREE, and every student reading the chart
+// was shown a stricter setup than the bot takes. Nothing anywhere announced the gap:
+// the two files have no shared source and no check compares them.
+//
+// MEASURED BEFORE CHANGING IT — XAUUSD.p M15, 2020-01-01 → 2026-09-22, PU Prime ECN,
+// bid/ask fills + commission + swap, one full replay per row with ONLY this clock
+// moved (lab runs c5bd33a16fe5 / 8ae02c55429f / 97a34e6e844e / 57fa2c22d7ce):
+//     12h   159 trades   profit factor 2.33   max drawdown 26.8%   Sharpe 0.72
+//     24h   206          2.30                 34.9%                0.72   ← was here
+//     72h   244          4.23                 26.9%                1.07   ← now here
+//      7d   255          4.22                 29.9%                1.06
+// 24h is DOMINATED, not a trade-off: less return AND 8 points more drawdown. 72h sits
+// on a PLATEAU rather than a peak — 7 days lands within 0.003 profit factor and 0.002
+// Sharpe of it — which is what says the number is not fitted to one lucky cell.
+// ⚠ The 38 setups the 1-day cap refused are the ones that PAID, and profit is LESS
+// concentrated at 72h than at 12h, so it is not one outlier carrying the difference.
+// SWEEP AGE IS NOT A QUALITY SIGNAL — note that this is the opposite of the usual
+// result in this repo, where loosening a filter costs money (root CLAUDE.md, Run 12).
+// Nothing was loosened here: the setups are identical, only the fuel's age differs.
 int  aplusWindow       = 4320
-int  aplusSweepWindow  = 1440
 
 //============================================================
   // RSI DIVERGENCE (locked defaults — not user-tunable)
@@ -1981,22 +2003,31 @@ f_rev15() =>
 
     var int lastBullSos = na, var int lastBearSos = na
     var int lastSosCloseT = na   // close time of the latest 15m SOS candle — the 1m fib must anchor to a SOS AFTER this
+    // Per-side SOS TIME, added 2026-09-27 for the retro-link's window below. lastSosCloseT
+    // cannot serve: it is shared by both directions, so a bear SOS would date a bull link.
+    var int lastBullSosT = na, var int lastBearSosT = na
     if mtf.bull_sos
         lastBullSos := bar_index
+        lastBullSosT := time
         lastSosCloseT := time_close
     if mtf.bear_sos
         lastBearSos := bar_index
+        lastBearSosT := time
         lastSosCloseT := time_close
 
     // LONG state
-    var int   L_arm = na, var int L_sos = na
+    // L_armT / S_armT — the TIME the Stage-1 arm fired, added 2026-09-27 so this engine
+    // can age an arm out the way the bot and the 15m chart side do. It had NO clock at
+    // all: a divergence arm sat here until a death came along, which can be weeks, so a
+    // 1m chart could show Tracking off fuel the other two had long dropped.
+    var int   L_arm = na, var int L_sos = na, var int L_armT = na
     var float L_low = na, var float L_high = na
     var bool  L_half = false, var bool L_618 = false
     var int   L_deep = 0
     var bool  L_tp50 = false, var bool L_tp382 = false, var bool L_tp0 = false
     var bool  L_leftZone = false
     // SHORT state
-    var int   S_arm = na, var int S_sos = na
+    var int   S_arm = na, var int S_sos = na, var int S_armT = na
     var float S_low = na, var float S_high = na
     var bool  S_half = false, var bool S_618 = false
     var int   S_deep = 0
@@ -2033,15 +2064,21 @@ f_rev15() =>
     // _m15Retraced, which is what fiboShowAligned, the 1m External Fib, the 1m Sniper
     // Zone and the 1m ENTRY row all hang off.
     if mtf.bear_sos or (not na(L_sos) and mtf.bull_bos and not mtf.bull_sos) or (not na(L_low) and close < L_low) or L_tp0
-        L_arm := na, L_sos := na, L_low := na, L_high := na
+        L_arm := na, L_sos := na, L_low := na, L_high := na, L_armT := na
         L_half := false, L_618 := false, L_deep := 0
         L_tp50 := false, L_tp382 := false, L_tp0 := false
         L_leftZone := false
-    if newBullDiv and na(L_arm) and na(L_sos)
-        L_arm := bullDivBar
-    if mtf.bull_sos and not na(L_arm) and na(L_sos)
+    // Age a Stage-1 arm out on the SAME single clock the bot and the chart side use.
+    // Stage 1 only — a locked Stage 2 dies through a real death, never on time.
+    if not na(L_arm) and na(L_sos) and not na(L_armT) and time - L_armT > aplusWindow * 60000
+        L_arm := na, L_armT := na
+    // A newer divergence TAKES OVER the slot and restarts the clock — `na(L_arm)` was
+    // dropped from this line to match the bot's arm block.
+    if newBullDiv and na(L_sos)
+        L_arm := bullDivBar, L_armT := time
+    if mtf.bull_sos and not na(L_arm) and na(L_sos) and time - L_armT <= aplusWindow * 60000
         L_sos := bar_index, L_low := mtf.bull_bos_low, L_high := mtf.bull_bos_high
-    if newBullDiv and not na(L_arm) and na(L_sos) and not na(lastBullSos) and lastBullSos >= bullDivBar
+    if newBullDiv and not na(L_arm) and na(L_sos) and not na(lastBullSos) and lastBullSos >= bullDivBar and time - lastBullSosT <= aplusWindow * 60000
         L_sos := lastBullSos, L_low := mtf.bull_bos_low, L_high := mtf.bull_bos_high
     if not na(L_sos) and (na(L_high) or high > L_high)
         L_high := high
@@ -2090,15 +2127,18 @@ f_rev15() =>
     // S_tp0 is the mirror of the long's TP3 death — see the note there for why it was
     // missing and what the 1m chart was showing without it.
     if mtf.bull_sos or (not na(S_sos) and mtf.bear_bos and not mtf.bear_sos) or (not na(S_high) and close > S_high) or S_tp0
-        S_arm := na, S_sos := na, S_low := na, S_high := na
+        S_arm := na, S_sos := na, S_low := na, S_high := na, S_armT := na
         S_half := false, S_618 := false, S_deep := 0
         S_tp50 := false, S_tp382 := false, S_tp0 := false
         S_leftZone := false
-    if newBearDiv and na(S_arm) and na(S_sos)
-        S_arm := bearDivBar
-    if mtf.bear_sos and not na(S_arm) and na(S_sos)
+    // Mirror of the bull clock above — see the note there.
+    if not na(S_arm) and na(S_sos) and not na(S_armT) and time - S_armT > aplusWindow * 60000
+        S_arm := na, S_armT := na
+    if newBearDiv and na(S_sos)
+        S_arm := bearDivBar, S_armT := time
+    if mtf.bear_sos and not na(S_arm) and na(S_sos) and time - S_armT <= aplusWindow * 60000
         S_sos := bar_index, S_high := mtf.bear_bos_high, S_low := mtf.bear_bos_low
-    if newBearDiv and not na(S_arm) and na(S_sos) and not na(lastBearSos) and lastBearSos >= bearDivBar
+    if newBearDiv and not na(S_arm) and na(S_sos) and not na(lastBearSos) and lastBearSos >= bearDivBar and time - lastBearSosT <= aplusWindow * 60000
         S_sos := lastBearSos, S_high := mtf.bear_bos_high, S_low := mtf.bear_bos_low
     if not na(S_sos) and (na(S_low) or low < S_low)
         S_low := low
@@ -5876,9 +5916,11 @@ var int  aplusL_sweepBar = na
 var int  aplusL_sosBar   = na
 var int  aplusL_armTime  = na    // timestamp the sweep/div arm fired — window is measured in TIME, not bars
 // Per-source arm timestamps — track a live sweep arm and a live divergence arm
-// SEPARATELY so the 1/3 row can state which fired (Sweep / Div / Sweep+Div) and each
-// can age out on its own window (sweep = aplusSweepWindow, div = aplusWindow). na = that
-// source is not currently contributing to the Stage-1 arm.
+// SEPARATELY so the Stage-1 row can state which fired (Sweep / Div / Sweep+Div).
+// na = that source is not currently contributing to the Stage-1 arm.
+// ⚠ LABEL STATE ONLY since 2026-09-27. They used to carry a per-source expiry each and
+// that is what the arm died on; now nothing reads them but the row's text. Do not
+// reintroduce a clock here without moving the bot too — see the window constant.
 var int  aplusL_swpArmT  = na
 var int  aplusL_divArmT  = na
 var int  aplusS_swpArmT  = na
@@ -5980,24 +6022,34 @@ bool dailySweepTooOldL = newSweepL and recentSSL == "Day Low" and not na(liq_dl_
 if dailySweepTooOldL
     newSweepL := false
 
-// Arm ONLY when nothing is already tracking on this side. Once armed (Stage 1)
-// or locked (Stage 2), the arm is frozen — a rotating liquidity source (e.g. the
-// daily flipping from Day-Low-swept to Day-High-swept at the session boundary)
-// changes recentSSL_bar, but it must NOT overwrite or re-trigger a live arm. The
-// arm only clears through a real death: opposite SOS, TP3, or invalidation.
+// A SWEEP arms only when nothing is already tracking on this side, so a rotating
+// liquidity source (e.g. the daily flipping from Day-Low-swept to Day-High-swept at the
+// session boundary) changes recentSSL_bar without re-triggering a live arm.
+// ⚠ A STAGE-1 ARM NOW ALSO DIES ON TIME — 4320 minutes, in the stale-arm clear below.
+// This comment used to say the arm "only clears through a real death: opposite SOS, TP3,
+// or invalidation", which was true while the window was waved through and is not now.
 bool aplusL_canArm = na(aplusL_sweepBar) and na(aplusL_sosBar)
-// Sweep and divergence each register their own timestamp. The FIRST to fire creates
-// the arm (sets sweepBar/armTime); a second, different source firing while still at
-// Stage 1 (no SOS yet) joins it — that overlap is what shows as "Sweep+Div".
-if newSweepL and not aplusDivOnly and na(aplusL_sosBar)
-    if aplusL_canArm
-        aplusL_sweepBar := recentSSL_bar
-        aplusL_armTime  := time
+// A SWEEP arms only when nothing is already tracking this side. A DIVERGENCE may take
+// over a Stage-1 slot a sweep is holding, and it RESTARTS the clock; it may never take
+// over a locked Stage 2. Both halves match the bot line for line —
+// strategies/python/sos_fade/sequence.py, the Stage-1 arm block.
+// ⚠ It used to be first-source-wins here, with a later source only JOINING the label and
+// never touching the arm time. That is one of the four reasons this table and the bot
+// disagreed about what was tracking.
+if newSweepL and aplusL_canArm
+    aplusL_sweepBar := recentSSL_bar
+    aplusL_armTime  := time
+if newDivL and na(aplusL_sosBar)
+    aplusL_sweepBar := lastBullDivBar
+    aplusL_armTime  := time
+// The two source stamps are LABEL STATE ONLY — they drive the Stage-1 row's
+// "Sweep / Div / Sweep+Div" text and nothing else now. Set whenever that source fires
+// at Stage 1, so the row still names an overlap the arm itself ignores; cleared
+// everywhere the arm is cleared. THEY NO LONGER EXPIRE ANYTHING — the per-source caps
+// that used to read them are deleted, which is what the 1440 cap lived in.
+if newSweepL and na(aplusL_sosBar)
     aplusL_swpArmT := time
 if newDivL and na(aplusL_sosBar)
-    if na(aplusL_sweepBar)
-        aplusL_sweepBar := lastBullDivBar
-        aplusL_armTime  := time
     aplusL_divArmT := time
 
 // Retro-link — a divergence pivot only CONFIRMS divPivotLen bars after the low it
@@ -6006,7 +6058,7 @@ if newDivL and na(aplusL_sosBar)
 // Stage 2 check below never sees it — the setup sticks at 1/3 forever. If the last
 // bull SOS landed at or after the divergence's pivot bar (so the sequence really
 // did run div -> SOS) and is still inside the staleness window, adopt it.
-if newDivL and not na(aplusL_sweepBar) and na(aplusL_sosBar) and not na(lastBullSosBar) and lastBullSosBar >= lastBullDivBar and (aplusIgnoreWindow or time - lastBullSosTime <= aplusWindow * 60000)
+if newDivL and not na(aplusL_sweepBar) and na(aplusL_sosBar) and not na(lastBullSosBar) and lastBullSosBar >= lastBullDivBar and time - lastBullSosTime <= aplusWindow * 60000
     aplusL_sosBar := lastBullSosBar
 
 bool newSweepS = recentBSL != "" and recentBSL_bar != recentBSL_bar[1] and not sessionGapBar
@@ -6016,26 +6068,28 @@ bool dailySweepTooOldS = newSweepS and recentBSL == "Day High" and not na(liq_dh
 if dailySweepTooOldS
     newSweepS := false
 
+// Mirror of the bull arming above, same rules, same reasons.
 bool aplusS_canArm = na(aplusS_sweepBar) and na(aplusS_sosBar)
-if newSweepS and not aplusDivOnly and na(aplusS_sosBar)
-    if aplusS_canArm
-        aplusS_sweepBar := recentBSL_bar
-        aplusS_armTime  := time
+if newSweepS and aplusS_canArm
+    aplusS_sweepBar := recentBSL_bar
+    aplusS_armTime  := time
+if newDivS and na(aplusS_sosBar)
+    aplusS_sweepBar := lastBearDivBar
+    aplusS_armTime  := time
+if newSweepS and na(aplusS_sosBar)
     aplusS_swpArmT := time
 if newDivS and na(aplusS_sosBar)
-    if na(aplusS_sweepBar)
-        aplusS_sweepBar := lastBearDivBar
-        aplusS_armTime  := time
     aplusS_divArmT := time
 
 // Mirror of the bull retro-link above.
-if newDivS and not na(aplusS_sweepBar) and na(aplusS_sosBar) and not na(lastBearSosBar) and lastBearSosBar >= lastBearDivBar and (aplusIgnoreWindow or time - lastBearSosTime <= aplusWindow * 60000)
+if newDivS and not na(aplusS_sweepBar) and na(aplusS_sosBar) and not na(lastBearSosBar) and lastBearSosBar >= lastBearDivBar and time - lastBearSosTime <= aplusWindow * 60000
     aplusS_sosBar := lastBearSosBar
 
-// Stage 2 — SOS must fire after the sweep, within the staleness window
-if st.bull_sos and not na(aplusL_armTime) and (aplusIgnoreWindow or time - aplusL_armTime <= aplusWindow * 60000)
+// Stage 2 — SOS must fire after the sweep, within the staleness window. The window is
+// ENFORCED now; it used to be waved through, so an SOS could adopt an arm of any age.
+if st.bull_sos and not na(aplusL_armTime) and time - aplusL_armTime <= aplusWindow * 60000
     aplusL_sosBar := bar_index
-if st.bear_sos and not na(aplusS_armTime) and (aplusIgnoreWindow or time - aplusS_armTime <= aplusWindow * 60000)
+if st.bear_sos and not na(aplusS_armTime) and time - aplusS_armTime <= aplusWindow * 60000
     aplusS_sosBar := bar_index
 
 // Detect the first bar after a SESSION GAP (e.g. the daily 17:00-18:00 close).
@@ -6044,38 +6098,24 @@ if st.bear_sos and not na(aplusS_armTime) and (aplusIgnoreWindow or time - aplus
 // and resetting live arms. Skip the stale check on any bar whose gap from the
 // previous bar is more than 2x the normal spacing.
 
-// Clear a stale arm — sweep/div fired but no SOS followed within the window.
-// Without this, aplusL_sweepBar stays set FOREVER even after the SOS Fade row has
-// already fallen back to "Pass" (the display checks the window; this variable
-// didn't), which permanently blocked CONT from ever arming again.
-if not aplusIgnoreWindow and not sessionGapBar and not na(aplusL_sweepBar) and na(aplusL_sosBar) and not na(aplusL_armTime) and time - aplusL_armTime > aplusWindow * 60000
+// Clear a stale arm — sweep/div fired but no SOS followed within the window. Without
+// this the arm state stays set FOREVER, which is what permanently blocked CONT from ever
+// arming again. The row and this variable read the SAME window now, so they cannot
+// disagree about whether a setup is still alive; they once could, and did.
+// ⚠ THIS IS NOW THE ONLY THING THAT AGES AN ARM OUT, and it is live. It was dead code
+// for as long as the window was waved through, and the two per-source caps that used to
+// sit below it — sweep 1440 minutes, divergence 4320 — did the ageing instead. Those are
+// deleted: they are what made this table drop a sweep two days before the bot did, and
+// they are the ONE rule the bot has no equivalent of. One clock, from the arm, both
+// sources, both files.
+if not sessionGapBar and not na(aplusL_sweepBar) and na(aplusL_sosBar) and not na(aplusL_armTime) and time - aplusL_armTime > aplusWindow * 60000
     aplusL_sweepBar := na
     aplusL_armTime := na
     aplusL_swpArmT := na, aplusL_divArmT := na
-if not aplusIgnoreWindow and not sessionGapBar and not na(aplusS_sweepBar) and na(aplusS_sosBar) and not na(aplusS_armTime) and time - aplusS_armTime > aplusWindow * 60000
+if not sessionGapBar and not na(aplusS_sweepBar) and na(aplusS_sosBar) and not na(aplusS_armTime) and time - aplusS_armTime > aplusWindow * 60000
     aplusS_sweepBar := na
     aplusS_armTime := na
     aplusS_swpArmT := na, aplusS_divArmT := na
-
-// Per-source staleness caps — ALWAYS enforced (independent of aplusIgnoreWindow).
-// A sweep arm ages out after aplusSweepWindow minutes, a divergence arm after
-// aplusWindow minutes. Only while still at Stage 1 (no SOS locked). Once BOTH
-// sources on a side have aged out with no SOS, the whole arm dies — this is the
-// hard "stale fuel" filter: a day-old sweep or a 3-day-old divergence stops arming.
-if na(aplusL_sosBar) and not sessionGapBar
-    if not na(aplusL_swpArmT) and time - aplusL_swpArmT > aplusSweepWindow * 60000
-        aplusL_swpArmT := na
-    if not na(aplusL_divArmT) and time - aplusL_divArmT > aplusWindow * 60000
-        aplusL_divArmT := na
-    if not na(aplusL_sweepBar) and na(aplusL_swpArmT) and na(aplusL_divArmT)
-        aplusL_sweepBar := na, aplusL_armTime := na
-if na(aplusS_sosBar) and not sessionGapBar
-    if not na(aplusS_swpArmT) and time - aplusS_swpArmT > aplusSweepWindow * 60000
-        aplusS_swpArmT := na
-    if not na(aplusS_divArmT) and time - aplusS_divArmT > aplusWindow * 60000
-        aplusS_divArmT := na
-    if not na(aplusS_sweepBar) and na(aplusS_swpArmT) and na(aplusS_divArmT)
-        aplusS_sweepBar := na, aplusS_armTime := na
 
 // Sequence death. Opposite SOS kills the SOS Fade tracking on that side — the trend
 // it was riding just reversed. ANY SOS (either direction) also clears CONT on
