@@ -505,6 +505,13 @@ SOS Fade · XAUUSD.p · 2 of 3
 Swept Day Low · 0.5-0.886 tagged, FVG live · not tagged yet
 Zone 3,405.10 – 3,418.60 · stop 3,418.60
 
+👀 SETUP FORMING · LONG
+Realign · XAUUSD.p · 1 of 3
+Bearish 15m shift in an uptrend, momentum against · 5m break pending · 5m realign pending
+TP1 3,331.20
+(a market-entry setup has no zone; the stop appears once the 5m counter move prints)
+(no demo/LIVE tag in the trades or signals rooms — each holds one kind; the health room keeps it)
+
 🎯 0.25 lots · BUY LIMIT RESTING
 2 of 3
 Limit 3,410.00 · stop 3,418.60

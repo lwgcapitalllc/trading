@@ -184,6 +184,12 @@ def format_watching(snap, digits: int = 2, display: str = "") -> str:
         if snap.stop is not None:
             zone = f"{zone} · stop {_price(snap.stop, digits)}"
         lines.append(zone)
+    else:
+        # A MARKET-entry setup (Realign) has no zone, so its price line is the projected stop and
+        # the target — without this it printed no prices at all (2026-09-27).
+        prices = [f"Stop {_price(snap.stop, digits)}"] if snap.stop is not None else []
+        prices += [f"TP{i} {_price(t, digits)}" for i, t in enumerate(snap.targets, 1) if t]
+        lines.append(" · ".join(prices))
     return alert("👀", "SETUP FORMING", snap.direction, *lines)
 
 

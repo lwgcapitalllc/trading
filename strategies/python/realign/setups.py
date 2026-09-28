@@ -81,43 +81,36 @@ class RealignSetupWatch:
 
     # ── snapshots ────────────────────────────────────────────────────────────────────────────
     def _confluences(self, strat, a, fired: bool):
+        """Three conditions, counted the way SOS Fade counts its three (Aaron, 2026-09-27).
+
+        ⚠ **The 15m trend, the false break and the momentum are ONE condition, the setup.** A
+        setup is only ever announced with all three true (`_tradeable`), so as three it printed
+        "3 of 5" on every first message — a count that could never read anything else. What is
+        left to happen is the two 5m moves, and the count now says so: 1 of 3, then 2 of 3."""
         cfg = self._cfg
         long_ = a.dir > 0
-        was, against = ("up", "bearish") if long_ else ("down", "bullish")
-        out = [
-            Confluence("15m trend", True, f"the 15m trend was {was}"),
-            Confluence(
-                "False break",
-                True,
-                f"a 15m {against} shift — the first against the trend",
-            ),
-        ]
+        trend, against = ("an uptrend", "bearish") if long_ else ("a downtrend", "bullish")
+        setup_ok, setup = True, f"{against} 15m shift in {trend}"
         if cfg.realign_mom_days is not None:
             m = getattr(strat.execution, "mom_dir", None)
-            ok = m is not None and m != a.dir
-            out.append(
-                Confluence(
-                    f"{cfg.realign_mom_days}-day momentum",
-                    ok,
-                    ("against the trade — this setup fades it" if ok
-                     else "not read yet" if m is None
-                     else "with the trade — the order would be refused"),
-                )
-            )
+            setup_ok = m is not None and m != a.dir
+            setup += (", momentum against" if setup_ok
+                      else ", momentum not read" if m is None
+                      else ", momentum with — would refuse")
+        out = [Confluence("15m false break", setup_ok, setup)]
         out.append(
             Confluence(
                 "5m counter move",
                 a.counter_bar is not None or fired,
-                "the 5m broke against the trade" if a.counter_bar is not None or fired
-                else "waiting for the 5m to break against the trade",
+                "5m broke against" if a.counter_bar is not None or fired
+                else "5m break pending",
             )
         )
         out.append(
             Confluence(
                 "5m realignment",
                 fired,
-                "the 5m shifted back with the trend" if fired
-                else "waiting for the 5m to shift back with the trend",
+                "5m realigned" if fired else "5m realign pending",
             )
         )
         return tuple(out)

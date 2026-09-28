@@ -577,6 +577,16 @@ class LiveRunner:
         log.propagate = False  # the root logger is not this package's to write through
         return log
 
+    def _name_for(self, room=None) -> str:
+        """`_label` for a message going to `room` — the plain name in the trades and setups rooms,
+        which hold one account kind each (`bot_state.labelled`). NEVER raises, like `_label`."""
+        try:
+            import bot_state
+
+            return bot_state.labelled(self.cfg.display_name, self.cfg.account, room)
+        except Exception:
+            return self._label
+
     @property
     def _label(self) -> str:
         """This bot's name as a MESSAGE says it: its strategy's name plus LIVE or demo, worked out
@@ -1647,7 +1657,7 @@ class LiveRunner:
                 log=self.log,
                 categories=cats,
                 digits=getattr(self.cfg, "digits", 2),
-                display=self._label,
+                display=self._name_for("signal"),  # its room says demo/live
                 # The size the BROKER is holding, read off the placed order. Passing the
                 # bridge's own method rather than a number is what makes the alert layer
                 # broker-free: it never learns what a lot is, it is handed one. A bot with no
@@ -2264,8 +2274,9 @@ class LiveRunner:
                 # The cap must measure against the SAME number the strategy sizes against.
                 sizing_basis_adjustment=getattr(self.cfg, "sizing_basis_adjustment", 0.0),
                 instance_dir=self.cfg.instance_dir,
-                # The fills and halts say "SOS Fade · LIVE", not the bot key — see `_label`.
-                name_for_messages=lambda: self._label,
+                # The fills say "SOS Fade" and the halts "SOS Fade · LIVE", never the bot key — the
+                # bridge names the room it is writing to (`_name_for`).
+                name_for_messages=self._name_for,
                 # How much the locked R must improve before another stop-move message goes into
                 # the trade's thread. Every bot takes the default; see `live_config`.
                 trail_alert_step_r=self.cfg.trail_alert_step_r,

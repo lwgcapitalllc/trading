@@ -233,12 +233,24 @@ def account_kind(account):
     return None
 
 
-def labelled(name: str, account) -> str:
+#: Rooms that only ever hold ONE account kind, so the room already says demo or live. A live
+#: account's trades and setups rooms are its own and never borrowed (`notify.chat_for`), which
+#: leaves the shared ones holding demo only. The HEALTH room is not here: a live account may use
+#: the shared one, beside every demo bot. Spelled as `notify`'s room kinds.
+_ONE_KIND_ROOMS = frozenset({"trade", "signal"})
+
+
+def labelled(name: str, account, room=None) -> str:
     """A bot's name as a PERSON reads it where nothing else says which account: `SOS Fade · LIVE`,
     `SOS Fade · demo`. The plain name when the kind cannot be read — never a guessed tag.
 
     This is what tells two copies of one strategy apart now that they share a name, and it cannot
-    go stale: it is worked out from the account at the moment the message is written."""
+    go stale: it is worked out from the account at the moment the message is written.
+
+    ⚠ **No tag in a room of one kind** (`room` is `"trade"` or `"signal"`) — Aaron, 2026-09-27:
+    the channel already says it. `None` means the room is unknown or shared, and keeps the tag."""
+    if room in _ONE_KIND_ROOMS:
+        return name
     tag = _KIND_TAGS.get(account_kind(account))
     return f"{name} · {tag}" if tag else name
 

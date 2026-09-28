@@ -15,6 +15,11 @@ against it and then realign. The entry is at MARKET, so there is no resting-limi
 
 - **Root** — the conditions so far: the 15m trend, the false break, the 20-day momentum, the 5m
   counter move, the 5m realignment. The projected stop once the counter move has printed; the target.
+  ⚠ **Three conditions, counted like SOS Fade's (Aaron, 2026-09-27)**: the setup (15m false
+  break against the trend, with momentum against the trade) as ONE, then the 5m counter move and
+  the 5m realignment. As five it read "3 of 5" on every first message, since all three setup
+  parts are always true when one is announced. Now `1 of 3`, then `2 of 3`, e.g.
+  `Bearish 15m shift in an uptrend, momentum against · 5m break pending · 5m realign pending`.
 - **ENTERED** — the realignment fired and the market order went in.
 - **NO TRADE** — the realignment fired and a rule refused it (the order layer names which,
   `RealignExecution.refusal`, reporting only); the 72-hour window closed; a newer false break

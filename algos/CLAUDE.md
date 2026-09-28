@@ -297,6 +297,7 @@ Most-cited code: `live/setup_alerts.py`, `live/alerts.py`, `live/bridge.py`, `sh
 - 🔴 HEALTH messages go through ONE hold policy (`shared/alert_policy.py`, a table keyed by label): one alert per fault, quick recoveries held, TRADING OFF per account after 15 min, never a BACK ON without its OFF; HALT-type labels are never held; every hold is logged. A Command Center deploy/start/restart is one message the bot edits into its outcome, and the watchdog says NOT BACK ONLINE at 3 min (2026-09-26)
 - ✅ The hourly reviewer no longer re-sends a finding whose real-time alert is in the send log (a lost one still goes), a live halt is one finding not two, and a LIVE bot halted or down gets a REMINDER every hour (2026-09-26)
 - ✅ A DAILY SUMMARY per health room at 08:00 Chicago counts what was held, the longest trading-off, auto-restarts, late and given-up messages — off the send log only, and says so when it cannot read it; sent by SYS_MONITOR, no new task (2026-09-26)
+- ✅ No demo/LIVE tag in the trades and setups rooms — each holds one kind; the health room keeps it (2026-09-27)
 - ✅ The REV SETUP student feed — `tools/rev_setup_feed.py` renders the bot's own decision records for a students' channel from a per-event WHITELIST, so no lot size, dollar risk or P&L can be published; off until switched on (2026-09-23)
 
 ### `notes/telegram-message-catalog.md` — Every Telegram message this suite can send, by room

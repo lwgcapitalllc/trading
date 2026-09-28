@@ -1075,7 +1075,7 @@ def _filled_entry(name_for_messages):
 
 def test_the_ENTRY_alert_names_the_bot_as_the_RUNNER_says_it_never_by_its_key():
     """MUTATION: hand `format_entry` the order-comment key again -> red."""
-    _b, entry = _filled_entry(lambda: "SOS Fade · LIVE")
+    _b, entry = _filled_entry(lambda room=None: "SOS Fade · LIVE")
     assert entry.splitlines()[-1] == "SOS Fade · LIVE"
     assert "BOT_TEST" not in entry
 
@@ -1083,9 +1083,27 @@ def test_the_ENTRY_alert_names_the_bot_as_the_RUNNER_says_it_never_by_its_key():
 def test_a_HALT_names_the_bot_as_the_runner_says_it():
     """The most consequential message the bridge sends, in the one health room both kinds share —
     so it is the one that most needs to say LIVE. MUTATION: name the halt by the key -> red."""
-    b, _ops, _ledger, notes = _bridge(_FakeExecution(), name_for_messages=lambda: "SOS Fade · LIVE")
+    b, _ops, _ledger, notes = _bridge(
+        _FakeExecution(), name_for_messages=lambda room=None: "SOS Fade · LIVE"
+    )
     b.halt("the fleet was stopped")
     assert notes[-1].splitlines()[0] == "⛔ HALTED · SOS Fade · LIVE"
+
+
+def test_the_bridge_names_the_ROOM_it_writes_to():
+    """The entry goes to the trades room and asks for that room's name; a halt goes to health and
+    asks with no room, so it keeps LIVE/demo. MUTATION: drop `notify.TRADE` from the entry -> red."""
+    rooms = []
+
+    def name(room=None):
+        rooms.append(room)
+        return "SOS Fade"
+
+    b, _entry = _filled_entry(name)
+    assert "trade" in rooms
+    rooms.clear()
+    b.halt("the fleet was stopped")
+    assert rooms == [None]
 
 
 def test_with_no_name_given_the_bridge_says_what_it_always_said():
@@ -1100,7 +1118,7 @@ def test_a_name_that_cannot_be_worked_out_costs_the_TAG_never_the_alert():
     or the position record written straight after the entry alert. MUTATION: drop the try in
     `_message_name` -> red."""
 
-    def boom():
+    def boom(room=None):
         raise RuntimeError("registry unreadable")
 
     b, _ops, _ledger, notes = _bridge(_FakeExecution(), name_for_messages=boom)
@@ -1113,7 +1131,7 @@ def test_a_name_that_cannot_be_worked_out_costs_the_TAG_never_the_alert():
 def test_the_order_comment_and_restart_record_keep_the_KEY():
     """The key is an IDENTIFIER — MT5 order comments and the restart record are matched on it —
     so the message name must never leak into it."""
-    b, _entry = _filled_entry(lambda: "SOS Fade · LIVE")
+    b, _entry = _filled_entry(lambda room=None: "SOS Fade · LIVE")
     assert b._strategy_name == "BOT_TEST"
 
 

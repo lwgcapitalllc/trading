@@ -609,7 +609,7 @@ class OrderBridge:
         # number the strategy sizes against - see `_account_balance`.
         sizing_basis_adjustment: float = 0.0,
         instance_dir: Optional[Path] = None,
-        name_for_messages: Optional[Callable[[], str]] = None,
+        name_for_messages: Optional[Callable[[Optional[str]], str]] = None,
         trail_alert_step_r: float = DEFAULT_TRAIL_ALERT_STEP_R,
     ) -> None:
         self._mt5 = bot_mt5
@@ -645,6 +645,8 @@ class OrderBridge:
         # its name plus LIVE or demo, worked out per message from the account; the key stays on
         # the MT5 order comments and on the restart record, which are identifiers, not prose.
         # ⚠ A caller that passes nothing gets the key, exactly as before.
+        # It is handed the ROOM (`notify.TRADE`, or None for health): the fills drop the tag
+        # because the trades room already says demo or live (2026-09-27).
         self._message_name_fn = name_for_messages
 
         self.state = BridgeState.LIVE
@@ -740,7 +742,7 @@ class OrderBridge:
         self._pos_alert_id = None
         self.halt_reason: str = ""
 
-    def _message_name(self) -> str:
+    def _message_name(self, room=None) -> str:
         """What a message calls this bot (see `name_for_messages` above). NEVER raises and never
         returns empty: it is evaluated INSIDE the calls that report a fill and a halt, and a name
         that could not be worked out must cost the LIVE/demo tag — never the message, and never
@@ -749,7 +751,7 @@ class OrderBridge:
         if fn is None:
             return self._strategy_name
         try:
-            return str(fn() or "") or self._strategy_name
+            return str(fn(room) or "") or self._strategy_name
         except Exception:
             return self._strategy_name
 
@@ -2024,7 +2026,7 @@ class OrderBridge:
         self._notify(
             alerts.format_exit(
                 show_size=alerts.SHOW_SIZE,
-                strategy=self._message_name(),
+                strategy=self._message_name(notify.TRADE),
                 symbol=self._mt5.symbol,
                 exit_price=price,
                 pnl_usd=pnl,
@@ -2608,7 +2610,7 @@ class OrderBridge:
         self._pos_alert_id = self._notify(
             alerts.format_entry(
                 show_size=alerts.SHOW_SIZE,
-                strategy=self._message_name(),
+                strategy=self._message_name(notify.TRADE),
                 symbol=self._mt5.symbol,
                 direction=side,
                 entry=p.price_open,

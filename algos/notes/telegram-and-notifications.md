@@ -1171,3 +1171,16 @@ Tests: `algos/tests/test_review_and_reminders.py` (16) and three updated in `tes
   posting.
 
 Tests: `algos/tests/test_daily_summary.py` (11; 4 mutations watched RED, named in its docstring).
+
+## The demo/LIVE tag only where a room mixes the two (2026-09-27)
+
+Aaron: *"I already know what they are by the channel they go to."* The fill, the exit and the
+setup messages now name the bot plainly (`SOS Fade`); health messages keep `SOS Fade · LIVE`.
+
+- 🔴 **Why the split, not a blanket removal:** a live account's trades and setups rooms are its own
+  and never borrowed (`notify.chat_for`), so those rooms hold one kind. The HEALTH room is not
+  required per account — 35710389 (live) names none and uses the shared one beside every demo bot —
+  and the chat bot's status list shows every bot at once. Two bots are both called "SOS Fade", so
+  there the tag is the only thing telling them apart.
+- The rule is one set in `shared/bot_state.py` (`labelled(..., room)`); the runner and the bridge
+  name the room they are writing to. Needs a promote to reach a running bot.
