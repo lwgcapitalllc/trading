@@ -102,3 +102,7 @@
 2026-09-28 22:05:05,246 [INFO] Warmed 15000 bars (2026-07-14 10:35:00+00:00 → 2026-09-28 22:00:00+00:00) in 3.2s
 2026-09-28 22:05:05,262 [INFO] Equity re-anchored to the account after warm-up: 13,844.72 → 14,862.76
 2026-09-28 22:15:06,215 [INFO] Priority 2 on this account: waiting 14s for the bots above
+2026-09-28 22:30:01,542 [INFO] Priority 2 on this account: waiting 18s for the bots above
+2026-09-28 22:45:01,590 [INFO] Priority 2 on this account: waiting 18s for the bots above
+2026-09-28 23:00:01,533 [INFO] Priority 2 on this account: waiting 18s for the bots above
+2026-09-28 23:15:01,491 [INFO] Priority 2 on this account: waiting 19s for the bots above
