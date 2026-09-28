@@ -307,8 +307,8 @@ broke a new fork.
   +1.15R ± 0.62, P 0.95, held back +0.28R. It retires the old chart/Python difference (Pine 0
   ticks, Python 30), which now applies only to an export taken in "Ticks" mode.
   ⚠ **The Pine's fraction branch is UNGATED until a fresh export is taken in that mode** — every
-  golden predates it and decodes as "Ticks". ⚠ **`realign_1` pins "Ticks" / 30** in its own
-  config, so this default does not reach the demo bot until that file changes.
+  golden predates it and decodes as "Ticks". `realign_1` (demo) was switched to it the same
+  day in its own config — a bot's config pins every setting, so a default never reaches it alone.
 - **The entry-side SOS Fade fields are left alone deliberately** (`exec_fib_nearest`, `exec_deep_fib`,
   `exec_fvg_pre_zone`, `exec_fib_overlap`, `exec_fib_deep_edge`, `exec_sl_deep`). This fork places
   no fib-priced order, so nothing reads them. Pinning them would imply they mean something here.
