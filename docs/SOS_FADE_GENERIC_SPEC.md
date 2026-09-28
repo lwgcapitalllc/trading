@@ -92,3 +92,41 @@ stop refused only 1, 9 and 9 — so the stop floor is not what starves FX.
 pin set for gold (`SosFadeStrategy.engine_config`). A pair that moves less in percentage terms has
 fewer gaps that size. Testing it means changing that pin for FX runs, which moves the engine setting
 and needs its own measurement — not a tidy-up.
+
+### Does price turn from the zone? (2026-09-27, `backtest/tools/generic_zone_turn.py`)
+
+Every setup whose pullback reached the 0.5-0.886 zone, 2020-01-01 → 2026-09-26, M15. TURN = price made
+a new high/low (the 0.0) before breaking the start of the move (the 1.0). A bar touching both = fail.
+Setups that traded are scored by their own result; the rest are walked forward from the zone touch.
+
+| | Gap, traded | No gap | All |
+|---|---|---|---|
+| GBPUSD.p | 45.6% (79) | 44.8% (362) | **46.5%** (456) |
+| GBPJPY.p | 41.7% (72) | 50.3% (320) | **50.0%** (408) |
+| XAUUSD.p | 57.6% (165) | 45.5% (178) | **55.0%** (373) |
+
+⚠ Setups with a gap whose limit never filled turned 81-97% — SELECTION, not signal: price turned
+before reaching the fill. They are in "All" and not shown on their own.
+**Read:** on both pairs a zone touch is a coin flip, and a gap does not improve it. On gold a gap
+lifts the turn rate 12 points, which is where this bot's gold profit comes from.
+
+### Does the leg's volume point of control mark the turn? (2026-09-27, `backtest/tools/generic_poc_study.py`)
+
+Aaron's idea: a fixed-range volume profile over the move; its point of control (the busiest price)
+is where the pullback should turn. Rules fixed before the result — see the tool's docstring. The
+profile is 50 rows over the leg, 5-minute bars, MetaTrader TICK volume, the canonical engine's
+arithmetic. Each setup alone, stop 1.0, target 0.0, **gross R (no costs)**, 2020-01-01 → 2026-09-04.
+
+| R per fill | fib 0.5 | fib 0.618 | fib 0.786 | fib 0.886 | **at the POC** | **nearest fib, same setups** |
+|---|---|---|---|---|---|---|
+| GBPUSD.p | -0.11 (451) | -0.11 (379) | -0.15 (306) | -0.11 (276) | **-0.23** (204) | **-0.17** (208) |
+| GBPJPY.p | -0.02 (408) | -0.01 (334) | +0.04 (266) | +0.14 (238) | **-0.16** (190) | **-0.08** (196) |
+| XAUUSD.p | -0.04 (368) | +0.03 (314) | -0.05 (240) | -0.17 (211) | **-0.12** (162) | **-0.17** (162) |
+
+Where the POC sits: in the 0.5-0.886 zone on 53-56% of legs, shallower than 0.5 on 38-40%.
+**Read:** the POC is WORSE than a plain fib of the same depth on both pairs and marginally better
+on gold, where both are negative. It does not find the turn. ⚠ GBPJPY at 0.886 (+0.14R, 31 wins in
+238) is one of twelve cells, t ≈ 0.75 before costs — noise, not a lead.
+⚠ **No fixed entry depth has an edge on its own, on any of the three.** Stop at 1.0 and target at
+0.0 is roughly break-even gross everywhere; what makes SOS Fade pay on gold is the selection and
+trade management this bot strips out.
