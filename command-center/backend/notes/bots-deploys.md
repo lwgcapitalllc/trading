@@ -1110,3 +1110,25 @@ The rows now read this route once, every minute.
   bot's own STOPPED already said it, and this one is logged `held`.
 - ⚠ A promote still launches with `_launch_bot` directly — it sends no STARTING of its own.
 - Tests: `tests/test_one_message_per_action.py`.
+
+## 🔴 A deploy never STARTS a bot that was not running (2026-09-27)
+
+**What happened.** A deploy at 16:54 UTC went to two STOPPED bots on Richard's live account
+35710389, which is unfunded. `_finish_promote` treated "restart" as kill-then-launch whatever the
+bot was doing, so it LAUNCHED both. Both refused to start on the $0.00 balance. The watchdog had
+seen the extreme leg start and nobody stop it, so it read the death as a crash: three restarts,
+then a "REMINDER — DOWN" every hour into the shared health room (the account names no health room
+of its own, so health falls back there by design). The Bots page said Stopped throughout, because
+it reads the process list, and the watchdog's "stopped on purpose" flag is a different fact.
+
+**The rule now.** `_finish_promote` asks `_bot_running_state` once, after the build, and restarts
+only on `True`. `False` pins the new code and leaves the bot stopped — the PROMOTED message says so
+and it runs the code when someone starts it. `None` (could not ask) is NOT running either: a
+running bot left on older code shows it on its badge, while a stopped bot launched on a guess may
+trade real money. The nothing-new "running older code" retry is gated the same way.
+
+**TESTED:** `tests/test_bot_promote.py` — stopped, could-not-ask, and nothing-new-on-a-stopped-bot.
+All three went RED with the gate removed; the could-not-ask one went RED on `is not False`.
+
+⚠ **This does not clear a bot the watchdog already believes crashed.** That needs a stop request
+(the bot's record says it was asked to stop), which the watchdog honours even for a dead process.

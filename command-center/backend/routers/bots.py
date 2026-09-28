@@ -5422,6 +5422,16 @@ def _finish_promote(
 
     ok = reported
     restarted = False
+    # 🔴 **A DEPLOY NEVER STARTS A BOT THAT WAS NOT RUNNING (2026-09-27).** "Restart" means put a
+    # RUNNING process onto the new code. Until this check it meant kill-then-launch whatever the bot
+    # was doing, so deploying to a stopped bot STARTED it: two bots on an unfunded live account were
+    # launched that way, crashed on its $0 balance, and the watchdog — which had seen them start and
+    # nobody stop them — paged the shared room every hour. A stopped bot keeps the new code pinned
+    # and runs it when somebody starts it. ⚠ *Could not ask* (None) is not *running* either: a
+    # running bot left on older code says so on its badge, while a stopped one launched on a guess
+    # may trade real money.
+    was_running = _bot_running_state(bot_key) if (ok and req.restart) else None
+    restart = bool(ok and req.restart and was_running is True)
     # 🔴 **NOTHING NEW TO LOAD: SAY SO AND LEAVE THE BOT ALONE (2026-09-23).** promote.py has
     # already refused to rewrite a snapshot identical to the one the bot is running and has brought
     # its record up to date; stopping and starting the process here would cancel whatever it has
@@ -5437,7 +5447,7 @@ def _finish_promote(
     # day — leaves the new code pinned and the OLD process running. The retry then found nothing to
     # build and, before this check, refused to restart, so no deploy could ever move the bot onto
     # code already pinned. The process's own report decides it; see `_running_older_code`.
-    stale = _running_older_code(bot_key) if (ok and nothing_new and req.restart) else False
+    stale = _running_older_code(bot_key) if (nothing_new and restart) else False
     if ok and nothing_new and not stale:
         _notify_telegram(
             alert(
@@ -5485,17 +5495,25 @@ def _finish_promote(
             if (was_v is not None or now_v is not None)
             else ""
         )
+        if restart:
+            next_step = "Restarting it now."
+        elif not req.restart:
+            next_step = "Restart it to pick the new version up."
+        elif was_running is False:
+            next_step = "It is stopped, so it was left stopped - it runs this code when started."
+        else:
+            next_step = "Could not tell whether it is running, so it was not restarted - restart it if it is."
         root = _notify_telegram(
             alert(
                 "📦",
                 "PROMOTED",
                 _bot_label(bot_key),
                 joined([moved, "deployed"]) or "The new code is deployed.",
-                "Restarting it now." if req.restart else "Restart it to pick the new version up.",
+                next_step,
             ),
             bot_key=bot_key,
         )
-        if req.restart:
+        if restart:
             _set_alert_thread(
                 bot_key,
                 root,
@@ -5503,7 +5521,7 @@ def _finish_promote(
                 chat=_health_room(bot_key),
                 from_version=_vlabel(was_v) if was_v is not None else "",
             )
-    if ok and req.restart:
+    if restart:
         # Kill it and let SYS_MONITOR bring it back — that path is exercised every time the
         # watchdog fires, so it is the one most likely to work. The suppress key is NOT
         # written: this stop is meant to be undone, immediately.

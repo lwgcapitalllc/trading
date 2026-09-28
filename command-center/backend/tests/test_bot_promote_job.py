@@ -95,6 +95,7 @@ def box(monkeypatch):
         real_enter(job, key)
 
     monkeypatch.setattr(bots, "_ssh", ssh)
+    monkeypatch.setattr(bots, "_bot_running_state", lambda k: True)
     monkeypatch.setattr(bots, "_kill_bot", kill)
     monkeypatch.setattr(bots, "_launch_bot", launch)
     monkeypatch.setattr(bots, "_job_enter", enter)
