@@ -39,3 +39,28 @@
 2026-09-28 03:10:01,048 [INFO] Priority 4 on this account: waiting 39s for the bots above
 2026-09-28 03:15:01,435 [INFO] Priority 4 on this account: waiting 59s for the bots above
 2026-09-28 03:20:01,062 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-28 03:25:21,423 [INFO] Priority 4 on this account: waiting 19s for the bots above
+2026-09-28 03:25:50,028 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-28 03:25:50,028 [INFO] Stop requested — shutting down.
+2026-09-28 03:25:50,028 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-28 03:25:50,032 [INFO] MT5 disconnected.
+2026-09-28 03:26:00,298 [INFO] FFT | FftStrategy v333 | hash 9f33d0fcdfe6 | commit 985fe6a1 | frozen | LIVE
+2026-09-28 03:26:00,838 [INFO] Connected | #700152905 | $14,862.76 | PUPrime-Demo
+2026-09-28 03:26:00,838 [INFO] MT5 connection lock released
+2026-09-28 03:26:01,096 [INFO] Sizing against account balance $14,862.76
+2026-09-28 03:26:01,111 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-28 03:26:01,111 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared signals channel
+2026-09-28 03:26:11,480 [INFO] Warmed 45000 bars (2026-08-12 08:45:00+00:00 → 2026-09-28 03:25:00+00:00) in 9.2s
+2026-09-28 03:26:11,480 [INFO] Equity re-anchored to the account after warm-up: 17,465.32 → 14,862.76
+2026-09-28 03:26:12,152 [INFO] Watching for closed M1 bars (poll 10s). Ctrl-C to stop.
+2026-09-28 03:30:03,083 [INFO] Priority 4 on this account: waiting 57s for the bots above
+2026-09-28 03:35:00,952 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-28 03:40:01,089 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-28 03:45:01,107 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-28 03:50:01,146 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-28 03:55:01,061 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-28 04:00:01,009 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-28 04:05:00,884 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-28 04:10:01,014 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-28 04:15:00,697 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-28 04:20:00,855 [INFO] Priority 4 on this account: waiting 39s for the bots above
