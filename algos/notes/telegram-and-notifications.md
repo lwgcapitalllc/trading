@@ -1184,3 +1184,15 @@ setup messages now name the bot plainly (`SOS Fade`); health messages keep `SOS 
   there the tag is the only thing telling them apart.
 - The rule is one set in `shared/bot_state.py` (`labelled(..., room)`); the runner and the bridge
   name the room they are writing to. Needs a promote to reach a running bot.
+
+## 🔴 A Stop pressed on a bot that is ALREADY down stands it down (2026-09-27)
+
+The watchdog read a stop's suppress key only at the running → down transition. A bot that crashed
+first — Richard's extreme leg, launched by a deploy into an unfunded live account and refusing on
+the $0 balance — had no process left to write a shutdown record and no transition left to read, so
+a Stop from the page or the trading-box tool was never seen and the live-bot REMINDER — DOWN went
+to the shared health room every hour. `check_bot` now also consumes the suppress key for a bot
+that is already down: it is marked stopped on purpose, no restart, no reminder.
+TESTED: `tests/test_watchdog.py::test_a_stop_pressed_on_a_bot_ALREADY_down_stands_it_down`, RED
+with the check removed. The deploy that launched it is fixed on the Command Center side — see
+`command-center/backend/notes/bots-deploys.md` → *A deploy never STARTS a bot that was not running*.

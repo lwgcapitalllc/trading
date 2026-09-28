@@ -428,6 +428,17 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
             bot_state["stop_suppressed"] = True
             return bot_state
 
+        # 🔴 **A Stop pressed on a bot that is ALREADY down is still a stop (2026-09-27).** The
+        # suppress key used to be read only at the running -> down transition above, so a bot that
+        # crashed first could never be stood down: no process to write a shutdown record, the
+        # transition long gone, and a live one paged hourly for ever. Richard's extreme leg, on an
+        # unfunded account, did exactly that until this line.
+        suppress_key = cfg.get("suppress_key", "")
+        if suppress_key and _is_stop_suppressed(suppress_key):
+            print(f"{bot_key}: stopped on request while already down - standing down")
+            bot_state["stop_suppressed"] = True
+            return bot_state
+
         tries = bot_state.get("restart_tries", 0)
         if tries < MAX_BOT_RESTARTS:
             print(f"{bot_key} is DOWN. Restart attempt {tries + 1}/{MAX_BOT_RESTARTS}...")

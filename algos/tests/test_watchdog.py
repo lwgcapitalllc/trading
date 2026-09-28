@@ -307,6 +307,23 @@ def test_a_deliberate_stop_is_not_fought(down, monkeypatch):
     assert steady["running"] is False
 
 
+def test_a_stop_pressed_on_a_bot_ALREADY_down_stands_it_down(down, monkeypatch):
+    """2026-09-27: a live bot crashed on an unfunded account, the watchdog gave up restarting it,
+    and a Stop pressed afterwards was never read — the key was only consumed at the running ->
+    down transition, long past — so it paged hourly for ever. MUTATION: delete the suppress-key
+    check in the `if not running:` block → red."""
+    monkeypatch.setattr(monitor, "_is_stop_suppressed", lambda key: True)
+    out = down.run(
+        carried={
+            "running": False,
+            "restart_tries": monitor.MAX_BOT_RESTARTS,
+            "max_retry_alerted": True,
+        }
+    )
+    assert out["stop_suppressed"] is True
+    assert down.attempts == [] and down.sent == []
+
+
 def test_a_failed_restart_counts_toward_the_ceiling(down):
     out = down.run(restart_succeeds=False)
     assert out["restart_tries"] == 1
