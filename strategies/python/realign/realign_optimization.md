@@ -1202,6 +1202,35 @@ decodes the mode from an export (an older export reads as "Ticks"). ⚠ The Pine
 has no export yet, so it is ungated; the four goldens are all "Ticks" and stay PARITY OK.
 Scripts: `sweep_be.sh`, `sweep_be2.sh`, `score_be.py` beside Run 18's.
 
+### Run 20 — a tighter trail once a winner is deep in profit — REJECTED, proven harmful (2026-09-27)
+
+**Question (Aaron, parked since before demo):** once a trade is well in profit, trail it tighter.
+**Tested shape:** once the trade's best excursion reaches N × its entry risk, the runner trail
+anchors on the 5m (chart) frame's confirmed swings instead of the 15m's. Scratch hook on
+`_step_core`, same after-the-step timing as the shipped overwrite; never built into the port.
+
+**Basis:** fit window 2018-09-14 → 2025-08-05, Run 19's shipped defaults (10% breakeven
+cushion), paired against that baseline.
+
+| switch at | sum R | PF | maxDD R | 1st half | 2nd half | ex-best | best trade | ret/DD | vs base | P |
+|---|---|---|---|---|---|---|---|---|---|---|
+| **never (shipped)** | **+82.74** | 3.16 | 5.70 | +34.04 | +48.70 | +46.12 | 36.62 | **58.4** | — | — |
+| always (5m trail) | +40.17 | 2.03 | 5.70 | +14.05 | +26.12 | +24.79 | 15.38 | 14.9 | −42.57 ± 26.65 | 0.04 |
+| 1R | +43.30 | 2.14 | 5.70 | +14.05 | +29.25 | +27.91 | 15.38 | 18.0 | −39.44 ± 26.59 | 0.06 |
+| 2R | +43.08 | 2.13 | 5.70 | +14.05 | +29.03 | +27.70 | 15.38 | 17.8 | −39.66 ± 26.49 | 0.06 |
+| 3R | +45.22 | 2.18 | 5.70 | +13.54 | +31.68 | +29.84 | 15.38 | 19.6 | −37.52 ± 23.99 | 0.04 |
+| 4R | +43.60 | 2.14 | 5.70 | +14.07 | +29.54 | +28.22 | 15.38 | 17.8 | −39.14 ± 22.75 | 0.02 |
+| 6R | +46.69 | 2.22 | 5.70 | +12.81 | +33.88 | +31.30 | 15.38 | 20.3 | −36.05 ± 17.53 | 0.00 |
+| 10R | +53.76 | 2.41 | 5.70 | +12.81 | +40.96 | +38.38 | 15.38 | 27.7 | −28.98 ± 16.69 | 0.04 |
+
+- **Reject — proven harmful at every threshold** (P ≤ 0.06). Even at 10R, touching only 3
+  trades, it gives back 29R: the +36.6R winner becomes +15.4R every time.
+- **Drawdown does not move (5.70R in every row)** — the tighter trail buys no smoothness.
+- The 15m trail IS the edge on this strategy (Run 13 said the same of the % ratchet). Not built,
+  so there is nothing to reuse for other bots.
+
+Scripts: `sweep_tr.sh` and the `tight_r=` hook in `run.py`, beside Run 18's.
+
 ---
 
 # Flat before the close — Aaron's no-weekend-holds switch (2026-09-19)
