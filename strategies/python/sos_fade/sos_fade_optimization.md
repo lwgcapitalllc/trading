@@ -5936,3 +5936,32 @@ The base position and the other adds are untouched.
   on to pay, and the +0.2R at 0.5R is one lot.
 - The 2026-09-21 chart trade is unchanged in every arm (+0.59R).
 - ✅ **Decision: adds keep the shared stop.**
+
+## Run 57 — 2026-09-27: the breakeven cushion as a share of risk, re-tested on today's setup — every arm loses
+
+**The question (Aaron):** Realign adopted a cushion of 10% of the trade's risk (its Run 19). Does
+the same help SOS Fade, whose Runs 17 and 26 both lost on the older 10%-risk setup and were judged
+without a paired difference?
+
+**Basis:** the live bot's own settings (`algos/markets/fx/instances/sos_fade_demo/config.json`:
+M15, XAUUSD.p, 5% risk, re-entry leg on, fill feed as the lab uses it), PU Prime ECN costs from lab
+run f3a846ce6018, 2018-09-14 to 2025-08-05. Full replay per arm. Paired difference by entry day and
+direction against the shipped 30-tick cushion, bootstrap P(better). Pass rule set beforehand: total
+R, return per drawdown and total without the best trade all at or above the baseline.
+
+| Arm | Trades | W / L / S | Total R | Max DD R | Without best | Ret/DD at 5% | Diff vs 30 ticks | P(better) |
+|---|---|---|---|---|---|---|---|---|
+| 30 ticks (shipped) | 226 | 78 / 98 / 50 | +123.5 | 11.94 | +96.9 | 176 | — | — |
+| 5% of risk | 226 | 77 / 99 / 50 | +121.4 | 12.44 | +94.8 | 155 | −2.1 ± 2.4 | 0.21 |
+| 10% of risk | 228 | 74 / 100 / 54 | +113.2 | 12.00 | +86.6 | 110 | −10.3 ± 6.9 | 0.04 |
+| 20% of risk | 229 | 107 / 100 / 22 | +115.5 | 11.51 | +88.9 | 128 | −8.0 ± 7.0 | 0.11 |
+| 10% of risk + cost | 228 | 73 / 97 / 58 | +114.8 | 11.82 | +88.2 | 121 | −8.7 ± 6.9 | 0.09 |
+| 20% of risk + cost | 229 | 107 / 97 / 25 | +117.0 | 11.45 | +90.4 | 138 | −6.5 ± 7.1 | 0.18 |
+
+- 🔴 **No arm passes; the held-back window was not opened.** 10% of risk is proven harmful
+  (P 0.04); the rest are not proven.
+- The wider cushions do make scratches pay (scratch R +0.8 → up to +4.1) but lose more than that on
+  trades that would have run: a cushion measured off SOS Fade's wide stops sits far enough away to
+  change which trades survive to the target.
+- ✅ **Decision: SOS Fade keeps the 30-tick cushion.** Three runs (17, 26, 57) now agree; don't
+  re-open without a new mechanism.
