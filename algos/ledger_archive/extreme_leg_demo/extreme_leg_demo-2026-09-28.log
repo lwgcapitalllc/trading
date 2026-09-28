@@ -33,3 +33,7 @@
 2026-09-28 07:54:02,756 [WARNING] Heartbeat write failed: [WinError 5] Access is denied: 'C:\\trading\\algos\\markets\\fx\\instances\\extreme_leg_demo\\bot_state.json.26896.tmp' -> 'C:\\trading\\algos\\markets\\fx\\instances\\extreme_leg_demo\\bot_state.json'
 2026-09-28 08:00:04,648 [INFO] Priority 2 on this account: waiting 15s for the bots above
 2026-09-28 08:15:05,553 [INFO] Priority 2 on this account: waiting 14s for the bots above
+2026-09-28 08:30:05,381 [INFO] Priority 2 on this account: waiting 15s for the bots above
+2026-09-28 08:45:04,193 [INFO] Priority 2 on this account: waiting 16s for the bots above
+2026-09-28 09:00:03,761 [INFO] Priority 2 on this account: waiting 16s for the bots above
+2026-09-28 09:15:04,344 [INFO] Priority 2 on this account: waiting 16s for the bots above
