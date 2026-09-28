@@ -1000,6 +1000,82 @@ it off stops being sweepable**, which is the one comparison anyone would want. F
 **Nothing in the inverse measurement above changes** — it was always run on shipped defaults, and
 the REAL arm still matches the control exactly.
 
+### Run 15 — skip a trade whose target is already behind the entry (`realign_min_rr = 0.0`) (2026-09-27)
+
+**Question:** the Pine refuses a setup whose target is not beyond the entry (`tgtLong > close`);
+this Python takes it unless `realign_min_rr` is set. Is the skip worth adopting?
+
+**Basis:** a FULL replay of lab run `f3a846ce6018`'s settings and costs (PU Prime `XAUUSD.p` 5m,
+2020-01-01 → 2026-09-25, the last cached day), charged, one position slot, split 2023-05-01. Both
+rows replayed end to end — never rows dropped from a finished list (the minimum-stop guard's
+cheap estimate once got its sign wrong that way).
+
+| `realign_min_rr` | trades | sum R | avg R | PF | maxDD R | 1st half | 2nd half | ex-best |
+|---|---|---|---|---|---|---|---|---|
+| **None (shipped — takes it)** | 115 | **+88.53** | +0.770 | 2.99 | 6.07 | +39.15 | +49.38 | +51.91 |
+| 0.0 (skips it, = the Pine guard) | 107 | +85.57 | +0.800 | 3.02 | 6.07 | +38.75 | +46.82 | +48.95 |
+
+- **It removes exactly the 8 target-behind trades and adds none** — the freed slot was taken by
+  nothing, so this is the trades' own worth: **−2.96R**.
+- **Worse in BOTH halves and without the best trade; drawdown unchanged.** Better per trade (+0.800
+  against +0.770) only because it drops eight trades that were net winners.
+- **Verdict: the default stays `None`.** The Pine/Python difference stays open for the parity gate
+  to settle; on this book the Python's behaviour is the better one.
+
+Script (run from the repo root with `command-center/backend/.venv/bin/python`):
+`/private/tmp/claude-501/-Users-alwg-trading/3619773e-ac87-4dae-9496-7625f1822f5f/scratchpad/skip/skip.py`
+— ⚠ a scratch path; it replays the stored run's params through `services.python_runner`'s own
+config, cost and lot-ceiling helpers, the same way the lab does.
+
+### Run 16 — the early 1m trigger (`realign_early_1m`) — FAILS, ships OFF (2026-09-27)
+
+**Idea (Aaron):** inside the window the 5m trigger waits in (after the 5m has gone counter and set
+the dip extreme), enter at the close of a 1m bar that completes a trade-way shift of structure
+then a trade-way break; any counter 1m break resets it. Stop = the dip extreme known then + the
+same 20 ticks. Every gate unchanged; the 5m trigger still fires if no 1m entry was made. Built in
+`early.py` / `dual.py`; canonical structure engine on 1m at swing length 10.
+🔴 **The code is NOT on `main`** — it is parked on branch `research/realign-early-1m` (commit
+`ed51728c`, 16 tests, 17 mutations watched red) so the result can be re-run. Never merge it.
+
+**Pre-declared, before any row was read:** basis = lab run `f3a846ce6018`'s params and costs (PU
+Prime `XAUUSD.p`, $10k, charged, one slot, full exit ladder), fitting window 2020-01-01 →
+2025-08-05, split 2023-05-01. PASS only if early-on beats early-off on total R AND both halves AND
+R without the best trade, with max drawdown no worse than +10%. Held-back 2025-08-06 → 2026-09-25
+touched only on a PASS.
+
+✅ **Control:** switch off, 2020-01-01 → 2026-09-25 — 115 trades, +88.53R, the same entries and the
+same sum R as the stored lab run; the two-stream replay with the switch off is identical trade for
+trade.
+
+| row (fitting window) | trades | sum R | avg R | PF | maxDD R | 1st half | 2nd half | ex-best |
+|---|---|---|---|---|---|---|---|---|
+| **early off, min_rr None (shipped)** | 97 | **+80.01** | +0.825 | 3.27 | **5.07** | +39.15 | +40.86 | +43.39 |
+| early ON, min_rr None | 116 | +78.15 | +0.674 | 2.51 | 6.30 | +36.12 | +42.03 | +41.53 |
+| early off, min_rr 0.0 | 90 | +76.88 | +0.854 | 3.30 | 5.07 | +38.75 | +38.13 | +40.26 |
+| early ON, min_rr 0.0 | 109 | +74.04 | +0.679 | 2.51 | 6.30 | +36.26 | +37.78 | +37.42 |
+
+- 🔴 **FAIL on both rows**: lower total, lower first half, lower ex-best, drawdown +24%. Only the
+  second half at min_rr None improves (+1.17R). **The held-back window was not touched.**
+- **The mechanism is the pre-study's, now through the real ladder:** 45 setups entered EARLIER on
+  the 1m (26 better, 19 worse) for **+14.83R** — the better price is real. But **19 NEW trades**
+  from setups the 5m never triggered: 1 winner, 16 full stops, **−16.69R**. No 5m trade was lost.
+- The row at min_rr 0.0 says the same (41 earlier +14.34R, 19 new −17.19R).
+- **The 2026-09-18 long** (5m entry 4377.69): early-on enters 16:11 at **4362.10**, stop 19.52
+  away (against 35.11). The target 4367.52 is then IN FRONT of it, halfway rung hit inside the
+  same 5m bar, stop lifted to breakeven and taken the next bar: **−0.02R** (the shipped 5m entry
+  booked −0.17R). Read off a full-window replay run for this one trade; no held-back total computed.
+
+⚠ **Lab finding only — there is no Pine counterpart.** ⚠ The early entry's 5m bar is managed on
+its post-entry minutes only; a 1m trigger inside the 5m bar that publishes a 15m close still sees
+the pre-close setup (the 5m path's own publication delay). Neither flatters the ON row.
+⚠ **The one variant this leaves open** is "early entries only on setups the 5m then confirms" —
+that is not tradeable as stated (it needs the future 5m trigger), so it is not a lead.
+
+Commands (scratch, reproducible): `scratchpad/early_build/launch.sh` runs every row through
+`early_replay.py` (worktree code, main checkout's lab DB and bar cache, read-only);
+`report.py fit | repro | trade` scores them. Full path:
+`/private/tmp/claude-501/-Users-alwg-trading/3619773e-ac87-4dae-9496-7625f1822f5f/scratchpad/early_build/`.
+
 ---
 
 # Flat before the close — Aaron's no-weekend-holds switch (2026-09-19)

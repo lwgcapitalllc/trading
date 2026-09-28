@@ -308,6 +308,10 @@ class RealignConfig(SosFadeConfig):
     refused setup FREES the slot and a different setup takes it, which is how the
     minimum-stop guard's cheap estimate got its SIGN wrong (+1.84R estimated, -1.84R
     replayed).
+
+    MEASURED 2026-09-27 (`realign_optimization.md` → Run 15, full replay 2020-2026 charged): 0.0
+    removes exactly the 8 target-behind trades and costs 2.96R (+88.53R → +85.57R), worse in both
+    halves and without the best trade, drawdown unchanged — so the default stays `None`.
     """
 
     realign_trend_minutes: Optional[int] = None
