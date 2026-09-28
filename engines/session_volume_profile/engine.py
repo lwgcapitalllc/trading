@@ -85,6 +85,46 @@ _SVP_BAR_CAP = 1491
 _Bar = Tuple[float, float, float, float, Optional[float]]
 
 
+def range_poc(bars, low: float, high: float, rows: int = _SVP_ROWS) -> Optional[float]:
+    """The POINT OF CONTROL of any price range: the mid-price of its highest-volume row.
+
+    `bars` is chronological `(open, high, low, close, volume)`; each bar's volume is spread evenly
+    over the rows its high/low span, and the first (lowest) row wins a tie. This is the SAME
+    arithmetic the Asia profile uses — `_build_profile` calls it — so a consumer that needs a
+    profile over another range (a structure leg, a day) reads it here rather than building a
+    second one. None for a range with no height.
+
+    ⚠ Walked NEWEST-FIRST with bull and bear volume in separate arrays, summed only at the end.
+    That is Pine's order, and float addition is not associative, so it is what keeps a near-tie
+    POC row on the parity gate's side (quirk #2 in this package's CLAUDE.md).
+    """
+    rng = high - low
+    if rng <= 0:
+        return None
+    row_up = [0.0] * rows
+    row_dn = [0.0] * rows
+    for o, h, l, c, v in reversed(bars):
+        vol = v if v is not None else 0.0
+        bull = c >= o
+        r_lo = max(0, min(math.floor((l - low) / rng * rows), rows - 1))
+        r_hi = max(0, min(math.ceil((h - low) / rng * rows) - 1, rows - 1))
+        span = max(1, r_hi - r_lo + 1)
+        per_row = vol / span
+        for r in range(r_lo, r_hi + 1):
+            if bull:
+                row_up[r] += per_row
+            else:
+                row_dn[r] += per_row
+    max_vol = 0.0
+    poc_row = 0
+    for r in range(rows):
+        rv = row_up[r] + row_dn[r]
+        if rv > max_vol:  # strict > -> first (lowest) row wins a tie
+            max_vol = rv
+            poc_row = r
+    return low + (poc_row + 0.5) * (rng / rows)
+
+
 class SvpEngine:
     """Streaming Session Volume Profile (Asia POC / MV line).
 
@@ -167,31 +207,7 @@ class SvpEngine:
         svp_slen = index - rng.start_index + 1  # Pine bar_index - svp_startBar + 1
         window = profile_bars[-min(svp_slen, _SVP_BAR_CAP) :]  # newest 1491 bars (Pine cap)
 
-        row_up = [0.0] * _SVP_ROWS
-        row_dn = [0.0] * _SVP_ROWS
-        # Newest-first, matching Pine's b = 0 (close bar) → older; keep bull/bear separate (quirk #2).
-        for o, h, l, c, v in reversed(window):
-            vol = v if v is not None else 0.0
-            bull = c >= o
-            r_lo = max(0, min(math.floor((l - svp_lo) / svp_range * _SVP_ROWS), _SVP_ROWS - 1))
-            r_hi = max(0, min(math.ceil((h - svp_lo) / svp_range * _SVP_ROWS) - 1, _SVP_ROWS - 1))
-            span = max(1, r_hi - r_lo + 1)
-            per_row = vol / span
-            for r in range(r_lo, r_hi + 1):
-                if bull:
-                    row_up[r] += per_row
-                else:
-                    row_dn[r] += per_row
-
-        max_vol = 0.0
-        poc_row = 0
-        for r in range(_SVP_ROWS):
-            rv = row_up[r] + row_dn[r]
-            if rv > max_vol:  # strict > → first (lowest) row wins a tie
-                max_vol = rv
-                poc_row = r
-
-        poc_px = svp_lo + (poc_row + 0.5) * (svp_range / _SVP_ROWS)
+        poc_px = range_poc(window, svp_lo, svp_hi)
         self._poc_px.append(poc_px)  # deque(maxlen) == Pine shift-then-push FIFO
         ev.formed = True
 

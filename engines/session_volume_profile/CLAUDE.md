@@ -20,6 +20,15 @@ TradingView-only toolchain); the CSV + compare tool are the engine's half.
 
 ---
 
+## `range_poc` — the profile over ANY range (2026-09-27)
+
+The POC arithmetic is a public function, `range_poc(bars, low, high, rows=50)`, and the Asia profile
+calls it. It exists so a consumer that needs a profile over another range (a structure leg, a day)
+reads it here instead of building a second one. Lifting it out was a pure move: the golden export
+stayed PARITY OK (20,096 bars, warmup 251) and the 12 tests stayed green; flipping its tie rule
+turned 7 tests red. **Consumer:** `backtest/tools/generic_poc_study.py` (a study; no strategy reads
+it). ⚠ Volume on FX and CFDs is MetaTrader TICK volume.
+
 ## What this engine is (ported semantics)
 
 While the **Asia session** (0900-1800 Asia/Tokyo — the same window as the sessions engine's Asia) is open,
