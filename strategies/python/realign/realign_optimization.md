@@ -1076,6 +1076,44 @@ Commands (scratch, reproducible): `scratchpad/early_build/launch.sh` runs every 
 `report.py fit | repro | trade` scores them. Full path:
 `/private/tmp/claude-501/-Users-alwg-trading/3619773e-ac87-4dae-9496-7625f1822f5f/scratchpad/early_build/`.
 
+### Run 17 — the 1m entry on ONLY the 8 target-behind trades, and cutting them — both rejected (2026-09-27)
+
+**Question (Aaron):** Run 16 put the 1m entry on every setup. Put it on only the 8 setups Run 15
+found with the target already behind the 5m entry — does an earlier entry save them? And judged
+on drawdown and per-trade return rather than profit, should they be cut altogether?
+
+**Basis:** full window 2020-01-01 → 2026-09-25, Run 16's saved rows (`full_off_dual`,
+`full_on_none`) plus one new row at min_rr 0.0 to name the 8. The 8 are swapped for their early-ON
+versions; no swapped trade overlaps another, so the one slot is not disturbed. ⚠ **This is an
+UPPER BOUND, not a tradeable rule** — a setup is known to be target-behind only when the 5m fires,
+and every 1m entry that changed came before that.
+
+| setup (armed) | dir | 5m R | 1m version |
+|---|---|---|---|
+| 2020-06-02 | short | −0.81 | 1m −1.19 |
+| 2022-04-19 | short | +1.63 | no 1m signal, same |
+| 2022-10-04 | long | −0.42 | 1m −0.41 |
+| 2024-11-19 | long | +3.17 | 1m +5.00 |
+| 2025-07-10 | long | +0.24 | no 1m signal, same |
+| 2025-07-15 | long | −0.03 | 1m −1.01 (entered 11h early, full stop) |
+| 2025-07-24 | short | −0.65 | no 1m signal, same |
+| 2026-09-16 (held-back) | long | −0.17 | 1m −0.02 |
+
+| row | trades | sum R | avg R | PF | maxDD R | 1st half | 2nd half | ex-best | @5% risk | maxDD % | return / DD |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| **shipped** | 115 | **+88.53** | +0.770 | 2.99 | 6.07 | +39.15 | +49.38 | +51.91 | x18.7 | 26.7% | **66.0** |
+| 1m on the 8 only | 115 | +89.17 | +0.775 | 2.95 | 6.07 | +38.78 | +50.39 | +52.55 | — | — | — |
+| cut the 8 | 107 | +85.57 | +0.800 | 3.02 | 6.07 | +38.75 | +46.82 | +48.95 | x16.4 | 26.7% | 57.4 |
+
+- **1m on the 8: +0.64R, all of it one trade** (2024-11-19, +1.83R); without it −1.19R. Lower
+  first half and PF, and it is the hindsight ceiling. Rejected.
+- **Cutting the 8: drawdown identical** (6.07R, 26.7% at 5% risk, longest losing run 7 either
+  way). Avg R rises +0.030 only because the 8 averaged +0.37R, below the book's +0.77R but still
+  positive; the total falls 2.96R and compounded return 18.7x → 16.4x for the same pain. Avg
+  R / stdev unchanged (0.183 vs 0.184). Rejected — **the default stays `None`**.
+
+Scripts: `oracle8.py` and `cut.py` beside Run 16's in the same scratch folder.
+
 ---
 
 # Flat before the close — Aaron's no-weekend-holds switch (2026-09-19)
