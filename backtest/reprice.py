@@ -26,6 +26,7 @@ to the cent. The spread case reproduces 130.27R / $16,266,933.57 exactly.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Iterable, Sequence
@@ -209,6 +210,48 @@ def _adds(row: dict) -> list[dict]:
     return [a for a in (row.get("adds") or []) if float(a.get("qty") or 0.0) > 0]
 
 
+def _base_legs(row: dict) -> list[dict]:
+    """The exit rungs of the BASE position — `legs` with any add-bank rung taken out.
+
+    🔴 **`legs` is not base-only once adds bank at their own level** (the "H4 H/L" add target,
+    the default since 2026-09-26). `sos_fade.execution._bank_adds` records the bank as a rung of
+    its own — the chart draws it — so the list sums to `size` PLUS the banked adds, and reading it
+    as base rungs charged that exit twice and took the adds off the swap-bearing size twice.
+    MEASURED on the two-year reference window: commission 0.031R over, swap 0.207R under.
+
+    A rung is an add bank when its time and reason match adds that exited there and its quantity
+    is exactly their total — a base rung never carries add quantity (`_exit_portion` records the
+    base `qty` only), so the match cannot swallow one. Refuses if what is left still does not sum
+    to `size`: a guess here prices a position the run never held.
+    """
+    legs = list(row.get("legs") or [])
+    size = float(row.get("size") or 0.0)
+    if not legs or abs(sum(float(lg.get("qty") or 0.0) for lg in legs) - size) <= 1e-6 * max(
+        size, 1.0
+    ):
+        return legs
+    banked: dict[tuple[int, str], float] = {}
+    for add in _adds(row):
+        if add.get("exit_ms"):
+            key = (int(add["exit_ms"]), str(add.get("exit_reason") or ""))
+            banked[key] = banked.get(key, 0.0) + float(add.get("qty") or 0.0)
+    base = [
+        lg
+        for lg in legs
+        if not math.isclose(
+            float(lg.get("qty") or 0.0),
+            banked.get((int(lg.get("ms") or 0), str(lg.get("reason") or "")), -1.0),
+            rel_tol=1e-9,
+        )
+    ]
+    if abs(sum(float(lg.get("qty") or 0.0) for lg in base) - size) > 1e-6 * max(size, 1.0):
+        raise RepriceError(
+            f"trade #{row.get('index')}'s exit rungs do not add up to its size once its add "
+            f"banks are taken out, so which part of it paid which exit cannot be told"
+        )
+    return base
+
+
 def _qty_open_at(row: dict, when_ms: int) -> float:
     """How much of the position was still open at `when_ms`.
 
@@ -238,7 +281,7 @@ def _qty_open_at(row: dict, when_ms: int) -> float:
     already gets from the `<=` on its exit rungs below.
     """
     qty = float(row.get("size") or 0.0)
-    for leg in row.get("legs") or []:
+    for leg in _base_legs(row):
         leg_ms = int(leg.get("ms") or 0)
         if leg_ms and leg_ms <= when_ms:
             qty -= float(leg.get("qty") or 0.0)
@@ -284,7 +327,7 @@ def _cost_r(
     if "commission" in layers:
         # Per LOT per SIDE. `profile.commission` already converts size to lots, so this cannot
         # drift from the replay the way a local `qty / contract_size` would.
-        legs = row.get("legs") or []
+        legs = _base_legs(row)
         exit_qty = [float(lg.get("qty") or 0.0) for lg in legs] or [qty]
         cost += profile.commission(qty) + sum(profile.commission(q) for q in exit_qty)
         # ⚠ Charged per ADD rather than on their total, because commission is per LOT and the

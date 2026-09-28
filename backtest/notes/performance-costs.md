@@ -216,3 +216,23 @@ rounds lots, so summing first and charging once rounds a different number.
 ⚠ Both halves proven by MUTATION: dropping the adds from the spread charge reddens the spread
 case, dropping them from the commission charge reddens the commission case, and neither touches
 the other.
+
+## 🔴 An add that banks at its own level was charged as a BASE exit too (2026-09-27)
+
+Since the add target defaulted to "H4 H/L" (2026-09-26), `sos_fade.execution._bank_adds` writes
+the bank into `legs` as a rung of its own — the chart draws it — so `legs` summed to `size` PLUS
+the banked adds. `reprice.py` read every rung as the base position's, which charged that exit's
+commission twice and subtracted the adds from the swap-bearing size twice. It went unseen because
+`test_reprice.py` had been failing on a different error since the same default change (its 15m-only
+replay could not run the "1m break" add), so the check that would have caught it never ran.
+
+MEASURED on the two-year reference window, add target at its default: commission 0.031R over,
+swap 0.207R under the real charged replay. On stored run `7760823a639e` (246 trades, 11 with an
+add bank): the page's re-priced swap was **7.06R, now 7.60R**, and commission 0.84R, now 0.83R.
+
+✅ `reprice._base_legs` drops a rung whose time, reason and quantity match the adds that exited
+there, and REFUSES a trade whose remaining rungs still do not sum to `size`. ⚠ **No stored run
+moves** — every KPI came from a real charged replay; only the page's cost toggle re-prices.
+⚠ `test_reprice.py` now pins the add to "Trail" (15m) and leaves the add target at "H4 H/L" on
+purpose; pinning the target to "Ride" makes the case green without testing it. Proven by mutation:
+returning `legs` unfiltered reddens the commission and swap cases and nothing else.

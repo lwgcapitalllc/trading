@@ -350,3 +350,4 @@ listed below under the notes file that now holds it.
 - On the 1-minute feed the loop is walked 2.4M times; timestamps are boxed in one pass (2026-09-27)
 - `replay/recorded.py` stores a per-bar stream; only a FROZEN output may be recorded (2026-09-27)
 - 🔴 The Costs pill UNDER-CHARGED every trade that scaled in (2026-09-07)
+- 🔴 An add banked at its own level was charged as a base exit too — page swap 7% low on the default add (2026-09-27)
