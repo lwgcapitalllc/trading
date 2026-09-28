@@ -311,7 +311,7 @@ listed below under the notes file that now holds it.
 - Read the range, never the middle number — a range crossing zero means the reading told us nothing
 - MEASURED 2026-09-17: the three shipped labels separate neither market behaviour nor money, and 78% of bars are called trending
 - `tools/trade_export.py` — replay ANY registered strategy for its entry times and R, when the rich report's shape does not fit (2026-09-17)
-- `replay/registry.py` — which packages declare the contract, in ONE place; being in it is not a promise every tool can drive it (2026-09-17)
+- `replay/registry.py` — which packages declare the contract, in ONE place; being in it is not a promise every tool can drive it (2026-09-17). `sos_fade_generic` added 2026-09-27 — listed by `trade_export.py` (never run there yet), not by `run_report.py`
 - `regime_study/swap_cut.py` — MEASURED 2026-09-19: the candidate swapped IN as the extreme leg's market cut is a WORSE gate (110 trades / +46.8R / 9.61R worst run vs the shipped 146 / +87.3R / 6.00R), though not significantly worse than random thinning. No strategy file touched (2026-09-19)
 - `regime_study/candidate.py` — the candidate reading: two scales, bands ranked against the instrument's own past, nothing fitted. NOT an engine, no strategy imports it (2026-09-17)
 

@@ -1,0 +1,118 @@
+{
+  "_comment": "UI metadata for sos_fade_generic, read by the command-center scanner. Labels and descriptions are the SOS Fade Pine input titles and tooltips VERBATIM wherever the setting is SOS Fade's own (docs/STRATEGY_WORKFLOW.md). UI ONLY: it never touches a trade decision. Click Scan Strategies after editing.",
+  "tldr": [
+    {
+      "text": "SOS Fade with everything but the core switched off, built to be run on other instruments."
+    },
+    {
+      "text": "A stop run past a recent high or low, or an RSI divergence, arms a side; then structure must shift the other way.",
+      "show_if": { "exec_arm_sweep": true, "exec_arm_div": true }
+    },
+    {
+      "text": "It rests a limit on the pullback into the same fib zone as SOS Fade, and only where there is a price gap.",
+      "show_if": { "exec_req_fvg": true }
+    },
+    {
+      "text": "It rests a limit on the pullback into the same fib zone as SOS Fade: on a gap when there is one, else at the 0.618.",
+      "show_if": { "exec_req_fvg": false }
+    },
+    {
+      "text": "The stop sits at the start of the move (the 1.0 fib). The whole trade closes at one target, at {exec_risk_pct}% risk, one trade at a time."
+    }
+  ],
+  "params": [
+    {
+      "name": "exec_arm_sweep",
+      "group": "What arms a setup",
+      "core": true,
+      "widget": "toggle",
+      "label": "Arm on liquidity sweep",
+      "short": "Arm on sweep",
+      "options": { "off": "Ignore", "on": "Arms setups" },
+      "desc": "Lets a run on the stops past a recent high or low start a setup."
+    },
+    {
+      "name": "exec_arm_div",
+      "group": "What arms a setup",
+      "core": true,
+      "widget": "toggle",
+      "label": "Arm on RSI divergence",
+      "short": "Arm on divergence",
+      "options": { "off": "Ignore", "on": "Arms setups" },
+      "desc": "Lets a momentum divergence start a setup. If this and the sweep trigger are both off, nothing ever trades."
+    },
+    {
+      "name": "aplus_window",
+      "group": "What arms a setup",
+      "label": "Max time: sweep → SOS (minutes)",
+      "short": "Sweep → SOS window",
+      "unit": "minutes",
+      "desc": "How long a stop run stays valid while it waits for structure to confirm. 4320 = 3 days."
+    },
+    {
+      "name": "exec_longs",
+      "group": "What arms a setup",
+      "widget": "toggle",
+      "label": "Trade longs",
+      "short": "Longs",
+      "options": { "off": "No longs", "on": "Longs on" },
+      "desc": "Lets long setups trade. Off = shorts only."
+    },
+    {
+      "name": "exec_shorts",
+      "group": "What arms a setup",
+      "widget": "toggle",
+      "label": "Trade shorts",
+      "short": "Shorts",
+      "options": { "off": "No shorts", "on": "Shorts on" },
+      "desc": "Lets short setups trade. Off = longs only."
+    },
+    {
+      "name": "exec_req_fvg",
+      "group": "Entry zone",
+      "core": true,
+      "widget": "toggle",
+      "label": "Require an FVG in the zone",
+      "short": "Require an FVG",
+      "options": { "off": "0.618 limit", "on": "Gap required" },
+      "desc": "On = only trade when there is a gap in the pullback zone. Off = trade the pullback on its own."
+    },
+    {
+      "name": "gen_target",
+      "group": "Risk & stop",
+      "core": true,
+      "label": "Take profit at",
+      "short": "Target",
+      "desc": "Where the whole position closes. Swing high/low = back to the far end of the move (the 0.0 fib). 1R, 2R, 3R = that many times what the trade is risking. The stop is always the 1.0 fib.",
+      "choices": ["Swing high/low", "1R", "2R", "3R"]
+    },
+    {
+      "name": "exec_risk_pct",
+      "role": "risk_pct",
+      "group": "Risk & stop",
+      "core": true,
+      "label": "Risk % per trade",
+      "short": "Risk per trade",
+      "unit": "% of balance",
+      "step": 0.5,
+      "desc": "How much of the account each trade risks. The stop distance sets the position size, so a tighter stop buys a bigger position at the same risk."
+    },
+    {
+      "name": "exec_min_stop_mode",
+      "group": "Risk & stop",
+      "label": "Minimum stop distance",
+      "short": "Min stop mode",
+      "desc": "Skip a setup whose stop sits closer to the entry than the floor below.",
+      "choices": ["Off", "% of price", "Fixed $", "x ATR(14)"]
+    },
+    {
+      "name": "exec_min_stop_val",
+      "group": "Risk & stop",
+      "label": "Minimum stop floor (unit = mode above)",
+      "short": "Min stop floor",
+      "desc": "The floor itself, in whatever unit the setting above uses. Higher refuses more setups.",
+      "step": 0.01,
+      "show_if": { "exec_min_stop_mode": ["% of price", "Fixed $", "x ATR(14)"] }
+    }
+  ]
+}
