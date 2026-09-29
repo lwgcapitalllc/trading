@@ -78,6 +78,19 @@
       "desc": "On = only trade when there is a gap in the pullback zone. Off = trade the pullback on its own."
     },
     {
+      "name": "exec_shift_entry",
+      "group": "Entry zone",
+      "core": true,
+      "widget": "toggle",
+      "label": "Enter on a 1m SOS then BOS",
+      "short": "1m SOS→BOS entry",
+      "options": {
+        "off": "Limit in the zone",
+        "on": "1m SOS then BOS"
+      },
+      "desc": "On = no order rests in the zone. Once price tags the 0.5, the bot waits for a 1-minute SOS and then a BOS its way and buys or sells at market on the next minute. Cancelled if price touches the 1.0 or the 0.0 first. The gap setting is then ignored. Loads 1-minute bars, so runs are slower. Lab only — TradingView does not have it."
+    },
+    {
       "name": "gen_target",
       "group": "Risk & stop",
       "core": true,

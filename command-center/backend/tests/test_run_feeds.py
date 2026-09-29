@@ -258,6 +258,31 @@ def test_the_reentry_fill_clock_matches_the_strategy_that_owns_it():
     assert spec.param in SosFadeConfig.__dataclass_fields__
 
 
+def test_every_fill_clock_trigger_loads_the_second_feed_and_the_list_matches_its_owner():
+    """🔴 Until 2026-09-28 only the re-entry loaded the fast feed here, so a lab run with the
+    level memory (or, since then, the 1-minute SOS-then-BOS entry) on and the re-entry off
+    replayed no fast bars and booked none of its trades. The list is a COPY of the strategy's
+    `FAST_CLOCK_FLAGS`, for the reason `default` is one; this pins the two together.
+
+    ✅ Watched RED against the module before the change: `uses_secondary` answered False for
+    both flags, and `FAST_CLOCK_FLAGS` did not exist.
+    """
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3]
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    from strategies.python.sos_fade.dual_clock import FAST_CLOCK_FLAGS
+
+    assert run_feeds.FAST_CLOCK_FLAGS == FAST_CLOCK_FLAGS
+    for flag in FAST_CLOCK_FLAGS:
+        assert run_feeds.uses_secondary({flag: True}) is True
+        assert run_feeds.required_timeframes("Minute", 15, {flag: True}) == [1, 15]
+        assert flag in run_feeds.EXTRA_FEEDS
+    assert run_feeds.uses_secondary({f: False for f in FAST_CLOCK_FLAGS}) is False
+
+
 # ── the run's OWN fill clock, not the registry's default (2026-09-01) ─────────
 #
 # 🔴 The strategy declares "Re-entry fill clock (minutes)" as a 1-15 number widget whose own

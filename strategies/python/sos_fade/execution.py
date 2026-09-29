@@ -52,7 +52,14 @@ from engines.fibonacci.geometry import fib_level
 from .config import _TP_LEVELS
 from .entry_window import in_window as in_entry_window
 from .level_memory import SRC as LVL_SRC
+from .shift_entry import SRC as SHIFT_SRC
+from .shift_entry import ShiftCtx
 from .signals import POI_SOURCE_OB_NO_FVG, poi_rank_is_fvg, pois_for, sos_aware_veto
+
+#: Triggers that BORROW the re-entry's order path and are not re-entries. None of the
+#: re-entry's own overrides (`exec_sec_*`) may reach them, and their stop-out never kills a
+#: re-entry leg: they describe a different trade.
+_OWN_TRADE_SRCS = (LVL_SRC, SHIFT_SRC)
 
 
 def _first(pred, values):
@@ -756,6 +763,9 @@ class Execution:
         # and while flat.
         self._entry_src: Optional[str] = None
         self._entry_after: Optional[str] = None
+        # The 1-minute SOS-then-BOS entry (`exec_shift_entry`): the live setup per side as of
+        # the last 15m close, (long, short). Read by the fill clock only.
+        self.shift_ctx: Tuple[Optional[ShiftCtx], Optional[ShiftCtx]] = (None, None)
         # A force-close DECIDED at this bar's close and FILLED at the next bar's open, held as
         # (reason, leg tag) or None. Pine's `strategy.close()` is a MARKET order, and a market
         # order in this fill model is subject to the same one-bar delay every other order is —
@@ -1433,6 +1443,8 @@ class Execution:
         to return. MEASURED 2026-08-23: 29 of 90 re-entry orders waited over 30 minutes for that
         return and 8 waited over 12 hours, and Aaron's 2025-08-19 reclaim is one of the 8. A market
         entry buys a worse price and a wider stop in exchange for never missing the move."""
+        if src == SHIFT_SRC:
+            return True    # the shift IS the signal; its edge is the confirming bar's close
         if (src == LVL_SRC
                 and getattr(self._cfg, "exec_lvl_confluence", "None") == "Shift confirms"):
             # The level memory's confirmed entry is a MARKET order by design: the shift is the
@@ -1466,6 +1478,10 @@ class Execution:
         # stop floor below still reads the raw stop distance, which is the right question (a leg
         # too short to trade is too short whatever size you put on it).
         risk_pct = cfg.exec_risk_pct * getattr(cfg, "exec_sec_risk_pct", 100.0) / 100.0
+        if SHIFT_SRC in (getattr(arm, "l_src", None), getattr(arm, "s_src", None)):
+            # The 1-minute SOS-then-BOS entry is the FIRST trade on its setup, so it risks what a
+            # first trade risks — the re-entry's fraction describes a different trade.
+            risk_pct = cfg.exec_risk_pct
         if arm.l_armed and arm.l_edge is not None and arm.l_sl is not None:
             dist = arm.l_edge - arm.l_sl
             if self._stop_clears_floor(dist, arm.l_edge):
@@ -1584,6 +1600,7 @@ class Execution:
         # accumulating state while a position from the other side is open, and that path never
         # runs then.
         self._record_misses(sig, seq, dec, long_edge, short_edge)
+        self.shift_ctx = self._shift_context(sig, seq)
 
         # ── Phase B: at close, (re)place orders for the next bar ──
         if self._pos_dir != 0 and self._entry_kind != "secondary":
@@ -1664,7 +1681,12 @@ class Execution:
             elif self._time_stop_due(sig):
                 self._pending_close = ("time-stop", "TIME")
         elif self._pos_dir == 0:
-            self._place_entries(sig, seq, dec, dec.long_edge, dec.short_edge)
+            if getattr(self._cfg, "exec_shift_entry", False):
+                # The 1-minute SOS-then-BOS entry REPLACES the resting limit: with no edge nothing
+                # rests, and any order left from before is pulled the same way a dead setup's is.
+                self._place_entries(sig, seq, dec, None, None)
+            else:
+                self._place_entries(sig, seq, dec, dec.long_edge, dec.short_edge)
         # else: a secondary is open — managed on the fill-clock stream (step_secondary), not here.
 
         return dec
@@ -1778,6 +1800,34 @@ class Execution:
         return (lo <= sig.ny_hour < hi) if lo < hi else (sig.ny_hour >= lo or sig.ny_hour < hi)
 
     # ── missed-setup watch (Pine f_w23Arm / f_w23, 3116-3194 + 4022-4023) ────────
+    def _shift_context(self, sig, seq):
+        """The live setup on each side for the 1-minute SOS-then-BOS entry (`exec_shift_entry`).
+
+        A DECISION input, so it is read off the sequence here rather than off the miss watch,
+        which is reporting-only. A side qualifies while its setup is armed by an ENABLED source,
+        SOS'd, has tagged the 0.5, and the 15m fib still points its way. Whether it has already
+        been traded, or its window has closed, is the fill clock's to know (`ShiftEntry`).
+        """
+        cfg = self._cfg
+        if not getattr(cfg, "exec_shift_entry", False):
+            return (None, None)
+        if sig.fibo_p10 is None or sig.fibo_p7 is None:
+            return (None, None)
+        out = []
+        for d, on, stage, sos_bar, swp, div, tagged in (
+            (1, cfg.exec_longs, seq.l_stage, seq.l_sos_bar, seq.sos_l_swp, seq.sos_l_div,
+             seq.l_half or seq.l_618),
+            (-1, cfg.exec_shorts, seq.s_stage, seq.s_sos_bar, seq.sos_s_swp, seq.sos_s_div,
+             seq.s_half or seq.s_618),
+        ):
+            sos_ms = self._bar_ms.get(sos_bar) if sos_bar is not None else None
+            ok = (on and stage >= 2 and tagged and sos_ms is not None and sig.fibo_dir == d
+                  and ((cfg.exec_arm_sweep and swp) or (cfg.exec_arm_div and div)))
+            out.append(ShiftCtx(dir=d, sos_ms=int(sos_ms), from_ms=int(sig.time_ms),
+                                stop=float(sig.fibo_p10), extreme=float(sig.fibo_p7))
+                       if ok else None)
+        return (out[0], out[1])
+
     def _record_misses(self, sig, seq, dec, long_edge, short_edge) -> None:
         """Track each side's live setup and book a MISS when it dies without trading.
 
@@ -3119,7 +3169,7 @@ class Execution:
         # `exec_sec_*`, and a level-memory trade only carries `kind="secondary"` because it
         # borrows that order path. Letting them reach it would re-price a rung Run 42 graded,
         # off settings that describe a different trade.
-        if kind == "secondary" and pend.src != LVL_SRC:
+        if kind == "secondary" and pend.src not in _OWN_TRADE_SRCS:
             # `exec_sec_tp2_x` — REPLACE the second rung with a multiple of the FIRST one's
             # distance, so a re-entry's two targets are in order by construction. Off by default.
             # ⚠ Unlike the floor below, this overrides the fib in BOTH directions: it pulls IN a
@@ -3660,7 +3710,7 @@ class Execution:
         # guard its stop-out would retire a re-entry leg it has nothing to do with — the two
         # features are only ever on together by choice, and that is when it would bite.
         if (self._entry_kind == "secondary" and self._stage == 0
-                and self._entry_src != LVL_SRC):
+                and self._entry_src not in _OWN_TRADE_SRCS):
             self._sec_stop_dir = self._pos_dir
         # The PRIMARY's own record on this leg, for the looser `exec_sec_require` gates. `_stage`
         # is still the trade's final stage here (it is reset a few lines below), so stage 0 means
@@ -4501,6 +4551,10 @@ class Execution:
                 # 15m fib behind the trade to fall back to. A target in R is the only rung it
                 # has, which is why its config refuses anything but a positive multiple.
                 tp_r = getattr(self._cfg, "exec_lvl_tp_r", -1.0)
+            elif src == SHIFT_SRC:
+                # The 1-minute SOS-then-BOS entry reads the FIRST trade's target: in R off the real
+                # fill when one is set, otherwise the frozen 15m 0.0 the arm priced.
+                tp_r = getattr(self._cfg, "exec_tp1_r", -1.0)
             else:
                 tp_r = getattr(self._cfg, "exec_sec_tp_r", -1.0)
             if tp_r > 0 and dist > 0:
@@ -4528,6 +4582,8 @@ class Execution:
                 # 100 by default — the whole position off at its R target with no runner
                 # behind it, which is the ladder Run 42 graded.
                 own = getattr(self._cfg, "exec_lvl_tp1_pct", 100.0)
+            elif src == SHIFT_SRC:
+                own = self._cfg.exec_tp1_pct    # the first trade's own bank
             else:
                 own = getattr(self._cfg, "exec_sec_tp1_pct", -1.0)
             if own != -1.0:
@@ -4765,6 +4821,8 @@ class Execution:
         "gap": ("exec_gap_be_r", "exec_gap_be_keep_r"),
         "Structure shift": ("exec_shift_be_r", "exec_shift_be_keep_r"),
         LVL_SRC: ("exec_lvl_be_r", "exec_lvl_be_keep_r"),
+        # The first trade on its setup, so the PRIMARY's rule — not a re-entry's.
+        SHIFT_SRC: ("exec_be_arm_r", "exec_be_keep_r"),
     }
 
     def _protect_rule(self) -> Tuple[float, float]:

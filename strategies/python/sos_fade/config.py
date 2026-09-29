@@ -1987,6 +1987,19 @@ class SosFadeConfig:
     #   the fill clock: 24 is two hours on the shipped 5-minute feed. ⚠ Read only when
     #   exec_lvl_confluence is "Shift confirms".
 
+    # ── The 1-minute SOS-then-BOS entry ────────────────────────────────────────────────
+    exec_shift_entry: bool = False     # "Enter on a 1m SOS then BOS"
+    #   REPLACES the resting limit. With it on no first-trade limit is placed at all: a setup
+    #   that has SOS'd and tagged the 0.5 waits for the 1-minute structure to print an SOS and
+    #   then a BOS in its direction, and enters at market on the next 1-minute open. Stop at the
+    #   15m 1.0; the whole position comes off at the first target (`exec_tp1_level`/`exec_tp1_r`,
+    #   the 15m 0.0 when no R is set). The zone's gap is not read. Rules: `shift_entry.py`.
+    #   Screened 2026-09-28 (`backtest/tools/generic_ltf_trigger.py`): +0.26R a trade net on
+    #   GBPJPY (184, z +3.2) and +0.19R on GBPUSD (176, z +2.4) — a screen, no position slot.
+    #   ⚠ Needs the fill clock at 1 minute (`exec_sec_fill_tf_min = 1`), refused otherwise.
+    #   ⚠ Sized at the full `exec_risk_pct` — it is the first trade, not a re-entry.
+    #   ⚠ No Pine counterpart; the parity gate is blind to it.
+
     def __post_init__(self) -> None:
         """Refuse a Custom SL ratio outside (0, 1.0], and a time stop of 0 hours — LOUDLY,
         at construction.
@@ -2466,6 +2479,12 @@ class SosFadeConfig:
                 raise ValueError(
                     f"exec_be_cost_conflict must be one of {conflicts}, got "
                     f"{self.exec_be_cost_conflict!r}.")
+
+        if self.exec_shift_entry and int(self.exec_sec_fill_tf_min) != 1:
+            raise ValueError(
+                f"exec_shift_entry reads 1-minute structure and needs the fill clock at 1 minute; "
+                f"exec_sec_fill_tf_min is {self.exec_sec_fill_tf_min!r}. A shift read off slower "
+                f"bars is a different signal from the one that was measured.")
 
         # ── Level memory ────────────────────────────────────────────────────────────────
         # Every one of these REFUSES rather than clamps, for the reason the rest of this method

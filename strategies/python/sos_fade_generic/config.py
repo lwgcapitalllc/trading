@@ -51,6 +51,10 @@ class SosFadeGenericConfig:
     #   On = the pullback must reach a gap in the zone and the limit rests on the fib nearest it.
     #   Off = a gap is still used when there is one; with none the limit rests at the 0.618.
     exec_req_fvg: bool = True          # "Require an FVG in the zone"
+    #   On = no limit rests in the zone at all: once the pullback tags the 0.5 the bot waits for
+    #   a 1-minute SOS and then a BOS its way and enters at market. The gap setting above is
+    #   then not read. Needs the 1-minute feed, which the lab loads when this is on.
+    exec_shift_entry: bool = False     # "Enter on a 1m SOS then BOS"
     # ── exit ─────────────────────────────────────────────────────────────────────
     #   The stop is ALWAYS the 1.0 fib (the start of the move) and is not a setting.
     gen_target: str = "Swing high/low"  # "Take profit at" ∈ TARGETS
@@ -94,6 +98,8 @@ class SosFadeGenericConfig:
             exec_arm_div=self.exec_arm_div,
             aplus_window=self.aplus_window,
             exec_req_fvg=self.exec_req_fvg,
+            exec_shift_entry=self.exec_shift_entry,
+            exec_sec_fill_tf_min=1,     # the 1-minute feed the shift entry reads
             exec_min_stop_mode=self.exec_min_stop_mode,
             exec_min_stop_val=self.exec_min_stop_val,
             mintick=self.mintick,

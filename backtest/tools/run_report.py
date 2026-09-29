@@ -220,16 +220,20 @@ def _choose_replay(cfg, no_secondary: bool):
     # trades — the config said the feature was on, the replay could not reach it, and the report
     # said nothing. That is the exact defect the docstring above exists to prevent, arriving
     # through a second door. Anything that needs the fast feed must be asked about HERE.
-    fast = sec or bool(getattr(cfg, "exec_lvl_memory", False))
+    # Since 2026-09-28 the list lives in ONE place, `strategies.python.sos_fade.dual_clock.FAST_CLOCK_FLAGS`, which
+    # also names the 1-minute SOS-then-BOS entry.
+    from strategies.python.sos_fade.dual_clock import uses_fast_clock
+
+    fast = uses_fast_clock(cfg)
     if not (sec and no_secondary):
         return cfg, fast, ""
     cfg = dataclasses.replace(cfg, exec_secondary=False)
-    # ⚠ `--no-secondary` switches off the RE-ENTRY, not the fast clock. With the level memory on
-    # the dual path still runs, and the note says so rather than implying the 15m-only path.
-    still_fast = bool(getattr(cfg, "exec_lvl_memory", False))
+    # ⚠ `--no-secondary` switches off the RE-ENTRY, not the fast clock. With another fast-clock
+    # trigger on the dual path still runs, and the note says so rather than implying 15m-only.
+    still_fast = uses_fast_clock(cfg)
     note = (
         (
-            "--no-secondary: exec_secondary forced False (the level memory still needs the fast "
+            "--no-secondary: exec_secondary forced False (another trigger still needs the fast "
             "feed, so the dual path is what runs)"
         )
         if still_fast

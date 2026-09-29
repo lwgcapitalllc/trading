@@ -183,6 +183,18 @@
       "desc": "On = only trade when there is a gap in the pullback zone. Off = trade the pullback on its own."
     },
     {
+      "name": "exec_shift_entry",
+      "group": "Entry zone",
+      "widget": "toggle",
+      "label": "Enter on a 1m SOS then BOS",
+      "short": "1m SOS→BOS entry",
+      "options": {
+        "off": "Off",
+        "on": "On"
+      },
+      "desc": "Replaces the resting limit. Once price tags the 0.5 the bot waits for a 1-minute SOS and then a BOS its way and enters at market on the next minute; stop at the 1.0, whole position off at the first target. Cancelled if price touches the 1.0 or the 0.0 first. Needs the re-entry fill clock at 1 minute. Python only — the TradingView strategy does not have it."
+    },
+    {
       "name": "exec_nogap_arm",
       "group": "Entry zone",
       "core": true,

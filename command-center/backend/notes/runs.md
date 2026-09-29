@@ -696,6 +696,11 @@ three bullets up was not being kept.** Story and the verification: `../docs/BACK
   required_timeframes(...)`.** The chart is always in the feed set, so a run whose CHART is 1m
   makes the membership test true and would fire the dual replay with the secondary switched
   OFF. Pinned by an AST test that also refuses a `getattr(config, "exec_secondary")` here.
+- 🔴 **The fast feed was loaded for the RE-ENTRY only until 2026-09-28**, so every lab run with
+  SOS Fade's level memory on and the re-entry off could not fire the level memory at all. The
+  fast feed is now loaded when ANY setting in SOS Fade's `dual_clock.FAST_CLOCK_FLAGS` is on
+  (re-entry, level memory, the 1-minute SOS-then-BOS entry). `run_feeds.py` keeps a pinned copy
+  of that list, and `test_run_feeds.py` fails when the two disagree.
 
 ## Comparing two runs — the BASIS before the result
 

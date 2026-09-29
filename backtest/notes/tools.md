@@ -64,6 +64,11 @@ CLAUDE.md gets at most one index line.
     and `--no-secondary` switches off the RE-ENTRY rather than the clock, saying which in its note.
     ⚠ **Any future feature that fills on the faster feed has to be added THERE**, exactly like the
     commit hook's per-day exemptions: a rule that enumerates today's shapes stops working silently.
+    ✅ **Since 2026-09-28 that list lives in ONE place** — SOS Fade's `dual_clock.FAST_CLOCK_FLAGS`,
+    read here through `uses_fast_clock` (imported by its full `strategies.python...` path, since a
+    bare `sos_fade` import only worked when another test had put it on the path). It also names
+    the 1-minute SOS-then-BOS entry. The `--no-secondary` note now says "another trigger" rather
+    than naming the level memory.
   - `trades.csv` now carries **`kind`** (primary / secondary). Without it no reader could tell a
     15m setup from its re-entry, and the two are sized, stopped and targeted differently.
   - **`--server`** picks the broker cache to replay, same flag and meaning as `axis_sweep.py`'s.

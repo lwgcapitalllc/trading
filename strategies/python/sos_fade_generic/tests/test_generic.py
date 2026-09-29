@@ -38,6 +38,7 @@ _OFF = {
     "exec_entry_block_from": "", "exec_entry_block_to": "", "exec_close_opp_sos": False,
     "exec_time_stop_mode": "Off", "exec_be_arm_r": -1.0, "exec_giveback_arm_r": -1.0,
     "exec_rev_exit": "Off", "flat_mode": "Off", "exec_conf_sz": False,
+    "exec_shift_entry": False,
 }
 
 
@@ -93,6 +94,15 @@ def test_exposed_settings_reach_sos_fade():
     inner = g.to_sos_fade()
     assert (inner.exec_longs, inner.exec_risk_pct, inner.exec_req_fvg, inner.aplus_window,
             inner.exec_min_stop_val, inner.symbol) == (False, 2.5, False, 600, 0.2, "GBPUSD.p")
+
+
+def test_the_shift_entry_reaches_sos_fade_on_the_one_minute_clock():
+    """RED by mutation: dropping `exec_shift_entry=` or the fill-clock pin from `to_sos_fade`."""
+    inner = SosFadeGenericConfig(exec_shift_entry=True).to_sos_fade()
+    assert (inner.exec_shift_entry, inner.exec_sec_fill_tf_min) == (True, 1)
+    s = SosFadeGenericStrategy(SosFadeGenericConfig(exec_shift_entry=True))
+    assert s.fast_feed_minutes() == 1
+    assert SosFadeGenericStrategy(SosFadeGenericConfig()).fast_feed_minutes() is None
 
 
 def test_tick_size_follows_the_cost_profile():

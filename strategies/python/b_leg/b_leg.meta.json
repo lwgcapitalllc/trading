@@ -451,6 +451,18 @@
       "desc": "Covers the early closes and market holidays too — Christmas Eve, New Year's Eve, the Thursday before Good Friday and Thanksgiving. Read only when Flat before the close is on."
     },
     {
+      "name": "exec_shift_entry",
+      "group": "Entry zone",
+      "label": "Enter on a 1m SOS then BOS",
+      "short": "1m SOS→BOS entry",
+      "options": {
+        "off": "Off",
+        "on": "On"
+      },
+      "desc": "Inherited from SOS Fade and never built or measured for this bot. Leave it Off here.",
+      "hidden": true
+    },
+    {
       "name": "exec_lvl_memory",
       "group": "Level memory",
       "label": "Trade a level we already traded",

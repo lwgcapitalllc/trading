@@ -203,3 +203,33 @@ survives on both pairs**, with every row positive in both halves. GBPUSD's is sm
 +0.26R) but it is the first time an FX result here has held on a pair it was not found on.
 ⚠ Still a screen: every setup is taken, with no one-position slot, no sizing and no minimum stop —
 a real lab run of the entry is what decides it.
+
+### The lab run (2026-09-28, the 1-minute SOS then BOS entry built into the strategy)
+
+Aaron: *"can you prove it?"* The entry above was built as a default-OFF setting in SOS Fade
+("Enter on a 1m SOS then BOS" in Generic; rules in `strategies/python/sos_fade/notes/shift_entry.md`)
+and run in the lab over 2020-01-01 → 2026-09-26: one position at a time, 5% risk, PU Prime ECN
+costs, the minimum stop floor on. Pass/fail was declared before the runs: **a pass needs a profit
+after costs in both date halves on both pairs**, split at 2023-07-08.
+
+| run | trades | net R/trade | halves | z | vs the Generic baseline |
+|---|---|---|---|---|---|
+| GBPJPY `8bcf06ffa418` | 213 | −0.062 | −0.075 / −0.045 | −1.0 | `58d992c5fd42`: 73 trades, profit factor 0.64 → 0.79 |
+| GBPUSD `0c4b00e3325f` | 225 | −0.093 | −0.091 / −0.095 | −1.5 | `55541e54da00`: 79 trades, profit factor 0.81 → 0.75, max drawdown 42% → 79% |
+| **both pairs** | 438 | **−0.078 ± 0.044** | — | −1.75 | — |
+| GBPJPY, minimum stop off `8c4869685d96` | 214 | −0.066 | −0.083 / −0.045 | −1.1 | — |
+| GBPUSD, minimum stop off `7adec48ba74f` | 226 | −0.097 | −0.091 / −0.103 | −1.5 | — |
+
+**Verdict: Reject — not proven.** It loses in all four halves; the chance it has a real positive
+edge on these runs is about 4%. The minimum stop is not the reason: turning it off moved nothing.
+About 55-60% of trades win, but winners average only +0.3 to +0.6R, so break-even needs
+roughly 65%.
+
+⚠ **The lab's trades are not the screen's trades.** The screen found 184 GBPJPY setups with the
+pattern; the lab took 213 trades despite holding only one position at a time, so the two select
+different setups. Why is not established. Until that gap is explained, the +0.26R screen
+result describes a trade this strategy does not take. Not investigated here.
+
+⚠ Every trade from this entry is labelled a first-target exit in the trade list, stop-outs
+included; the cause is not checked. The R figures above are from each trade's
+profit and are unaffected.

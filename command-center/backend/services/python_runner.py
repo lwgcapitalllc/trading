@@ -519,7 +519,7 @@ def _execute(job_id: str, spec: dict) -> None:
         )
         if df1m.empty:
             raise ValueError(
-                f"exec_secondary is on but no {fill_tf}m bars loaded for {symbol} over "
+                f"a fill-clock trigger is on but no {fill_tf}m bars loaded for {symbol} over "
                 f"[{spec['start_date']}, {spec['end_date']}] — check the broker serves {fill_tf}m "
                 f"history for this window (or turn the secondary off)."
             )
@@ -984,7 +984,7 @@ def _execute_opt(job_id: str, spec: dict) -> None:
         )
         if fast_df.empty:
             raise ValueError(
-                f"exec_secondary is on but no {fill_tf}m bars loaded for {symbol} over "
+                f"a fill-clock trigger is on but no {fill_tf}m bars loaded for {symbol} over "
                 f"[{spec['start_date']}, {spec['end_date']}] — check the broker serves {fill_tf}m "
                 f"history for this window (or turn the secondary off for the sweep)."
             )

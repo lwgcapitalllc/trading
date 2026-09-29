@@ -18,6 +18,9 @@ export has been taken at its settings yet, so every lab figure is unverified.
   `tests/test_generic.py`. Check both whenever SOS Fade gains a setting.
 - **A new pinned setting that the export carries also goes into `_PINNED_LABELS` in
   `tools/compare_generic.py`**, or the gate will accept an export taken with it on.
+- **"Enter on a 1m SOS then BOS" replaces the zone limit** (SOS Fade's `exec_shift_entry`, rules in
+  `../sos_fade/notes/shift_entry.md`). It pins the fill clock to 1 minute and needs the 1-minute
+  feed, which the lab loads when it is on. ⚠ The export gate can never check it — no Pine input.
 - **`self.config` is the SOS Fade config**; the generic settings are `self.generic_config`.
 - **The tick size comes from the run's cost profile** when it has one (gold's 0.01 would charge a
   GBPJPY run 10x its slippage).

@@ -583,3 +583,7 @@ Most-cited code: `compare_strategy.py`, `sos_fade.meta.json`, `sos_fade_strategy
 **Read before touching:** `entry_window.py` or the no-entry window settings. Every window tried lost R; the drawdown cut was one 2022 stretch.
 
 🔴 **2026-09-26: the "1m break" add can run live.** The bridge now accepts it (it buys at market on the 15m close, like "Trail") and rests each add ticket's take-profit at the level the strategy banks it at — `add_exit_price()`, new in the live contract — so an add banked at the H4 high/low fills THERE instead of at market a bar later. Live it needs the re-entry on and its fill clock at 1 minute, because the live runner builds the 1-minute feed only for the re-entry. Detail: `algos/notes/account-anchor-scale-in-and-targets.md`.
+
+### `notes/shift_entry.md` — The 1-minute SOS-then-BOS entry (built 2026-09-28, OFF)
+
+**Read before touching:** `shift_entry.py`, `exec_shift_entry`, or `dual_clock.FAST_CLOCK_FLAGS`.

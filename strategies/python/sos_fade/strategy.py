@@ -239,9 +239,9 @@ class SosFadeStrategy:
         values — `algos/live/feed.timeframe_for_minutes`. Rule 1: off and cannot-have must not
         arrive as the same answer.
         """
-        if not self.config.exec_secondary:
+        from .dual_clock import fast_tf_minutes, uses_fast_clock
+        if not uses_fast_clock(self.config):
             return None
-        from .dual_clock import fast_tf_minutes
 
         return fast_tf_minutes(self.config)
 

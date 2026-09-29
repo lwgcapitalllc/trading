@@ -136,7 +136,7 @@ def test_no_secondary_switches_off_the_reentry_and_keeps_the_fast_path():
     )
     assert cfg.exec_secondary is False
     assert wants is True
-    assert "level memory" in note
+    assert "still needs the fast feed" in note
 
 
 def test_no_secondary_without_the_level_memory_is_unchanged():
