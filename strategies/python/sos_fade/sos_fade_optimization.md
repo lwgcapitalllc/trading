@@ -5965,3 +5965,40 @@ R, return per drawdown and total without the best trade all at or above the base
   change which trades survive to the target.
 - ✅ **Decision: SOS Fade keeps the 30-tick cushion.** Three runs (17, 26, 57) now agree; don't
   re-open without a new mechanism.
+
+## Run 58 — 2026-09-28: a wider tick cushion — 60 ticks beats 30, 80 is too far
+
+**The question (Aaron):** how far can the 30-tick breakeven cushion widen — 35, 40, 50? The aim is
+to cover costs on scratches without giving back winners.
+
+**Basis:** identical to Run 57 (live bot settings, 5% risk, re-entry leg on, PU Prime ECN costs from
+f3a846ce6018). Fit 2018-09-14 to 2025-08-05, held-back 2025-08-06 to 2026-09-25. Same paired
+difference and pass rule.
+
+| Cushion | Trades | W / L / S | Total R | Max DD R | Without best | Ret/DD at 5% | Diff vs 30 | P(better) |
+|---|---|---|---|---|---|---|---|---|
+| 30 ticks (shipped) | 226 | 78 / 98 / 50 | +123.5 | 11.94 | +96.9 | 176 | — | — |
+| 35 | 226 | 78 / 98 / 50 | +124.0 | 11.81 | +97.4 | 182 | +0.5 ± 0.1 | 1.00 |
+| 40 | 226 | 78 / 99 / 49 | +123.5 | 11.68 | +96.9 | 179 | −0.0 ± 1.1 | 0.53 |
+| 45 | 226 | 79 / 99 / 48 | +124.0 | 11.54 | +97.4 | 185 | +0.5 ± 1.1 | 0.74 |
+| 50 | 226 | 82 / 99 / 45 | +124.5 | 11.41 | +97.9 | 192 | +1.0 ± 1.1 | 0.82 |
+| **60** | 227 | 86 / 98 / 43 | **+126.2** | **11.01** | **+99.6** | **214** | **+2.7 ± 1.3** | **0.97** |
+| 80 | 227 | 84 / 98 / 45 | +120.2 | 10.72 | +93.6 | 167 | −3.3 ± 6.3 | 0.35 |
+
+Held-back window (52 trades each, identical trades in every arm):
+
+| Cushion | Total R | Max DD R | Diff vs 30 | P(better) |
+|---|---|---|---|---|
+| 30 | +38.05 | 3.61 | — | — |
+| 35 | +38.07 | 3.61 | +0.02 | 1.00 |
+| 45 | +38.10 | 3.61 | +0.05 | 1.00 |
+| 50 | +38.12 | 3.61 | +0.07 | 1.00 |
+| 60 | +38.15 | 3.61 | +0.10 | 1.00 |
+
+- ✅ **Adopt 60 ticks: +2.7 ± 1.3R, P 0.97 on the fit window**; drawdown 11.9 → 11.0R, ret/DD 176 → 214.
+- The rise is smooth from 35 to 60 and breaks at 80 (its first half drops 4R), so 60 is not a lone
+  lucky number — but it is the best of six, so read the fit gain as slightly flattering.
+- The held-back window agrees in direction and is small (+0.1R): only 9 of its 52 trades ever
+  reach breakeven, so there is little for the cushion to act on there.
+- ⚠ **Not yet applied** — the Python default, the Pine default and the live bot all still read 30.
+  Moving the live bot waits for Aaron's go.
