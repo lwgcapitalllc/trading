@@ -26,3 +26,14 @@
 2026-09-29 20:58:19,309 [INFO] Trading is allowed on this account again.
 2026-09-29 21:06:20,214 [ERROR] TRADING OFF: the terminal has lost its connection to the broker's server. Every order this bot sends will be refused.
 2026-09-29 21:07:10,302 [INFO] Trading is allowed on this account again.
+2026-09-29 21:33:22,812 [ERROR] TRADING OFF: the terminal has lost its connection to the broker's server. Every order this bot sends will be refused.
+2026-09-29 21:34:22,959 [INFO] Trading is allowed on this account again.
+2026-09-29 22:01:06,124 [WARNING] 63 M1 bars missed on the re-entry's feed — re-warming the fast side. The primary is untouched.
+2026-09-29 22:01:24,220 [INFO] Warmed the fast feed on 75000 M1 bars (2026-07-15 08:32:00+00:00 → 2026-09-29 22:00:00+00:00).
+2026-09-29 22:01:24,220 [INFO] The 63 M1 intervals were a market break, not lost bars — no alert.
+2026-09-29 22:15:06,150 [WARNING] 5 bars missed — re-warming the engines rather than resuming with a hole in the stream.
+2026-09-29 22:15:06,150 [INFO] Sizing against account balance $14,862.76
+2026-09-29 22:15:07,648 [INFO] Warmed 5000 bars (2026-07-15 10:45:00+00:00 → 2026-09-29 22:00:00+00:00) in 1.4s
+2026-09-29 22:15:18,039 [INFO] Fast feed bookmarked at 2026-09-29 22:14:59.999000+00:00 — the 15m context is already past it.
+2026-09-29 22:15:18,039 [INFO] Warmed the fast feed on 75000 M1 bars (2026-07-15 08:46:00+00:00 → 2026-09-29 22:14:00+00:00).
+2026-09-29 22:15:18,039 [INFO] Equity re-anchored to the account after warm-up: 17,496.53 → 14,862.76

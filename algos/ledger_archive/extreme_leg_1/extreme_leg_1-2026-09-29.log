@@ -90,3 +90,10 @@
 2026-09-29 20:58:11,877 [INFO] Trading is allowed on this account again.
 2026-09-29 21:06:22,472 [ERROR] TRADING OFF: the terminal has lost its connection to the broker's server. Every order this bot sends will be refused.
 2026-09-29 21:07:12,528 [INFO] Trading is allowed on this account again.
+2026-09-29 21:33:24,259 [ERROR] TRADING OFF: the terminal has lost its connection to the broker's server. Every order this bot sends will be refused.
+2026-09-29 21:34:14,314 [INFO] Trading is allowed on this account again.
+2026-09-29 22:05:07,114 [WARNING] 13 bars missed — re-warming the engines rather than resuming with a hole in the stream.
+2026-09-29 22:05:07,114 [INFO] Sizing against account balance $14,862.76
+2026-09-29 22:05:12,373 [INFO] Warmed 15000 bars (2026-07-15 10:35:00+00:00 → 2026-09-29 22:00:00+00:00) in 5.0s
+2026-09-29 22:05:12,404 [INFO] Equity re-anchored to the account after warm-up: 13,844.72 → 14,862.76
+2026-09-29 22:15:03,492 [INFO] Priority 2 on this account: waiting 17s for the bots above
