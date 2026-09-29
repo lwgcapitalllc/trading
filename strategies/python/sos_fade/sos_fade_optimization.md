@@ -5936,3 +5936,71 @@ The base position and the other adds are untouched.
   on to pay, and the +0.2R at 0.5R is one lot.
 - The 2026-09-21 chart trade is unchanged in every arm (+0.59R).
 - ✅ **Decision: adds keep the shared stop.**
+
+## Run 57 — 2026-09-27: the breakeven cushion as a share of risk, re-tested on today's setup — every arm loses
+
+**The question (Aaron):** Realign adopted a cushion of 10% of the trade's risk (its Run 19). Does
+the same help SOS Fade, whose Runs 17 and 26 both lost on the older 10%-risk setup and were judged
+without a paired difference?
+
+**Basis:** the live bot's own settings (`algos/markets/fx/instances/sos_fade_demo/config.json`:
+M15, XAUUSD.p, 5% risk, re-entry leg on, fill feed as the lab uses it), PU Prime ECN costs from lab
+run f3a846ce6018, 2018-09-14 to 2025-08-05. Full replay per arm. Paired difference by entry day and
+direction against the shipped 30-tick cushion, bootstrap P(better). Pass rule set beforehand: total
+R, return per drawdown and total without the best trade all at or above the baseline.
+
+| Arm | Trades | W / L / S | Total R | Max DD R | Without best | Ret/DD at 5% | Diff vs 30 ticks | P(better) |
+|---|---|---|---|---|---|---|---|---|
+| 30 ticks (shipped) | 226 | 78 / 98 / 50 | +123.5 | 11.94 | +96.9 | 176 | — | — |
+| 5% of risk | 226 | 77 / 99 / 50 | +121.4 | 12.44 | +94.8 | 155 | −2.1 ± 2.4 | 0.21 |
+| 10% of risk | 228 | 74 / 100 / 54 | +113.2 | 12.00 | +86.6 | 110 | −10.3 ± 6.9 | 0.04 |
+| 20% of risk | 229 | 107 / 100 / 22 | +115.5 | 11.51 | +88.9 | 128 | −8.0 ± 7.0 | 0.11 |
+| 10% of risk + cost | 228 | 73 / 97 / 58 | +114.8 | 11.82 | +88.2 | 121 | −8.7 ± 6.9 | 0.09 |
+| 20% of risk + cost | 229 | 107 / 97 / 25 | +117.0 | 11.45 | +90.4 | 138 | −6.5 ± 7.1 | 0.18 |
+
+- 🔴 **No arm passes; the held-back window was not opened.** 10% of risk is proven harmful
+  (P 0.04); the rest are not proven.
+- The wider cushions do make scratches pay (scratch R +0.8 → up to +4.1) but lose more than that on
+  trades that would have run: a cushion measured off SOS Fade's wide stops sits far enough away to
+  change which trades survive to the target.
+- ✅ **Decision: SOS Fade keeps the 30-tick cushion.** Three runs (17, 26, 57) now agree; don't
+  re-open without a new mechanism.
+
+## Run 58 — 2026-09-28: a wider tick cushion — 60 ticks beats 30, 80 is too far
+
+**The question (Aaron):** how far can the 30-tick breakeven cushion widen — 35, 40, 50? The aim is
+to cover costs on scratches without giving back winners.
+
+**Basis:** identical to Run 57 (live bot settings, 5% risk, re-entry leg on, PU Prime ECN costs from
+f3a846ce6018). Fit 2018-09-14 to 2025-08-05, held-back 2025-08-06 to 2026-09-25. Same paired
+difference and pass rule.
+
+| Cushion | Trades | W / L / S | Total R | Max DD R | Without best | Ret/DD at 5% | Diff vs 30 | P(better) |
+|---|---|---|---|---|---|---|---|---|
+| 30 ticks (shipped) | 226 | 78 / 98 / 50 | +123.5 | 11.94 | +96.9 | 176 | — | — |
+| 35 | 226 | 78 / 98 / 50 | +124.0 | 11.81 | +97.4 | 182 | +0.5 ± 0.1 | 1.00 |
+| 40 | 226 | 78 / 99 / 49 | +123.5 | 11.68 | +96.9 | 179 | −0.0 ± 1.1 | 0.53 |
+| 45 | 226 | 79 / 99 / 48 | +124.0 | 11.54 | +97.4 | 185 | +0.5 ± 1.1 | 0.74 |
+| 50 | 226 | 82 / 99 / 45 | +124.5 | 11.41 | +97.9 | 192 | +1.0 ± 1.1 | 0.82 |
+| **60** | 227 | 86 / 98 / 43 | **+126.2** | **11.01** | **+99.6** | **214** | **+2.7 ± 1.3** | **0.97** |
+| 80 | 227 | 84 / 98 / 45 | +120.2 | 10.72 | +93.6 | 167 | −3.3 ± 6.3 | 0.35 |
+
+Held-back window (52 trades each, identical trades in every arm):
+
+| Cushion | Total R | Max DD R | Diff vs 30 | P(better) |
+|---|---|---|---|---|
+| 30 | +38.05 | 3.61 | — | — |
+| 35 | +38.07 | 3.61 | +0.02 | 1.00 |
+| 45 | +38.10 | 3.61 | +0.05 | 1.00 |
+| 50 | +38.12 | 3.61 | +0.07 | 1.00 |
+| 60 | +38.15 | 3.61 | +0.10 | 1.00 |
+
+- ✅ **Adopt 60 ticks: +2.7 ± 1.3R, P 0.97 on the fit window**; drawdown 11.9 → 11.0R, ret/DD 176 → 214.
+- The rise is smooth from 35 to 60 and breaks at 80 (its first half drops 4R), so 60 is not a lone
+  lucky number — but it is the best of six, so read the fit gain as slightly flattering.
+- The held-back window agrees in direction and is small (+0.1R): only 9 of its 52 trades ever
+  reach breakeven, so there is little for the cushion to act on there.
+- ✅ **Applied 2026-09-28 on Aaron's go:** the Python and Pine defaults are 60, and so are the
+  three SOS Fade bots' settings (`sos_fade_demo` live, `sos_fade_1` and `sos_fade_2` demo). B-LEG,
+  BOS and Realign inherit this setting and now PIN 30 — none was measured at 60. A running bot
+  picks the value up on its next restart.

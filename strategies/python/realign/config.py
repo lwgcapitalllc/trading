@@ -393,6 +393,9 @@ class RealignConfig(SosFadeConfig):
     here. That is for this bot's parity gate to settle, not for a parent's default to move.
     """
 
+    exec_be_buf_tk: float = 30.0  # "Breakeven buffer (ticks)" — pinned, NOT inherited
+    #   The parent moved 30 → 60 on 2026-09-28 (SOS Fade Run 58, measured on SOS Fade only). Read
+    #   only in Ticks mode here; pinned so switching to Ticks still means what Run 19 measured.
     exec_be_buf_mode: str = "Fraction of stop"
     exec_be_buf_r: float = 0.10
     """PINNED here: the breakeven stop sits 10% of the trade's OWN entry risk past the entry,

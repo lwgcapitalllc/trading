@@ -45,7 +45,7 @@
     "exec_min_stop_val": 0.08,
     "exec_tp1_pct": 0.0,
     "exec_tp2_pct": 0.0,
-    "exec_be_buf_tk": 30.0,
+    "exec_be_buf_tk": 60.0,
     "exec_trail_step": 5.0,
     "exec_runner_trail": "Structure + % ratchet",
     "exec_struct_trail_buf_tk": 20.0,

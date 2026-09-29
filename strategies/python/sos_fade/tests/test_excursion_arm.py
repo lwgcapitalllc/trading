@@ -149,7 +149,8 @@ def test_the_trigger_is_measured_off_the_FROZEN_entry_stop():
     the staged stop 0.30 above the entry it reads as 3.33R. A trigger at 3.0R must therefore stay
     unarmed, and does not if the managed stop is read.
     """
-    ex = Execution(SosFadeConfig(exec_be_arm_r=3.0), initial_capital=10_000.0)
+    # 30 ticks pinned: the numbers above were chosen at that buffer (the default is 60 since Run 58).
+    ex = Execution(SosFadeConfig(exec_be_arm_r=3.0, exec_be_buf_tk=30.0), initial_capital=10_000.0)
     _long_in(ex)
     ex._advance_stage(Sig(o=ENTRY, h=TP1, l=ENTRY, c=ENTRY))   # rung at 2.0R touched
     assert ex._stage >= 1 and ex._current_stop() == pytest.approx(ENTRY + 0.30)

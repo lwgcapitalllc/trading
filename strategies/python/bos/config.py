@@ -36,6 +36,10 @@ from sos_fade.config import SosFadeConfig  # noqa: E402
 class BosConfig(SosFadeConfig):
     """`bos_strategy.pine`'s Strategy Execution panel, field for field."""
 
+    exec_be_buf_tk: float = 30.0  # "Breakeven buffer (ticks)" — pinned, NOT inherited
+    #   The parent moved 30 → 60 on 2026-09-28 (SOS Fade Run 58, measured on SOS Fade only). This
+    #   fork's Pine still ships 30 and nothing measured it at 60.
+
     # ── 1. WHAT TRADES (Pine execLongs / execShorts) ─────────────────────────────
     # Inherited: exec_longs / exec_shorts, both True.
 
