@@ -14,3 +14,5 @@
 2026-09-29 03:22:03,355 [INFO] Warmed the fast feed on 75000 M1 bars (2026-07-14 13:52:00+00:00 → 2026-09-29 03:20:00+00:00).
 2026-09-29 03:22:03,355 [INFO] Equity re-anchored to the account after warm-up: 19,998.53 → 14,862.76
 2026-09-29 03:22:04,199 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-29 14:30:02,671 [INFO] place bullish primary limit 1.15L @ 4124.64378 SL 4118.216780000001 TP none
+2026-09-29 14:30:02,780 [INFO] PENDING PLACED | ticket=394820594 | bullish 1.15L @ 4124.64 | SL=4118.22 TP=none
