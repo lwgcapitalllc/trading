@@ -27,7 +27,8 @@ MATCH — same direction, entry within `--tol-min` minutes (default 0: the same 
 each trade used once. Every matched pair prints its gap, so a tolerance is never hiding one.
 
 EXPLAIN — each unmatched trade gets the reason this tool can SEE, never a guess:
-  study only  "lab was holding a position" (a lab trade spans the entry), or "lab was flat"
+  study only  "lab was holding a position" (a lab trade spans the entry); "lab was flat; the study
+              NOTES why" when the study's own `note` names a deliberate difference; else "lab was flat"
   lab only    the study setup it came from (same direction, latest SOS at or before the entry) and
               whether the lab entered BEFORE or AFTER the study's start point for it; "no study
               setup" if the study never watched one.
@@ -118,9 +119,13 @@ def source_setup(setups: List[dict], x: dict) -> Optional[dict]:
 def explain(study_only, lab_only, lab, setups):
     for s in study_only:
         h = lab_holding(lab, s["entry_ms"])
-        s["why"] = (
-            f"lab was holding a position (opened {fmt(h['entry_ms'])})" if h else "lab was flat"
-        )
+        if h:
+            s["why"] = f"lab was holding a position (opened {fmt(h['entry_ms'])})"
+        elif s.get("note"):
+            # The study named its own deliberate difference (e.g. a stop under the lab's floor).
+            s["why"] = "lab was flat; the study NOTES why"
+        else:
+            s["why"] = "lab was flat"
     for x in lab_only:
         src = source_setup(setups, x)
         if src is None:

@@ -93,9 +93,10 @@ pin set for gold (`SosFadeStrategy.engine_config`). A pair that moves less in pe
 fewer gaps that size. Testing it means changing that pin for FX runs, which moves the engine setting
 and needs its own measurement — not a tidy-up.
 
-⚠ **Every screen below reads its setups through `generic_fx_patterns.collect()`, which anchors each
-setup on its DEEPEST zone visit — hindsight.** Found 2026-09-28; see *The lab run*. Read their
-numbers as optimistic until re-run from the first tag.
+⚠ **Every screen below was run through `generic_fx_patterns.collect()` when it anchored each setup
+on its DEEPEST zone visit — hindsight.** Found 2026-09-28; see *The lab run*. `collect()` now reads
+the point-in-time feed, but **only the 1-minute GBPJPY row has been re-run: every other number
+below is NOT reconciled** and reads as optimistic until it is (`backtest/CLAUDE.md` rule).
 
 ### Does price turn from the zone? (2026-09-27, `backtest/tools/generic_zone_turn.py`)
 
@@ -161,6 +162,8 @@ H4 High sweeps 35.4% (48, z -1.8). Long vs short, sweep vs sweep+divergence, gap
 size: all flat.
 
 ### Does a 1-5 minute structure shift call the turn? (2026-09-27, `backtest/tools/generic_ltf_trigger.py`)
+
+⚠ **NOT reconciled — hindsight-anchored. Superseded for GBPJPY 1m by *Reconciled re-run* below.**
 
 Aaron: *"After price turned from the zone, was it a 1-5 min SOS then BOS, or internal structure?"*
 Setups whose zone touch is on or after 2020-01-01. The canonical structure engine runs on the
@@ -246,8 +249,38 @@ ones where price kept going to the 1.0) and started at the dip that held. The la
 first tag, took those early entries, lost on them, and had retired the setup before most of the
 screen-only winners arrived. **When the two take the same trade they agree; the edge was the
 anchor.** ⚠ The same `collect()` feeds every screen in this file (the zone turn, the POC, the FX
-patterns), so their numbers carry the same anchor. Scripts: the session's `recon_*.py`, not yet a
-repo tool.
+patterns), so their numbers carry the same anchor. The match-up is now a repo tool,
+`backtest/tools/study_vs_lab.py`.
+
+### Reconciled re-run (2026-09-28, on the point-in-time feed)
+
+`collect()` and `generic_ltf_trigger.py` rebuilt to watch each setup exactly as the strategy's own
+1-minute entry does: from the bar the strategy first reports the touch, with the fib standing then,
+on the strategy's own continuous 1-minute structure feed, a short's exits on the ask, no time limit.
+GBPJPY 1m, 2020-01-01 → 2026-09-26, matched against `8bcf06ffa418`:
+
+| group | trades | lab R/trade | study R/trade |
+|---|---|---|---|
+| both took it, same minute | 213 | −0.062 | −0.064 (212 of 213 same win/loss) |
+| study only | 1 | — | −1.02 (stop 0.067% of price, under the lab's 0.08% minimum) |
+| lab only | 0 | — | — |
+
+**Every lab trade is matched to the minute.** The one study-only trade is the lab's minimum stop
+refusing it; the one outcome that differs is a scratch (−0.006R study, +0.014R lab). The study's own
+verdict on the full population now agrees with the lab's:
+
+| pattern (GBPJPY 1m) | trades | net R/trade | halves | z |
+|---|---|---|---|---|
+| ext SOS → BOS | 214 | −0.069 | −0.014 / −0.123 | −1.1 |
+| ext SOS | 271 | −0.081 | −0.028 / −0.134 | −1.3 |
+| int SOS → BOS | 173 | −0.034 | −0.023 / −0.046 | −0.5 |
+| any internal | 326 | −0.105 | −0.083 / −0.128 | −2.1 |
+| CONTROL, first bar after the touch | 407 | −0.050 | −0.073 / −0.026 | −1.0 |
+
+**Verdict: Reject — not proven, for every pattern.** None is positive after costs and none is
+clearly apart from the structure-blind control (−0.05R). "Any internal" loses in both halves at
+z −2.1 against zero, but it is one of five patterns tested, so that is not proof of harm. GBPUSD and the other screens above are not re-run. Detail:
+`backtest/notes/study-reconciliation.md`.
 
 ⚠ Every trade from this entry is labelled a first-target exit in the trade list, stop-outs
 included; the cause is not checked. The R figures above are from each trade's

@@ -76,3 +76,12 @@ def test_a_lab_only_trade_with_no_study_setup_says_so():
     x = _t(5)
     sv.explain([], [x], [], [dict(setup="Later", dir=1, sos_ms=10 * M, start_ms=12 * M)])
     assert x["why"] == "no study setup"
+
+
+def test_a_flat_lab_study_only_trade_carrying_the_studys_OWN_note_is_grouped_as_noted():
+    """A named deliberate difference (a stop under the lab's floor) must not read as unexplained,
+    and an un-noted one must. RED against dropping the note branch."""
+    noted, bare = _t(50, note="stop under the 0.08% minimum"), _t(60)
+    sv.explain([noted, bare], [], [], [])
+    assert noted["why"] == "lab was flat; the study NOTES why"
+    assert bare["why"] == "lab was flat"

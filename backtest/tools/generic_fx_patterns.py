@@ -9,6 +9,10 @@ RULES, fixed before any result:
 POPULATION  every setup (sweep or divergence arm, then the shift) whose pullback tagged the
             0.5-0.886 zone, M15, PU Prime bars. Collected with an impossible minimum stop so the
             bot never trades: every setup is recorded and each one is measured ALONE.
+            ⚠ Since 2026-09-28 a setup is anchored on the bar the strategy FIRST reported the
+            touch (the point-in-time feed, `backtest/setup_feed.py`). Every number this tool
+            printed before then was anchored on the setup's DEEPEST zone visit, known only once it
+            was over — see `backtest/notes/study-reconciliation.md` — and is NOT reconciled.
 OUTCOME     from the zone touch: TURN = a new high/low (the 0.0) before breaking the 1.0; a bar
             touching both = FAIL; 30-day horizon. Entering at the zone's edge (0.5) with the stop at
             1.0 and the target at 0.0 is a 1:1 trade, so TURN% above 50 is the edge, before costs.
@@ -42,6 +46,7 @@ import numpy as np  # noqa: E402
 from sos_fade_generic import SosFadeGenericConfig, SosFadeGenericStrategy  # noqa: E402
 
 from backtest.data.cache import BarCache  # noqa: E402
+from backtest.setup_feed import episodes, leg_side, replay_setups  # noqa: E402
 from engines.fibonacci.geometry import fib_level  # noqa: E402
 
 NY = ZoneInfo("America/New_York")
@@ -49,19 +54,25 @@ END, WARMUP, HORIZON = "2026-09-26", 500, 2880
 DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sun")
 
 
-def collect(symbol, m15, on_signal=None):
-    """Every setup that tagged the zone. `on_signal(sig)`, if given, sees every bar's signals."""
+def collect(symbol, m15, on_signal=None, every_episode=False):
+    """Every setup whose pullback touched the zone, AT THE BAR THE STRATEGY FIRST REPORTED IT.
+
+    Read off the strategy's own setup snapshots through `backtest/setup_feed.py`, never off its
+    miss records. 🔴 **The miss records were the old anchor and they looked ahead**: a miss's zone
+    time brackets the setup's DEEPEST visit to the zone, known only once the setup is over, so every
+    study built on it skipped the early entries — the ones that lose. Found 2026-09-28 by matching
+    the 1m SOS-then-BOS study against its lab run (`backtest/notes/study-reconciliation.md`).
+
+    A setup qualifies on a bar while it is armed by an enabled source, SOS'd, has touched the zone
+    (0.5 or 0.618 tagged — no gap needed) and the 15m fib points its way: the same check the
+    strategy's own 1-minute entry makes. The fib (`ash`, `asl`) is the one standing on that bar.
+
+    One row per setup — its FIRST qualifying run — unless `every_episode`, which returns every
+    unbroken run (a setup that stops qualifying and comes back is watched afresh, as the lab does).
+    `on_signal(sig)`, if given, sees every bar's signals.
+    """
     cfg = SosFadeGenericConfig(symbol=symbol, exec_min_stop_mode="Fixed $", exec_min_stop_val=1e12)
     strat = SosFadeGenericStrategy(cfg)
-    ex = strat.execution
-    geo, orig = {}, ex._record_misses
-
-    def hooked(sig, seq, dec, le, se):
-        if sig.fibo_ash is not None and sig.fibo_asl is not None:
-            geo[sig.time_ms] = (sig.index, sig.fibo_ash, sig.fibo_asl, sig.fibo_dir)
-        return orig(sig, seq, dec, le, se)
-
-    ex._record_misses = hooked
     if on_signal is not None:
         upd = strat.signals.update
 
@@ -71,25 +82,33 @@ def collect(symbol, m15, on_signal=None):
             return sig
 
         strat.signals.update = watched
-    strat.run(m15, warmup=WARMUP)
-    assert not ex.trades, "the impossible stop floor let a trade through"
-    out = []
-    for m in ex.misses:
-        if m.index < WARMUP or m.zone_time_ms is None or m.code not in (3, 8):
+    rows = replay_setups(strat, m15, warmup=WARMUP)
+    assert not strat.execution.trades, "the impossible stop floor let a trade through"
+    eps = episodes(rows, lambda s: s.tradeable and s.touched is True and leg_side(s.leg) == s.side)
+    step = rows[0].known_ms - rows[0].bar_ms if rows else 0
+    out, seen = [], set()
+    for e in eps:
+        if not every_episode and e.key in seen:
             continue
-        g = geo.get(m.zone_time_ms)
-        if g is None or g[3] != m.dir:
-            continue
+        seen.add(e.key)
+        r, snap = e.first, e.first.snap
+        ext, org = snap.leg
+        conf = {c.name: c for c in snap.confluences}
+        anchor = snap.key.rsplit(":", 1)[-1]
         out.append(
             dict(
-                dir=m.dir,
-                gap=m.code == 8,
-                arm=m.arm_text,
-                t=m.zone_time_ms,
-                z=g[0],
-                ash=g[1],
-                asl=g[2],
-                fdir=g[3],
+                key=snap.key,
+                sos_ms=int(anchor[1:]) if anchor.startswith("t") else None,
+                dir=snap.side,
+                gap=conf["Retrace zone"].met,
+                arm=conf["Arm"].detail,
+                t=r.bar_ms,
+                known_ms=r.known_ms,
+                until_ms=e.rows[-1].known_ms + step,
+                z=r.index,
+                ash=ext if snap.side > 0 else org,
+                asl=org if snap.side > 0 else ext,
+                fdir=snap.side,
             )
         )
     return out
