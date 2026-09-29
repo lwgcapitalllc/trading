@@ -35,6 +35,9 @@ class BLegConfig(SosFadeConfig):
     #   only to prove the bot trades nothing without it. `exec_aplus` is inherited and still
     #   matters: SOS Fade never PLACES an order here, but it holds the priority gate — set it False
     #   to drop that gate and read the B leg completely on its own.
+    exec_be_buf_tk: float = 30.0  # "Breakeven buffer (ticks)" — pinned, NOT inherited
+    #   The parent moved 30 → 60 on 2026-09-28 (SOS Fade Run 58, measured on SOS Fade only). This
+    #   fork's Pine still ships 30 and nothing measured it at 60.
     exec_sl_level: str = "1.0"    # "Stop fib level" — pinned, NOT inherited
     #   The parent defaulted this "1.0" → "0.886" on 2026-07-27 to match the SOS Fade Pine. This fork's
     #   Pine (`b_leg_strategy.pine`) still ships "1.0", and toggle-default parity with its OWN

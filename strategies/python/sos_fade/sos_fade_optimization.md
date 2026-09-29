@@ -6000,5 +6000,7 @@ Held-back window (52 trades each, identical trades in every arm):
   lucky number — but it is the best of six, so read the fit gain as slightly flattering.
 - The held-back window agrees in direction and is small (+0.1R): only 9 of its 52 trades ever
   reach breakeven, so there is little for the cushion to act on there.
-- ⚠ **Not yet applied** — the Python default, the Pine default and the live bot all still read 30.
-  Moving the live bot waits for Aaron's go.
+- ✅ **Applied 2026-09-28 on Aaron's go:** the Python and Pine defaults are 60, and so are the
+  three SOS Fade bots' settings (`sos_fade_demo` live, `sos_fade_1` and `sos_fade_2` demo). B-LEG,
+  BOS and Realign inherit this setting and now PIN 30 — none was measured at 60. A running bot
+  picks the value up on its next restart.
