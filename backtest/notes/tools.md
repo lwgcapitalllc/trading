@@ -1902,3 +1902,14 @@ in Asian session at eight, eight fifteen, sometimes nine, nine thirty, ten".
 - ⚠ **Cheap mode**: one book re-walked, so nothing here is a replay.
 
 - 🔴 **2026-09-26: the fill clock default is 1m again (5m since 2026-08-21)**, because SOS Fade's new default add ("1m break") reads 1-minute structure off the same feed. `run_report.py` and the overlap audit now load 1-minute bars for SOS Fade by default; the overlap baseline was re-recorded the same day (`notes/strategy-overlap.md`).
+
+## `tools/study_vs_lab.py` — a study's trades matched against a lab run (2026-09-28)
+
+Matches on direction and entry minute (`--tol-min`, default 0), nearest first, each trade once.
+Prints three groups — both, study only, lab only — with count, mean R and sum R, the same-outcome
+rate on the matched group, and a reason for every unmatched trade that the tool can SEE: a
+study-only trade inside a lab position, or a lab-only trade tied to its study setup and timed
+before or after the study's start point for it. "Lab was flat" and "no study setup" are
+UNEXPLAINED, and are the finding. The study's file format is in the tool's docstring. Tests:
+`tests/test_study_vs_lab.py` (7; direction, nearest-first, the holding window and the
+no-setup case each watched RED by mutation). Why it exists: `notes/study-reconciliation.md`.
