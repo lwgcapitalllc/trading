@@ -6004,3 +6004,205 @@ Held-back window (52 trades each, identical trades in every arm):
   three SOS Fade bots' settings (`sos_fade_demo` live, `sos_fade_1` and `sos_fade_2` demo). B-LEG,
   BOS and Realign inherit this setting and now PIN 30 — none was measured at 60. A running bot
   picks the value up on its next restart.
+
+## Run 59 — 2026-09-28: the no-gap setups on the current book — facts only, no entry rule tested
+
+**The question (Aaron):** of every setup that came back into the zone with no fair-value gap, how
+many turned without being stopped and made a new high (new low for shorts), how many were stopped
+and then made one, and how many were simply stopped? Then: how did the stopped-then-recovered ones
+behave, and how far did the ones that held the 1.0 run?
+
+**Basis:** lab run 467118f513e9 — XAUUSD.p, M15 with the 1m feed, 2020-01-01 to 2026-09-29, PU Prime
+ECN, its full stored settings, built the lab's way. The replay reproduced **247 of 247 trades**
+(157 primaries, 90 re-entries). Gap state read ONCE, on the first bar in the zone (Run 32's rule).
+Outcomes walked on M1 from the first M1 bar that reached the 0.5; stop and extreme frozen at
+arrival. No costs. Scripts were run from a session scratchpad and are **not** in the repo.
+
+**The funnel**
+
+| Step | Count |
+|---|---|
+| Armed SOS setups with fibs | 612 |
+| Came back into the zone (0.5 / 0.618 tag) | 375 |
+| Gap on arrival (138 traded) | 170 |
+| No gap on arrival | 205 |
+| No gap on arrival and never traded — **the pool** | **186** |
+
+⚠ "Never traded" also contains setups refused for the late-day block, a veto or an open position —
+not only for the missing gap.
+
+**Outcome of the 186** — A new extreme before any stop touch; B stop first, new extreme later;
+C stop, no new extreme; D neither.
+
+| Stop | Horizon | A | B | C | D |
+|---|---|---|---|---|---|
+| 1.0 | 1 day | 86 | 20 | 66 | 14 |
+| 1.0 | **5 days** | **93** | **58** | **35** | 0 |
+| 1.0 | 20 days | 93 | 80 | 13 | 0 |
+| 0.886 (the run's stop) | 1 day | 77 | 29 | 68 | 12 |
+| 0.886 | **5 days** | **83** | **68** | **35** | 0 |
+| 0.886 | 20 days | 83 | 90 | 13 | 0 |
+
+- 5 days, 1.0 stop: long 44 / 20 / 15, short 49 / 38 / 20. Every year 2020–2025 looks alike; 2026
+  is the one year C leads (7 of 16).
+- No same-M1-bar ties between stop and extreme.
+
+**How the stopped-then-recovered (B, 68) behaved against the stopped-for-good (C, 35)** — 0.886
+stop, 5 days, structure from the canonical engine on 15m and on M1 resampled to 5m.
+
+| Class | 15m B \| C | 5m B \| C |
+|---|---|---|
+| Pure sweep — pierced, closed back, no break against | 9 \| 0 | 9 \| 0 |
+| Break against, then with-trade SOS back | 17 \| 22 | 35 \| 29 |
+| Past the 1.0, no shift back | 41 \| 13 | 23 \| 6 |
+| Other | 1 \| 0 | 1 \| 0 |
+
+- The stop candle closing back on the trade side: 51% of B, 46% of C — no difference.
+- Stop touch to new extreme, B: quartiles 8.8h / 25.7h / 77.8h.
+- **Shift against then shift back is MORE common in C than B** (15m 63% vs 25%; 5m 83% vs 51%), so
+  it is not a recovery signal. Pure sweep points the right way on 9 cases.
+- Depth and time beyond the stop separate B from C, but partly by construction (B's window ends at
+  the new extreme, C's runs the full 5 days). Not tested at a fixed cut-off.
+
+**How far the 93 that held the 1.0 ran** — entry the 0.5, stop the 1.0, so the 0.0 is exactly +1R;
+furthest point before the 1.0 is touched.
+
+| Reached | The 93, 5 days | The 93, 1 day | All 186, 5 days | All 186, 1 day |
+|---|---|---|---|---|
+| ≥1R | 93 (100%) | 86 | 93 (50%) | 86 (46%) |
+| ≥1.5R | 77 | 63 | 77 (41%) | 63 (34%) |
+| ≥2R | 60 (65%) | 42 | 60 (32%) | 42 (23%) |
+| ≥3R | 46 (49%) | 21 | 46 (25%) | 21 (11%) |
+| ≥4R | 31 | 11 | 31 (17%) | 11 (6%) |
+| ≥5R | 21 | 5 | 21 (11%) | 5 (3%) |
+
+- The 93, 5 days: max R quartiles 1.81 / 2.96 / 4.89; median time to 1R 3.7h, 2R 12.1h, 3R 28.2h.
+  Long median 3.35R, short 2.87R.
+- In "all 186", a setup that touched the 1.0 first counts as −1R; at 5 days none sat between the
+  two.
+- Rough reading, no costs: a 1R target on all 186 is 93 wins against 93 losses, ≈0R. A 2R target is
+  −6R to +27R — 33 setups reached 1–2R and were not followed to a stop or the horizon.
+
+**Status:** facts recorded, no entry rule built or replayed. The 93 are only known in hindsight; no
+signal tested in Runs 27–36 or here picks them out in advance.
+
+## Run 60 — 2026-09-28: a lower-frame structure sequence that picks out Run 59's winners — none
+
+**The question (Aaron):** of Run 59's 186 no-gap setups, do the 93 that made the new extreme before
+the 1.0 share a 1m or 5m structure pattern — a shift, a break, or a sequence such as break against
+> shift with > break with — that the 93 losers do not?
+
+**Method, declared before the results.** Same pool and walk as Run 59. Events from the canonical
+structure engine at its default swing length (the one the strategy's replay uses), on M1 and on M1
+resampled to 5m: swing and internal, break and shift, with and against — 16 event types. Window:
+from the first M1 bar at the 0.5 until price is +0.25R toward the 0.0 (R = 0.5 → 1.0) or the 1.0
+touch, whichever is first; nothing later counts. Events ordered by bar close time. 4,368 candidates
+(16 singles, 256 ordered pairs, 4,096 ordered triples). Search 2020–23, check 2024–26; minimum 15
+and 8 setups; pass = +10pp over that half's baseline in BOTH halves. 200 label shuffles within each
+half for the chance rate.
+
+- Baselines: 55.4% (112 setups) in 2020–23, 41.9% (74) in 2024–26.
+- The window is short: median 1 event per setup, 56 of 186 with none. Only 17 candidates met the
+  minimum n.
+- **Passers: 0.** Shuffled labels: median 0, 95th percentile 4. The best search-half lift was
+  +1.2pp and fell to −11.1pp in the check half.
+- The sequences Aaron named: 5m shift with — 7 and 5 setups, below baseline in the search half.
+  1m shift with — 43.2% vs 55.4%, then 45.2% vs 41.9%. 1m break against > shift with > break
+  with — 41.2% vs 55.4%, then 44.4% vs 41.9%. The same triple on 5m formed in time on 2 setups in
+  6.7 years.
+- "Shift against" looks like a loser marker only because windows that end at the 1.0 are losers by
+  definition; among windows that reached +0.25R first it is within noise.
+
+**Verdict: Reject — not proven.** Agrees with Run 34 on a different pool and winner definition.
+
+🔴 **Correction to Run 34's tool** (`nogap_winner_patterns.py` on `research/nogap-shift-5m`): it built
+each sequence as all 1m events followed by all 5m events, never sorted by time, so its CROSS-FRAME
+pairs were not real time orderings. Its same-frame results — which carried its verdict — stand.
+
+## Run 61 — 2026-09-28: a stop order at a fib level of the leg after the turn — fairly priced
+
+**The question (Aaron):** once price turns from the zone toward the 0.0, at which fib level of the
+same leg does reaching it mean price usually goes on to the new extreme?
+
+**Method.** Run 59's 186 setups and walk. Levels 0.45 to 0.1 (11). For each: how many reached it
+before the 1.0 and how many then went beyond the 0.0. Then a stop order filled exactly at the level
+on first touch, two stops (the 1.0; beyond the turn — the furthest adverse price since arrival plus
+0.02 of the leg), targets 1R / 2R / the 0.0 — 66 cells. PU Prime ECN costs: spread 0.12 plus $1 a
+side per lot, 0.14/oz round trip; slippage unmeasured, swap excluded.
+
+| Level | Reached | Went beyond the 0.0 | Break-even win rate to the 0.0, 1.0 stop |
+|---|---|---|---|
+| 0.45 | 174 | 53.4% | 55% |
+| 0.382 | 158 | 58.9% | 62% |
+| 0.318 | 131 | 71.0% | 68% |
+| 0.236 | 119 | 78.2% | 76% |
+| 0.15 | 104 | 89.4% | 85% |
+| 0.1 | 103 | 90.3% | 90% |
+
+- Continuation rises with depth only because losers drop out; it tracks the break-even rate within
+  about 3 points at every level. The leg is fairly priced.
+- 13 of 66 cells are positive in both halves after costs, nearly all at 0.286 or deeper. Best three
+  by their worse half: +0.11 to +0.13R a trade after costs, ± 0.09–0.13, chance above 0 81–92%
+  before any correction for picking the best of 66.
+- Every cell at 0.35 and shallower is flat or negative in 2024–26.
+
+**Verdict: Reject — not proven.**
+
+## Run 62 — 2026-09-28: a breakout of the old extreme after the no-gap retrace — the closest yet
+
+**The question (Aaron):** of the setups that went back to the 0.0, how many made at least 1R from
+there?
+
+**The trade, pinned.** A stop order resting at the 0.0 from arrival, cancelled at the 1.0 touch. It
+fills on exactly Run 59's 93 — so, unlike Runs 59–61, the pool is NOT hindsight. Filled at exactly
+the 0.0 on the first M1 bar beyond it. Stops frozen at fill: (a) beyond the turn + 0.02 of the leg,
+(b) the 0.5, (c) the 1.0. Targets 1R / 2R / 3R, 5 business days from fill. Stop on the fill bar is a
+loss; no same-bar ties occurred. Costs as Run 61.
+
+| Stop / target | W / L / open | R per trade after costs | ± 1 s.e. | Chance above 0 | 2020–23 | 2024–26 | Long / short |
+|---|---|---|---|---|---|---|---|
+| (a) 1R | 51 / 39 / 3 | +0.12 | 0.10 | 88% | +0.13 | +0.10 | +0.24 / +0.01 |
+| **(a) 2R** | 34 / 51 / 8 | **+0.21** | 0.15 | 93% | +0.31 | +0.02 | +0.51 / −0.05 |
+| (a) 3R | 21 / 57 / 15 | +0.19 | 0.18 | 86% | +0.30 | −0.03 | +0.35 / +0.05 |
+| (b) 1R | 51 / 42 / 0 | +0.08 | 0.10 | 78% | +0.08 | +0.09 | +0.21 / −0.04 |
+| (b) 2R | 36 / 55 / 2 | +0.18 | 0.15 | 88% | +0.27 | +0.02 | +0.48 / −0.09 |
+| (c) 1R | 47 / 39 / 7 | +0.06 | 0.10 | 74% | +0.11 | −0.02 | +0.15 / −0.01 |
+
+- Median risk: (a) 0.67 of the leg ($13.13/oz), (b) 0.50, (c) 1.00. Costs take 0.01–0.02R a trade.
+- Median time from fill to 1R: (a) 8.6h, (b) 4.2h, (c) 23.5h.
+- Only the 1R targets hold in both halves. The 2R and 3R edge is 2020–23 and longs — possibly just
+  gold's trend.
+
+**Verdict: Reject — not proven**, but the only version in Runs 27–62 that fills without hindsight
+and stays positive in both halves. Next: the rule fixed at (a) 1R and checked on 2018–2019, which no
+run in this line has touched — see Run 63. If it ever passes, it belongs in the break-of-structure
+bot, not SOS Fade, so it does not queue in front of primaries in the one position slot.
+
+Scripts for Runs 59–62 ran from a session scratchpad and are not in the repo.
+
+## Run 63 — 2026-09-28: Run 62's breakout on 2018–2019 — fails the declared rule
+
+**The rule, fixed before the run:** Run 62 cell (a) 1R — stop order at the 0.0, stop beyond the turn
++ 0.02 of the leg, 1R target, 5 business days, PU Prime ECN costs. **Pass rule, declared before the
+run:** (1) 2018–19 net R per trade > 0 AND (2) pooled 2018–2026 chance above 0 ≥ 95%.
+
+**Basis:** one replay 2018-09-14 → 2026-09-29 on run 467118f513e9's settings. History real from
+2018-09-14 by bars per weekday (M15 median 92, M1 1,379). First setup counted 2018-11-01 (about 3,300
+M15 bars of warm-up). 2018-11 → 2019-12: 85 armed, 50 into the zone, 29 no-gap untraded, 18 filled.
+
+| Window | Trades | W / L / open | Net R per trade | ± 1 s.e. | Chance above 0 |
+|---|---|---|---|---|---|
+| 2018–19 | 18 | 10 / 7 / 1 | +0.13 | 0.23 | 73% |
+| 2020–26 (Run 62) | 93 | 51 / 39 / 3 | +0.12 | 0.10 | 88% |
+| **Pooled** | 111 | — | **+0.12** | 0.09 | **90.4%** |
+
+- (1) passes, (2) fails. **Verdict: Reject — not proven.**
+- The long/short split reversed: 2018–19 longs −0.16, shorts +0.37 — the opposite of 2020–26.
+- The 2R target (information only) turns negative out of sample: 2018–19 −0.18R a trade.
+- **Cold-start artefact:** with warm history the 2020+ pool is 185, not 186. One long (SOS
+  2020-01-02 09:30, a $2.92 leg) exists only when the engine starts cold on 2020-01-01 — as lab run
+  467118f513e9 does. It was a breakout winner; warm, Run 62's cell reads 50 / 39 / 3 (+0.11R).
+  Immaterial to that run, but it is in it.
+
+**This closes the no-gap line on XAUUSD 15m through Run 63.** The breakout at the 0.0 is a small
+positive (+0.12R ± 0.09) that does not reach the declared confidence.
