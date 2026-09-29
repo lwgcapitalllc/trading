@@ -16,3 +16,5 @@
 2026-09-29 03:22:23,695 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
 2026-09-29 14:30:01,166 [INFO] place bullish primary limit 0.8L @ 4124.64378 SL 4118.216780000001 TP none
 2026-09-29 14:30:01,276 [INFO] PENDING PLACED | ticket=368280675 | bullish 0.8L @ 4124.64 | SL=4118.22 TP=none
+2026-09-29 15:45:04,219 [INFO] cancel bullish primary limit T368280675
+2026-09-29 15:45:04,328 [INFO] PENDING CANCELLED | T368280675
