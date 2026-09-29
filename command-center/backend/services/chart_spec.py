@@ -472,9 +472,35 @@ def _build_trades(
         # trail taking the whole position gives one leg per still-open bracket, all at one
         # price. They are one line on the chart, so they are one chip: drawing the second
         # stacks a duplicate 15px below and reads as two separate fills.
+        #
+        # 🔴 A SCALE-IN LOT BANKING ON ITS OWN IS NOT THE TRADE'S EXIT (2026-09-28). The strategy
+        # records that fill as a leg too, so a trade with three adds drew FOUR `Exit` chips across
+        # its box and read as exiting four times (Aaron, run 12bd4b64ae2e, the long of
+        # 2020-07-16). Each lot's close is already drawn by the `Scale-in detail` layer in its own
+        # box, so here a leg matching a lot's recorded close — same bar, price and reason — is
+        # left out. ⚠ The LAST leg is never dropped: a stop or force-close takes the adds WITH the
+        # base in one leg carrying the same bar/price/reason as each lot, and that leg is the
+        # trade's exit. A run stored before lots recorded their close matches nothing and draws as
+        # it always did.
+        lot_closes = {
+            (int(a["exit_ms"]), round(float(a["exit_price"]), 5), str(a.get("exit_reason") or ""))
+            for a in (p.get("adds") or [])
+            if isinstance(a, dict)
+            and isinstance(a.get("exit_ms"), (int, float))
+            and isinstance(a.get("exit_price"), (int, float))
+        }
+        raw_legs = [lg for lg in p.get("legs") or [] if isinstance(lg.get("price"), (int, float))]
         profit_legs: list = []
-        for lg in p.get("legs") or []:
-            if not isinstance(lg.get("price"), (int, float)):
+        for j, lg in enumerate(raw_legs):
+            if (
+                j < len(raw_legs) - 1
+                and (
+                    int(lg.get("ms") or 0),
+                    round(float(lg["price"]), 5),
+                    str(lg.get("reason") or ""),
+                )
+                in lot_closes
+            ):
                 continue
             lp = float(lg["price"])
             leg = {

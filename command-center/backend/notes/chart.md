@@ -805,6 +805,18 @@ adds would not make it model them, it would make it double-count the base. A sca
 therefore not something the sizing engine can currently re-size, and that is a known gap rather
 than a solved problem.
 
+### A lot banking on its own is not the trade's EXIT (2026-09-28)
+
+The strategy records a lot banking on its own target as a leg of the trade, so the long of
+2020-07-16 on run 12bd4b64ae2e (three adds) drew **four** `Exit` chips across its box and read as
+exiting four times. `_build_trades` now leaves out of `profitLegs` any leg matching a lot's
+recorded close on bar, price and reason; the `Scale-in detail` layer already draws each lot's close
+in its own box. ⚠ **The last leg is never dropped** — a stop or force-close takes the lots WITH the
+base in one leg that matches every lot exactly, and that leg is the trade's exit. A run whose lots
+never recorded their close matches nothing and draws as before. ⚠ **A cached `chart_spec.json` is
+not rebuilt on its own** — an older run shows the old chips until its chart is fetched with
+`?refresh=true`. Tests: `tests/test_chart_spec_tp_rungs.py`, both guards proven red by mutation.
+
 ## Trade fibs — the leg each trade was actually priced off
 
 `chart_spec._trade_fib`. Aaron's brother asked to see, on every trade the chart plots, the fib run
