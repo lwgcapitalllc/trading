@@ -82,3 +82,11 @@
 2026-09-29 19:45:03,874 [INFO] Priority 2 on this account: waiting 16s for the bots above
 2026-09-29 20:00:03,752 [INFO] Priority 2 on this account: waiting 16s for the bots above
 2026-09-29 20:15:02,695 [INFO] Priority 2 on this account: waiting 17s for the bots above
+2026-09-29 20:30:02,429 [INFO] Priority 2 on this account: waiting 18s for the bots above
+2026-09-29 20:42:21,474 [ERROR] TRADING OFF: the terminal has lost its connection to the broker's server. Every order this bot sends will be refused.
+2026-09-29 20:43:01,527 [INFO] Trading is allowed on this account again.
+2026-09-29 20:45:01,898 [INFO] Priority 2 on this account: waiting 18s for the bots above
+2026-09-29 20:57:21,747 [ERROR] TRADING OFF: the terminal has lost its connection to the broker's server. Every order this bot sends will be refused.
+2026-09-29 20:58:01,799 [INFO] Trading is allowed on this account again.
+2026-09-29 21:06:22,414 [ERROR] TRADING OFF: the terminal has lost its connection to the broker's server. Every order this bot sends will be refused.
+2026-09-29 21:07:02,466 [INFO] Trading is allowed on this account again.

@@ -20,3 +20,9 @@
 2026-09-29 15:45:03,795 [INFO] PENDING CANCELLED | T394820594
 2026-09-29 19:27:05,052 [ERROR] TRADING OFF: the terminal has lost its connection to the broker's server. Every order this bot sends will be refused.
 2026-09-29 19:28:05,340 [INFO] Trading is allowed on this account again.
+2026-09-29 20:42:16,661 [ERROR] TRADING OFF: the terminal has lost its connection to the broker's server. Every order this bot sends will be refused.
+2026-09-29 20:43:16,878 [INFO] Trading is allowed on this account again.
+2026-09-29 20:57:29,177 [ERROR] TRADING OFF: the terminal has lost its connection to the broker's server. Every order this bot sends will be refused.
+2026-09-29 20:58:19,309 [INFO] Trading is allowed on this account again.
+2026-09-29 21:06:20,214 [ERROR] TRADING OFF: the terminal has lost its connection to the broker's server. Every order this bot sends will be refused.
+2026-09-29 21:07:10,302 [INFO] Trading is allowed on this account again.
