@@ -1,0 +1,5 @@
+2026-09-29 03:12:36,991 [ERROR] Config changed in ways that CANNOT be applied to a running bot: exec_be_buf_tk: 30.0 → 60.0. Still running the settings loaded at startup. Restart the bot to take them (the version pin and the engine warmup are re-checked on restart).
+2026-09-29 03:16:58,794 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-29 03:16:58,794 [INFO] Stop requested — shutting down.
+2026-09-29 03:16:58,794 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-29 03:16:59,258 [INFO] MT5 disconnected.
