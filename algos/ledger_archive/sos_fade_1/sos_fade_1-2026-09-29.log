@@ -18,3 +18,5 @@
 2026-09-29 14:30:02,780 [INFO] PENDING PLACED | ticket=394820594 | bullish 1.15L @ 4124.64 | SL=4118.22 TP=none
 2026-09-29 15:45:03,623 [INFO] cancel bullish primary limit T394820594
 2026-09-29 15:45:03,795 [INFO] PENDING CANCELLED | T394820594
+2026-09-29 19:27:05,052 [ERROR] TRADING OFF: the terminal has lost its connection to the broker's server. Every order this bot sends will be refused.
+2026-09-29 19:28:05,340 [INFO] Trading is allowed on this account again.
