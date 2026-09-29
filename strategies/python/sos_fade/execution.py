@@ -1912,7 +1912,8 @@ class Execution:
                 # gates are already resolved through the enable-toggles exactly as `_armed`
                 # reads them — so "armed" means the same thing in an alert as in a decision.
                 self._setup_ctx[slot] = self._setup_context(
-                    sig, m, is_long, arm_swp, arm_div, veto, late, htf_any, tight, quiet)
+                    sig, m, is_long, arm_swp, arm_div, veto, late, htf_any, tight, quiet,
+                    touched=bool(zone_hit))
                 continue
 
             # it died (or traded) — book the miss, then close the watch either way
@@ -2170,7 +2171,7 @@ class Execution:
 
     def _setup_context(self, sig, m: _MissWatch, is_long: bool, arm_swp: bool, arm_div: bool,
                        veto: bool, late: bool, htf_any: bool, tight: bool,
-                       quiet: bool) -> dict:
+                       quiet: bool, touched: bool) -> dict:
         """Freeze what this side's live setup looks like on this bar.
 
         ⚠ **`tight` / `quiet` carry NO DEFAULT, and that is deliberate.** A default of False
@@ -2249,6 +2250,12 @@ class Execution:
 
         announce = self._announce_ready(sig, m.sos_bar, is_long)
 
+        # For the research feed (`backtest/setup_feed.py`), never a decision. `touched` is the
+        # zone LATCH the 1-minute entry reads (`_shift_context`: the 0.5 or the 0.618 tagged),
+        # which is NOT `zone_met` — that one also wants a gap. `leg` is copied off the same
+        # signal fields `_shift_context` freezes, and like `zone` it is None while no fib is live.
+        leg = (float(sig.fibo_p7), float(sig.fibo_p10)) if (
+            sig.fibo_dir != 0 and sig.fibo_p7 is not None and sig.fibo_p10 is not None) else None
 
         return {
             "key": self._setup_key(is_long, m.sos_bar, m.sos_ms),
@@ -2280,6 +2287,8 @@ class Execution:
             "zone": zone,
             "stop": proj_stop,
             "blocked_by": tuple(blocked),
+            "touched": touched,
+            "leg": leg,
         }
 
     def _book_setup_end(self, ctx: Optional[dict], state: str, reason: str,
@@ -2305,7 +2314,7 @@ class Execution:
             side=ctx["side"], state=state, confluences=ctx["confluences"],
             zone=ctx["zone"], entry=None, stop=ctx["stop"], targets=(),
             blocked_by=ctx["blocked_by"], reason=(f"{label} — {reason}" if label else reason),
-            tradeable=ctx["tradeable"],
+            tradeable=ctx["tradeable"], touched=ctx["touched"], leg=ctx["leg"],
         ))
 
     def live_setups(self) -> List[SetupSnapshot]:
@@ -2339,6 +2348,7 @@ class Execution:
                 tradeable=ctx["tradeable"],
                 announce_resting=ctx["announce_resting"],
                 paused_by=() if resting else self._pull_why[slot],
+                touched=ctx["touched"], leg=ctx["leg"],
             ))
         return out
 

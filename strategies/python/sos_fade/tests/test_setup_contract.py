@@ -67,7 +67,8 @@ def _real_context(ex, is_long=True):
     # sit ABOVE it deliberately, so the default context is NOT yet announce-ready and a test
     # that wants the other state has to say so.
     sig = SimpleNamespace(fibo_p2=100.0, fibo_p3=98.0, fibo_p4=97.0, fibo_p5=96.0,
-                          fibo_p6=95.0, fibo_p10=94.0, fibo_dir=1 if is_long else -1,
+                          fibo_p6=95.0, fibo_p7=105.0, fibo_p10=94.0,
+                          fibo_dir=1 if is_long else -1,
                           fibo_ash=105.0, fibo_asl=90.0,
                           low=102.5 if is_long else 91.0,
                           high=104.0 if is_long else 93.5)
@@ -75,7 +76,7 @@ def _real_context(ex, is_long=True):
     m.open(sos_bar=7, sos_ms=7_000, arm_src="SWP", swp_nm="Day Low")
     return ex._setup_context(sig, m, is_long, arm_swp=True, arm_div=False,
                              veto=False, late=False, htf_any=False,
-                             tight=False, quiet=False)
+                             tight=False, quiet=False, touched=False)
 
 
 def test_drain_clears_resolved_setups_so_they_are_not_re_sent_every_bar():
@@ -187,13 +188,14 @@ def _ctx_at(ex, low, high, is_long=True, sos_bar=7):
     from strategies.python.sos_fade.execution import _MissWatch
 
     sig = SimpleNamespace(fibo_p2=100.0, fibo_p3=98.0, fibo_p4=97.0, fibo_p5=96.0,
-                          fibo_p6=95.0, fibo_p10=94.0, fibo_dir=1 if is_long else -1,
+                          fibo_p6=95.0, fibo_p7=105.0, fibo_p10=94.0,
+                          fibo_dir=1 if is_long else -1,
                           fibo_ash=105.0, fibo_asl=90.0, low=low, high=high)
     m = _MissWatch()
     m.open(sos_bar=sos_bar, sos_ms=None, arm_src="SWP", swp_nm="Day Low")
     return ex._setup_context(sig, m, is_long, arm_swp=True, arm_div=False,
                              veto=False, late=False, htf_any=False,
-                             tight=False, quiet=False)
+                             tight=False, quiet=False, touched=False)
 
 
 def test_a_limit_is_not_announced_until_price_retraces_to_the_configured_fib():
@@ -308,3 +310,62 @@ def test_opening_a_watch_SNAPSHOTS_the_SOS_time_so_it_cannot_be_looked_up_later_
     assert m.sos_ms == 1_789_400_000_000
     m.open(sos_bar=4959, sos_ms=None, arm_src="DIV", swp_nm="")
     assert m.sos_ms is None, "a re-open must not keep the previous setup's time"
+
+
+# ── the research feed's two fields (2026-09-28) ──────────────────────────────────────────────
+def test_TOUCHED_is_the_zone_LATCH_the_1m_entry_reads_not_the_gap_confluence():
+    """A study must start watching where the 1-minute entry does — at the touch alone. The zone
+    CONFLUENCE also wants a gap, so reading it would start late on every gapless setup.
+
+    RED against threading `zone_met` (or a constant) into `touched`: this setup has touched
+    and has no gap, so its confluence is unmet while `touched` must be True.
+    """
+    ex = _strategy().execution
+    from types import SimpleNamespace
+
+    from strategies.python.sos_fade.execution import _MissWatch
+
+    sig = SimpleNamespace(fibo_p2=100.0, fibo_p3=98.0, fibo_p4=97.0, fibo_p5=96.0,
+                          fibo_p6=95.0, fibo_p7=105.0, fibo_p10=94.0, fibo_dir=1,
+                          fibo_ash=105.0, fibo_asl=90.0, low=99.0, high=101.0)
+    m = _MissWatch()
+    m.open(sos_bar=7, sos_ms=7_000, arm_src="SWP", swp_nm="Day Low")
+    m.zone, m.fvg = True, False
+    ctx = ex._setup_context(sig, m, True, arm_swp=True, arm_div=False, veto=False, late=False,
+                            htf_any=False, tight=False, quiet=False, touched=True)
+    ex._setup_ctx[0] = ctx
+    snap = ex.live_setups()[0]
+    assert snap.confluences[2].met is False      # no gap: the confluence is NOT met...
+    assert snap.touched is True                  # ...but price has reached the zone
+
+
+def test_the_LEG_is_copied_from_the_signal_on_both_snapshot_paths():
+    """RED against dropping `leg` from either builder — the terminal path is the one a study reads
+    last, and a leg missing there reads as "no live leg"."""
+    from backtest.setups import DEAD
+
+    ex = _strategy().execution
+    ctx = _real_context(ex)
+    ex._setup_ctx[0] = ctx
+    assert ex.live_setups()[0].leg == (105.0, 94.0)     # (fib 0.0, fib 1.0)
+    ex._book_setup_end(ctx, DEAD, "died")
+    assert ex._setup_done[0].leg == (105.0, 94.0)
+    assert ex._setup_done[0].touched is False
+
+
+def test_NO_live_fib_reports_NO_leg_rather_than_a_stale_one():
+    """Same rule `zone` follows: a fib with no direction is not a leg to price anything off.
+    RED against dropping the `fibo_dir != 0` guard."""
+    from types import SimpleNamespace
+
+    from strategies.python.sos_fade.execution import _MissWatch
+
+    ex = _strategy().execution
+    sig = SimpleNamespace(fibo_p2=100.0, fibo_p3=98.0, fibo_p4=97.0, fibo_p5=96.0,
+                          fibo_p6=95.0, fibo_p7=105.0, fibo_p10=94.0, fibo_dir=0,
+                          fibo_ash=105.0, fibo_asl=90.0, low=102.5, high=104.0)
+    m = _MissWatch()
+    m.open(sos_bar=7, sos_ms=7_000, arm_src="SWP", swp_nm="Day Low")
+    ctx = ex._setup_context(sig, m, True, arm_swp=True, arm_div=False, veto=False, late=False,
+                            htf_any=False, tight=False, quiet=False, touched=False)
+    assert ctx["leg"] is None

@@ -44,3 +44,11 @@ earlier SOS, and was rewritten until its mutation failed it.
 ## Measured
 
 **Reject — not proven** (2026-09-28): −0.078R a trade over 438 trades on GBPJPY and GBPUSD, losing in every date half, minimum stop on or off. Detail: `docs/SOS_FADE_GENERIC_SPEC.md` → *The lab run*. Ships OFF and stays OFF.
+
+## The research feed reads the same latch (2026-09-28)
+
+Every setup snapshot now carries `touched` — the zone latch this entry's setup check reads (0.5 or
+0.618 tagged), which is NOT the zone confluence (that one also wants a gap) — and `leg`, the fib
+0.0 and 1.0 copied off the same signal fields this entry freezes. Reporting only: nothing in a
+decision reads either. Why, and the replay proving no trade moved:
+`backtest/notes/setups-contract.md` → *`touched` and `leg`*.

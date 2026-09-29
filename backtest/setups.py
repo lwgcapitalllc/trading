@@ -142,6 +142,24 @@ class SetupSnapshot:
     #: ⚠ **Reporting only**, like every field here. A broker cancel-and-replace carries no
     #: reason and stays silent — Aaron, 2026-09-16: no cancel messages.
     paused_by: Tuple[str, ...] = ()
+    #: Has price reached this setup's entry zone at least once in its life? A LATCH, read on the
+    #: bar this snapshot describes. `None` means the strategy does not say, never "no".
+    #:
+    #: 🔴 **Why it exists (2026-09-28): a study must see a setup at the bar the strategy learns
+    #: of it, not from a record written after it ends.** The Generic FX studies anchored each
+    #: setup on its miss record's zone time, which brackets the DEEPEST visit to the band — only
+    #: knowable once the setup is over — so they skipped the early entries that lose. A study
+    #: said +0.26R a trade; the lab made -0.06R. `backtest/setup_feed.py` reads this field.
+    #:
+    #: ⚠ **It is not the zone CONFLUENCE.** A confluence can need more than price getting there
+    #: (SOS Fade's also needs a gap in the zone), and an entry that does not ask for that extra —
+    #: the 1-minute SOS-then-BOS entry — starts watching at the touch alone.
+    touched: Optional[bool] = None
+    #: The leg this setup is priced off, as `(extreme, origin)` — fib 0.0 and 1.0 — COPIED from
+    #: what the strategy holds on this bar. It moves while a setup is alive (the extreme extends),
+    #: and a study that freezes it must freeze it at the bar it chose, not at the end. `None` =
+    #: no live leg on this bar, or a strategy that does not say. Reporting only, like the rest.
+    leg: Optional[Tuple[float, float]] = None
 
     def __post_init__(self) -> None:
         # A bad state would route a message to the wrong formatter and, worse, would leave a
@@ -155,6 +173,8 @@ class SetupSnapshot:
             raise ValueError("SetupSnapshot.key must be a stable non-empty id")
         if self.zone is not None and len(self.zone) != 2:
             raise ValueError(f"SetupSnapshot.zone must be (shallow, deep), got {self.zone!r}")
+        if self.leg is not None and len(self.leg) != 2:
+            raise ValueError(f"SetupSnapshot.leg must be (extreme, origin), got {self.leg!r}")
 
     # ── How far along it is. Derived, never stored — see the note on `of`. ───────────────────
     @property
