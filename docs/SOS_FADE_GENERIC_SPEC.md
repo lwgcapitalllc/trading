@@ -93,6 +93,10 @@ pin set for gold (`SosFadeStrategy.engine_config`). A pair that moves less in pe
 fewer gaps that size. Testing it means changing that pin for FX runs, which moves the engine setting
 and needs its own measurement — not a tidy-up.
 
+⚠ **Every screen below reads its setups through `generic_fx_patterns.collect()`, which anchors each
+setup on its DEEPEST zone visit — hindsight.** Found 2026-09-28; see *The lab run*. Read their
+numbers as optimistic until re-run from the first tag.
+
 ### Does price turn from the zone? (2026-09-27, `backtest/tools/generic_zone_turn.py`)
 
 Every setup whose pullback reached the 0.5-0.886 zone, 2020-01-01 → 2026-09-26, M15. TURN = price made
@@ -225,10 +229,25 @@ edge on these runs is about 4%. The minimum stop is not the reason: turning it o
 About 55-60% of trades win, but winners average only +0.3 to +0.6R, so break-even needs
 roughly 65%.
 
-⚠ **The lab's trades are not the screen's trades.** The screen found 184 GBPJPY setups with the
-pattern; the lab took 213 trades despite holding only one position at a time, so the two select
-different setups. Why is not established. Until that gap is explained, the +0.26R screen
-result describes a trade this strategy does not take. Not investigated here.
+🔴 **Why the screen said +0.26R and the lab −0.06R — a HINDSIGHT anchor in the screen, found
+trade by trade (2026-09-28).** Matched on GBPJPY by entry minute and direction:
+
+| group | trades | lab R/trade | screen R/trade |
+|---|---|---|---|
+| both took it, same minute | 108 | +0.21 | +0.26 (107 of 108 same win/loss) |
+| lab only | 105 | −0.34 | — |
+| screen only | 76 | — | +0.35 |
+
+Every lab-only trade came from a setup the screen also had, and **100 of the 105 entered BEFORE the
+zone touch the screen started watching from.** The screen's setup list (`generic_fx_patterns.collect`)
+reads the strategy's miss records, and a miss's zone time brackets the setup's DEEPEST visit to the
+0.5-0.886 band — known only once the setup is over. So the screen skipped every earlier visit (the
+ones where price kept going to the 1.0) and started at the dip that held. The lab, trading from the
+first tag, took those early entries, lost on them, and had retired the setup before most of the
+screen-only winners arrived. **When the two take the same trade they agree; the edge was the
+anchor.** ⚠ The same `collect()` feeds every screen in this file (the zone turn, the POC, the FX
+patterns), so their numbers carry the same anchor. Scripts: the session's `recon_*.py`, not yet a
+repo tool.
 
 ⚠ Every trade from this entry is labelled a first-target exit in the trade list, stop-outs
 included; the cause is not checked. The R figures above are from each trade's
