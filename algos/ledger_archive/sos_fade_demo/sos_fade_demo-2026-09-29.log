@@ -1,0 +1,1 @@
+2026-09-29 03:12:28,812 [ERROR] Config changed in ways that CANNOT be applied to a running bot: exec_be_buf_tk: 30.0 → 60.0. Still running the settings loaded at startup. Restart the bot to take them (the version pin and the engine warmup are re-checked on restart).
