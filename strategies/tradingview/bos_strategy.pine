@@ -3442,6 +3442,26 @@ f_blkWhy(int c) =>
         7 => "Session VWAP — price is not closing on the trend's own side of the line. Re-checked every bar, so this setup can still arm if price closes back across before the leg dies."
         => ""
 
+// A setup that FILLED was never blocked (2026-09-30): a refusal can lift while its setup lives
+// and the same limit then fills. The fill ERASES that setup's tags and forgets the side's others,
+// which can no longer fill. Mirrors the Python fill. Drawing only — no decision reads these.
+var array<label> blkLbl = array.new<label>()
+var array<line>  blkLn  = array.new<line>()
+var array<int>   blkKey = array.new<int>()   // setup bar * 2 + side
+f_blkErase(int slot, int bar) =>
+    int i = array.size(blkKey) - 1
+    while i >= 0
+        int k = array.get(blkKey, i)
+        if k % 2 == slot
+            if k == bar * 2 + slot
+                label.delete(array.get(blkLbl, i))
+                line.delete(array.get(blkLn, i))
+            array.remove(blkLbl, i)
+            array.remove(blkLn, i)
+            array.remove(blkKey, i)
+        i -= 1
+    i
+
 // Trailing `int _blkDone = 0` stops the drawing chain becoming the function's
 // return expression (CE10235).
 f_blkTag(array<int> ks, int slot, bool isLong, bool ready, int code, int bosBar, float edge, float y) =>
@@ -3449,8 +3469,9 @@ f_blkTag(array<int> ks, int slot, bool isLong, bool ready, int code, int bosBar,
         int key = bosBar * 10 + code
         if key != array.get(ks, slot)
             array.set(ks, slot, key)
-            line.new(bar_index, edge, bar_index, y, color = BLK_PINKL, style = line.style_dotted, width = 1)
-            label.new(bar_index, y, (isLong ? "▲" : "▼") + " TRADE BLOCKED", tooltip = (isLong ? "▲ LONG" : "▼ SHORT") + " blocked\n──────────────────\n" + f_blkWhy(code) + "\n──────────────────\nBOS #" + str.tostring(isLong ? bosL_n : bosS_n) + " · limit would have rested at " + str.tostring(edge, format.mintick), color = BLK_PINK, textcolor = color.new(#101014, 0), style = isLong ? label.style_label_up : label.style_label_down, size = size.small)
+            array.push(blkLn, line.new(bar_index, edge, bar_index, y, color = BLK_PINKL, style = line.style_dotted, width = 1))
+            array.push(blkLbl, label.new(bar_index, y, (isLong ? "▲" : "▼") + " TRADE BLOCKED", tooltip = (isLong ? "▲ LONG" : "▼ SHORT") + " blocked\n──────────────────\n" + f_blkWhy(code) + "\n──────────────────\nBOS #" + str.tostring(isLong ? bosL_n : bosS_n) + " · limit would have rested at " + str.tostring(edge, format.mintick), color = BLK_PINK, textcolor = color.new(#101014, 0), style = isLong ? label.style_label_up : label.style_label_down, size = size.small))
+            array.push(blkKey, bosBar * 2 + slot)
     int _blkDone = 0
 
 var array<int> blkKeys = array.from(-1, -1)
@@ -3511,6 +3532,7 @@ f_confClose(TradeLbl t, float tradeR, float band) =>
 
 if strategy.position_size > 0 and strategy.position_size[1] <= 0
     tradedBosL := pendBosL
+    f_blkErase(0, pendBosL)
     bosTrdL    := bosTrdL + 1
     lOrd       := pendOrdL
     lEntry     := strategy.position_avg_price
@@ -3522,6 +3544,7 @@ if strategy.position_size > 0 and strategy.position_size[1] <= 0
     f_confOpen(tlbl, 1, lEntry, _cOff, pendConfL, execLabelWhich != "None")
 if strategy.position_size < 0 and strategy.position_size[1] >= 0
     tradedBosS := pendBosS
+    f_blkErase(1, pendBosS)
     bosTrdS    := bosTrdS + 1
     sOrd       := pendOrdS
     sEntry     := strategy.position_avg_price

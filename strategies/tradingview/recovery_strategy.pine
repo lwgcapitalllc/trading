@@ -3809,14 +3809,35 @@ f_blkWhy(int c) =>
         7 => "Minimum stop distance — the stop sits closer to the entry than your floor, so this position would be oversized and noise-sensitive."
         => ""
 
+// A setup that FILLED was never blocked (2026-09-30): a refusal can lift while its setup lives
+// and the same limit then fills. The fill ERASES that setup's tags and forgets the side's others,
+// which can no longer fill. Mirrors the Python fill. Drawing only — no decision reads these.
+var array<label> blkLbl = array.new<label>()
+var array<line>  blkLn  = array.new<line>()
+var array<int>   blkKey = array.new<int>()   // setup bar * 2 + side
+f_blkErase(int slot, int bar) =>
+    int i = array.size(blkKey) - 1
+    while i >= 0
+        int k = array.get(blkKey, i)
+        if k % 2 == slot
+            if k == bar * 2 + slot
+                label.delete(array.get(blkLbl, i))
+                line.delete(array.get(blkLn, i))
+            array.remove(blkLbl, i)
+            array.remove(blkLn, i)
+            array.remove(blkKey, i)
+        i -= 1
+    i
+
 // [doc 140] ks carries the last (sosBar*10 + code) reported per side — the dedupe ke  -> docs/sos_fade_strategy.md
 f_blkTag(array<int> ks, int slot, bool isLong, bool ready, int code, int sosBar, float edge, float y) =>
     if showBlockTag and ready and code != 0 and not na(sosBar) and not na(edge)
         int key = sosBar * 10 + code
         if key != array.get(ks, slot)
             array.set(ks, slot, key)
-            line.new(bar_index, edge, bar_index, y, color = BLK_PINKL, style = line.style_dotted, width = 1)
-            label.new(bar_index, y, (isLong ? "▲" : "▼") + " TRADE BLOCKED", tooltip = (isLong ? "▲ LONG" : "▼ SHORT") + " blocked\n──────────────────\n" + f_blkWhy(code) + "\n──────────────────\nLimit would have rested at " + str.tostring(edge, format.mintick), color = BLK_PINK, textcolor = color.new(#101014, 0), style = isLong ? label.style_label_up : label.style_label_down, size = size.small)
+            array.push(blkLn, line.new(bar_index, edge, bar_index, y, color = BLK_PINKL, style = line.style_dotted, width = 1))
+            array.push(blkLbl, label.new(bar_index, y, (isLong ? "▲" : "▼") + " TRADE BLOCKED", tooltip = (isLong ? "▲ LONG" : "▼ SHORT") + " blocked\n──────────────────\n" + f_blkWhy(code) + "\n──────────────────\nLimit would have rested at " + str.tostring(edge, format.mintick), color = BLK_PINK, textcolor = color.new(#101014, 0), style = isLong ? label.style_label_up : label.style_label_down, size = size.small))
+            array.push(blkKey, sosBar * 2 + slot)
     int _blkDone = 0
 
 var array<int> blkKeys = array.from(-1, -1)
@@ -3948,6 +3969,7 @@ if posPrimary > 0 and posPrimary[1] <= 0
         tradedBLegL := pendSosL
     else
         tradedSosL := pendSosL
+        f_blkErase(0, pendSosL)
     lEntry     := f_primaryEntryPx()
     lEntryTime := time
     lStage     := 0
@@ -3971,6 +3993,7 @@ if posPrimary < 0 and posPrimary[1] >= 0
         tradedBLegS := pendSosS
     else
         tradedSosS := pendSosS
+        f_blkErase(1, pendSosS)
     sEntry     := f_primaryEntryPx()
     sEntryTime := time
     sStage     := 0
