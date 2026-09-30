@@ -216,3 +216,14 @@ listed below under the notes file that now holds it.
 
 - 🔴 Each level tier shows only up to its own timeframe (2026-09-14) — H4 ≤ 4H, sessions intraday, daily ≤ D, weekly and PWC ≤ W; written once at `canShowDaily`
 - 🔴 PWC rolls at the week's open, with PWH/PWL (2026-09-14) — the strategy Pines are deliberately left on their older weekly block
+
+### `notes/ny-opening-range.md` — the New York opening range, its length and the three parts that move together
+
+**Read before touching:** the opening-range length, the box that draws it, or adding a length to the panel list.
+
+- 🟢 The length is a CHOICE since 2026-09-29 — 5 Min (unchanged default) or 15 Min, one panel setting declared LAST in the file so no saved chart re-points its other text choices
+- ⚠ The window, the follow-on window that runs to the close, and the feed they are read from are ONE setting expressed three ways and may never be changed apart
+- ⚠ Only lengths that DIVIDE THE HOUR can be added — the range is one candle of a feed its own length, and that candle has to open on the bell; 10/20/50 do not
+- 🔴 OPEN, pre-existing: the range is read with look-ahead ON, so on history the box draws full-width from the first bar of the window — and that error scales with the length, so 15 Min is three times the 5 Min one
+- 🔴 `engines/sessions/` and the parity export are both still pinned to five minutes, so a chart on 15 Min shows a range nothing on the Python side reproduces and the gate cannot see it
+- ⚠ UNPROVEN until it compiles on TradingView — Pine cannot be built locally

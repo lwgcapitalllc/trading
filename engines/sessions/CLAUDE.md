@@ -91,6 +91,14 @@ plus the bar's high/low (needed only for the running session / NY-range extremes
 - **NY opening range** — the high/low of the `0930-0935` NY window (one 5-minute bar), frozen for
   the rest of the day. **≤5m feature** (Pine reads it off a 5m security): feed 5-minute-or-finer
   bars if you rely on `ny_range_high/low`. The session windows and kill zones are timeframe-agnostic.
+  🔴 **THE CHART INDICATOR'S RANGE LENGTH BECAME A USER CHOICE ON 2026-09-29 AND THIS ENGINE HAS NO
+  SETTING FOR IT.** `mpc_jarvis.pine` now offers a fifteen-minute open (`0930-0945`, then
+  `0945-1600`) beside the five-minute one; this engine and the parity export are both still pinned
+  to five. That is safe while five is the indicator's DEFAULT — the export exports the default — but
+  **a chart switched to fifteen is showing a range nothing here reproduces, and the parity gate
+  cannot see the difference.** The window constants are the only thing in the way: the range is
+  already accumulated from whatever bars it is fed, so a setting would not need a rewrite. Detail:
+  `indicators/engines/notes/ny-opening-range.md`.
 
 ### Two deliberate deviations from the Pine source (both = "emit events, not visuals")
 

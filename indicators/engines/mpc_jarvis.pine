@@ -758,6 +758,24 @@ bool drawFibo   = showFibTool and showFiboInput and _fibTfOk
 bool drawSniper = showFibTool and showSniperInput
 string sharedLabelMode = input.string("TP/Entry", "Fib label style", options = ["TP/Entry", "Fib Value", "Both"], group = GRP_FIBO, tooltip = "What each fib line is tagged with: the trade name, the ratio, or both.", display = display.none)
 
+// ── OPENING RANGE LENGTH (Kelly, 2026-09-29) ──
+// The New York opening range has always been the FIVE minutes off the bell, 0930-0935 NY.
+// Students who trade a slower open asked for the fifteen-minute range, so the length is a
+// choice now. The default is unchanged, so no chart already running this moves.
+// ⚠ DECLARED HERE, AT THE VERY END OF THE INPUTS, AND DELIBERATELY NOT BESIDE THE KILL
+// ZONE TOGGLE IT SITS UNDER ON THE PANEL. TradingView keys a chart's saved values off
+// DECLARATION ORDER WITHIN EACH TYPE, so a string added up in Chart Tools would silently
+// re-point the fib label style — and every string after it — on every chart already
+// running this script. `group =` is what places it on the panel; the declaration stays
+// last. Same rule as the level-tag size note above, and the reason that one is pinned.
+// ⚠ BOTH LENGTHS DIVIDE THE HOUR, AND THAT IS WHAT MAKES THIS A THREE-STRING SWAP RATHER
+// THAN A REWRITE. The range is read off a feed of its own length, so it is EXACTLY ONE
+// candle of that feed and that candle starts on the bell: 5 and 15 both align, 10/20/50
+// do not. A length that does not divide the hour would have to be accumulated bar by bar
+// from the chart's own candles instead — so do NOT extend this list without reading the
+// note at the opening-range block below.
+string nyRangeLenInput = input.string("5 Min", "Opening Range", options = ["5 Min", "15 Min"], group = GRP_TOOLS, active = showKZandNYRInput, tooltip = "How long the New York opening range runs from the 09:30 bell. 5 minutes is the tuned default; 15 suits a slower open.", display = display.none)
+
 float fibo1Value     = 0.382
 color fibo1Color     = #4caf50
 string fibo1Style    = "┈"
@@ -2411,12 +2429,25 @@ inAsia   = not na(time("", firstSessionTime,  firstSessionTZ))
 inLondon = not na(time("", secondSessionTime, secondSessionTZ))
 inNY     = not na(time("", thirdSessionTime,  thirdSessionTZ))
 
-inSession5 = not na(time("5", "0930-0935", "America/New_York"))
-inExtend5  = not na(time("5", "0935-1600", "America/New_York"))
-[startTime5, high5, low5] = request.security(syminfo.tickerid, "5", [time, high, low], lookahead = barmerge.lookahead_on)
+// ── THE OPENING RANGE, AND ITS THREE PARTS MOVE TOGETHER ──
+// The range window, the follow-on window that runs to the close, and the feed they are
+// read from are ONE setting expressed three ways, and they may never be changed apart:
+//   5 Min  — 0930-0935, then 0935-1600, read off five-minute candles
+//   15 Min — 0930-0945, then 0945-1600, read off fifteen-minute candles
+// The feed's length always equals the range's, so the range is exactly one candle of it
+// and that candle opens on the bell. Leave the follow-on window behind and the range
+// freezes while price is still inside it; leave the feed behind and the box is a
+// different length from the window that drew it.
+bool   nyrIs15 = nyRangeLenInput == "15 Min"
+string nyrFeed = nyrIs15 ? "15" : "5"
+string nyrWin  = nyrIs15 ? "0930-0945" : "0930-0935"
+string nyrExt  = nyrIs15 ? "0945-1600" : "0935-1600"
+inNyrWindow = not na(time(nyrFeed, nyrWin, "America/New_York"))
+inNyrExtend = not na(time(nyrFeed, nyrExt, "America/New_York"))
+[nyrFeedTime, nyrFeedHigh, nyrFeedLow] = request.security(syminfo.tickerid, nyrFeed, [time, high, low], lookahead = barmerge.lookahead_on)
 
 var int nyr_startTime = 0
-nyr_startTime := inSession5 and not inSession5[1] and isMondayToFriday ? startTime5 : nyr_startTime[1]
+nyr_startTime := inNyrWindow and not inNyrWindow[1] and isMondayToFriday ? nyrFeedTime : nyr_startTime[1]
 
 nyMidnightToday   = timestamp("America/New_York", year(timenow, "America/New_York"), month(timenow, "America/New_York"), dayofmonth(timenow, "America/New_York"), 0, 0)
 
@@ -4533,36 +4564,37 @@ f_processNyRange() =>
     var float nyr_low_val = na, var float nyr_high_val = na
 
     if showNYRange
-        if inSession5 and not inSession5[1] and isMondayToFriday and withinNYRangeDays
-            nyr_low_val  := low5
-            nyr_high_val := high5
-        if inSession5 and isMondayToFriday and withinNYRangeDays
+        if inNyrWindow and not inNyrWindow[1] and isMondayToFriday and withinNYRangeDays
+            nyr_low_val  := nyrFeedLow
+            nyr_high_val := nyrFeedHigh
+        if inNyrWindow and isMondayToFriday and withinNYRangeDays
             // ── THE DELETE IS UNCONDITIONAL NOW (Aaron, 2026-08-05) ──
-            // It used to be guarded by `if inSession5[1]` — "only if we were already in
+            // It used to be guarded by `if inNyrWindow[1]` — "only if we were already in
             // the session last bar" — which skipped it on the FIRST bar of the window
             // while the six lines below reassigned every handle anyway. Yesterday's box
             // and lines were then unreferenced and could never be deleted by anything:
             // they stayed on the chart until TradingView evicted them at max_lines_count,
             // which is roughly eighty days of them.
-            // Worse on a 5m chart, where the whole 0930-0935 window is ONE bar, so
-            // `inSession5[1]` is never true and this delete never ran at all.
+            // Worse on a chart whose candle IS the range — a 5m chart on the 5-minute
+            // setting, a 15m chart on the 15-minute one — where the whole window is ONE
+            // bar, so `inNyrWindow[1]` is never true and this delete never ran at all.
             // Deleting an `na` handle is a no-op in Pine, so dropping the guard costs
             // nothing on the first bar and closes the leak on every later one.
             line.delete(nyr_lowHLine),  line.delete(nyr_topHLine)
             line.delete(nyr_leftVLine), line.delete(nyr_rightVLine)
             line.delete(nyr_middleHLine)
             box.delete(nyr_bgBox)
-            if low5 < nyr_low_val
-                nyr_low_val := low5
-            if high5 > nyr_high_val
-                nyr_high_val := high5
+            if nyrFeedLow < nyr_low_val
+                nyr_low_val := nyrFeedLow
+            if nyrFeedHigh > nyr_high_val
+                nyr_high_val := nyrFeedHigh
             nyr_bgBox       := box.new(left = nyr_startTime, top = nyr_high_val, right = time, bottom = nyr_low_val, xloc = xloc.bar_time, bgcolor = color.new(color.blue, 80), border_color = color.blue, border_width = 2, border_style = line.style_solid)
             nyr_lowHLine    := line.new(nyr_startTime, nyr_low_val,  time, nyr_low_val,  xloc = xloc.bar_time, color = color.blue, style = line.style_solid, width = 2)
             nyr_topHLine    := line.new(nyr_startTime, nyr_high_val, time, nyr_high_val, xloc = xloc.bar_time, color = color.blue, style = line.style_solid, width = 2)
             nyr_leftVLine   := line.new(nyr_startTime, nyr_high_val, nyr_startTime, nyr_low_val, xloc = xloc.bar_time, color = color.blue, style = line.style_solid, width = 2)
             nyr_rightVLine  := line.new(time, nyr_high_val, time, nyr_low_val, xloc = xloc.bar_time, color = color.blue, style = line.style_solid, width = 2)
             nyr_middleHLine := line.new(nyr_startTime, (nyr_high_val + nyr_low_val) / 2, time, (nyr_high_val + nyr_low_val) / 2, xloc = xloc.bar_time, color = color.red, style = line.style_dotted, width = 2)
-        if inExtend5 and not inSession5 and isMondayToFriday and withinNYRangeDays
+        if inNyrExtend and not inNyrWindow and isMondayToFriday and withinNYRangeDays
             if not na(nyr_lowHLine)
                 t1 = line.get_x1(nyr_lowHLine), p = line.get_y1(nyr_lowHLine)
                 line.delete(nyr_lowHLine)
@@ -4577,17 +4609,18 @@ f_processNyRange() =>
                 nyr_middleHLine := line.new(t1, p, time, p, xloc = xloc.bar_time, color = color.red, style = line.style_dotted, width = 2)
     // ── AND IT IS WIPED WHEN THE DAY ENDS (Aaron, 2026-08-05) ──
     // Nothing here ever removed the range. It was only ever deleted from inside the
-    // 0930-0935 block above, so after 16:00 NY the box, both verticals, the high/low
+    // opening-range block above, so after 16:00 NY the box, both verticals, the high/low
     // lines and the red midline simply stopped being touched and sat on the chart
     // through the overnight session and all of the next London — until 09:30 the
     // following morning. That is the "still there when a new day starts" complaint.
-    // `inExtend5` bounds the NY day (0935-1600), so its falling edge IS the end of the
-    // day and is the honest moment to clear a level that only described that day.
+    // `inNyrExtend` bounds the NY day — the range's own close through 16:00 — so its
+    // falling edge IS the end of the day and is the honest moment to clear a level that
+    // only described that day.
     // ⚠ Deliberately OUTSIDE `if showNYRange`, unlike everything above it. Switching the
     // tool off mid-session used to leave the drawing behind for the same reason — the
     // only delete lived on a path the toggle had already closed. The na guard is what
     // stops this firing on every bar once it has run.
-    bool nyrEnded = (not inExtend5 and inExtend5[1]) or (not showNYRange and not na(nyr_bgBox))
+    bool nyrEnded = (not inNyrExtend and inNyrExtend[1]) or (not showNYRange and not na(nyr_bgBox))
     if nyrEnded
         line.delete(nyr_lowHLine),  line.delete(nyr_topHLine)
         line.delete(nyr_leftVLine), line.delete(nyr_rightVLine)
