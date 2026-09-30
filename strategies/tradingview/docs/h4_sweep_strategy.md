@@ -731,13 +731,43 @@ SCRATCH inside ±0.05R, as before.
 // ════════════════════════════════════════════════════════════════════════════
 //  DRAWING THE TRADE
 // ════════════════════════════════════════════════════════════════════════════
-// Red from entry to the opening stop, green from entry to TP1 — the picture from Aaron's
-// own position tool. Both boxes are frozen at the PLAN, so they still describe what was
-// risked and where the half came off even after the stop has moved.
-// ⚠ THERE IS NO BOX FOR THE RUNNER, and that is the honest drawing rather than a missing
-// one: TP2 is a trail, so the runner has no target price to draw a box to. What it has is
-// a stop that moves, and that is the dashed line — watch it leave the entry and climb.
 ```
+
+**Changed 2026-09-30: the RESULT box, SOS Fade's house standard, replaces the old PLAN boxes.**
+The file used to draw a red box from entry to the opening stop and a green box from entry to
+TP1 at the moment of entry, frozen at the plan. That showed what was risked, never what
+happened. Now:
+
+- **While open** — one grey box from the entry bar, between the entry and the latest close,
+  growing bar by bar.
+- **On close** — the grey box is deleted and the trade is repainted as stacked bands, all
+  ending at the last exit's bar:
+  - the **worst excursion** (faint red, behind everything) from entry to the furthest price
+    went against the trade;
+  - **green to each target price actually FILLED** — entry → the TP1 fill at the first depth,
+    then TP1 fill → the runner's exit at the second depth when the runner also closed beyond
+    TP1. A fill counts only at or beyond the TP1 price, so a breakeven stop never paints green.
+    With `TP1 size %` at 0 the runner's own exit beyond TP1 is the first band;
+  - **a loss with nothing banked** — a red band with a solid border from entry to the actual
+    exit price;
+  - **anything else** (flat, nothing banked) — an orange line at the entry.
+
+It is drawn from the tester's own closed-trade list, not from the file's own state — the same
+route as the extreme leg. A position's TP1 slice and runner are two closed trades with one
+entry bar; they are grouped by that bar, and a group is painted only once no open trade shares
+it, so a TP1 fill with the runner still running waits for the runner. The worst price comes
+from each piece's recorded maximum drawdown, converted back to a price. The stop and TP1 are
+this file's own values, used only when the closed trade's entry bar is the one this file
+recorded; otherwise a fill is counted as banked by its TP1 exit name alone.
+
+⚠ It runs BEFORE the triggers for the same reason as [55]: a new trigger on the closing bar
+overwrites the stop, TP1 and entry bar it reads.
+
+The TP1 tag and its dashed line are NOT drawn here — [56] still does that, at the real fill
+price. Drawing only: no order, stop, size or value feeding them reads anything in this block.
+
+⚠ **THERE IS NO TARGET BOX FOR THE RUNNER** — TP2 is a trail with no price to draw to. The
+dashed staircase ([46]) is how the runner is shown while it runs.
 
 ## [46] The moving stop, one segment per staged bar — the staircase IS the trail
 
@@ -921,7 +951,7 @@ visible through the entry label.
 Added 2026-09-30. The trade's R, the box's right edge, the TP1 tag, the entry label's
 recolour and the `[RESULT]` log line all used to run at the bottom of the script, AFTER the
 trigger blocks. On a bar where one trade closes and the next one triggers, the trigger has
-already overwritten `tNetAtEntry`, `tRiskUsd`, `tPat` and `bxRisk` by then, so the closed
+already overwritten `tNetAtEntry`, `tRiskUsd`, `tPat` and the trade's box by then, so the closed
 trade graded as exactly 0R, the NEW trade's box was cut to zero width, and the result line
 named the new trade's pattern. Grading first reads the closing trade's own values.
 

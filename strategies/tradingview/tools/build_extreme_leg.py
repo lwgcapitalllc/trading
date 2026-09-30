@@ -333,7 +333,7 @@ bool lowArmed  = not na(lowSweepBar)  and bar_index - lowSweepBar  <= barsBack a
 bool highArmed = not na(highSweepBar) and bar_index - highSweepBar <= barsBack and highFamilies >= minFamilies
 
 if showSweeps and (lowFamNow > 0 or highFamNow > 0)
-    label.new(bar_index, lowFamNow > 0 ? low : high, "swept", style = lowFamNow > 0 ? label.style_label_up : label.style_label_down, color = color.new(color.gray, 70), textcolor = color.gray, size = size.tiny)
+    label.new(bar_index, lowFamNow > 0 ? low : high, "swept", style = lowFamNow > 0 ? label.style_label_up : label.style_label_down, color = color.new(#999999, 45), textcolor = color.new(#101014, 0), size = size.tiny)
 
 // [doc 11] THE SETUP  -> docs/extreme_leg_strategy.md
 int lookbackBars = math.max(1, math.round(extremeMinutes / math.max(1, timeframe.in_seconds() / 60)))
@@ -701,12 +701,12 @@ f_lvl(float p, color c, string txt, bool on) =>
         label.new(bar_index + 10, p, txt, style = label.style_label_left, color = color(na), textcolor = color.new(c, 30), size = size.tiny)
 
 bool drawLevels = showLevels and barstate.islast
-f_lvl(h4H, color.gray, "H4 H", drawLevels)
-f_lvl(h4L, color.gray, "H4 L", drawLevels)
-f_lvl(dH, color.orange, "PDH", drawLevels)
-f_lvl(dL, color.orange, "PDL", drawLevels)
-f_lvl(wH, color.purple, "PWH", drawLevels)
-f_lvl(wL, color.purple, "PWL", drawLevels)
+f_lvl(h4H, #FF6B35, "H4 H", drawLevels)
+f_lvl(h4L, #FF6B35, "H4 L", drawLevels)
+f_lvl(dH, color.black, "PDH", drawLevels)
+f_lvl(dL, color.black, "PDL", drawLevels)
+f_lvl(wH, color.black, "PWH", drawLevels)
+f_lvl(wL, color.black, "PWL", drawLevels)
 
 if showDebug and barstate.islast
     label.new(bar_index, high, "15m dir " + str.tostring(st15.dir) + "\\n15m swing H " + str.tostring(st15.ash, format.mintick) + "\\n15m swing L " + str.tostring(st15.asl, format.mintick), style = label.style_label_down, color = color.new(color.black, 30), textcolor = color.white, size = size.small)

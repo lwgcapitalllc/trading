@@ -2950,8 +2950,8 @@ if _snBearBOS or _snBullBOS
         array.clear(sniper50Arr)
         array.clear(sniperLbl382Arr)
 
-    color _snColor = _snBullBOS ? color.new(#4caf50, 75) : color.new(#ff4444, 75)
-    color _snLineColor = _snBullBOS ? color.new(#4caf50, 0) : color.new(#ff4444, 0)
+    color _snColor = _snBullBOS ? color.new(#4caf50, 75) : color.new(#FF5252, 75)
+    color _snLineColor = _snBullBOS ? color.new(#4caf50, 0) : color.new(#FF5252, 0)
 
     if showSniperFib
         array.push(sniperBoxArr,    box.new(_snS, _zTop, _snE, _zBot, bgcolor = _snColor, border_color = color(na)))
@@ -2979,13 +2979,13 @@ plot(array.get(a_lastHighs, 1), "WH", color.new(i_weeklyColor,  100), editable =
 plot(array.get(a_lastLows,  1), "WL", color.new(i_weeklyColor,  100), editable = false, display = display.none)
 
 // [doc 61] MPC - JARVIS CONFIRMATION TABLE  -> docs/b_leg_strategy.md
-color JARVIS_YELLOW = #fbe35e
+color JARVIS_YELLOW = #ffde59
 color JARVIS_BLUE   = #17578e
 color JARVIS_WHITE  = #ffffff
 color JARVIS_BLACK  = #000000
-color JARVIS_BSL    = color.new(#ff4444, 0)
-color JARVIS_SSL    = color.new(#00cc66, 0)
-color JARVIS_NEUTRAL = color.new(#888888, 0)
+color JARVIS_BSL    = color.new(#FF5252, 0)
+color JARVIS_SSL    = color.new(#00E676, 0)
+color JARVIS_NEUTRAL = color.new(#94A3B8, 0)
 
 // ── 1. LIQUIDITY slots ──
 var string liq_h4h = "", var string liq_h4l = ""
@@ -3087,7 +3087,7 @@ if _snBearBOS or _snBullBOS
 
 // ── Draw table ──
 var table jarvisTable = table.new(f_tablePosition(tablePositionInput), 3, 18,
-  bgcolor      = color.new(#0a0a14, 5),
+  bgcolor      = color.new(#0B0E14, 5),
   border_color = color.new(JARVIS_BLUE, 50),
   border_width = 1,
   frame_color  = JARVIS_YELLOW,
@@ -3097,17 +3097,17 @@ f_jRow3(table t, int row, string sec, string val, color vc, string detail) =>
     table.cell(t, 0, row, sec,
       text_color  = color.new(JARVIS_WHITE, 20),
       text_size   = f_tableSize(tableSizeInput),
-      bgcolor     = color.new(#0a0a14, 15),
+      bgcolor     = color.new(#0B0E14, 15),
       text_halign = text.align_left)
     table.cell(t, 1, row, val,
       text_color  = vc,
       text_size   = f_tableSize(tableSizeInput),
-      bgcolor     = color.new(#0a0a14, 15),
+      bgcolor     = color.new(#0B0E14, 15),
       text_halign = text.align_center)
     table.cell(t, 2, row, detail,
       text_color  = color.new(JARVIS_WHITE, 40),
       text_size   = f_tableSize(tableSizeInput),
-      bgcolor     = color.new(#0a0a14, 15),
+      bgcolor     = color.new(#0B0E14, 15),
       text_halign = text.align_center)
 
 // Most recent BSL/SSL source — priority: NY > London > Asia > Daily > H4

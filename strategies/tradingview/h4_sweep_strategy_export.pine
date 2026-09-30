@@ -78,7 +78,7 @@ float minStopPct = input.float(0.0, "Minimum stop distance (% of price, 0 = off)
 bool   showEntryLabel = input.bool(true, "Show entry confluence label", group = G8, tooltip = "Prints one label per trade. Hover it for the full breakdown; it recolours by result and shows the R on close.")
 string labelWhich = input.string("All", "   ↳ keep labels for which results", options = ["All", "Wins only", "Losses only", "Losses + breakevens", "None"], group = G8, active = showEntryLabel, tooltip = "Which trades keep their label once the result is known. The rest are deleted on the bar the trade closes.")
 float  labelOff   = input.float(6, "   ↳ label distance from price (ATR)", group = G8, minval = 1, maxval = 40, step = 1, active = showEntryLabel, tooltip = "How far the label sits from the entry, in ATRs. Push it out so the hover opens over empty space instead of the candles.")
-bool   showTrade  = input.bool(true, "Show position box (result)", group = G8, tooltip = "Red from entry to the opening stop, green out to the first target, and a dashed staircase tracking the stop as it lifts. Also draws the entry triangles.")
+bool   showTrade  = input.bool(true, "Show position box (result)", group = G8, tooltip = "A grey box grows while the trade is open. When it closes the box is repainted with the result: green up to each target price actually filled, red down to the exit on a loss, and a faint red band for the furthest price went against the trade. Also draws the dashed line tracking the stop as it lifts, and the entry triangles.")
 bool   showTpTags = input.bool(true, "   ↳ Label the TP band (TP1)", group = G8, active = showTrade, tooltip = "Tags the first target at its real fill price once the trade closes. Off = the green band still paints, just untagged.")
 // [doc 5] 🔴 THIS FILE HAD NO BREAKEVEN STATE AT ALL, so a +0.02R scratch drew as a  -> docs/h4_sweep_strategy.md
 float  beBandR    = input.float(0.15, "Breakeven band (R)", group = G8, minval = 0, step = 0.05, tooltip = "A trade finishing within this many R of flat counts as a breakeven rather than a win or a loss.")
@@ -96,12 +96,15 @@ bool   logTrades  = input.bool(true, "Log every trade to Pine Logs", group = G8,
 color POS_WIN    = color.new(#26A69A, 12)   // a closed winner's callout
 color POS_LOSS   = color.new(#EF5350, 12)
 color POS_BE     = color.new(#FF9800, 12)   // BREAKEVEN — see the note at the result label
-color POS_DD     = color.new(#EF5350, 88)   // risk: entry → the opening stop, behind all
-color POS_G1     = color.new(#26A69A, 55)   // reward: entry → TP1
+color POS_DD     = color.new(#EF5350, 88)   // worst excursion: entry → the furthest price went against the trade, behind all
+color POS_G1     = color.new(#26A69A, 55)   // first banked rung: entry → its real fill
+color POS_G2     = color.new(#26A69A, 70)   // next banked rung: the first fill → the runner's fill beyond TP1
+color POS_RED    = color.new(#EF5350, 62)   // a loss: entry → the actual exit, solid red border
+color POS_OPENBX = color.new(#787B86, 80)   // the OPEN trade's box, grey until the result is known
 color POS_STOPLN = color.new(#EF5350, 25)   // the trailing-stop staircase
 color POS_GREENB = color.new(#26A69A, 0)    // solid: long entry marker
 color POS_REDB   = color.new(#EF5350, 0)    // solid: short entry marker
-color POS_OPENL  = color.new(#787B86, 0)    // the neutral grey — here, the trend EMA
+color POS_OPENL  = color.new(#787B86, 0)    // the neutral grey — the trend EMA and the open box's border
 color POS_TEXT   = color.new(#101014, 0)    // dark text on every bright label fill
 color POS_OPEN   = color.new(#787B86, 12)   // an OPEN trade's entry label — result not known yet
 color POS_WINL   = color.new(#26A69A, 0)    // the entry label's leader line, by result
@@ -1393,16 +1396,13 @@ var int   hTrigDir  = 0    // +1 long / -1 short, for EVERY trigger, taken or re
 
 // [doc 47] ════════════════════════════════════════════════════════════════════════  -> docs/h4_sweep_strategy.md
 // [doc 55] ⚠ THE RESULT IS GRADED HERE, BEFORE THE TRIGGERS, not at the bottom of the  -> docs/h4_sweep_strategy.md
-var box    bxRisk = na, var box bxTp1 = na
 var label  eLbl   = na, var line eLn = na     // the ONE entry label per trade, recoloured on close
 var string eHead  = "", var string eBody = ""
 var int    tpSeen = 0                          // closed trades already scanned for the TP1 fill
 float closedR = strategy.position_size == 0 and strategy.position_size[1] != 0 and not na(tRiskUsd) and tRiskUsd > 0 ? (strategy.netprofit - tNetAtEntry) / tRiskUsd : na
 
 if not na(closedR)
-    if showTrade and not na(bxRisk)
-        box.set_right(bxRisk, bar_index)
-        box.set_right(bxTp1,  bar_index)
+    if showTrade
         // [doc 56] The TP1 tag sits at the REAL fill price, found by exit id AND price. The  -> docs/h4_sweep_strategy.md
         if showTpTags and strategy.closedtrades > tpSeen
             float tpPx = na
@@ -1432,6 +1432,75 @@ if not na(closedR)
             line.delete(eLn)
         eLbl := na
         eLn  := na
+
+// [doc 45] ════════════════════════════════════════════════════════════════════════  -> docs/h4_sweep_strategy.md
+var box pbOpen   = na   // the grey box of the trade still open
+var int pbOpenEb = na   // the entry bar that box belongs to
+var int pbSeen   = 0    // closed trades already painted as a result box
+if showTrade and strategy.closedtrades > pbSeen
+    int openEb = strategy.opentrades > 0 ? strategy.opentrades.entry_bar_index(0) : na
+    int i = pbSeen
+    while i < strategy.closedtrades
+        int eb = strategy.closedtrades.entry_bar_index(i)
+        // A trade still holding its runner is not finished — wait for its last exit.
+        if not na(openEb) and eb == openEb
+            break
+        float ep    = strategy.closedtrades.entry_price(i)
+        int   dir   = strategy.closedtrades.size(i) > 0 ? 1 : -1
+        bool  mine  = not na(tBar) and eb == tBar
+        float t1    = mine ? tTp1 : na
+        float sl    = mine ? tStop : na
+        float worst = ep
+        float f1    = na
+        float f2    = na
+        float lastX = na
+        float net   = 0.0
+        int   xr    = eb
+        int   j     = i
+        while j < strategy.closedtrades and strategy.closedtrades.entry_bar_index(j) == eb
+            float  xPx = strategy.closedtrades.exit_price(j)
+            string xId = strategy.closedtrades.exit_id(j)
+            float  dd  = math.abs(strategy.closedtrades.max_drawdown(j)) / (math.abs(strategy.closedtrades.size(j)) * syminfo.pointvalue)
+            worst := dir > 0 ? math.min(worst, ep - dd) : math.max(worst, ep + dd)
+            bool banked = na(t1) ? (xId == "L-TP1" or xId == "S-TP1") : (dir > 0 ? xPx >= t1 : xPx <= t1)
+            if banked
+                if na(f1)
+                    f1 := xPx
+                else
+                    f2 := xPx
+            net   += strategy.closedtrades.profit(j)
+            lastX := xPx
+            xr    := math.max(xr, strategy.closedtrades.exit_bar_index(j))
+            j     += 1
+        // Worst excursion first, so every band after it sits on top.
+        if dir > 0 ? worst < ep : worst > ep
+            box.new(eb, math.max(ep, worst), xr, math.min(ep, worst), bgcolor = POS_DD, border_color = color(na))
+        if not na(f1)
+            box.new(eb, math.max(ep, f1), xr, math.min(ep, f1), bgcolor = POS_G1, border_color = color(na))
+            if not na(f2)
+                box.new(eb, math.max(f1, f2), xr, math.min(f1, f2), bgcolor = POS_G2, border_color = color(na))
+        else if net < 0
+            float redTo = na(lastX) ? sl : lastX
+            box.new(eb, math.max(ep, redTo), xr, math.min(ep, redTo), bgcolor = POS_RED, border_color = POS_REDB)
+        else
+            line.new(eb, ep, xr, ep, color = POS_BEL, width = 2)
+        i := j
+    pbSeen := i
+
+// The grey box: dropped once its trade is gone, opened for a trade not drawn yet, grown while open.
+if not na(pbOpen) and (strategy.opentrades == 0 or strategy.opentrades.entry_bar_index(0) != pbOpenEb)
+    box.delete(pbOpen)
+    pbOpen   := na
+    pbOpenEb := na
+if showTrade and strategy.opentrades > 0
+    int   oEb = strategy.opentrades.entry_bar_index(0)
+    float oEp = strategy.opentrades.entry_price(0)
+    if na(pbOpen)
+        pbOpen   := box.new(oEb, math.max(oEp, close), bar_index, math.min(oEp, close), bgcolor = POS_OPENBX, border_color = POS_OPENL, border_width = 1)
+        pbOpenEb := oEb
+    box.set_right(pbOpen, bar_index)
+    box.set_top(pbOpen, math.max(oEp, close))
+    box.set_bottom(pbOpen, math.min(oEp, close))
 
 if logTrades and not na(closedR)
     log.info("[RESULT] " + (tDir < 0 ? "SHORT" : "LONG") + " · " + tPat + " · " +
@@ -1633,15 +1702,6 @@ if strategy.position_size < 0 or tookShort
     if tp1Pct > 0 and tStage < 1
         strategy.exit("S-TP1", from_entry = "Short", qty_percent = tp1Pct, limit = tTp1, stop = curStop)
     strategy.exit("S-RUN", from_entry = "Short", stop = curStop)
-
-// [doc 45] ════════════════════════════════════════════════════════════════════════  -> docs/h4_sweep_strategy.md
-if (tookShort or tookLong) and showTrade and not na(tEntry)
-    bxRisk := box.new(bar_index, math.max(tEntry, tStop), bar_index + 1, math.min(tEntry, tStop), bgcolor = POS_DD, border_color = color(na))
-    bxTp1  := box.new(bar_index, math.max(tEntry, tTp1),  bar_index + 1, math.min(tEntry, tTp1),  bgcolor = POS_G1, border_color = color(na))
-
-if strategy.position_size != 0 and not na(bxRisk)
-    box.set_right(bxRisk, bar_index + 1)
-    box.set_right(bxTp1,  bar_index + 1)
 
 // [doc 57] ══ ENTRY CONFLUENCE LABEL ══════════════════════════════════════════════  -> docs/h4_sweep_strategy.md
 float lblAtr = ta.atr(14)

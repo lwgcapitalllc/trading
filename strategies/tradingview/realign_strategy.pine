@@ -1168,12 +1168,12 @@ plot(showDiag ? htfTrend  : na, "  htfTrend now",     display = display.data_win
 
 // [doc 13] MARKS  -> docs/realign_strategy.md
 plotshape(showMarks and trigLong,  title = "Realign long",  style = shape.triangleup,
-          location = location.belowbar, color = color.new(color.teal, 0), size = size.tiny)
+          location = location.belowbar, color = color.new(#26A69A, 0), size = size.tiny)
 plotshape(showMarks and trigShort, title = "Realign short", style = shape.triangledown,
-          location = location.abovebar, color = color.new(color.red, 0),  size = size.tiny)
+          location = location.abovebar, color = color.new(#EF5350, 0),  size = size.tiny)
 plotshape(showMarks and markFalseDown, title = "False break down",
-          style = shape.xcross, location = location.abovebar, color = color.new(color.orange, 0), size = size.tiny)
+          style = shape.xcross, location = location.abovebar, color = color.new(#FF9800, 0), size = size.tiny)
 plotshape(showMarks and markFalseUp, title = "False break up",
-          style = shape.xcross, location = location.belowbar, color = color.new(color.orange, 0), size = size.tiny)
-plot(inPos ? posStop : na, title = "Stop", color = color.new(color.red, 0), style = plot.style_linebr)
-plot(inPos and posStage < 2 ? posTp2 : na, title = "Target", color = color.new(color.teal, 0), style = plot.style_linebr)
+          style = shape.xcross, location = location.belowbar, color = color.new(#FF9800, 0), size = size.tiny)
+plot(inPos ? posStop : na, title = "Stop", color = color.new(#EF5350, 0), style = plot.style_linebr)
+plot(inPos and posStage < 2 ? posTp2 : na, title = "Target", color = color.new(#26A69A, 0), style = plot.style_linebr)

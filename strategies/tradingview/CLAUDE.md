@@ -302,6 +302,19 @@ it there first and copying it down** — never by picking one in a fork.
 | TP tags + their lines | `#26A69A` @40 | one colour for all three |
 | blocked setup | `#FF2E9A` @12 / @0 | pink |
 | label text | `#101014` @0 | dark on every bright fill |
+| missed setup | `#FF9800` @12 / @0 | orange tag, same hue as BREAKEVEN |
+
+**Beyond the trade, 2026-09-30 (Aaron: *"make sure all our colors … are standardized"*):** the
+same thing is drawn in the same colour in every file. Bullish / bearish structure `color.blue` /
+`color.red`; H4 levels `#FF6B35`, greyed `#999999` @45 once swept; daily and weekly levels
+`color.black`; gaps `color.gray` @80; sessions `#FF5252` @92 / `#2962FF` @92 / `#FFEB3B` @90;
+the confirmation panel SOS Fade's `JARVIS_*` set. Fixed that day: B-leg's panel (four older
+shades), realign's marks and stop/target lines (TradingView's built-in teal/red/orange), and the
+extreme leg's levels (grey / orange / purple). ⚠ **The checker enforces it by NAME**: a colour
+declared under one of SOS Fade's names must carry SOS Fade's hue (opacity may differ by use).
+A colour a file declares under a NEW name is not checked — give a shared concept SOS Fade's name.
+Left distinct on purpose: the session sweep's cyan / purple shift markers, which colour-code two
+TIMEFRAMES and have no counterpart in any other file.
 
 ## Key paths & entry points
 

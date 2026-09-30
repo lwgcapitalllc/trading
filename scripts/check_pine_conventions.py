@@ -112,6 +112,12 @@ _EXEMPT: dict = {
 }
 
 
+def _colour_consts(src: str) -> dict:
+    """Every `color NAME = …` declaration → its hue (a hex, upper-cased, or a built-in colour)."""
+    pat = r"^\s*(?:var\s+)?color\s+(\w+)\s*=\s*(?:color\.new\()?\s*(#[0-9A-Fa-f]{6}|color\.\w+)"
+    return {n: v.upper() if v.startswith("#") else v for n, v in re.findall(pat, src, re.M)}
+
+
 def _check(path: Path) -> list:
     src = path.read_text(encoding="utf-8")
     fails = []
@@ -181,6 +187,16 @@ def _check(path: Path) -> list:
         fails.append(f"blocked tag is not the standard pink {_BLOCK_PINK}")
     if "TRADE BLOCKED" not in src:
         fails.append('blocked tag does not read "TRADE BLOCKED"')
+
+    # 🔴 SAME NAME, SAME COLOUR. A colour declared under one of SOS Fade's own names must carry
+    #   SOS Fade's hue — this is decidable by text where "no hex outside the palette" is not.
+    #   B-leg's confirmation panel had kept an older yellow, red, green and grey under SOS Fade's
+    #   names until 2026-09-30. Hue only: opacity legitimately differs by use (H4's grey-at-12 is
+    #   a label under the same name as SOS Fade's grey-at-80 box).
+    std = _colour_consts((_TV / "sos_fade_strategy.pine").read_text(encoding="utf-8"))
+    for name, hue in _colour_consts(src).items():
+        if name in std and std[name] != hue:
+            fails.append(f"colour {name} is {hue} — SOS Fade uses {std[name]}")
 
     twin = path.with_name(path.stem + "_export.pine")
     block = _TV / "export_blocks" / path.name
