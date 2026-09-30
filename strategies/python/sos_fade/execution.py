@@ -3312,6 +3312,16 @@ class Execution:
                 self._traded_sos_l, self._traded_sos_l_ms = pend.sos_bar, sos_ms
             else:
                 self._traded_sos_s, self._traded_sos_s_ms = pend.sos_bar, sos_ms
+            # 🔴 A setup that FILLED was never blocked. A veto or the final hour can refuse a
+            # setup on one bar and lift on the next, and the same order then rests and fills —
+            # so an earlier refusal of THIS leg was a delay, not a trade that never happened.
+            # Left in, the chart tagged a taken trade "Blocked" (2021-10-19, filled at the very
+            # price the tag named) and any audit of a rule counted trades it did not stop:
+            # 71 of 294 blocked setups in run 467118f513e9 were later traded.
+            # Live is unaffected — the runner drains `blocks` every bar, before any fill.
+            self.blocks = [b for b in self.blocks
+                           if not (b.dir == pend.dir
+                                   and self._same_leg(pend.sos_bar, sos_ms, b.sos_bar))]
         self._pend_long = self._pend_short = self._pend_sec = None
         side = "Long" if pend.dir > 0 else "Short"
         dec.fills.append(Fill("entry", side, fill_price, granted, pend.dir))

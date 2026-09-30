@@ -19,6 +19,7 @@ sys.path.insert(0, str(_ROOT / "strategies" / "python"))
 
 from sos_fade import SosFadeConfig, Execution, SeqState  # noqa: E402
 from sos_fade.signals import Signals  # noqa: E402
+from sos_fade.execution import BlockedSetup  # noqa: E402
 
 
 def _cfg(**kw):
@@ -450,6 +451,33 @@ def test_one_record_per_setup_per_reason_set_not_per_bar():
     ex.step(_sig(5, 104.0, 104.5, 103.9, 104.2, ny_hour=16, veto_on=True, veto_rsi_ob=True),
             _seq_long_ready())
     assert [b.codes for b in ex.blocks] == [[3], [4], [3, 4]]
+
+
+def test_a_refused_setup_that_later_fills_is_not_a_block():
+    """A refusal that lifts is a DELAY: the same setup rests and fills, so it was never blocked
+    (Aaron, 2026-09-30 — the 2021-10-19 long was tagged Blocked at the price it filled at).
+    The final hour refuses bar 0, lifts on bar 1, and bar 2 fills; the record must go.
+    Watched RED 2026-09-30 with the purge at the primary fill removed."""
+    ex = Execution(_cfg())
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2, ny_hour=16), _seq_long_ready())
+    assert len(ex.blocks) == 1
+    ex.step(_sig(1, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())          # arms
+    ex.step(_sig(2, 105.40, 105.50, 103.50, 104.00), _seq_long_ready())      # fills @103.82
+    assert ex._pos_dir == 1
+    assert ex.blocks == []
+
+
+def test_a_refusal_of_the_other_side_survives_a_fill():
+    """Only the leg that filled loses its refusals — a short refused on the same bars was
+    still never traded."""
+    ex = Execution(_cfg())
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2, ny_hour=16), _seq_long_ready())
+    kept = BlockedSetup(dir=-1, index=0, time_ms=0, codes=[3], edge=110.0, sos_bar=1)
+    ex.blocks.append(kept)
+    ex.step(_sig(1, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    ex.step(_sig(2, 105.40, 105.50, 103.50, 104.00), _seq_long_ready())
+    assert ex._pos_dir == 1
+    assert ex.blocks == [kept]
 
 
 def test_a_setup_price_never_made_ready_is_not_a_block():
