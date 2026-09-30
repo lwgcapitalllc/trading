@@ -164,3 +164,27 @@
 2026-09-30 10:10:01,008 [INFO] Priority 4 on this account: waiting 39s for the bots above
 2026-09-30 10:15:00,935 [INFO] Priority 4 on this account: waiting 59s for the bots above
 2026-09-30 10:20:01,221 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 10:25:01,226 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 10:30:01,003 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 10:35:00,969 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 10:40:01,194 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 10:45:01,020 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 10:50:00,924 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 10:55:01,029 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 11:00:01,129 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 11:05:01,078 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 11:10:01,183 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 11:10:40,000 [INFO] POSITION OPENED | T395958618 LONG 0.53L @ 4179.66 | SL=4165.71
+2026-09-30 11:10:41,029 [ERROR] HALTED: MT5 holds a position the strategy does not know about. It will keep its broker-side stop, but the bot will not manage it.
+2026-09-30 11:10:42,029 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:11:03,038 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:12:03,374 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:13:03,535 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:14:03,744 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:15:04,042 [INFO] Priority 4 on this account: waiting 56s for the bots above
+2026-09-30 11:16:00,003 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:16:10,057 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:17:00,228 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:18:00,496 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:19:00,652 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:20:00,822 [INFO] Priority 4 on this account: waiting 39s for the bots above
