@@ -351,12 +351,14 @@ defaults now describe the bot that trades.
 - ⚠ **The golden export ran at 10** and the gate reads risk off it, so parity is untouched.
 
 
-## The breakeven cushion is 60 ticks (2026-09-28)
+## The breakeven cushion is 35 ticks (2026-09-29)
 
-After the first target the stop moves to the entry plus this cushion. It went 30 → 60 on
-Aaron's go after `sos_fade_optimization.md` Run 58 (+2.7 ± 1.3R, P 0.97; 80 was too far), in the
-Python default, both Pine files and all three bots' settings. ⚠ **B-LEG, BOS and Realign inherit
-this config and PIN 30** — none was measured at 60, so the parent's move must not reach them.
+After the first target the stop moves to the entry plus this cushion. It is 35 on Aaron's go after
+`sos_fade_optimization.md` Run 58 re-measured every width ON THE LAB (+0.4 ± 0.1R vs 30, P 1.00, no
+trade flips), in the Python default, both Pine files and all three bots' settings. 🔴 **It was 60
+for one day off a study that did not reconcile with the lab** — on the lab 60 loses a +5.8R winner
+and is −3.7 ± 6.0R; 40–55 are all inside noise. **Quote only lab-reconciled numbers for this
+setting.** ⚠ **B-LEG, BOS and Realign inherit this config and PIN 30** — none was measured at 35.
 A share-of-risk cushion was tested three times here (Runs 17, 26, 57) and lost every time.
 
 ## A re-entry when the GAP IS GONE — measured, and it ships OFF (2026-09-22)

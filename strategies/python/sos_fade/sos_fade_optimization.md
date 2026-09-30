@@ -5966,7 +5966,7 @@ R, return per drawdown and total without the best trade all at or above the base
 - ✅ **Decision: SOS Fade keeps the 30-tick cushion.** Three runs (17, 26, 57) now agree; don't
   re-open without a new mechanism.
 
-## Run 58 — 2026-09-28: a wider tick cushion — 60 ticks beats 30, 80 is too far
+## Run 58 — 2026-09-28: a wider tick cushion — study said 60; the LAB says 35 (see the re-measure below)
 
 **The question (Aaron):** how far can the 30-tick breakeven cushion widen — 35, 40, 50? The aim is
 to cover costs on scratches without giving back winners.
@@ -5995,7 +5995,7 @@ Held-back window (52 trades each, identical trades in every arm):
 | 50 | +38.12 | 3.61 | +0.07 | 1.00 |
 | 60 | +38.15 | 3.61 | +0.10 | 1.00 |
 
-- ✅ **Adopt 60 ticks: +2.7 ± 1.3R, P 0.97 on the fit window**; drawdown 11.9 → 11.0R, ret/DD 176 → 214.
+- ⚠ **Withdrawn 2026-09-29 — the study did not match the lab (below).** Study said: adopt 60 ticks, +2.7 ± 1.3R, P 0.97 on the fit window; drawdown 11.9 → 11.0R, ret/DD 176 → 214.
 - The rise is smooth from 35 to 60 and breaks at 80 (its first half drops 4R), so 60 is not a lone
   lucky number — but it is the best of six, so read the fit gain as slightly flattering.
 - The held-back window agrees in direction and is small (+0.1R): only 9 of its 52 trades ever
@@ -6005,6 +6005,36 @@ Held-back window (52 trades each, identical trades in every arm):
   BOS and Realign inherit this setting and now PIN 30 — none was measured at 60. A running bot
   picks the value up on its next restart.
 
+### Run 58 re-measured ON THE LAB — 2026-09-29: 60 is withdrawn, 35 adopted
+
+🔴 **The table above is a scratch study, and it did not reconcile with the lab.** Aaron's own lab
+runs showed 60 ticks making less than 30 (c228c166211e vs 467118f513e9). Matched trade by trade, the
+study against lab c228c166211e disagreed on 35 trades out of ~270 and on the R of 19 shared ones
+(re-entry fill timing differs), and it kept the 2020-08-18 short at +6R at every width when the lab
+stops it out at 60. So every width was re-run on the lab itself.
+
+**Basis:** SOS Fade lab default settings, 2018-09-14 → 2026-09-29, PU Prime ECN, bid/ask fills +
+$1/side commission + swap, consistent sizing, 5% risk, 100-lot ceiling. Only the cushion moves.
+Paired by entry time and direction against 30 ticks (12bd4b64ae2e); held-back from 2025-08-06.
+
+| Cushion | Run | Total R | Max DD R | Without best | W / L / S | Diff vs 30 | P(better) | Held-back diff |
+|---|---|---|---|---|---|---|---|---|
+| 30 | 12bd4b64ae2e | +163.6 | 11.99 | +137.0 | 100 / 117 / 56 | — | — | — |
+| **35** | 168cc65e4a0f | **+164.0** | **11.93** | **+137.4** | 102 / 117 / 54 | **+0.4 ± 0.1** | **1.00** | +0.02 |
+| 40 | 8de8b497c4bf | +163.4 | 11.87 | +136.7 | 102 / 118 / 53 | −0.25 ± 1.1 | 0.38 | +0.03 |
+| 45 | 3ac3c6ec5ce4 | +164.3 | 11.81 | +137.7 | 104 / 118 / 52 | +0.7 ± 1.2 | 0.76 | +0.05 |
+| 50 | 10772aab47d0 | +164.9 | 11.62 | +138.2 | 104 / 117 / 53 | +1.25 ± 2.1 | 0.74 | +0.07 |
+| 55 | 62b1025532c8 | +165.2 | 11.58 | +138.6 | 104 / 117 / 53 | +1.6 ± 2.1 | 0.79 | +0.09 |
+| 60 | 447d9eb8de38 | +159.9 | 11.54 | +133.3 | 103 / 117 / 54 | −3.7 ± 6.0 | 0.31 | +0.10 |
+
+- ✅ **Adopt 35: +0.4 ± 0.1R, P 1.00.** It changes no trade's outcome, only lifts scratches, and is ≥ 30 on
+  total, drawdown and without-best. Small, but the only width that is not noise.
+- ❌ **40–55: Reject — not proven.** Each lifts scratches but turns the 2021-05-19 long from +0.75R to
+  −0.27R and swaps two or three trades, so the gap sits inside its noise.
+- ❌ **60: Reject — not proven** (−3.7 ± 6.0R): the 2020-08-18 short goes +5.82R → +0.07R. 55 sits
+  just under that cliff — do not read its +1.6R as a sweet spot; a slightly different path moves the cliff.
+- ✅ **Applied 2026-09-29 on Aaron's go:** Python and Pine defaults, and all three SOS Fade bots' settings,
+  now 35. B-LEG, BOS and Realign still pin 30.
 ## Run 59 — 2026-09-28: the no-gap setups on the current book — facts only, no entry rule tested
 
 **The question (Aaron):** of every setup that came back into the zone with no fair-value gap, how

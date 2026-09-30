@@ -429,10 +429,10 @@ class SosFadeConfig:
     #   across all 21 combos (~−2R for every 10% moved off the runner). The runner is the edge.
     #   NOTE this is `BLegConfig`'s parent, so the B-LEG bot inherits 0/0 too — intended, both bots
     #   share one exit ladder.
-    exec_be_buf_tk: float = 60.0       # "Breakeven buffer (ticks)"
-    #   30 → 60 on 2026-09-28: `sos_fade_optimization.md` Run 58, +2.7 ± 1.3R, P 0.97 on the live
-    #   bot's settings; 80 was too far. The children that inherit this (B-LEG, BOS, Realign) PIN 30
-    #   — none was measured at 60.
+    exec_be_buf_tk: float = 35.0       # "Breakeven buffer (ticks)"
+    #   30 → 35 on 2026-09-29: `sos_fade_optimization.md` Run 58, measured on the LAB (+0.4 ± 0.1R,
+    #   P 1.00, no trade flips). 60 was shipped for a day off a study that did not match the lab and
+    #   lost −3.7 ± 6.0R there. The children that inherit this (B-LEG, BOS, Realign) PIN 30.
     #   ⚠ A FIXED price offset, applied identically whatever the trade is risking. That is what
     #   `exec_be_buf_mode` exists to replace — see below.
     exec_be_arm_r: float = -1.0        # "Protect the stop after a move of (R)"
