@@ -1422,6 +1422,21 @@ var bool  beArmed = false
 // The sibling `h4_sweep_strategy.pine` has carried the same pair since it was written.
 bool tookLong  = false
 bool tookShort = false
+// A setup that TRADED was never refused (2026-09-30, the rule every bot shares). Each REFUSED tag
+// is kept with the sweep that armed it; the entry erases that sweep's tags and a traded sweep draws
+// no more. Mirrors the Python order layer. Drawing only — no decision reads these.
+var array<label> refLbl = array.new<label>()
+var array<int>   refKey = array.new<int>()     // sweep bar * 2 + side (0 long, 1 short)
+var int tradedKeyL = na
+var int tradedKeyS = na
+f_refErase(int key) =>
+    int i = array.size(refKey) - 1
+    while i >= 0
+        if array.get(refKey, i) == key
+            label.delete(array.remove(refLbl, i))
+            array.remove(refKey, i)
+        i -= 1
+    i
 
 if goLong and strategy.position_size == 0
     strategy.entry("L", strategy.long, qty = f_qty(riskLong))
@@ -1429,12 +1444,16 @@ if goLong and strategy.position_size == 0
     tTgt  := tpLong
     beArmed := false
     tookLong := true
+    tradedKeyL := lowSweepBar * 2
+    f_refErase(tradedKeyL)
 if goShort and strategy.position_size == 0
     strategy.entry("S", strategy.short, qty = f_qty(riskShort))
     tStop := stopShort
     tTgt  := tpShort
     beArmed := false
     tookShort := true
+    tradedKeyS := highSweepBar * 2 + 1
+    f_refErase(tradedKeyS)
 
 if strategy.position_size != 0 and useBreakeven and not na(tTgt) and not na(tStop)
     float span = math.abs(tTgt - strategy.position_avg_price)
@@ -1460,8 +1479,11 @@ if strategy.position_size == 0 and not tookLong and not tookShort
 if showEntries and (goLong or goShort)
     label.new(bar_index, goLong ? low : high, goLong ? "▲" : "▼", style = goLong ? label.style_label_up : label.style_label_down, color = color.new(goLong ? bullColor : bearColor, 20), textcolor = color.white, size = size.small, tooltip = "take profit " + str.tostring(goLong ? tpLong : tpShort, format.mintick) + " (" + str.tostring((goLong ? rLong : rShort) * tpFrac, "#.##") + "R booked)  ·  swing " + str.tostring(goLong ? tgtLong : tgtShort, format.mintick) + " (" + str.tostring(goLong ? rLong : rShort, "#.##") + "R available)  ·  " + str.tostring(goLong ? lowFamilies : highFamilies) + " level(s) swept")
 
-if showBlocked and (not na(blockLong) or not na(blockShort))
-    label.new(bar_index, not na(blockLong) ? low : high, "REFUSED", style = not na(blockLong) ? label.style_label_up : label.style_label_down, color = color.new(color.orange, 60), textcolor = color.orange, size = size.tiny, tooltip = not na(blockLong) ? blockLong : blockShort)
+int refK = not na(blockLong) ? lowSweepBar * 2 : highSweepBar * 2 + 1
+int refT = not na(blockLong) ? tradedKeyL : tradedKeyS
+if showBlocked and (not na(blockLong) or not na(blockShort)) and (na(refT) or refK != refT)
+    array.push(refKey, refK)
+    array.push(refLbl, label.new(bar_index, not na(blockLong) ? low : high, "REFUSED", style = not na(blockLong) ? label.style_label_up : label.style_label_down, color = color.new(color.orange, 60), textcolor = color.orange, size = size.tiny, tooltip = not na(blockLong) ? blockLong : blockShort))
 
 // ⚠ Declared at top level, not inside the `if`. Pine refuses a function declaration inside a
 // conditional block, and the failure is a compile error rather than a quiet no-op.

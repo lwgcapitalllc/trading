@@ -529,8 +529,40 @@ bool newLeg      = rawSess != rawSess[1]
 
 var float  poolHi = na, var float poolLo = na
 var int    legId  = 0
+// A setup that TRADED was never blocked or missed (2026-09-30, the rule every bot shares). Each
+// BLOCKED / MISSED drawing is kept with its session and side; the fill erases that session side's,
+// and a traded session side draws no more. A new session forgets the old ones — they cannot fill.
+var array<label> tgLbl = array.new<label>()
+var array<line>  tgLn  = array.new<line>()
+var array<box>   tgBox = array.new<box>()
+var array<int>   tgLK  = array.new<int>()
+var array<int>   tgNK  = array.new<int>()
+var array<int>   tgBK  = array.new<int>()
+var int          tookSide = 0
+f_tgErase(int key) =>
+    int i = array.size(tgLK) - 1
+    while i >= 0
+        if array.get(tgLK, i) == key
+            label.delete(array.remove(tgLbl, i))
+            array.remove(tgLK, i)
+        i -= 1
+    i := array.size(tgNK) - 1
+    while i >= 0
+        if array.get(tgNK, i) == key
+            line.delete(array.remove(tgLn, i))
+            array.remove(tgNK, i)
+        i -= 1
+    i := array.size(tgBK) - 1
+    while i >= 0
+        if array.get(tgBK, i) == key
+            box.delete(array.remove(tgBox, i))
+            array.remove(tgBK, i)
+        i -= 1
+    i
 if newLeg
     legId += 1
+    array.clear(tgLbl), array.clear(tgLn), array.clear(tgBox)
+    array.clear(tgLK), array.clear(tgNK), array.clear(tgBK)
     if rawSess == 1
         poolHi := asiaHi
         poolLo := asiaLo
@@ -906,6 +938,8 @@ if justFilled
     t1Done    := false
     beShiftDone := false
     tookLeg   := true
+    tookSide  := posDir
+    f_tgErase(legId * 2 + (posDir == -1 ? 1 : 0))
     posWorst  := posEntry
     posBest   := posEntry
     posStop0  := pendStop
@@ -1113,7 +1147,8 @@ float tagStop  = tagShort ? sStop : lStop
 float tagDist  = tagShort ? sDist : lDist
 bool  tagTap   = confAtZone ? armTouched : (tagShort ? poiBearTap : poiBullTap)
 bool  tagFired = false
-if showBlockTag and tagCode > 0 and not armedNow and time_close >= timenow - debugDays * 86400000
+int   tagSide  = legId * 2 + (tagShort ? 1 : 0)
+if showBlockTag and tagCode > 0 and not armedNow and time_close >= timenow - debugDays * 86400000 and not (tookLeg and tookSide == (tagShort ? -1 : 1))
     int key = legId * 100 + tagCode * 2 + (tagShort ? 1 : 0)
     if key != lastTagKey
         lastTagKey := key
@@ -1133,10 +1168,14 @@ if showBlockTag and tagCode > 0 and not armedNow and time_close >= timenow - deb
         string cfMet = str.tostring(cfHit) + " OF " + str.tostring(cfTot)
         string head  = (tagShort ? "▼ SHORT" : "▲ LONG") + " · " + cfMet + (isMiss ? "" : ", NO SLOT")
         if drawZ
-            box.new(bar_index, math.max(tagZTop, tagZBot), bar_index + 8, math.min(tagZTop, tagZBot), border_color = FVG_EDGE, border_width = 1, bgcolor = FVG_ZONE)
-            line.new(bar_index, tagEdge, bar_index + 8, tagEdge, color = tagBg, style = line.style_dotted, width = 1)
-            line.new(bar_index, tagStop, bar_index + 8, tagStop, color = tagLn, style = line.style_dashed, width = 1)
-        line.new(bar_index, anch, bar_index, aim, color = tagLn, style = line.style_dotted, width = 1)
+            array.push(tgBox, box.new(bar_index, math.max(tagZTop, tagZBot), bar_index + 8, math.min(tagZTop, tagZBot), border_color = FVG_EDGE, border_width = 1, bgcolor = FVG_ZONE))
+            array.push(tgLn, line.new(bar_index, tagEdge, bar_index + 8, tagEdge, color = tagBg, style = line.style_dotted, width = 1))
+            array.push(tgLn, line.new(bar_index, tagStop, bar_index + 8, tagStop, color = tagLn, style = line.style_dashed, width = 1))
+            array.push(tgBK, tagSide)
+            array.push(tgNK, tagSide)
+            array.push(tgNK, tagSide)
+        array.push(tgLn, line.new(bar_index, anch, bar_index, aim, color = tagLn, style = line.style_dotted, width = 1))
+        array.push(tgNK, tagSide)
         string tipConf = not pbRequireConf ? "\n· Confirmation — not required, you have it switched off" : okConf ? "\n✓ Confirmation — the " + pbConfTf + "-minute changed character" + (na(cfPx) ? "" : " at " + str.tostring(cfPx, format.mintick)) : "\n✗ Confirmation — the " + pbConfTf + "-minute never changed character"
         string tipMet  = (okDir ? "✓" : "✗") + " Direction — the " + pbDirTf + "-minute is on this side\n" + (okSwp ? "✓" : "✗") + " Sweep — the previous session's level was taken" + tipConf + (poiOff ? "\n· Point of interest — not required, you have it switched off" : "\n" + (isMiss ? "✗" : "✓") + " Point of interest — the " + pbPoiTf + "-minute gap")
         bool   hasZone = not na(tagZTop) and not na(tagZBot)
@@ -1146,6 +1185,8 @@ if showBlockTag and tagCode > 0 and not armedNow and time_close >= timenow - deb
         string tipGeom = na(tagStop) or na(tagDist) or na(tagEdge) ? "" : "\n\nTHE TRADE THAT DID NOT HAPPEN\n" + (poiOff ? "You would have gone in at market at " : tagTap ? "Entry would have been " : "Had price reached it: entry ") + str.tostring(tagEdge, format.mintick) + ", stop " + str.tostring(tagStop, format.mintick) + " — " + str.tostring(tagDist, format.mintick) + " apart. Your floor is " + str.tostring(minStopDist, format.mintick) + "."
         string tipGap  = (not hasZone ? "" : "\n\nTHE GAP\n" + str.tostring(math.min(tagZTop, tagZBot), format.mintick) + " to " + str.tostring(math.max(tagZTop, tagZBot), format.mintick) + ", " + str.tostring(math.abs(tagZTop - tagZBot), format.mintick) + " tall." + tipFar) + tipGeom
         label bl = label.new(bar_index, anch, (tagShort ? "▼ " : "▲ ") + (isMiss ? str.tostring(cfHit) + "/" + str.tostring(cfTot) + " MISSED" : "BLOCKED"), style = tagShort ? label.style_label_down : label.style_label_up, color = tagBg, textcolor = TXT_DARK, size = size.small, tooltip = head + "\n──────────────────\n" + tipMet + "\n──────────────────\nWHY THERE WAS NO TRADE\n" + tipWhy + tipGap)
+        array.push(tgLbl, bl)
+        array.push(tgLK, tagSide)
 
 var int cfDrawn = -1
 var int cmDrawn = -1

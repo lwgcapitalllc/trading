@@ -120,3 +120,10 @@ has run on any of them. **Paste before trusting.**
 - ⚠ **Kept small on purpose: SOS Fade and BOS have both hit the compiled-token cap (CE10117).**
   Not compiled here — TradingView is the only compiler. If a file will not compile, this block is
   the newest addition to it.
+- **Extended to every Pine that draws a no-trade tag (same day).** Extreme leg: its REFUSED tags
+  key on the sweep that armed the side. Session sweep: its BLOCKED **and** MISSED tags key on the
+  session and side, because both are drawn on a bar while the session can still trade — and a
+  traded session side draws no more (its "second setup" tags on that side go with them). H4 sweep
+  needs nothing: a refusal CONSUMES the H4 window, so a refused setup can never trade. Realign
+  draws no such tag. ⚠ Pine compares against `na` as false — a traded-setup check must test
+  `na()` first or no tag draws before the first trade (caught before commit on the extreme leg).
