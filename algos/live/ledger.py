@@ -72,7 +72,7 @@ import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 DECISIONS = "decisions"
 HEALTH = "health"
@@ -305,6 +305,33 @@ def _one_or_list(obj, plural: str, singular: str):
     return None if one is _MISSING or one is None else [one]
 
 
+def mark_later_traded(rows: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Stamp `later_traded` on every `blocked` row: True when a trade row carries the same side and
+    setup, False when none does, None when the refusal has no setup identity to join on (a row
+    written before 2026-09-30, or a strategy without one).
+
+    🔴 **A refusal that LIFTED is not a trade that never happened.** The veto, the final hour or the
+    quiet-market gate can refuse a setup on one bar and let it trade on a later one; the refusal row
+    is written the moment it happens and cannot be taken back. Every audit of a rule must read
+    refusals through this, or it counts trades the rule did not stop (the lab's 204 of 487 on SOS
+    Fade, 2020-2026). Rows are returned in order; blocked rows are copies, the rest untouched.
+    """
+    rows = list(rows)
+    traded = {
+        (1 if str(r.get("dir", "")).upper() == "LONG" else -1, r.get("setup_ms"))
+        for r in rows
+        if r.get("kind") == "trade" and r.get("event") == "opened" and r.get("setup_ms") is not None
+    }
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        if r.get("kind") == "blocked":
+            r = dict(r)
+            key = r.get("setup_ms")
+            r["later_traded"] = None if key is None else (r.get("dir"), key) in traded
+        out.append(r)
+    return out
+
+
 class Ledger:
     def __init__(self, directory: Path, bot_key: str) -> None:
         self.dir = Path(directory)
@@ -388,6 +415,9 @@ class Ledger:
                 "tp1": _price_or_none(block, "tp1", "target_price"),
                 "tp2": _price_or_none(block, "tp2"),
                 "sos_bar": _first_or_none(block, "sos_bar"),
+                # The setup's restart-stable identity. A trade row carrying the same one means this
+                # refusal LIFTED and the setup traded — see `mark_later_traded`.
+                "setup_ms": _first_or_none(block, "setup_ms"),
                 "codes": _one_or_list(block, "codes", "code"),
                 "labels": _first_or_none(block, "labels"),
                 "reasons": _one_or_list(block, "reasons", "reason"),
@@ -432,6 +462,7 @@ class Ledger:
         risk_pct_realised: Optional[float] = None,
         intent: str = "primary",
         confluences: Optional[dict] = None,
+        setup_ms: Optional[int] = None,
     ) -> None:
         """`price` is the BROKER's fill; `intended_price` is where the strategy rested its
         limit. Both are recorded because the gap between them is the only honest measure of
@@ -482,6 +513,9 @@ class Ledger:
                 "risk_usd": risk_usd,
                 "risk_pct_realised": risk_pct_realised,
                 "confluences": confluences or {},
+                # Which setup this trade came from — the join key for `mark_later_traded`.
+                # None = not known (a re-entry, or a strategy without the seam), never a guess.
+                "setup_ms": setup_ms,
             },
         )
 

@@ -209,3 +209,6 @@ The original fields stay because the parity harness compares on them. Tests: the
   already traded could still reach the ledger. Reporting only, and inside one 3-hour window.
 - Tests: `test_a_refused_setup_that_later_fills_is_not_a_block`,
   `test_a_fill_leaves_other_setups_refusals_alone` — RED by three mutations.
+- **Live join (same day):** `Blocked.setup_ms` and `traded_setup_ms(direction)` spell the setup the
+  same way, so the live ledger can mark a refusal whose setup later traded
+  (`algos/live/ledger.mark_later_traded`). Test: `test_a_refusal_and_the_fill_of_its_setup_carry_the_same_setup_id`.

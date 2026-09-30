@@ -578,4 +578,4 @@ class BosExecution(Execution):
             self.blocks.append(BosBlockedSetup(
                 dir=1 if bull else -1, index=sig.index, time_ms=sig.time_ms,
                 codes=codes, edge=float(edge), sos_bar=int(leg.bar),
-                stop=stop, tp1=tp1, tp2=tp2))
+                stop=stop, tp1=tp1, tp2=tp2, setup_ms=self._bar_ms.get(int(leg.bar))))

@@ -1190,6 +1190,30 @@ def test_the_trade_record_says_which_LEG_opened_it():
     assert closed["intent"] == "secondary", "the two halves are separate lines; both must say"
 
 
+def test_a_primary_fill_records_the_setup_it_came_from():
+    """The trade row carries the setup, so the ledger can mark an earlier refusal of that same
+    setup as LIFTED rather than held (2026-09-30). MUTATION: drop `setup_ms` from the
+    `trade_opened` call and this goes red."""
+    ex = _FakeExecution(pend_long=_Pend(1, 3290.0, 42.0, 3280.0))
+    ex.traded_setup_ms = lambda d: 1_600_000_000_000 if d > 0 else None
+    b, _ops, ledger, _ = _filled(ex)
+    b.sync(_Dec(stop=3280.0), _Sig())
+    assert [kw for k, kw in ledger.rows if k == "opened"][0]["setup_ms"] == 1_600_000_000_000
+
+
+def test_a_fill_the_strategy_does_not_hold_is_never_stamped_with_a_setup():
+    """A broker position the emulator does not share must not borrow the LAST setup's identity —
+    it would mark a refusal as traded on a trade that setup never made. MUTATION: drop the
+    same-side check in `_filled_setup_ms` and this goes red."""
+    ex = _FakeExecution(pend_long=_Pend(1, 3290.0, 42.0, 3280.0))
+    ex.traded_setup_ms = lambda d: 1_600_000_000_000
+    b, _ops, ledger, _ = _filled(ex)
+    ex._pos_dir = 0
+    b.sync(_Dec(stop=3280.0), _Sig())
+    opened = [kw for k, kw in ledger.rows if k == "opened"]
+    assert opened and opened[0]["setup_ms"] is None
+
+
 def test_a_PRIMARY_still_records_itself_as_one():
     """⚠ Not decoration. A change that stamped every trade as a re-entry would pass the test
     above and mislabel every trade this bot has ever taken."""

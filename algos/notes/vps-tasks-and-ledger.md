@@ -573,6 +573,18 @@ session sweep record no refusals at all, so they write none. ⚠ **A bot still o
 code writes None for SOS Fade's bracket until it is promoted**; the extreme leg's fills straight
 away, because its refusal always carried the prices. Tests: `tests/test_ledger_refusal_fields.py`.
 
+✅ **A refusal whose setup LATER TRADED is joinable, since 2026-09-30.** A refusal row is written
+the moment it happens and cannot be taken back, but the veto, the final hour and the quiet-market
+gate can LIFT and let the same setup fill — in the lab 204 of 487 SOS Fade refusals were exactly
+that. So the refusal row and the trade-opened row both carry `setup_ms` (the setup's TIME: SOS
+Fade's SOS bar, the extreme leg's arming sweep — restart-stable, never a bar number), and
+`ledger.mark_later_traded(rows)` stamps `later_traded` True / False / **None when a row has no
+setup to join on** (older rows). 🔴 **Every audit of a rule off this file must read refusals
+through it**, or it counts trades the rule did not stop. The bridge's `_filled_setup_ms` stamps a
+trade only when it is a PRIMARY and the strategy holds the same side — a position the emulator does
+not share must never borrow the last setup's identity. Telegram needs nothing: a setup's messages
+already share one thread, so BLOCKED followed by FILLED reads as the delay it was. ⚠ Promote only.
+
 ⚠ **Routing is ONE dict (`ledger._DECISION_EVENTS`) and it is TEST-ENFORCED.**
 `tests/test_ledger_streams.py` greps every `ledger.event("...")` call in `algos/live/` and fails if
 the name is not classified, in **both** directions — an unrouted event would fall into health and

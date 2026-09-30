@@ -467,6 +467,21 @@ def test_a_refused_setup_that_later_fills_is_not_a_block():
     assert ex.blocks == []
 
 
+def test_a_refusal_and_the_fill_of_its_setup_carry_the_same_setup_id():
+    """The live ledger joins a refusal to a later fill on this id; if the two sides spelled it
+    differently every refusal would read as held. Watched RED 2026-09-30 by recording the
+    refusal's own bar time instead of its SOS bar's."""
+    ex = Execution(_cfg())
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_flat())        # the SOS bar, nothing ready
+    ex.step(_sig(1, 104.0, 104.5, 103.9, 104.2, ny_hour=16), _seq_long_ready(sos_bar=0))
+    (b,) = ex.blocks
+    assert b.setup_ms is not None and b.setup_ms != b.time_ms   # the SOS bar's time, not its own
+    ex.step(_sig(2, 104.0, 104.5, 103.9, 104.2), _seq_long_ready(sos_bar=0))
+    ex.step(_sig(3, 105.40, 105.50, 103.50, 104.00), _seq_long_ready(sos_bar=0))
+    assert ex._pos_dir == 1
+    assert ex.traded_setup_ms(1) == b.setup_ms
+
+
 def test_a_refusal_of_the_other_side_survives_a_fill():
     """Only the leg that filled loses its refusals — a short refused on the same bars was
     still never traded."""

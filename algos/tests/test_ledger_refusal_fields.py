@@ -198,6 +198,8 @@ def test_sos_fades_refusal_row_keeps_its_fields_and_order(tmp_path):
         ("tp1", None),
         ("tp2", None),
         ("sos_bar", 9),
+        # Added 2026-09-30 — the setup's time, None here because this refusal carries none.
+        ("setup_ms", None),
         ("codes", [3, 7]),
         ("labels", b.labels),
         ("reasons", b.reasons),
@@ -283,3 +285,48 @@ def test_a_miss_field_that_RAISES_is_written_as_unreadable(tmp_path):
     (row,) = _rows(tmp_path)
     assert row["kind"] == "missed"
     assert "no bar yet" in row["unreadable"]
+
+
+# ── a refusal that LIFTED — the setup traded later (2026-09-30) ─────────────────────────────────
+# The refusal row is written the moment it happens; a later fill of the SAME setup cannot un-write
+# it. The trade row carries the setup too, and `mark_later_traded` joins them.
+
+
+def test_a_refusal_whose_setup_later_traded_is_marked_so(tmp_path):
+    """RED by mutation (2026-09-30): join on direction only, and the other setup's refusal reads
+    as traded; drop the `setup_ms` field from `blocked()` and every refusal reads None."""
+    from algos.live.ledger import mark_later_traded
+
+    led = Ledger(tmp_path, "sos_fade_demo")
+    led.blocked(
+        BlockedSetup(
+            dir=1, index=10, time_ms=_T, codes=[4], edge=1771.54, sos_bar=9, setup_ms=_T - 900_000
+        )
+    )
+    led.blocked(
+        BlockedSetup(
+            dir=1, index=11, time_ms=_T, codes=[3], edge=1780.0, sos_bar=5, setup_ms=_T - 9_000_000
+        )
+    )
+    led.blocked(BlockedSetup(dir=-1, index=12, time_ms=_T, codes=[3], edge=1790.0, sos_bar=9))
+    led.trade_opened(
+        ticket=1,
+        direction="LONG",
+        symbol="XAUUSD.p",
+        lots=1.0,
+        price=1771.54,
+        stop=1763.0,
+        setup_ms=_T - 900_000,
+    )
+    marks = [
+        r.get("later_traded") for r in mark_later_traded(_rows(tmp_path)) if r["kind"] == "blocked"
+    ]
+    assert marks == [True, False, None]
+
+
+def test_the_extreme_legs_refusal_carries_its_setup(tmp_path):
+    b = _extreme_refusal()
+    b.setup_ms = 123
+    Ledger(tmp_path, "extreme_leg_demo").blocked(b)
+    (row,) = _rows(tmp_path)
+    assert row["setup_ms"] == 123

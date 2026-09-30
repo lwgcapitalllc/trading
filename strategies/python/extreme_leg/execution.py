@@ -858,6 +858,11 @@ class ExtremeLegExecution(LivePositionMixin):
             tgt = state.tgt_long if direction > 0 else state.tgt_short
             self._book(state, direction, code, entry, stop, tgt)
 
+    def traded_setup_ms(self, direction: int) -> Optional[int]:
+        """The setup (sweep time) this side last FILLED — stamped on the live trade record so a
+        refusal of the same setup reads as lifted. Same seam as SOS Fade's. None = none known."""
+        return self._traded_setup[direction]
+
     def _book(self, state, direction: int, code: int, entry, stop, tgt) -> None:
         """Append one refusal — unless its setup already traded, which makes it not a block."""
         setup = _setup_ms(state, direction)

@@ -331,3 +331,8 @@ Full record: `algos/notes/telegram-and-notifications.md` → *A SETUP THREAD DID
   2020-01 → 2026-09: SOS Fade 204 of 487 refusals were on setups it later filled, BOS 88 of 2,655;
   0 left after the fix. The extreme leg follows the same rule in its own order layer. Tests: `test_a_refused_setup_that_later_fills_is_not_a_block`
   and `test_a_refusal_of_the_other_side_survives_a_fill`, each watched RED by mutation.
+- **Live side (same day):** a refusal also carries `setup_ms` (the SOS bar's TIME), and
+  `traded_setup_ms(direction)` answers the setup a side last filled. The live ledger joins the two
+  (`algos/live/ledger.mark_later_traded`), because live a refusal is written before any fill and
+  cannot be removed. Test: `test_a_refusal_and_the_fill_of_its_setup_carry_the_same_setup_id`
+  (RED stamping the refusal's own bar time).

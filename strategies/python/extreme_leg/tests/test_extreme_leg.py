@@ -162,6 +162,16 @@ def test_a_refused_setup_that_later_fills_is_not_a_block():
     assert ex.blocks == []
 
 
+def test_a_refusal_and_the_fill_of_its_setup_carry_the_same_setup_id():
+    """The live ledger's join key, spelled identically on both sides."""
+    ex = _exec()
+    ex.record_blocks(_state(index=10, low_sweep_ms=77, blk_long=BLK_FRIDAY))
+    (b,) = ex.blocks
+    ex.enter(_state(index=12, ts_ms=_ts(12), low_sweep_ms=77, go_long=True,
+                    stop_long=98.0, tp_long=104.0, atr=1.0))
+    assert ex.traded_setup_ms(1) == b.setup_ms == 77
+
+
 def test_a_fill_leaves_other_setups_refusals_alone():
     """Only the setup that filled loses its refusals: another sweep's, or the other side's, stay."""
     ex = _exec()

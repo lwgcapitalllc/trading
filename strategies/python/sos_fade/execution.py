@@ -364,6 +364,10 @@ class BlockedSetup:
     stop: Optional[float] = None
     tp1: Optional[float] = None
     tp2: Optional[float] = None
+    # The SOS bar's TIME — the setup's identity across a restart (`sos_bar` is a bar number, and a
+    # re-warm renumbers bars). The live ledger joins it to `traded_setup_ms` at the fill, so an
+    # audit can tell a refusal that lifted from one that held. None = the bar time was not known.
+    setup_ms: Optional[int] = None
 
     @property
     def code(self) -> int:
@@ -2067,6 +2071,11 @@ class Execution:
                 for k in sorted(self._bar_ms)[: len(self._bar_ms) - self._BAR_MS_KEEP]:
                     del self._bar_ms[k]
 
+    def traded_setup_ms(self, direction: int) -> Optional[int]:
+        """The setup (SOS bar time) this side last FILLED as a primary — what the live ledger stamps
+        on a trade so a refusal of the same setup reads as lifted, not held. None = none known."""
+        return self._traded_sos_l_ms if direction > 0 else self._traded_sos_s_ms
+
     def _same_leg(self, traded_bar, traded_ms, current_bar) -> bool:
         """Is `current_bar` the leg we have already traded?
 
@@ -2430,7 +2439,7 @@ class Execution:
             self.blocks.append(BlockedSetup(
                 dir=1 if is_long else -1, index=sig.index, time_ms=sig.time_ms,
                 codes=list(cs), edge=float(edge), sos_bar=int(sos_bar),
-                stop=sl, tp1=tp1, tp2=tp2))
+                stop=sl, tp1=tp1, tp2=tp2, setup_ms=self._bar_ms.get(int(sos_bar))))
 
     def _stamp_account_clock(self, sig) -> None:
         """Tell the account the current bar time — unless something else owns the clock.

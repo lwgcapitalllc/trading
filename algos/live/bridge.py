@@ -2605,6 +2605,22 @@ class OrderBridge:
         self._place(slot, plan.lots, pend, sig, plan)
         return self._mt5.get_open_positions()
 
+    def _filled_setup_ms(self, d: int) -> Optional[int]:
+        """The setup this PRIMARY fill came from, for the ledger's refusal join — or None.
+
+        Read off the strategy only when it holds the SAME side, so a broker position the emulator
+        does not share (the divergence `_agrees` halts on) can never be stamped with the previous
+        setup's identity. A re-entry is None: the latch names the primary's setup, not its own.
+        Reporting only — nothing trades on it, and any failure answers None."""
+        try:
+            fn = getattr(self._ex, "traded_setup_ms", None)
+            if fn is None or self._pos_intent != "primary" or self._ex._pos_dir != d:
+                return None
+            ms = fn(d)
+            return None if ms is None else int(ms)
+        except Exception:  # noqa: BLE001 — a reporting field must never cost a trade its record
+            return None
+
     def _observe_open(self, positions, dec, sig) -> None:
         if self._pos_ticket is not None or not positions:
             return
@@ -2669,6 +2685,7 @@ class OrderBridge:
             risk_pct_realised=realised,
             intent=self._pos_intent,
             confluences=self._confluences(dec, sig),
+            setup_ms=self._filled_setup_ms(d),
         )
         self._pos_alert_id = self._notify(
             alerts.format_entry(

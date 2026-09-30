@@ -141,3 +141,11 @@ add banked at the H4 high/low fills AT that level rather than at market on the n
 SOS Fade answers its staged `_add_tp_level` (None when flat or with no live lot); FFT and the extreme
 leg never add and answer `None`. ⚠ The bridge asks it only while an add ticket is open, so a bot
 that never adds cannot be halted by it. Detail: `algos/notes/account-anchor-scale-in-and-targets.md`.
+
+## `traded_setup_ms(direction)` — OPTIONAL, reporting only (2026-09-30)
+
+The setup (by TIME) a side last filled as a primary. The live bridge stamps it on the trade-opened
+ledger row so `algos/live/ledger.mark_later_traded` can tell a refusal that LIFTED from one that
+held. SOS Fade (and BOS through it) answer the SOS bar's time, the extreme leg its arming sweep's;
+each refusal record carries the same value as `setup_ms`, and a test per strategy asserts the two
+spellings agree. Absent = None, and nothing trades on it — a bot without it simply writes no join.
