@@ -145,6 +145,34 @@ def test_a_setup_with_no_average_range_refuses_instead_of_sizing_off_nothing():
     assert ex.blocks and ex.blocks[-1].code == BLK_ATR_NOT_READY
 
 
+def test_a_refused_setup_that_later_fills_is_not_a_block():
+    """Every bot shares one rule: a setup that traded was never blocked (Aaron, 2026-09-30). One
+    sweep arms the long; its first shift is refused, a later shift of the SAME sweep fills — the
+    refusal must go, and a refusal of that setup after the fill is never booked.
+    Watched RED 2026-09-30 by mutation: with the fill's purge removed the first assertion fails,
+    and with the traded check removed from `_book` the second does."""
+    ex = _exec()
+    sweep = 1_599_999_000_000
+    ex.record_blocks(_state(index=10, low_sweep_ms=sweep, blk_long=BLK_FRIDAY))
+    assert len(ex.blocks) == 1
+    assert ex.enter(_state(index=12, ts_ms=_ts(12), low_sweep_ms=sweep, go_long=True,
+                           stop_long=98.0, tp_long=104.0, atr=1.0)) is True
+    assert ex.blocks == []
+    ex.record_blocks(_state(index=13, low_sweep_ms=sweep, blk_long=BLK_FRIDAY))
+    assert ex.blocks == []
+
+
+def test_a_fill_leaves_other_setups_refusals_alone():
+    """Only the setup that filled loses its refusals: another sweep's, or the other side's, stay."""
+    ex = _exec()
+    ex.record_blocks(_state(index=10, low_sweep_ms=1, blk_long=BLK_FRIDAY))
+    ex.record_blocks(_state(index=10, high_sweep_ms=2, blk_short=BLK_FRIDAY))
+    ex.enter(_state(index=12, ts_ms=_ts(12), low_sweep_ms=3, go_long=True,
+                    stop_long=98.0, tp_long=104.0, atr=1.0))
+    assert ex.pos is not None
+    assert [(b.dir, b.setup_ms) for b in ex.blocks] == [(1, 1), (-1, 2)]
+
+
 def test_only_one_position_at_a_time():
     """RED by deleting the `self.pos is not None` guard. Every measurement this strategy has was
     made with one slot, and a second position changes the population all of them describe."""

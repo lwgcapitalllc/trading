@@ -194,3 +194,18 @@ The lab's chart reads a refusal by SOS Fade's field names (`time_ms`, `edge`, `c
 aliases, plus `stop` / `tp1` / `tp2` (None for a NaN stop, and `tp2` always None — one target).
 The original fields stay because the parity harness compares on them. Tests: the last two in
 `tests/test_extreme_leg.py`, watched RED on the class without the aliases.
+
+## A setup that FILLED is never reported as refused (2026-09-30)
+
+- The rule every bot here shares (Aaron: *"all my bots should operate EXACTLY the same"*). A
+  setup is the SWEEP that armed it, keyed by the sweep's TIME (`LegState.low_sweep_ms` /
+  `high_sweep_ms`, never the bar number — a re-warm renumbers bars). The entry drops that
+  setup's earlier refusals, and `_book` never records a refusal of a setup already traded.
+- ⚠ **It changed nothing measured**: a setup-matched replay (478,141 M5 bars, 2020-01 → 2026-09)
+  found 0 of 439 refusals on a setup that later filled, before and after — 117 trades both times.
+  The nearest same-side fill after a refusal was 60 bars later against a 36-bar arming window.
+  The rule is a guarantee for a longer window, not a fix for a seen case.
+- ⚠ The traded latch lives in memory only, so after a live restart one refusal of the setup
+  already traded could still reach the ledger. Reporting only, and inside one 3-hour window.
+- Tests: `test_a_refused_setup_that_later_fills_is_not_a_block`,
+  `test_a_fill_leaves_other_setups_refusals_alone` — RED by three mutations.

@@ -93,6 +93,11 @@ class LegState:
     high_families: int = 0
     low_age: Optional[int] = None
     high_age: Optional[int] = None
+    # The TIME of the sweep that armed each side — the setup's identity. Reporting only: the
+    # refusal records key on it, so a setup that later fills is not reported as blocked. Time,
+    # never the bar number, because a live re-warm renumbers bars.
+    low_sweep_ms: Optional[int] = None
+    high_sweep_ms: Optional[int] = None
     swept_now: int = 0
     is_friday: bool = False
     raw_long: bool = False
@@ -179,6 +184,8 @@ class ExtremeLegStrategy:
         # different fact from "the last one has expired" and is kept as a different value.
         self._low_bar: Optional[int] = None
         self._high_bar: Optional[int] = None
+        self._low_ms: Optional[int] = None
+        self._high_ms: Optional[int] = None
         self._low_fam: int = 0
         self._high_fam: int = 0
 
@@ -351,14 +358,17 @@ class ExtremeLegStrategy:
 
         if low_fams:
             self._low_bar, self._low_fam = index, len(low_fams)
+            self._low_ms = st.ts_ms
         elif self._low_bar is not None and index - self._low_bar > bars_back:
             self._low_fam = 0
         if high_fams:
             self._high_bar, self._high_fam = index, len(high_fams)
+            self._high_ms = st.ts_ms
         elif self._high_bar is not None and index - self._high_bar > bars_back:
             self._high_fam = 0
 
         st.low_families, st.high_families = self._low_fam, self._high_fam
+        st.low_sweep_ms, st.high_sweep_ms = self._low_ms, self._high_ms
         st.low_age = None if self._low_bar is None else index - self._low_bar
         st.high_age = None if self._high_bar is None else index - self._high_bar
         st.low_armed = (self._low_bar is not None and index - self._low_bar <= bars_back

@@ -327,5 +327,7 @@ Full record: `algos/notes/telegram-and-notifications.md` → *A SETUP THREAD DID
   by setup before grading a rule.
 - ⚠ **Runs saved before this keep their stale tags** — `blocked_setups.json` is written once at run
   completion. Re-run to refresh.
-- `bos` and `b_leg` get it through the shared fill. Tests: `test_a_refused_setup_that_later_fills_is_not_a_block`
+- `bos` gets it through the shared fill (`b_leg` records no refusals). Setup-matched replay
+  2020-01 → 2026-09: SOS Fade 204 of 487 refusals were on setups it later filled, BOS 88 of 2,655;
+  0 left after the fix. The extreme leg follows the same rule in its own order layer. Tests: `test_a_refused_setup_that_later_fills_is_not_a_block`
   and `test_a_refusal_of_the_other_side_survives_a_fill`, each watched RED by mutation.

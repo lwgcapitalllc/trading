@@ -109,6 +109,9 @@ class Blocked:
     entry_price: float
     stop_price: float
     target_price: float
+    # The sweep that armed this setup, by TIME — its identity. A fill of the same setup deletes
+    # the record (`enter`), because a setup that traded was never blocked. None = unknown.
+    setup_ms: Optional[int] = None
 
     # ── the shared refusal shape ────────────────────────────────────────────────
     # 🔴 **The lab's chart reads a refusal by SOS Fade's names** (`backtest.output.
@@ -152,6 +155,11 @@ class Blocked:
 
 def _price_or_none(x) -> Optional[float]:
     return float(x) if x is not None and math.isfinite(x) else None
+
+
+def _setup_ms(state, direction: int) -> Optional[int]:
+    """The sweep time that armed this side — the setup's identity. None on a state that has none."""
+    return getattr(state, "low_sweep_ms" if direction > 0 else "high_sweep_ms", None)
 
 
 @dataclass
@@ -245,6 +253,10 @@ class ExtremeLegExecution(LivePositionMixin):
             )
         self.trades: List[Trade] = []
         self.blocks: List[Blocked] = []
+        # The setup each side last FILLED, by sweep time. A refusal of a traded setup is not
+        # booked, and a fill drops the setup's earlier ones — the rule every bot here shares
+        # (SOS Fade: `_record_blocks` / its primary fill). Reporting only.
+        self._traded_setup = {1: None, -1: None}
         self.misses: List = []
         self.pos: Optional[_Open] = None
         # A commanded exit waiting for the next bar. `None` = nobody asked; a string is the
@@ -769,11 +781,7 @@ class ExtremeLegExecution(LivePositionMixin):
                 # See BLK_ATR_NOT_READY. Recorded rather than skipped: a bar where this side
                 # diverges from the Pine must be visible in the output, not inferred from a gap.
                 state.set_block(direction, BLK_ATR_NOT_READY)
-                self.blocks.append(
-                    Blocked(state.index, state.ts_ms, direction,
-                            BLOCK_TEXT[BLK_ATR_NOT_READY], BLK_ATR_NOT_READY,
-                            entry, stop, tp)
-                )
+                self._book(state, direction, BLK_ATR_NOT_READY, entry, stop, tp)
                 return False
             # The budget gate runs HERE, at the fill — this bot enters at market on the close, so
             # there is no resting order and nothing reserves room before this moment. The account
@@ -803,6 +811,11 @@ class ExtremeLegExecution(LivePositionMixin):
                 # copy that shape here, and do not copy this one there.
                 ext_high=entry, ext_low=entry,
             )
+            setup = _setup_ms(state, direction)
+            self._traded_setup[direction] = setup
+            if setup is not None:
+                self.blocks = [b for b in self.blocks
+                               if not (b.dir == direction and b.setup_ms == setup)]
             return True
         return False
 
@@ -843,7 +856,14 @@ class ExtremeLegExecution(LivePositionMixin):
             entry = state.close
             stop = state.stop_long if direction > 0 else state.stop_short
             tgt = state.tgt_long if direction > 0 else state.tgt_short
-            self.blocks.append(
-                Blocked(state.index, state.ts_ms, direction, BLOCK_TEXT[code], code,
-                        entry, stop, tgt)
-            )
+            self._book(state, direction, code, entry, stop, tgt)
+
+    def _book(self, state, direction: int, code: int, entry, stop, tgt) -> None:
+        """Append one refusal — unless its setup already traded, which makes it not a block."""
+        setup = _setup_ms(state, direction)
+        if setup is not None and setup == self._traded_setup[direction]:
+            return
+        self.blocks.append(
+            Blocked(state.index, state.ts_ms, direction, BLOCK_TEXT[code], code,
+                    entry, stop, tgt, setup_ms=setup)
+        )
