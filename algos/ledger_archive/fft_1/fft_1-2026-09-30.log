@@ -578,3 +578,12 @@
 2026-09-30 20:10:01,123 [INFO] Priority 4 on this account: waiting 39s for the bots above
 2026-09-30 20:15:01,073 [INFO] Priority 4 on this account: waiting 59s for the bots above
 2026-09-30 20:20:00,925 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 20:23:00,509 [INFO] place bearish primary limit 0.41L @ 4191.8814999999995 SL 4219.29 TP 4174.9484999999995
+2026-09-30 20:23:00,607 [INFO] PENDING PLACED | ticket=396913772 | bearish 0.41L @ 4191.88 | SL=4219.29 TP=4174.95
+2026-09-30 20:25:02,455 [INFO] Priority 4 on this account: waiting 38s for the bots above
+2026-09-30 20:30:00,760 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 20:35:00,816 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 20:40:00,691 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 20:45:00,647 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 20:50:00,959 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 20:55:00,739 [INFO] Priority 4 on this account: waiting 39s for the bots above
