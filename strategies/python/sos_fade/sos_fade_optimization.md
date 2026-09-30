@@ -6324,3 +6324,30 @@ Trades matched by entry minute + side; ± is one standard error of the differing
 - ⚠ **The dead-market floor's gain is in-sample.** It was tuned on 2020–2026; over 2018–2019 dropping
   it made about +1.9R. Kept as cheap protection, not as a proven edge.
 - No bot, config or documented baseline moves.
+
+## Run 67 — 2026-09-30: a recovery trade after a loss, in the zone of the push leg — no entry rule earns
+
+**The idea (Aaron, from 2026-09-17):** after an SOS Fade loss, don't chase. Wait for structure to
+shift the other way, draw the zone on the PUSH leg only (09-17: 4305 → 4381, 0.618 ≈ 4334), enter on a
+pullback into it, and target the new break of structure (the push extreme).
+**Basis:** 83 post-loss opposite shifts, 2018-09-14 → 2026-09-29, XAUUSD.p, PU Prime ECN costs
+(spread, commission, swap), the shipped book from lab run `168cc65e4a0f`'s basis for slot checks.
+Stop 0.886 of the push leg, 36h time stop, stop first on a bar that touches both.
+⚠ **Study scripts, not a lab run** — kept in a session scratchpad, not in the repo; not reconciled
+trade by trade against a stored lab run. Displacement = shipped trades the new entry would have queued in front of.
+
+| Entry rule | Target | Trades | W/L/S | Net R | ± | P(>0) | Halves | Book net of displaced | vs market-on-shift control |
+|---|---|---|---|---|---|---|---|---|---|
+| Gap in the push-leg zone | push extreme | 19 new | 5/13/1 | −2.14 | 7.19 | 0.35 | +8.20 / −10.34 | −3.78 | −11.29 ± 12.17, P 0.17 |
+| Gap in the push-leg zone | the bot's own take-profit steps | 19 new | 5/10/4 | +0.17 | 6.33 | 0.49 | +6.65 / −6.49 | −1.47 | −8.98 ± 11.53, P 0.21 |
+| No gap: 1m, 5m and 15m trend rows all agree, 1m just turned | push extreme | 23 | 7/14/2 | −5.43 | 4.17 | 0.10 | +1.66 / −7.09 | −5.06 | — |
+
+- **Reject — not proven**, all three. Every one is carried by the early half and loses in the later one.
+- **Trend-row trigger:** 2023–2026 all negative; −9.07R without its best 3; on the 13 setups the gap
+  rule did not trade it made −2.90 ± 3.39R, so the rows find no setups the gap misses. Of 83 setups:
+  23 traded, 19 hit the leg's start first, 20 ran to target first, 10 lost the 15m, 11 never pulled back to 0.5.
+  The 5m row was built from the canonical structure engine on 5m candles (the trend engine has none).
+- **09-17 itself:** no gap fill (the gap sat $0.52 above the 0.5; the low stopped $0.19 short of the
+  0.618). The trend-row trigger would have taken it for +1.07R — one day, not evidence.
+- Agrees with Runs 27–31 (no-gap shift entries) and 64–65 (the trend rows as filter / size): after a
+  loss, a pullback entry on the opposite shift has shown no edge by any trigger tried.
