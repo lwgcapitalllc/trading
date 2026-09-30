@@ -22,3 +22,20 @@
 2026-09-30 01:45:03,113 [INFO] Priority 2 on this account: waiting 17s for the bots above
 2026-09-30 02:00:03,340 [INFO] Priority 2 on this account: waiting 17s for the bots above
 2026-09-30 02:15:04,560 [INFO] Priority 2 on this account: waiting 15s for the bots above
+2026-09-30 02:30:04,169 [INFO] Priority 2 on this account: waiting 16s for the bots above
+2026-09-30 02:45:03,537 [INFO] Priority 2 on this account: waiting 16s for the bots above
+2026-09-30 03:00:04,436 [INFO] Priority 2 on this account: waiting 16s for the bots above
+2026-09-30 03:11:52,182 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-30 03:11:52,182 [INFO] Stop requested — shutting down.
+2026-09-30 03:11:52,182 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-30 03:11:52,182 [INFO] MT5 disconnected.
+2026-09-30 03:12:15,304 [INFO] Extreme Leg | ExtremeLegStrategy v338 | hash 1f314a822f98 | commit 5d2b07cf | frozen | LIVE
+2026-09-30 03:12:15,867 [INFO] Connected | #34957946 | $10,287.06 | PUPrime-Live
+2026-09-30 03:12:15,867 [INFO] MT5 connection lock released
+2026-09-30 03:12:16,351 [INFO] Sizing against account balance $10,287.06
+2026-09-30 03:12:16,414 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-30 03:12:16,461 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → account 34957946's own signals channel -1003332727688
+2026-09-30 03:12:21,212 [INFO] Warmed 15000 bars (2026-07-15 15:40:00+00:00 → 2026-09-30 03:05:00+00:00) in 4.3s
+2026-09-30 03:12:21,212 [INFO] Equity re-anchored to the account after warm-up: 9,582.44 → 10,287.06
+2026-09-30 03:12:22,212 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
+2026-09-30 03:15:02,787 [INFO] Priority 2 on this account: waiting 17s for the bots above
