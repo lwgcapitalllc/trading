@@ -756,6 +756,23 @@ this panel and it should be the default move.
 
 ### 🔴 This file's panel is ordered by PROVENANCE, and it is the only one here that is
 
+🔴 **SUPERSEDED 2026-09-30 (Aaron's call): the house contract NUMBERING now wins, and provenance
+lives in the group NAMES.** On-screen order is now `2 · Market structure — ours`, `3 · What trades
+— ours`, `4 · What arms it — his model`, `5 · Entry — his model + ours`, `6 · Stop & targets — his
+model + ours`, `7 · Filters — his model + ours`, `8 · Chart annotations — ours`, `10 · Drawing: sessions — ours`. 1, 9, 11 and
+12 are unused and the numbering does not close up. Groups 5, 6 and 7 mix both and say "his model +
+ours" — 6 and 7 were first split into two groups each under one number, and merged the same day
+because two 6s and two 7s is not the panel every other strategy shows. Merging was a group-string
+change only, so it reset nothing. The old `GS` shift-of-structure group was dissolved:
+the confirmation switches went to 4 (and "when the shift must happen" to 5, since it decides where
+the order rests), breakeven-on-shift to 6 (his rule), and the SOS markers to 2.
+⚠ **Seven declarations MOVED, in three places, against the note above, because a group lands where its first input
+is declared** — the structure pivot length to the top (it was already the first int, so no int
+reset), the five "What trades" inputs after it, and the stop anchor ("Stop sits behind…") up beside
+the other group-6 inputs. Everything else changed only its group string. ⚠ **Press "Reset settings
+to defaults" once** on a chart already running this file. The paragraphs below are the history of
+the provenance-first layout and still explain WHY the names carry provenance.
+
 **Aaron, 2026-08-16: *"rearrange the inputs into things that came from him 100% and things that
 came from us… so I could see them logically."*** Groups **1-4 are HIS MODEL**, groups **5-10 are
 OURS**. The other five strategy files keep the house contract that groups by what a setting
@@ -904,6 +921,8 @@ new state with the state it belongs to — is exactly what puts a read above its
 ⚠ **`9 · Drawing: fibs`** — no fibs.
 ⚠ **`12 · Debug`** — held one per-event Pine Logs line; cut on Aaron's call. What it reported is on
 the chart already, from the same state.
+⚠ **2026-09-30: group 2 now exists** — it holds the structure pivot length and the SOS markers,
+not a structure drawing, so the paragraph below still stands.
 🔴 **`2 · Market structure` — the one place "the same four toggles everywhere" cannot be honoured
 by porting.** Every other file runs its engine on the CHART frame, so drawing it is free; H4 ported
 ~1,000 lines in on that basis. This one runs the engine inside `request.security` on the 15m and
@@ -917,3 +936,30 @@ rule rather than an example of it** — they DECIDE trades (the sweep pool is re
 safe only because every Pine file here has carried the identical DST-aware values since
 2026-07-31, so a divergence would be a bug and not a setting. **A change to them belongs in every
 file that carries the block.**
+
+### The annotation layer brought onto SOS Fade's standard (2026-09-30)
+
+Drawing and panel only — no order, exit, cancel, size or trading default changed; the diff against
+the previous file touches inputs' group strings and the drawing section alone.
+
+- **Entry confluence label** (`[doc 3]` in `docs/smc_session_sweep_strategy.md`): one grey label at
+  entry, recoloured WIN / LOSS / BREAKEVEN with the R on close, hover = the armed breakdown. It
+  REPLACES the result label that `execShowLabels` used to write at close; that toggle now writes
+  only the entry / exit / furthest / deepest / stop prices. Three SOS Fade inputs came with it:
+  show it, which results keep it, distance from price (6 ATR).
+- **Entry triangles** — SOS Fade's two `plotshape` calls, gated on the position box. The twin
+  builder strips them, so the export twin stays at 59 of 64 plots.
+- **TP tags at the real fill price** (`execShowExitLines`, "Label the TP bands (TP1/TP2)"): each
+  closed slice that filled at or beyond the first target gets a dashed `TP_ANNOT` line and a TP1 /
+  TP2 tag, numbered in fill order like SOS Fade's `f_tpBand`. No per-rung bands were added.
+- **Pink and orange are separate switches now.** "Mark blocked trades on chart (pink)" = code 10
+  only; "Show missed setups (all but one condition met, or better)" = codes 6-9, with "Which misses
+  to draw": *Near misses only* (default — every condition met, or price reached the gap and it still
+  failed), *All misses*, or *All conditions met only* (only possible with the gap switched off,
+  because otherwise a miss is by definition the gap failing). The blocked tag now reads "TRADE
+  BLOCKED". The day limit is SOS Fade's "Only draw debug callouts from the last N days", default 3
+  (was 30), and 0 now means all history.
+- **"Breakeven band (R)" is no longer greyed with the position box**, because the entry label reads
+  it too — a greyed control that is still read is the worse half of the cascade audit above.
+- The position box toggle is now labelled "Show position box (result)".
+

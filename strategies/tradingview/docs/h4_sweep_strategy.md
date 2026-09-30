@@ -253,6 +253,11 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // when the rest of this file's annotations are brought up to SOS Fade's set.
 ```
 
+**Promoted to an input, 2026-09-30** — `Breakeven band (R)` in section 8, same wording and
+default (0.15) as SOS Fade. It grades the entry label's WIN / LOSS / BREAKEVEN colour and
+nothing else: no order, stop or size reads it. The Pine Logs line still calls a result a
+SCRATCH inside ±0.05R, as before.
+
 ## [6] ⚠ THE TRIGGER LINE AND ITS LABEL ARE ORANGE, AND ORANGE IS SOS Fade's BREAKEVE
 
 ```
@@ -776,6 +781,10 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // bar late — or, on a trade that opens and closes quickly, not at all.
 ```
 
+**Changed 2026-09-30:** the triangles now follow `Show position box (result)`, the same as SOS
+Fade, so the first sentence above no longer holds. With the boxes off the trade is still
+visible through the entry label.
+
 ## [50] ════════════════════════════════════════════════════════════════════════  _(only in h4_sweep_strategy_export.pine)_
 
 ```
@@ -906,4 +915,70 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // deliberately: they are one family, they are the thing most likely to be swept, and a reader
 // decoding them should not have to mask around five unrelated sequence switches.
 ```
+
+## [55] ⚠ THE RESULT IS GRADED HERE, BEFORE THE TRIGGERS, not at the bottom of the
+
+Added 2026-09-30. The trade's R, the box's right edge, the TP1 tag, the entry label's
+recolour and the `[RESULT]` log line all used to run at the bottom of the script, AFTER the
+trigger blocks. On a bar where one trade closes and the next one triggers, the trigger has
+already overwritten `tNetAtEntry`, `tRiskUsd`, `tPat` and `bxRisk` by then, so the closed
+trade graded as exactly 0R, the NEW trade's box was cut to zero width, and the result line
+named the new trade's pattern. Grading first reads the closing trade's own values.
+
+⚠ `closedR` is also plotted by the export twin (`px_closed_r`). Its value moves only on that
+same-bar case, from the wrong 0R to the trade's real R. No order, stop or size reads it, so
+the trade list cannot move.
+
+## [56] The TP1 tag sits at the REAL fill price, found by exit id AND price. The
+
+Added 2026-09-30, SOS Fade's `Label the TP bands` for a file with one target. The id alone is
+not enough: `L-TP1` / `S-TP1` also carry a STOP, so a TP1 slice stopped out before the target
+closes under the same id. A fill only counts when it is at or beyond the TP1 price. The
+runner's trail exit is never tagged — it has no target to name. ONE band, ONE tag: this file
+has no TP2 or TP3, so none are drawn.
+
+## [57] ══ ENTRY CONFLUENCE LABEL ══════════════════════════════════════════════
+
+Added 2026-09-30. One label per trade, copied from SOS Fade's `f_confOpen` / `f_confClose`:
+grey while open, recoloured WIN / LOSS / BREAKEVEN with the R appended on close, hover for the
+breakdown (pattern, the level swept, the trigger line, entry, stop, TP1 and whether it was hit).
+It replaces the separate "+R" result label, which printed a SECOND label per trade.
+
+The orange confirmation-candle label is kept, because it is a SETUP marker rather than a trade
+label — it fires on every armed pattern, traded or not — but it is now OFF by default, so the
+default chart carries one label per trade like SOS Fade. Written inline rather than as SOS Fade's
+functions: Pine functions cannot assign to globals, and this file has no label object type.
+
+⚠ **Inputs were added and section 8 was reordered, so "Reset settings to defaults" is needed
+once** on any chart already running this strategy — saved values will otherwise land on the
+wrong settings.
+
+## [58] ══ MISSED-SETUP CALLOUT ════════════════════════════════════════════════
+
+Added 2026-09-30, SOS Fade's "N of 3" callout ported to how THIS strategy decides. One orange
+tag per H4 window that never traded, drawn when the window ends, listing what was met and what
+was missing. Hover for the detail; arrows point at the swept level and the pattern candle, and
+a dashed line marks the trigger line.
+
+**The three steps are the three this strategy requires, in order:**
+
+1. **Sweep** — the previous liquidity candle's high or low was taken. The watch opens here, so
+   it is always met.
+2. **Pattern** — an enabled confirmation pattern printed after the sweep. It counts even when
+   the prior-candle filter refused it, because that filter is a refusal, not a missing pattern.
+3. **Trigger** — a chart candle closed past the trigger line. It counts when a gate then
+   refused the entry, and the callout names the gate.
+
+The EMA, minimum-stop, trigger-cap and side switches are NOT steps. They refuse a setup that is
+already there (section 7), so they appear as the reason on a 3/3, and the pink TRADE BLOCKED tag
+marks the bar.
+
+**Near misses** are the ones a rule of yours cost: a 3/3 that a gate refused, or a pattern the
+prior-candle filter kept from arming. A 2/3 where price never closed past the line is the
+market saying no, and shows only under "All misses".
+
+⚠ Only with "Require an H4 sweep first" on — without it there is no window to end. There is no
+"disabled source" option: the sweep is the only thing that arms this strategy. A window is
+skipped when a trade from an earlier window was still open while it was armed, since the
+one-position rule, not the setup, stopped it.
 

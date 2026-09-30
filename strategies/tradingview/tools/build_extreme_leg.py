@@ -6,7 +6,8 @@ The file embeds the external structure state machine TWICE — once on the chart
 trend, and the swing that is the target). The second copy is DERIVED by
 `derive_htf_structure.py`, never retyped, so the two cannot drift silently.
 
-Run `derive_htf_structure.py` first, then this. Both are idempotent.
+Run `derive_htf_structure.py` first, then this. Both are idempotent. `--check` writes nothing and
+exits 1 if the committed parent differs from what this would write.
 
 It writes the strategy you trade, then hands it to `build_export_twins.py` for its EXPORT TWIN —
 the same file with a block of `plot()` calls appended that write the per-bar decision stream into a
@@ -94,9 +95,18 @@ float minR       = input.float(2.0, "Refuse a target nearer than (R)", minval = 
 float minStopUsd = input.float(0.0, "Minimum stop distance ($)", minval = 0.0, step = 0.1, group = G7, tooltip = "Refuses a stop tighter than this. A tight stop does not make the risk small, it makes the position large. 0 switches it off.")
 
 // ── 8 · Chart annotations ───────────────────────────────────────
-bool showEntries = input.bool(true,  "Entry markers", group = G8)
-bool showBlocked = input.bool(true,  "Refused setups", group = G8, tooltip = "Tags a setup that armed and was then refused, with the reason.")
-bool showSweeps  = input.bool(false, "Mark the sweep that armed it", group = G8)
+// [doc 3a] SOS Fade's controls, in SOS Fade's order, at SOS Fade's defaults  -> docs/extreme_leg_strategy.md
+bool   execShowConfLabel = input.bool(true, "Show entry confluence label", group = G8, tooltip = "Prints one label per trade. Hover it for the full breakdown; it recolours by result and shows the R on close.")
+string execLabelWhich    = input.string("All", "   ↳ keep labels for which results", options = ["All", "Wins only", "Losses only", "Losses + breakevens", "None"], group = G8, active = execShowConfLabel, tooltip = "Which trades keep their label once the result is known. The rest are deleted on the bar the trade closes.")
+float  execLabelOff      = input.float(6, "   ↳ label distance from price (ATR)", group = G8, minval = 1, maxval = 40, step = 1, active = execShowConfLabel, tooltip = "How far the label sits from the entry, in ATRs. Push it out so the hover opens over empty space instead of the candles.")
+bool   execShowPosBox    = input.bool(true, "Show position box (result)", group = G8, tooltip = "Draws one box per trade showing the result: green to the take-profit fill, red to the exit on a loss.")
+bool   execShowExitLines = input.bool(true, "   ↳ Label the target band", group = G8, active = execShowPosBox, tooltip = "Tags the take-profit fill at its real price. Off = the green band still paints, just untagged.")
+float  execBeBandR       = input.float(0.15, "Breakeven band (R)", group = G8, minval = 0, step = 0.05, tooltip = "A trade finishing within this many R of flat counts as a breakeven rather than a win or a loss.")
+bool   showBlocked       = input.bool(true, "Mark blocked trades on chart (pink)", group = G8, tooltip = "Drops a pink tag whenever a setup armed and one of your rules refused it. Hover it for the reason.")
+bool   showMissed        = input.bool(true, "Show missed setups (3 of 4 or better)", group = G8, tooltip = "Marks a 5-minute change of character that never traded but met at least 3 of the 4 things a trade needs, listing what was missing.")
+string missFilter        = input.string("Near misses only", "Which misses to draw", options = ["Near misses only", "All misses", "4-of-4 only"], group = G8, tooltip = "Which misses to draw. Near misses only keeps the chart readable.")
+int    debugDays         = input.int(3, "Only draw debug callouts from the last N days (0 = all)", group = G8, minval = 0, maxval = 365, tooltip = "Only draw callouts from the last N days. 0 = the whole history.")
+bool   showSweeps        = input.bool(false, "Mark the sweep that armed it", group = G8, tooltip = "Prints a small grey tag on every bar that took a level. Drawing only.")
 
 // ── 11 · Drawing: Liquidity ─────────────────────────────────────
 bool showLevels = input.bool(false, "Draw the levels", group = G11, tooltip = "Draws the highs and lows this strategy watches. Drawing only — it changes nothing.")
@@ -402,6 +412,23 @@ var bool  beArmed = false
 // The sibling `h4_sweep_strategy.pine` has carried the same pair since it was written.
 bool tookLong  = false
 bool tookShort = false
+// A setup that TRADED was never refused (2026-09-30, the rule every bot shares). Each tag is kept
+// with the sweep that armed it; the entry erases that sweep's tags and a traded sweep draws no
+// more. Mirrors the Python order layer. Drawing only — no decision reads these.
+var array<label> refLbl = array.new<label>()
+var array<line>  refLn  = array.new<line>()
+var array<int>   refKey = array.new<int>()     // sweep bar * 2 + side (0 long, 1 short)
+var int tradedKeyL = na
+var int tradedKeyS = na
+f_refErase(int key) =>
+    int i = array.size(refKey) - 1
+    while i >= 0
+        if array.get(refKey, i) == key
+            label.delete(array.remove(refLbl, i))
+            line.delete(array.remove(refLn, i))
+            array.remove(refKey, i)
+        i -= 1
+    i
 
 if goLong and strategy.position_size == 0
     strategy.entry("L", strategy.long, qty = f_qty(riskLong))
@@ -409,12 +436,16 @@ if goLong and strategy.position_size == 0
     tTgt  := tpLong
     beArmed := false
     tookLong := true
+    tradedKeyL := lowSweepBar * 2
+    f_refErase(tradedKeyL)
 if goShort and strategy.position_size == 0
     strategy.entry("S", strategy.short, qty = f_qty(riskShort))
     tStop := stopShort
     tTgt  := tpShort
     beArmed := false
     tookShort := true
+    tradedKeyS := highSweepBar * 2 + 1
+    f_refErase(tradedKeyS)
 
 if strategy.position_size != 0 and useBreakeven and not na(tTgt) and not na(tStop)
     float span = math.abs(tTgt - strategy.position_avg_price)
@@ -436,12 +467,231 @@ if strategy.position_size == 0 and not tookLong and not tookShort
     tTgt  := na
     beArmed := false
 
-// [doc 13] ANNOTATIONS
-if showEntries and (goLong or goShort)
-    label.new(bar_index, goLong ? low : high, goLong ? "▲" : "▼", style = goLong ? label.style_label_up : label.style_label_down, color = color.new(goLong ? bullColor : bearColor, 20), textcolor = color.white, size = size.small, tooltip = "take profit " + str.tostring(goLong ? tpLong : tpShort, format.mintick) + " (" + str.tostring((goLong ? rLong : rShort) * tpFrac, "#.##") + "R booked)  ·  swing " + str.tostring(goLong ? tgtLong : tgtShort, format.mintick) + " (" + str.tostring(goLong ? rLong : rShort, "#.##") + "R available)  ·  " + str.tostring(goLong ? lowFamilies : highFamilies) + " level(s) swept")
+// [doc 13] ANNOTATIONS — DRAWING ONLY. Nothing below is read by an order, a stop or a size  -> docs/extreme_leg_strategy.md
+// Every trade colour is copied from sos_fade_strategy.pine, the house standard. Change it there first.
+color POS_RED    = color.new(#EF5350, 62)
+color POS_OPEN   = color.new(#787B86, 80)
+color POS_ORANGE = color.new(#FF9800, 0)
+color POS_GREENB = color.new(#26A69A, 0)   // solid borders so even a thin box is visible
+color POS_REDB   = color.new(#EF5350, 0)
+color POS_G1     = color.new(#26A69A, 55)  // the one target band — this file has no TP2 or TP3
+color POS_DD     = color.new(#EF5350, 88)  // drawdown: behind everything, barely there
+color TP_ANNOT   = color.new(#26A69A, 40)  // the target tag and its line
+color BLK_PINK   = color.new(#FF2E9A, 12)
+color BLK_PINKL  = color.new(#FF2E9A, 0)
+color MISS_ORN   = color.new(#FF9800, 12)
+color MISS_ORNL  = color.new(#FF9800, 0)
+color LBL_TXT    = color.new(#101014, 0)
 
-if showBlocked and (not na(blockLong) or not na(blockShort))
-    label.new(bar_index, not na(blockLong) ? low : high, "REFUSED", style = not na(blockLong) ? label.style_label_up : label.style_label_down, color = color.new(color.orange, 60), textcolor = color.orange, size = size.tiny, tooltip = not na(blockLong) ? blockLong : blockShort)
+float annAtr    = ta.atr(14)
+float annLo     = ta.lowest(low, 20)
+float annHi     = ta.highest(high, 20)
+bool  annRecent = debugDays == 0 or time >= timenow - debugDays * 86400000
+bool  annFlat   = strategy.position_size == 0 and not tookLong and not tookShort
+
+// Which kinds of level the latest sweep on each side took, and where — for the hovers only.
+f_famTxt(bool h4, bool sess, bool day, bool week) =>
+    string s = (h4 ? ", 4-hour" : "") + (sess ? ", session" : "") + (day ? ", previous day" : "") + (week ? ", previous week" : "")
+    str.length(s) > 0 ? str.substring(s, 2) : "none"
+var string lowFamTxt  = ""
+var string highFamTxt = ""
+var float  lowSweepPx  = na
+var float  highSweepPx = na
+if lowFamNow > 0
+    lowFamTxt  := f_famTxt(swH4L, sessLowSwept, swDL, swWL)
+    lowSweepPx := low
+if highFamNow > 0
+    highFamTxt  := f_famTxt(swH4H, sessHighSwept, swDH, swWH)
+    highSweepPx := high
+
+// [doc 13a] THE TRADE IS READ FROM THE EMULATOR'S OWN TRADE LIST, NOT FROM THE POSITION SIZE  -> docs/extreme_leg_strategy.md
+// A trade that opens on one close and exits inside the next bar never shows a non-zero position.
+var int    snapBar  = na    // bar the entry order went out on
+var float  snapStop = na    // the stop it opened with — 1R
+var float  snapTgt  = na    // the take profit it rested
+var string snapBody = ""
+var int    openBar  = na    // entry bar of the trade drawn open, na when none is
+var label  tLbl     = na
+var line   tLn      = na
+var box    tBox     = na
+var int    elSeen   = 0     // closed trades already drawn
+int        fillDir  = 0     // a trade that filled on the PREVIOUS bar's close became visible here
+
+f_elOpen(int dir, int x, float px, string body) =>
+    string head = dir > 0 ? "▲ LONG" : "▼ SHORT"
+    float  ly   = dir > 0 ? px - annAtr * execLabelOff : px + annAtr * execLabelOff
+    line   ln   = line.new(x, px, x, ly, color = color.new(#787B86, 0), width = 1)
+    label  lb   = label.new(x, ly, head, tooltip = head + "\\n" + body, color = color.new(#787B86, 12), textcolor = LBL_TXT, style = dir > 0 ? label.style_label_up : label.style_label_down, size = size.small)
+    [lb, ln]
+
+// On the bar the trade closes: recolour by RESULT and append the R, or delete it per the filter.
+f_elGrade(label lb, line ln, int dir, float r, float net, string body) =>
+    if not na(lb)
+        bool   be   = not na(r) and math.abs(r) <= execBeBandR
+        bool   won  = not be and (na(r) ? net > 0 : r > 0)
+        string res  = be ? "BREAKEVEN" : won ? "WIN" : "LOSS"
+        bool   keep = execLabelWhich == "All" or (execLabelWhich == "Wins only" and won) or (execLabelWhich == "Losses only" and not won and not be) or (execLabelWhich == "Losses + breakevens" and not won)
+        if keep
+            string line1 = (dir > 0 ? "▲ LONG" : "▼ SHORT") + "  ·  " + res + (na(r) ? "" : "  " + (r >= 0 ? "+" : "") + str.tostring(r, "#.##") + "R")
+            label.set_text(lb, line1)
+            label.set_tooltip(lb, line1 + "\\n" + body)
+            label.set_color(lb, be ? color.new(#FF9800, 12) : won ? color.new(#26A69A, 12) : color.new(#EF5350, 12))
+            line.set_color(ln, be ? color.new(#FF9800, 0) : won ? color.new(#26A69A, 0) : color.new(#EF5350, 0))
+        else
+            label.delete(lb)
+            line.delete(ln)
+    int _gDone = 0
+
+// [doc 13b] The closed trade drawn as bands: drawdown behind, then ONE green band to the fill  -> docs/extreme_leg_strategy.md
+f_elBox(int x1, int x2, int dir, float entry, float stop, float tgt, float best, float worst, float net) =>
+    int lx = x2 + 4
+    if dir > 0 ? worst < entry : worst > entry
+        box.new(x1, math.max(entry, worst), x2, math.min(entry, worst), bgcolor = POS_DD, border_color = color(na))
+    bool atTgt = not na(tgt) and (dir > 0 ? best >= tgt - syminfo.mintick : best <= tgt + syminfo.mintick)
+    if atTgt
+        box.new(x1, math.max(entry, best), x2, math.min(entry, best), bgcolor = POS_G1, border_color = color(na))
+        if execShowExitLines
+            line.new(x1, best, lx, best, color = TP_ANNOT, style = line.style_dashed, width = 1)
+            label.new(lx, best, " TP", color = color(na), textcolor = TP_ANNOT, style = label.style_label_left, size = size.small)
+    else if net < 0
+        float redTo = na(best) ? stop : best
+        box.new(x1, math.max(entry, redTo), x2, math.min(entry, redTo), bgcolor = POS_RED, border_color = POS_REDB)
+    else
+        line.new(x1, entry, x2, entry, color = POS_ORANGE, width = 2)
+    int _bDone = 0
+
+bool annLabels = execShowConfLabel and execLabelWhich != "None"
+
+// Closed first: a trade can close and the next one be ordered on the same bar.
+if strategy.closedtrades > elSeen
+    for i = elSeen to strategy.closedtrades - 1
+        int   eb    = strategy.closedtrades.entry_bar_index(i)
+        float ep    = strategy.closedtrades.entry_price(i)
+        float sz    = strategy.closedtrades.size(i)
+        int   dir   = sz > 0 ? 1 : -1
+        bool  mine  = not na(snapBar) and eb == snapBar
+        float stop0 = mine ? snapStop : na
+        float riskU = na(stop0) ? na : math.abs(sz) * math.abs(ep - stop0) * syminfo.pointvalue
+        float net   = strategy.closedtrades.profit(i)
+        float r     = na(riskU) or riskU <= 0 ? na : net / riskU
+        float xPx   = strategy.closedtrades.exit_price(i)
+        float worst = ep - dir * math.abs(strategy.closedtrades.max_drawdown(i)) / (math.abs(sz) * syminfo.pointvalue)
+        string body = mine ? snapBody : ""
+        if na(openBar) or eb != openBar
+            // never seen open: it filled on one close and exited inside the next bar
+            if eb == bar_index - 1
+                fillDir := dir
+            if annLabels
+                [lb0, ln0] = f_elOpen(dir, eb, ep, body)
+                tLbl := lb0
+                tLn  := ln0
+        f_elGrade(tLbl, tLn, dir, r, net, body)
+        if not na(tBox)
+            box.delete(tBox)
+        if execShowPosBox
+            f_elBox(eb, strategy.closedtrades.exit_bar_index(i), dir, ep, stop0, mine ? snapTgt : na, xPx, worst, net)
+        tLbl    := na
+        tLn     := na
+        tBox    := na
+        openBar := na
+    elSeen := strategy.closedtrades
+
+// Opened: the emulator holds a trade not drawn yet. Grey until the result is known.
+if strategy.opentrades > 0
+    int   eb = strategy.opentrades.entry_bar_index(0)
+    float ep = strategy.opentrades.entry_price(0)
+    if na(openBar) or eb != openBar
+        openBar := eb
+        int dir = strategy.opentrades.size(0) > 0 ? 1 : -1
+        if eb == bar_index - 1
+            fillDir := dir
+        if annLabels
+            [lb1, ln1] = f_elOpen(dir, eb, ep, not na(snapBar) and eb == snapBar ? snapBody : "")
+            tLbl := lb1
+            tLn  := ln1
+        if execShowPosBox
+            tBox := box.new(eb, math.max(ep, close), bar_index, math.min(ep, close), bgcolor = POS_OPEN, border_color = color.new(#787B86, 0), border_width = 1)
+    else if not na(tBox)
+        box.set_right(tBox, bar_index)
+        box.set_top(tBox, math.max(ep, close))
+        box.set_bottom(tBox, math.min(ep, close))
+
+// [doc 13c] The triangles sit on the ENTRY bar: offset -1, because the fill is seen one bar later  -> docs/extreme_leg_strategy.md
+plotshape(execShowPosBox and fillDir > 0, title = "Long entry",  style = shape.triangleup,   location = location.belowbar, color = POS_GREENB, size = size.small, offset = -1)
+plotshape(execShowPosBox and fillDir < 0, title = "Short entry", style = shape.triangledown, location = location.abovebar, color = POS_REDB,   size = size.small, offset = -1)
+
+// Blocked: the arming gates passed and a rule in the refusal ladder said no. Reads blkLong /
+// blkShort, the same numbers the export writes, so the tag and the CSV cannot disagree.
+int refK = not na(blockLong) ? lowSweepBar * 2 : highSweepBar * 2 + 1
+int refT = not na(blockLong) ? tradedKeyL : tradedKeyS
+if showBlocked and (not na(blockLong) or not na(blockShort)) and (na(refT) or refK != refT)
+    bool   isL = not na(blockLong)
+    float  yB  = isL ? annLo - annAtr * 2 : annHi + annAtr * 2
+    array.push(refKey, refK)
+    array.push(refLn, line.new(bar_index, entryPx, bar_index, yB, color = BLK_PINKL, style = line.style_dotted, width = 1))
+    array.push(refLbl, label.new(bar_index, yB, (isL ? "▲" : "▼") + " TRADE BLOCKED", tooltip = (isL ? "▲ LONG" : "▼ SHORT") + " blocked\\n──────────────────\\n" + (isL ? blockLong : blockShort) + "\\n──────────────────\\nWould have entered at " + str.tostring(entryPx, format.mintick), color = BLK_PINK, textcolor = LBL_TXT, style = isL ? label.style_label_up : label.style_label_down, size = size.small))
+
+// [doc 13d] MISSED SETUP — a change of character that never traded, scored 4 ways  -> docs/extreme_leg_strategy.md
+// Levels · SOS · 15m trend · room to the swing. The SOS is always met: it is the bar being scored.
+f_roomCode(float tgt, float risk, float r, bool isLong) =>
+    na(tgt) ? 2 : (isLong ? tgt <= entryPx : tgt >= entryPx) ? 3 : risk <= 0 ? 4 : r < minR ? 6 : 0
+
+f_miss(bool isLong, bool sos, int fam, int sweepBar, float sweepPx, string famTxt, bool trendOk, int room, float r, int rule, int tradedKey, float y) =>
+    bool inWin = not na(sweepBar) and bar_index - sweepBar <= barsBack
+    int  famN  = inWin ? fam : 0
+    int  key   = inWin ? sweepBar * 2 + (isLong ? 0 : 1) : -1
+    if showMissed and sos and annRecent and annFlat and (isLong ? execLongs : execShorts) and (key == -1 or na(tradedKey) or key != tradedKey)
+        bool lvlMet  = famN >= minFamilies
+        bool roomMet = room == 0
+        int  metN    = (lvlMet ? 1 : 0) + 1 + (trendOk ? 1 : 0) + (roomMet ? 1 : 0)
+        bool near    = metN == 4 or (metN == 3 and ((not lvlMet and famN > 0) or room == 6))
+        bool pass    = missFilter == "All misses" ? true : missFilter == "4-of-4 only" ? metN == 4 : near
+        if metN >= 3 and pass
+            string lvlTxt = str.tostring(famN) + " of " + str.tostring(minFamilies) + " needed" + (famN > 0 ? " · " + famTxt : "")
+            string met = "MET\\n  SOS     5-minute change of character"
+            string mss = "MISSING"
+            if lvlMet
+                met := met + "\\n  Levels  " + lvlTxt
+            else
+                mss := mss + "\\n  Levels  " + (famN > 0 ? lvlTxt : "nothing swept in the last " + str.tostring(sweptMinutes) + " minutes")
+            if trendOk
+                met := met + "\\n  Trend   " + (reqCounterTrend ? "against the 15-minute trend" : "not required")
+            else
+                mss := mss + "\\n  Trend   " + (isLong ? "the 15-minute trend is not down" : "the 15-minute trend is not up")
+            if roomMet
+                met := met + "\\n  Room    swing " + str.tostring(r, "#.#") + "R away"
+            else
+                mss := mss + "\\n  Room    " + f_blkText(room, isLong)
+            if metN == 4
+                mss := mss + "\\n  Entry   " + (rule > 0 ? f_blkText(rule, isLong) : "no entry")
+            string tag = (isLong ? "▲ " : "▼ ") + str.tostring(metN) + "/4" + (metN == 4 ? " ✗" : "")
+            string hdr = (isLong ? "▲ LONG   " : "▼ SHORT   ") + str.tostring(metN) + " OF 4" + (metN == 4 ? "   NO ENTRY" : "")
+            string tip = hdr + "\\n──────────────────\\n" + met + "\\n" + mss + "\\n──────────────────\\n  Would have entered at " + str.tostring(entryPx, format.mintick)
+            array.push(refKey, key)
+            array.push(refLbl, label.new(bar_index, y, tag, tooltip = tip, color = MISS_ORN, textcolor = LBL_TXT, style = label.style_label_center, size = size.small))
+            line ln = na
+            if inWin and not na(sweepPx)
+                ln := line.new(bar_index, y, sweepBar, sweepPx, color = MISS_ORNL, style = line.style_arrow_right, width = 1)
+            array.push(refLn, ln)
+    int _mDone = 0
+
+// 4 of 4 means the arming gates passed, so the refusal ladder ran: its own code is the reason.
+f_miss(true,  st.bull_sos, lowFamilies,  lowSweepBar,  lowSweepPx,  lowFamTxt,  not reqCounterTrend or htfBear, f_roomCode(tgtLong,  riskLong,  rLong,  true),  rLong,  blkLong,  tradedKeyL, annLo - annAtr * 4)
+f_miss(false, st.bear_sos, highFamilies, highSweepBar, highSweepPx, highFamTxt, not reqCounterTrend or htfBull, f_roomCode(tgtShort, riskShort, rShort, false), rShort, blkShort, tradedKeyS, annHi + annAtr * 4)
+
+// Keep the tag lists bounded. Pine has already recycled anything this old off the chart.
+if array.size(refKey) > 600
+    array.shift(refKey)
+    array.shift(refLbl)
+    array.shift(refLn)
+
+// Snapshot the order LAST, so a trade that closed on this bar was graded against its own entry.
+if tookLong or tookShort
+    snapBar  := bar_index
+    snapStop := tStop
+    snapTgt  := tTgt
+    int fam = tookLong ? lowFamilies : highFamilies
+    snapBody := "──────────────────\\nTake profit  " + str.tostring(tTgt, format.mintick) + "  (" + str.tostring((tookLong ? rLong : rShort) * tpFrac, "#.##") + "R booked)\\nSwing        " + str.tostring(tookLong ? tgtLong : tgtShort, format.mintick) + "  (" + str.tostring(tookLong ? rLong : rShort, "#.##") + "R available)\\nStop         " + str.tostring(tStop, format.mintick) + "\\nLevels swept " + str.tostring(fam) + " · " + (tookLong ? lowFamTxt : highFamTxt)
 
 // ⚠ Declared at top level, not inside the `if`. Pine refuses a function declaration inside a
 // conditional block, and the failure is a compile error rather than a quiet no-op.
@@ -463,6 +713,17 @@ if showDebug and barstate.islast
 """
 
 body = HEAD + native + "\n" + derived + MID
+
+# `--check` regenerates in memory and diffs against the committed parent, writing nothing. Added
+# 2026-09-30: the parent had been hand-edited (the refused-tag erase) while this builder was not,
+# so the next regeneration would have silently deleted a shipped fix.
+if "--check" in sys.argv[1:]:
+    if OUT.read_text() != body:
+        print(f"{OUT.name} is STALE or hand-edited - make the change here, then run this without --check")
+        sys.exit(1)
+    print(f"{OUT.name} matches its builder")
+    sys.exit(0)
+
 OUT.write_text(body)
 
 # The twin is the SAME body with " Export" on the title and the export block on the end, built by

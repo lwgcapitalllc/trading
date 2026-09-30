@@ -231,15 +231,27 @@ evening** — four pointers to nothing, which is the one thing an anchor must ne
 The entry callout is drawn at the fill in neutral grey and recoloured only when the trade closes.
 Colouring it at entry would paint a guess. It carries "▲ LONG" / "▼ SHORT" until then.
 
+**Since 2026-09-30 it matches `sos_fade_strategy.pine`:** it sits "label distance from price
+(ATR)" × ATR(14) from the ENTRY price (default 6 — it used to sit 0.6 ATR past the fill bar's
+wick), "None" in "keep labels for which results" draws no label at all, and its hover carries
+the confluence breakdown in [26]. The ATR is now computed at global scope; it used to be called
+inside the fill block, which Pine evaluates only on the bars that block runs.
+
 ## [15] Closed this bar: grade it in R, recolour the callout, paint the bands
 
 The trade's R is its net P&L over the dollar risk frozen at the fill (entry to stop, times size).
 A result inside ±`beBandR` is **BREAKEVEN** (orange line), otherwise a red or green result box.
+The band default moved **0.1 → 0.15 R on 2026-09-30** to match SOS Fade. It is grading only — it
+colours the label and the band and feeds no order; the export twin reports it as a `cfg_` column
+and no gate reads it. The result band now ends at the REAL exit fill
+(`strategy.closedtrades.exit_price`), not the close of the exit bar — a stop fills inside the bar.
 The best and worst prices are banded underneath first, so the result sits on top of them. The
 colours are copied from `sos_fade_strategy.pine`, never re-picked.
 
 ⚠ **This fork banks nothing at its rungs** (both default 0%), so every trade ends on the trail, the
-time stop or the flat, and the result is one band rather than a stack of partials.
+time stop or the flat, and the result is one band rather than a stack of partials. **Do not add
+empty TP rungs to match SOS Fade** — a rung nobody banks at would paint a band for a fill that
+never happened. The "Label the target band" tag ([29]) is this file's version of SOS Fade's TP tags.
 
 ## [16] Entry triangles
 
@@ -256,8 +268,15 @@ happens, never re-derived** — `d_strategy.pine` paid for that: its tag read di
 bar's SOS and drew every candidate as a SHORT once a second entry mode existed.
 
 Codes: 1 stop on the wrong side · 2 minimum stop · 3 target behind entry · 4 no retest level ·
-5 retest expired · 6 invalidated before the fill. ⚠ Written inline, not through a helper — a Pine
-function cannot assign to a global.
+5 retest expired · 6 invalidated before the fill · 7 with the N-day move. ⚠ Written inline, not
+through a helper — a Pine function cannot assign to a global.
+
+**Since 2026-09-30 the tag is SOS Fade's:** pink `#FF2E9A` @12 fill / @0 leader (it was purple
+`#E040FB`), text "▲ TRADE BLOCKED" / "▼ TRADE BLOCKED" (was "REFUSED"), set 1 ATR beyond the
+missed-setup callouts' base, with a dotted pink leader from the bar's close — or from the resting
+limit for codes 5 and 6. The words for each code live in ONE function, `f_refWhy`, which the
+orange missed-setup callout reads too. Nothing to erase on a later fill: a realign refusal is
+final, because the setup is consumed on its trigger ([19]).
 
 ## [18] The 15m close is read on the FIRST chart bar of the next 15m bar
 
@@ -333,8 +352,8 @@ and the decision to build it: `strategies/python/realign/realign_optimization.md
   written. A chart's first N trading days therefore take no trades with the filter on.
 - **`dayKey` starts at 0, never `na`** — Pine's `int` has no `na`, and a comparison against one is
   the trap the export block warns about.
-- ⚠ **The input is the LAST `int` declared.** Adding it anywhere earlier would reset every later
-  int input on a chart already running this script.
+- ⚠ **The input WAS the LAST `int` declared** until 2026-09-30, when section 8 gained "Only draw
+  debug callouts from the last N days" after it. See [24] — a reset is needed once.
 
 ## [23] The breakeven buffer — fixed ticks, or a share of the trade's own risk
 
@@ -349,6 +368,103 @@ at the rung that moved it. The same buffer feeds the "Breakeven" floor past TP2.
   shrinks as the trail tightens. The Python twin is `_be_buffer` in `sos_fade/execution.py`.
 - **The cap is measured against the NEARER of TP1 and TP2**, exactly as the port's
   `_stage_rungs()[0]`.
-- ⚠ **The three inputs are the LAST string and floats declared**, for the saved-values reason in
-  [22]. They sit in section 6 of the panel.
+- ⚠ **The three inputs were the LAST string and floats declared** until section 8 grew on
+  2026-09-30 ([24]). They sit in section 6 of the panel.
 - ⚠ **The port's third mode, "Fraction of stop + cost", has no Pine twin.** Not offered here.
+
+## [24] Section 8 brought onto SOS Fade's annotation panel — "Reset settings to defaults" once
+
+**2026-09-30.** Section 8 now carries SOS Fade's labels and defaults, which
+`scripts/check_pine_conventions.py` checks by label and default:
+
+| setting | was | now |
+|---|---|---|
+| entry label toggle | "Entry callout, recoloured on close" | "Show entry confluence label" |
+| which labels to keep | "Which callouts to keep", no None | "keep labels for which results", with None |
+| label distance | hardcoded 0.6 ATR past the wick | "label distance from price (ATR)", default 6 |
+| breakeven band | 0.1 R | "Breakeven band (R)", 0.15 R |
+| blocked tag | "Tag refused setups", purple | "Mark blocked trades on chart (pink)" |
+| target-band tag | — | "Label the target band" ([29]) |
+| missed setups | — | "Show missed setups", "Which misses to draw", "Only draw debug callouts from the last N days" (3) |
+
+🔴 **This inserts inputs, and TradingView keys a saved chart's values off declaration order within
+each type.** Every later bool, float, string and int input shifts, including the section-6
+breakeven-buffer inputs and the Debug toggle. **Open the script and use "Reset settings to
+defaults" once**, then set anything you had changed. Take the next CSV export after that reset.
+
+⚠ **No "include ones armed by a disabled source" setting.** SOS Fade has one because it can switch
+off its sweep and divergence arm sources. Realign has ONE arm source, the external false break,
+with no switch — the setting would do nothing.
+
+**Drawing only.** No input in section 8 is read by an entry, exit, cancel or size. The trade list
+is unchanged; the one `strategy()` change is `max_labels_count`/`max_lines_count`/
+`max_boxes_count` = 500, as in SOS Fade, so the extra callouts do not push older ones off the chart.
+
+## [25] One setup's life — the watch record behind the missed-setup callout and the entry label
+
+Each side keeps two `MissW` records. `mwL`/`mwS` follow an ARMED setup: opened on the false
+break, stamped with the first chart-frame counter break. `moL`/`moS` follow a setup whose trigger
+SENT an order, until that order fills or dies. They only OBSERVE the tracker's state
+(`markFalseDown`, `armLong`, `stepLong`, `trigLong`, `refBar`/`refDir`/`refCode`, `pendBar`); they
+write nothing back to it.
+
+## [26] The entry label's hover — the confluence breakdown
+
+Built at the fill from values already known there: the order record ([25]) for the three steps
+and how many bars before the trigger each happened, and the position's frozen entry, stop, TP1 and
+TP2. Lines: Arm (external false break), Counter (chart break against it), Realign (chart SOS back
+with the trend, and the level it broke), Filter (the N-day move), then Entry (market or retest),
+Stop, TP1 (halfway; stages breakeven), TP2 (the external swing that stood before the break) and
+the runner trail.
+
+## [27] The missed-setup callout — "N of 3", orange, setups that never traded
+
+**Realign's three steps are the three things that decide whether it trades**, in order:
+
+1. **Arm** — an external-frame SOS against the trend that is its first counter break (the false break).
+2. **Counter** — a chart-frame break against the setup while it is armed.
+3. **Realign** — a chart-frame SOS back with the trend. This is the trigger.
+
+Every watched setup has Arm, so a callout is 2 of 3 (it countered but never realigned) or 3 of 3
+✗ (it triggered and still did not trade). 1 of 3 is never drawn. Filters — the N-day move, the
+minimum stop, the target check — are not steps: they REFUSE a trigger, so they appear as the
+reason on a 3-of-3, and as the pink tag.
+
+**"Near misses only"** draws every 3-of-3, and a 2-of-3 that died because the armed window ran
+out. A 2-of-3 that was killed (the external frame broke the same way again, so the false break
+became a trend) or replaced by a newer false break is the setup correctly dying, and shows only
+under "All misses".
+
+Colour and layout are SOS Fade's: `#FF9800` @12 with `#101014` text, a short tag on the chart and
+the full MET / MISSING list in the hover, arrows to the false-break bar and the counter-break bar,
+a dashed line at the price the order was sent (or the trigger bar's close), stacked three deep
+below the 60-bar low (above the high for shorts). Only the last "N days" are drawn (default 3).
+
+## [28] How a watched setup ends
+
+Per bar, per side, after every trading decision on that bar:
+
+- **An order is waiting** (`mo`): it FILLED (a new trade with this side's entry id opened this
+  bar — counted by trades, so a fill that stopped out inside the same bar still counts), or it was
+  cancelled with code 5 or 6, or a newer trigger replaced the resting limit, or it was never filled.
+- **A new false break**: an armed setup still watched is closed as replaced.
+- **The trigger fires**: a trade already open → 3/3 ✗ "a trade was already open"; a refusal code on
+  this bar for this side → 3/3 ✗ with its reason; otherwise the order was sent and `mo` takes over.
+- **The arm drops without a trigger**: killed by a same-way external break, or the window expired.
+
+⚠ **Known blind spot:** `refBar`/`refDir`/`refCode` hold ONE refusal per bar. If a resting retest
+limit is cancelled on the same bar a new same-side trigger is refused, one reason overwrites the
+other. Retest mode is shipped off and this needs both on one bar, so it is left stated, not built.
+
+## [29] The target-band tag — the real exit price and how the trade closed
+
+With "Label the target band" on, the closed trade's result band gets a dashed line and a tag at
+the real exit fill: TIME STOP or FLAT BEFORE CLOSE (from the close-all comment), TP1 / TP2 (a
+banked rung — only when its size % is above 0), else TRAIL, BREAKEVEN STOP or STOP by the exit
+ladder's stage on the last open bar. With partial exits it tags the FINAL fill only.
+
+## [30] Where the missed-setup watch runs
+
+At the END of the bar, after the blocked tag: the entry label on a fill bar reads the order record
+before this block closes it. The fill test is by trade count and entry id ([28]), not by the
+position size, which a same-bar stop-out would hide.

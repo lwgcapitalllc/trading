@@ -182,3 +182,26 @@ internal engine and make the section standard.**
 ⚠ **No `_export` twin, so no parity gate can ever run on it** — the same hole
 `realign_strategy.pine` has, and it means every number this file produces is a lab finding
 until a twin exists.
+
+---
+
+## The trade annotation layer, and the builder that had fallen behind its file (2026-09-30)
+
+✅ **It now carries SOS Fade's full annotation layer** — entry label recoloured WIN / LOSS /
+BREAKEVEN with the R, position box with ONE target band, entry triangles, pink "TRADE BLOCKED"
+tag, and an "N of 4" missed-setup callout — and `scripts/check_pine_conventions.py extreme_leg`
+passes. Drawing only; the trade list cannot move. Design and the four-item scoring:
+`docs/extreme_leg_strategy.md` → `[13]`. ⚠ Never compiled here; the first paste is the test.
+
+🔴 **The `.pine` had been hand-edited and the builder had not** (commit `eaf80068`, the refused-tag
+erase). Regenerating would have silently deleted a shipped fix. It is ported into
+`tools/build_extreme_leg.py`, and `build_extreme_leg.py --check` now exits 1 on that drift. ⚠ It
+is NOT wired into `scripts/run_all_tests.sh`; the twin check (step 18) cannot see it, because it
+rebuilds the twin FROM the committed parent and so agrees with a hand-edited one.
+
+⚠ **The builder also copies its structure engine out of `h4_sweep_strategy.pine`** (between
+`type SMCStructure` and its `[doc 18]` anchor). A change there moves this file on the next
+regeneration — read the diff before trusting one.
+
+⚠ **"Reset settings to defaults" is needed once** on a chart already running it: section 8 was
+replaced and reordered.

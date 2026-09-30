@@ -78,13 +78,18 @@ string execMinStopMode = input.string("% of price", "Minimum stop distance", opt
 float  execMinStopVal  = input.float(0.10, "   ↳ Minimum stop floor (unit = mode above)", group = G7, minval = 0, step = 0.05, active = execMinStopMode != "Off", tooltip = "The floor itself. A percent, dollars of price, or an ATR multiple, following the mode above.")
 
 // ── 8 · Chart annotations ───────────────────────────────────────
-bool   execShowConfLabel = input.bool(false, "Show entry label", group = G8, tooltip = "One label per trade. Hover it for the full breakdown; it recolours by result and shows the R on close.")
+bool   execShowConfLabel = input.bool(true, "Show entry confluence label", group = G8, tooltip = "One label per trade. Hover it for the full breakdown; it recolours by result and shows the R on close.")
 string execLabelWhich = input.string("All", "   ↳ keep labels for which results", options = ["All", "Wins only", "Losses only", "Losses + breakevens", "None"], group = G8, active = execShowConfLabel, tooltip = "Which trades keep their label once the result is known. The rest are deleted on the bar they close.")
 float  execLabelOff = input.float(6, "   ↳ label distance from price (ATR)", group = G8, minval = 1, maxval = 40, step = 1, active = execShowConfLabel, tooltip = "How far the label sits from the entry. Raise it so the hover opens over empty space instead of on top of the candles.")
-bool   execShowPosBox = input.bool(false, "Show position box (result)", group = G8, tooltip = "One box per trade showing the result: green to the furthest price actually filled, red to the stop on a loss.")
-bool   execShowExitLines = input.bool(false, "   ↳ Label the TP bands (TP1/TP2/TP3)", group = G8, active = execShowPosBox, tooltip = "Tags each banked exit at its real fill price. Off = the coloured bands still paint, just untagged.")
+bool   execShowPosBox = input.bool(true, "Show position box (result)", group = G8, tooltip = "One box per trade showing the result: green to the furthest price actually filled, red to the stop on a loss.")
+bool   execShowExitLines = input.bool(true, "   ↳ Label the TP bands (TP1/TP2/TP3)", group = G8, active = execShowPosBox, tooltip = "Tags each banked exit at its real fill price. Off = the coloured bands still paint, just untagged.")
 float execBeBandR = input.float(0.15, "Breakeven band (R)", group = G8, minval = 0, step = 0.05, tooltip = "A trade finishing within this many R of flat counts as a breakeven. It changes labelling only, never a trade.")
-bool showBlockTag = input.bool(false, "Mark blocked trades (pink)", group = G8, tooltip = "Drops a pink tag whenever a setup was ready to place its order and one of your own settings stopped it.")
+bool showBlockTag = input.bool(true, "Mark blocked trades on chart (pink)", group = G8, tooltip = "Drops a pink tag whenever a setup was ready to place its order and one of your own settings stopped it.")
+// [doc 111] The missed-setup callout — BOS's own three conditions, drawing only  -> docs/bos_strategy.md
+bool debugShow23 = input.bool(true, "Show missed setups (2 of 3 or better)", group = G8, tooltip = "Marks setups that met at least 2 of the 3 conditions and never traded, listing what was missing.")
+bool debugShow23Disarmed = input.bool(false, "…include ones armed by a disabled source", group = G8, tooltip = "On = also show breaks your break settings refused, so you can see what they would have caught.")
+string debug23Filter = input.string("Near misses only", "Which misses to draw", options = ["Near misses only", "All misses", "3-of-3 only"], group = G8, tooltip = "Which misses to draw. Near misses only keeps the chart readable.")
+int    debugDays = input.int(3, "Only draw debug callouts from the last N days (0 = all)", group = G8, minval = 0, maxval = 365, tooltip = "Only draw callouts from the last N days. 0 = the whole history.")
 
 // ── 9 · Drawing: fibs ───────────────────────────────────────────
 bool drawFibs = input.bool(false, "Draw the fib levels", group = G9, tooltip = "Draws the fib levels on the chart. They are always calculated - this only decides whether you see them.")
@@ -3562,6 +3567,121 @@ float closedR = strategy.position_size == 0 and strategy.position_size[1] != 0 a
 if not na(closedR)
     f_confClose(tlbl, closedR, execBeBandR)
     openRiskUsd := na
+
+// [doc 112] MISSED-SETUP CALLOUT — one orange tag per BOS setup that died untraded  -> docs/bos_strategy.md
+// Drawing only: no order, size or gate reads anything in this block.
+f_dbg23Box(int atBar, float y, string tag, string full, int armBar, float armPx, float entryPx, int entryFrom) =>
+    color orn = color.new(#FF9800, 0)
+    label.new(atBar, y, tag, tooltip = full, color = color.new(#FF9800, 12), textcolor = color.new(#101014, 0), style = label.style_label_center, size = size.small)
+    if not na(armBar)
+        line.new(atBar, y, armBar, armPx, color = orn, style = line.style_arrow_right, width = 1)
+    if not na(entryPx) and not na(entryFrom)
+        line.new(entryFrom, entryPx, atBar, entryPx, color = orn, style = line.style_dashed, width = 1)
+
+type MissW
+    bool   watch  = false
+    bool   armOk  = false // the break passed your break settings and armed a leg
+    int    armBar = na    // bar the break fired on
+    int    ord    = 0     // its BOS ordinal since the shift
+    float  hi     = na    // the break leg, frozen — prices a REFUSED break's levels
+    float  lo     = na
+    bool   zone   = false // price pulled back to the band's shallow end
+    bool   gap    = false // an entry price existed while price was in the band
+    bool   touch  = false // price traded through that entry price
+    bool   busy   = false // ...while another trade held the one position slot
+    int    code   = 0     // the first refusal live while price was at the entry
+    float  edge   = na    // the price the limit rested at (first seen)
+    int    from   = na    // first bar in the band — where the entry line starts
+    int    drawn  = 0     // callouts drawn on this side — drives the stagger
+var MissW mwL = MissW.new()
+var MissW mwS = MissW.new()
+
+f_w23Arm(MissW m, bool fire, bool ok, int ord, float hi, float lo) =>
+    if fire
+        m.watch  := true
+        m.armOk  := ok
+        m.armBar := bar_index
+        m.ord    := ord
+        m.hi     := hi
+        m.lo     := lo
+        m.zone   := false
+        m.gap    := false
+        m.touch  := false
+        m.busy   := false
+        m.code   := 0
+        m.edge   := na
+        m.from   := na
+
+// [doc 113] Track the live setup, then draw the callout when it dies without trading  -> docs/bos_strategy.md
+f_w23(MissW m, bool isLong, bool alive, bool traded, bool flat, float top, float edge, int code, float y, float step, bool recent) =>
+    if m.watch and alive and not traded
+        if not na(top) and (isLong ? low <= top : high >= top)
+            m.zone := true
+            m.from := na(m.from) ? bar_index : m.from
+            m.gap  := m.gap or not na(edge)
+        if not na(edge)
+            m.edge := na(m.edge) ? edge : m.edge
+            if isLong ? low <= edge : high >= edge
+                m.touch := true
+                m.busy  := m.busy or strategy.position_size != 0
+                m.code  := m.code == 0 ? code : m.code
+    else if m.watch
+        if not traded and flat
+            int  metN = (m.armOk ? 1 : 0) + (m.zone ? 1 : 0) + (m.touch ? 1 : 0)
+            // A NEAR miss: all three met and still no trade, or price reached the band and no gap priced an entry.
+            bool nearMiss = metN == 3 or (m.zone and not m.gap)
+            bool passFilt = debug23Filter == "All misses" ? true : debug23Filter == "3-of-3 only" ? metN == 3 : nearMiss
+            if debugShow23 and recent and passFilt and metN >= 2 and (m.armOk or debugShow23Disarmed)
+                string brk = "BOS #" + str.tostring(m.ord) + (m.ord == 1 ? " (expansion)" : " (continuation)")
+                string met = "MET"
+                string mss = "MISSING"
+                if m.armOk
+                    met := met + "\n  Arm     " + brk
+                else
+                    mss := mss + "\n  Arm     " + brk + " — your break settings refused it"
+                if m.zone
+                    met := met + "\n  Pull    price reached the " + bosEntryTop + " band" + (m.gap ? "" : ", no gap")
+                else
+                    mss := mss + "\n  Pull    price never pulled back to " + bosEntryTop
+                if m.touch
+                    met := met + "\n  Entry   price reached the limit"
+                else if m.zone and not m.gap
+                    mss := mss + "\n  Entry   no gap or Sniper Zone priced an entry in the band"
+                else
+                    mss := mss + "\n  Entry   price never reached the limit"
+                if metN == 3
+                    mss := mss + "\n  Order   " + (m.code != 0 ? "blocked — " + f_blkWhy(m.code) : m.busy ? "another trade held the one position slot" : "no order was resting when price got there")
+                string tag = (isLong ? "▲ " : "▼ ") + str.tostring(metN) + "/3" + (metN == 3 ? " ✗" : "")
+                string hdr = (isLong ? "▲ LONG   " : "▼ SHORT   ") + str.tostring(metN) + " OF 3" + (metN == 3 ? "   NO ENTRY" : "")
+                string bdy = "──────────────────\n" + met + "\n" + mss + (na(m.edge) ? "" : "\n──────────────────\n  Entry would rest at " + str.tostring(m.edge, format.mintick))
+                int    armX  = bar_index - m.armBar < 5000 ? m.armBar : na
+                int    fromX = na(m.from) ? armX : bar_index - m.from < 5000 ? m.from : na
+                // Stagger: every third callout on this side sits back at the base.
+                float  yTag = isLong ? y - (m.drawn % 3) * step : y + (m.drawn % 3) * step
+                m.drawn := m.drawn + 1
+                f_dbg23Box(bar_index, yTag, tag, hdr + "\n" + bdy, armX, isLong ? m.hi : m.lo, m.edge, fromX)
+        m.watch := false
+    int _w23Done = 0
+
+// [doc 114] Where each watch's band and limit come from — the live arm, or a refused break's own leg  -> docs/bos_strategy.md
+bool  _dbgRecent = debugDays == 0 or time >= timenow - debugDays * 86400000
+bool  _mReqGap = bosUseFvg and execReqFVG
+float _mFibV  = str.tonumber(bosEntryFib)
+float _mTopV  = bosShallow ? 0.382 : 0.5
+float _mTopL  = mwL.armOk ? lTop : f_lvl(mwL.hi, mwL.lo, _mTopV)
+float _mTopS  = mwS.armOk ? sTop : f_lvl(mwS.lo, mwS.hi, _mTopV)
+float _mEdgeL = mwL.armOk ? longEdge  : _mReqGap ? na : math.min(f_lvl(mwL.hi, mwL.lo, _mFibV), _mTopL)
+float _mEdgeS = mwS.armOk ? shortEdge : _mReqGap ? na : math.max(f_lvl(mwS.lo, mwS.hi, _mFibV), _mTopS)
+bool  _mDeadL = bosFireL or not bosRegL or close < mwL.lo or bar_index - mwL.armBar > BOS_MAX or (mwL.zone and high >= mwL.hi) or (bosReqHold and close < mwL.hi)
+bool  _mDeadS = bosFireS or not bosRegS or close > mwS.hi or bar_index - mwS.armBar > BOS_MAX or (mwS.zone and low <= mwS.lo) or (bosReqHold and close > mwS.lo)
+bool  _mLiveL = mwL.armOk ? (bosL_on and bosL_bar == mwL.armBar) : not _mDeadL
+bool  _mLiveS = mwS.armOk ? (bosS_on and bosS_bar == mwS.armBar) : not _mDeadS
+
+// Close the old watch BEFORE a new break opens one, so a re-anchor still draws the setup it replaced.
+f_w23(mwL, true,  _mLiveL, not na(tradedBosL) and tradedBosL == mwL.armBar, strategy.position_size == 0, _mTopL, _mEdgeL, mwL.armOk ? lBlkCode : 0, _tagLo, atr14 * 2, _dbgRecent)
+f_w23(mwS, false, _mLiveS, not na(tradedBosS) and tradedBosS == mwS.armBar, strategy.position_size == 0, _mTopS, _mEdgeS, mwS.armOk ? sBlkCode : 0, _tagHi, atr14 * 2, _dbgRecent)
+f_w23Arm(mwL, bosFireL, bosL_on and bosL_bar == bar_index, bosCntL, st.bull_bos_high, st.bull_bos_low)
+f_w23Arm(mwS, bosFireS, bosS_on and bosS_bar == bar_index, bosCntS, st.bear_bos_high, st.bear_bos_low)
 
 // [doc 95] POSITION BOX — the trade drawn as stacked bands  -> docs/bos_strategy.md
 type PosBox

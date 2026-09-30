@@ -151,6 +151,8 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 // ============================================================================
 ```
 
+⚠ **Superseded 2026-09-30 on one point:** the missed-setup callout now exists in this file, scored on BOS's own three conditions rather than copied from SOS Fade. See [111].
+
 ## [2] THE INPUT PANEL — one consolidated block, twelve numbered sections
 
 ```
@@ -1463,3 +1465,83 @@ source by a `// [doc N]` line. Grep this file for `## [N]` to find one.
 //   cfg_enum2 = tp2StopMode + 10*htfWeekly + 100*htfDaily
 ```
 
+
+## [111] The missed-setup callout — BOS's own three conditions, drawing only
+
+Added 2026-09-30 to bring BOS onto the same chart annotations as `sos_fade_strategy.pine`. The
+four settings, their wording and their defaults are copied from SOS Fade's group 8; only the
+three conditions they score are BOS's own. Group 8 also moved onto SOS Fade's defaults the same
+day: the entry label, the position box, the TP-band tags and the pink blocked tag are all ON.
+
+⚠ **Reset settings to defaults once on any chart already running this file.** Four new inputs
+were added and two labels renamed ("Show entry confluence label", "Mark blocked trades on chart
+(pink)"). TradingView keys saved values off declaration order, so an old chart can carry values
+onto the wrong settings until it is reset.
+
+**Why three conditions and not the ones the first audit suggested.** The callout must name what
+BOS actually needs to trade, or it lists "missing" things the strategy never asks for. BOS trades
+when a break arms a leg, price pulls back into the entry band, and price reaches the resting
+limit with no filter refusing it. So the three are:
+
+| # | condition | met when |
+|---|---|---|
+| 1 | **Arm** | a break inside an SOS run passed the break settings in group 4 and armed a leg |
+| 2 | **Pull** | price pulled back to the band's shallow end (0.5, or 0.382 if chosen) |
+| 3 | **Entry** | price reached the price the limit rested at |
+
+- **The gap and the Sniper Zone are not a separate condition.** They only decide WHERE the limit
+  rests, and only when "Price the entry off a gap" and "...and require one" are both on. When
+  they are required and none existed while price was in the band, Entry is listed as missing for
+  that reason ("no gap or Sniper Zone priced an entry").
+- **RSI divergence is not a condition at all.** In this file it only VETOES an entry, and that
+  veto is off by default. The entry label's "Div live" line is an opposing divergence, not a
+  confluence. Scoring it would mark a setup "missing divergence" that BOS never needed.
+- **3 of 3 and still no trade** means a filter refused the order when price got there. The
+  tooltip names it with the same reason text as the pink tag, or says another trade held the one
+  position slot, or that no order was resting yet on that bar.
+- **Near misses only** draws a 3-of-3, or a setup whose only gap was the missing gap. ⚠ With gap
+  pricing off (the default) every armed setup has an entry price, so near misses are exactly the
+  3-of-3s. "All misses" adds the setups that pulled back but never reached the limit.
+- **"…include ones armed by a disabled source"** means breaks the group-4 break settings
+  refused (which break, minimum clearance, minimum leg). Those never arm, so their band and limit
+  are priced off the break's own leg with the plain fallback level. With a gap required they are
+  never scored, since no gap scan ran for them. ⚠ With "Measure levels on" set to expansion leg,
+  a refused break's levels are the break leg's, not what the live arm would have used.
+
+## [112] MISSED-SETUP CALLOUT — one orange tag per BOS setup that died untraded
+
+Same drawing as SOS Fade: a small orange `#FF9800` @12 tag with `#101014` text, an arrow back to
+the break at the broken level, and a dashed line along the entry price from the first bar in the
+band. The tag reads `▲ 2/3`, or `▲ 3/3 ✗` when everything was met. Hover it for what was met,
+what was missing, and where the entry would have rested. Tags stagger over three rows per side
+so neighbours do not overlap. Only setups that NEVER traded are drawn, and only while flat when
+the setup died.
+
+**It cannot change a trade.** Nothing in this block is read by an entry, an exit, a cancel, the
+position size or any gate. It only READS existing state (the armed leg, the entry price, the
+per-bar refusal code the pink tag already uses, and the fill record).
+
+⚠ Not compiled here, and this file has hit the compiled-token cap (CE10117) before. If a paste
+refuses, this block is the newest addition and the first to cut; cutting it costs a chart
+annotation, never a trade.
+
+## [113] Track the live setup, then draw the callout when it dies without trading
+
+A watch opens on every break inside an SOS run. While the setup is alive it records whether
+price reached the band, whether an entry price existed there, whether price traded through it,
+and the first refusal that was live when it did. When the setup dies — the normal death rules,
+a newer break taking over, or the opposite SOS — the callout is drawn if the setup never filled.
+The old watch is closed BEFORE a new break opens its own, so a re-anchor still draws the setup it
+replaced.
+
+⚠ A trade that opens and closes on the same bar never shows a position change, so the fill is
+not recorded and that setup can draw as a miss. The same blind spot already exists in the fill
+block above it.
+
+## [114] Where each watch's band and limit come from — the live arm, or a refused break's own leg
+
+An armed setup reads the strategy's own band, entry price and alive state, so the callout and
+the trade cannot disagree. A refused break has no state of its own, so its band and fallback
+level are priced off the break leg it would have used, and it dies on the same rules the live
+arm does: past the leg origin, stale after the day cap, the cycle completing, a close back
+through the broken level when that rule is on, a newer break, or the run ending.

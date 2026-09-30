@@ -191,13 +191,25 @@ The other half of the standardisation: *"as I move to strategies, nothing seems 
 than the logic of the strategy."* Same blocked marker, same missed callout, same position box,
 same entry triangles, on every file.
 
-| annotation | SOS Fade | B-LEG | BOS | D | H4 | M15 |
-|---|---|---|---|---|---|---|
-| position box / result bands | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ **new** |
-| entry callout, recoloured on close | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ **new** |
-| **entry triangles** | ✅ | ✅ | ✅ | ✅ **new** | ✅ | ✅ **new** |
-| **blocked-setup tag (pink)** | ✅ | ✅ | ✅ | ✅ | ✅ **new** | ✅ |
-| missed-setup callout (2-of-3) | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+🔴 **2026-09-30 — all seven are now on the SOS Fade standard, and the checker enforces it.** Audit
+found B-LEG complete and five files short: the extreme leg drew no trade at all; the session sweep's
+panel numbers meant different things (its "5" was execution hours) with no triangles and no open
+label; H4 drew two labels per trade and half the section-8 panel; realign's blocked tag was PURPLE
+with a 0.1 R breakeven band; BOS had every annotation switched OFF by default. Only B-LEG and SOS
+Fade had the missed-setup callout. Each file now has one, scored on ITS OWN conditions (SOS Fade's
+three do not transfer) — the set per file is in its `docs/` entry. A strategy with one target draws
+ONE green band, never empty TP2/TP3 rungs. Charts already running a changed file need "Reset
+settings to defaults" once.
+
+| annotation | SOS Fade | B-LEG | BOS | extreme leg | H4 | realign | session sweep |
+|---|---|---|---|---|---|---|---|
+| position box / result bands | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| entry label, recoloured on close | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| entry triangles | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| blocked-setup tag (pink) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| missed-setup callout (N of M) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+The history below predates that pass and is kept for its reasons.
 
 **D gained the entry triangles.** `plotshape` is a GLOBAL-SCOPE call, so it cannot live inside
 the fill block and the fill edge is written out at top level instead — the SAME test the fill
@@ -235,12 +247,11 @@ now audits every `*_strategy.pine` here for the numbered panel, the six annotati
 standard RESULT colours, and it is **meant to fail the build the same way `check_pine_blocks.py`
 does for the engine copies.**
 
-🔴 **IT IS NOT WIRED INTO `scripts/run_all_tests.sh` YET, AND THIS SECTION SAID IT WAS FOR A DAY.**
-The two files in the table below still fail it, so wiring it would land a red build on everyone —
-run it by hand (`python3 scripts/check_pine_conventions.py`) until they are fixed, and wire it
-then. ⚠ **A doc claiming a check runs when it does not is worse than no doc**: it is exactly the
-"a label is a CLAIM about code somewhere else" failure in rule 7, committed by the very file
-written to stop a convention from drifting.
+🔴 **WIRED INTO STEP 18 OF `scripts/run_all_tests.sh` ON 2026-09-30**, once every file passed. For a
+day this section claimed it was wired when it was not — rule 7 committed by the file written to stop
+drift. Since 2026-09-30 it also checks that each group NUMBER carries its contract NAME (a provenance
+suffix like "— his model" is allowed) and that group 8 holds SOS Fade's annotation settings by label
+AND default; the presence-only version had passed three half-built panels.
 
 ⚠ **A DIFFERENT Pine check DID land, inside step 14** — `indicators/tools/check_continuation.py`,
 green on all 43 Pine files, so it cost nobody a red build. A wrapped expression indented a
@@ -248,13 +259,6 @@ multiple of four is read by Pine as a new block and the line above it is reporte
 unfinished; `realign_strategy.pine` refused to compile on exactly that on 2026-09-16, and because
 a twin is GENERATED the identical break arrived in both halves of the parity gate. Any
 non-multiple of four works.
-
-What the first credible run found, beyond realign:
-
-| file | what was missing |
-|---|---|
-| `extreme_leg_strategy.pine` | **no trade drawing of any kind** — it draws structure and never draws a trade |
-| `smc_session_sweep_strategy.pine` | a position box, but **no BREAKEVEN grading** (a scratch drew as a win or a loss) and no entry triangles |
 
 ⚠ **The palette rule is checked by PRESENCE of the three result colours, never by absence of
 others.** "No hex outside the palette" cannot be decided by text — these files legitimately colour

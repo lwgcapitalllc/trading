@@ -567,3 +567,89 @@ off `extreme_leg_strategy_export.pine` — is the one step no machine here can t
 measurements. Over the full cached history at the shipped defaults it replays **178 trades /
 +97.4R / 50.6% hit / worst losing run 7.9R, every year positive** — the same place the study landed
 (169 / +84.0R / 7.9R), which is the only claim that comparison supports.
+
+---
+
+## [13] The trade annotations — SOS Fade's layer, drawn for one position and one target (2026-09-30)
+
+**Drawing only.** Nothing in this section is read by an entry, an exit, a stop, a target or a size.
+The trade list cannot move because of it: every removed line was a drawing, every added assignment
+writes a new drawing variable, and no `strategy.entry` / `strategy.exit` line changed. It has not
+been compiled — nothing here can compile Pine — so the first paste into TradingView is the test.
+
+⚠ **Press "Reset settings to defaults" once** on any chart already running this file. Section 8's
+inputs were replaced and reordered, and TradingView keys saved values off declaration order.
+
+⚠ **Make changes in `tools/build_extreme_leg.py`, never in the `.pine`.** The file is generated.
+The refused-tag erase (commit `eaf80068`) was hand-edited into the `.pine` and never reached the
+builder, so the next regeneration would have deleted it. It is in the builder now, and
+`build_extreme_leg.py --check` exits 1 when the committed file and the builder disagree.
+
+### [3a] Section 8 — the same controls, order and defaults as `sos_fade_strategy.pine`
+
+Entry label, which results keep it, its distance (6 ATR), position box, the target-band tag, the
+breakeven band (0.15 R), the pink blocked tag, then the three missed-setup controls (3-day limit).
+"Mark the sweep that armed it" is this file's own and sits last. The old "Entry markers" toggle is
+gone: the entry label replaced the one-shot ▲/▼ marker and carries the same hover.
+
+⚠ **"Label the target band", not "Label the TP bands (TP1/TP2/TP3)".** This file rests ONE limit
+target, so there is one band and one tag ("TP"). Naming rungs that cannot exist would be a label
+claiming code somewhere else.
+
+### [13a] The trade is read from the emulator's trade list, not from the position size
+
+The entry is a market order filled at the bar's close, so the fill is first visible on the NEXT
+bar. A trade that then exits inside that next bar never shows a non-zero position at all, and a
+position-size test — what SOS Fade uses — would never draw it. So the label and box are driven by
+the closed-trade and open-trade lists: a new closed trade is graded, and one never seen open is
+drawn and graded on the same bar. The breakdown (take profit, swing, stop, levels swept) is
+snapshotted on the order bar and matched to the trade by its entry bar.
+
+R is the trade's profit over the stop it OPENED with, so a breakeven move does not shrink 1R. A
+result within ±0.15 R is BREAKEVEN (orange), otherwise WIN (green) or LOSS (red). The worst
+excursion comes from the emulator's own per-trade drawdown.
+
+### [13b] The position box
+
+Grey while open. On close: the drawdown band behind (red @88), then ONE green band from entry to
+the fill when the exit was at the target (within a tick — Pine rounds the limit to the tick), a
+red band to the exit on a loss, or an orange line on a scratch. There is no TP2 or TP3 band.
+
+### [13c] The entry triangles
+
+SOS Fade's two `plotshape` calls, gated on the position-box toggle, shifted one bar left
+(`offset = -1`) so they sit on the bar whose close filled the order. They fire only when the
+trade's recorded entry bar IS the previous bar, so a triangle cannot appear where the trade list
+has no fill. The twin strips them, so they cost the export nothing (62 plots, unchanged).
+
+### Blocked tag
+
+Pink, "▲ TRADE BLOCKED" / "▼ TRADE BLOCKED", hover = the refusal reason and the entry price. It
+reads the refusal ladder's own number (the one the export writes), so the tag and the CSV cannot
+disagree. It keeps the existing rule: the entry erases every tag on the sweep that traded, and a
+traded sweep draws no more. ⚠ Unlike SOS Fade it still tags a refusal while a trade is open — that
+was this file's behaviour before, and it was kept rather than changed in a drawing pass.
+
+### [13d] The missed-setup callout — "N of 4"
+
+Scored on every 5-minute change of character that did not trade while flat, on the side you trade:
+
+| item | met when |
+|---|---|
+| Levels | the sweep in the window took at least "Levels that must agree" kinds of level |
+| SOS | always — it is the bar being scored |
+| Trend | against the 15-minute trend (or that rule is off) |
+| Room | a 15-minute swing on the right side, at least the minimum R away |
+
+**Why these four:** they are exactly what decides a trade before the calendar and minimum-stop
+refusals. Levels and trend are the arming gates, and room is the part of the refusal ladder that
+judges the setup rather than the day. A 4-of-4 is a setup every piece agreed on that a rule then
+refused, and its "Entry" line names that rule from the ladder's own code. The families are not
+scored one by one, because only the agreeing COUNT decides a trade — H4 alone is as good as daily
+alone to the rule.
+
+"Near misses only" (default) draws a 4 of 4, or a 3 of 4 whose missing piece was partly there:
+some levels swept but fewer kinds than needed, or a swing on the right side but nearer than the
+minimum R. A trend miss is not near: the 15-minute trend either is or is not against you. Orange
+#FF9800 @12, an arrow back to the sweep, the last 3 days only by default. A callout on a sweep
+that later traded is erased with the blocked tags, by the same rule.

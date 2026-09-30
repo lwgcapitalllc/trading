@@ -7,50 +7,50 @@ strategy("SMC Session Sweep Strategy", overlay = true, pyramiding = 0,
   margin_long = 0.2, margin_short = 0.2, slippage = 0,
   max_lines_count = 500, max_labels_count = 500, max_boxes_count = 500, max_bars_back = 2000)
 
-var string G1  = "1 · HIS MODEL — what arms the trade"
-var string GS  = "2 · THE SHIFT OF STRUCTURE — everything about it, in one place"
-var string G2  = "3 · HIS MODEL — the entry zone"
-var string G3  = "4 · HIS MODEL — targets"
-var string G4  = "5 · HIS MODEL — execution hours"
-var string G5  = "6 · OURS — what trades, and how big"
-var string G6  = "7 · OURS — choices his method leaves open"
-var string G7  = "8 · OURS — safety filters that REFUSE a setup"
-var string G8  = "9 · OURS — chart annotations"
-var string G9  = "10 · OURS — drawing: sessions"
+var string G2  = "2 · Market structure — ours"
+var string G3  = "3 · What trades — ours"
+var string G4  = "4 · What arms it — his model"
+var string G5  = "5 · Entry — his model + ours"
+var string G6  = "6 · Stop & targets — his model + ours"
+var string G7  = "7 · Filters — his model + ours"
+var string G8  = "8 · Chart annotations — ours"
+var string G10 = "10 · Drawing: sessions — ours"
 
-string pbDirTf       = input.string("15", "Direction — trend timeframe", options = ["5", "15", "30", "60", "240"], group = G1, tooltip = "Which timeframe decides long or short. Only trades that way. The video uses 15.")
-bool   pbTradeLdn    = input.bool(true, "Location — trade London (sweeps the Asian high/low)",   group = G1, tooltip = "London hunts Asia's high and low.")
-bool   pbTradeNy     = input.bool(true, "Location — trade New York (sweeps the London high/low)", group = G1, tooltip = "New York hunts London's high and low.")
-bool   pbRequireConf = input.bool(false, "Confirmation — require a lower-timeframe change of character", group = GS, tooltip = "On: after the level is taken, wait for the small timeframe to turn our way. Off: enter on the sweep alone, at worse prices. The course has this ON. It ships OFF because that is the setting being traded here - turn it on to compare.")
+// [doc 2] The panel follows the house contract numbers; provenance lives in the group names  -> docs/smc_session_sweep_strategy.md
+int    pbStructLen   = input.int(15, "   ↳ Structure pivot length", minval = 2, maxval = 50, group = G2, tooltip = "How the swing highs and lows are first found. Mostly affects warm-up. Leave it alone.")
 
-string pbPoiTf        = input.string("5", "Point of interest — timeframe the zone is found on", options = ["Off", "1", "3", "5", "15"], group = G2, tooltip = "Which timeframe the entry gap is found on. The video uses 5. OFF means no gap is needed at all - you enter at market the moment the confirmation timeframe turns, with the stop behind the sweep. Off does nothing unless confirmation is required, or nothing would be left to trigger on.")
-bool   pbPoiUntouched = input.bool(true, "   ↳ Untouched zones only", group = G2, active = pbPoiTf != "Off", tooltip = "On: skip any gap price has already traded back into. Off takes more trades at worse prices.")
+bool   pbTradeLongs  = input.bool(true,  "Trade longs",  group = G3, inline = "dir", tooltip = "Off means shorts only.")
+bool   pbTradeShorts = input.bool(true,  "Trade shorts", group = G3, inline = "dir")
+string execSizeMode  = input.string("Risk % of equity", "Position sizing", options = ["Risk % of equity", "Fixed contracts"], group = G3, tooltip = "Risk % makes every trade worth the same. Fixed uses the same size whatever the stop. Use Risk % unless you are copying another script.")
+float  execRiskPct   = input.float(4.0, "   ↳ Risk % per trade", minval = 0.01, maxval = 100.0, step = 0.25, group = G3, active = execSizeMode == "Risk % of equity", tooltip = "How much of the account you lose if the stop is hit. This ships at 4, which is an aggressive number - drop it to 1 if you want to read the shape of the equity curve rather than its size.")
+float  execFixedQty  = input.float(1.0, "   ↳ Contracts", minval = 0.01, step = 0.01, group = G3, active = execSizeMode == "Fixed contracts")
 
-string execTp1Mode     = input.string("Fixed R", "Target 1 — what the first target IS", options = ["Fixed R", "Nearest liquidity level"], group = G3, tooltip = "Fixed R puts the first target at a multiple of your risk, which is what the course does. Nearest level uses yesterday's or last week's high or low.")
-float  execTp1R        = input.float(3.5, "   ↳ First target (R)", minval = 0.5, maxval = 50.0, step = 0.5, group = G3, active = execTp1Mode == "Fixed R", tooltip = "How many times your risk the first target sits at. 5 is his number; this ships at 3.5, which is the setting being traded here.")
-float  execTp1Pct      = input.float(80, "   ↳ % banked at the first target", minval = 0, maxval = 100, step = 5, group = G3, tooltip = "How much you take off at the first target. 0 = take nothing and ride it all to the second. At 80 the runner is a fifth of the position, so the second target moves the result far less than the first one does.")
-bool   execUseTp1      = input.bool(true, "Previous day's low / high is a target", group = G3, tooltip = "Use yesterday's high or low as a target.")
-bool   execUseTp2      = input.bool(true, "Previous week's low / high is a target", group = G3, tooltip = "Use last week's high or low as a target.")
-bool   execBeOnShift   = input.bool(true, "Stop to breakeven when the confirmation timeframe shifts AGAINST the trade", group = GS, tooltip = "Moves the stop to your entry price as soon as the small timeframe turns against you.")
+string pbDirTf       = input.string("15", "Direction — trend timeframe", options = ["5", "15", "30", "60", "240"], group = G4, tooltip = "Which timeframe decides long or short. Only trades that way. The video uses 15.")
+bool   pbTradeLdn    = input.bool(true, "Location — trade London (sweeps the Asian high/low)",   group = G4, tooltip = "London hunts Asia's high and low.")
+bool   pbTradeNy     = input.bool(true, "Location — trade New York (sweeps the London high/low)", group = G4, tooltip = "New York hunts London's high and low.")
+bool   pbRequireConf = input.bool(false, "Confirmation — require a lower-timeframe change of character", group = G4, tooltip = "On: after the level is taken, wait for the small timeframe to turn our way. Off: enter on the sweep alone, at worse prices. The course has this ON. It ships OFF because that is the setting being traded here - turn it on to compare.")
 
-bool   execUseWindows  = input.bool(true, "Only execute inside the course's hours", group = G4, tooltip = "Only take trades during the hours below. Orders waiting outside them are cancelled.")
-string execWinLdn      = input.string("0200-0500", "   ↳ London hours (New York clock)", group = G4, active = execUseWindows, tooltip = "New York clock. Our London session starts at 3am, so this really means 3am to 5am.")
-string execWinNy       = input.string("0700-1000", "   ↳ New York hours (New York clock)", group = G4, active = execUseWindows, tooltip = "New York clock. Our New York session starts at 8am, so this really means 8am to 10am.")
+string pbPoiTf        = input.string("5", "Point of interest — timeframe the zone is found on", options = ["Off", "1", "3", "5", "15"], group = G5, tooltip = "Which timeframe the entry gap is found on. The video uses 5. OFF means no gap is needed at all - you enter at market the moment the confirmation timeframe turns, with the stop behind the sweep. Off does nothing unless confirmation is required, or nothing would be left to trigger on.")
+bool   pbPoiUntouched = input.bool(true, "   ↳ Untouched zones only", group = G5, active = pbPoiTf != "Off", tooltip = "On: skip any gap price has already traded back into. Off takes more trades at worse prices.")
 
-bool   pbTradeLongs  = input.bool(true,  "Trade longs",  group = G5, inline = "dir", tooltip = "Off means shorts only.")
-bool   pbTradeShorts = input.bool(true,  "Trade shorts", group = G5, inline = "dir")
-string execSizeMode  = input.string("Risk % of equity", "Position sizing", options = ["Risk % of equity", "Fixed contracts"], group = G5, tooltip = "Risk % makes every trade worth the same. Fixed uses the same size whatever the stop. Use Risk % unless you are copying another script.")
-float  execRiskPct   = input.float(4.0, "   ↳ Risk % per trade", minval = 0.01, maxval = 100.0, step = 0.25, group = G5, active = execSizeMode == "Risk % of equity", tooltip = "How much of the account you lose if the stop is hit. This ships at 4, which is an aggressive number - drop it to 1 if you want to read the shape of the equity curve rather than its size.")
-float  execFixedQty  = input.float(1.0, "   ↳ Contracts", minval = 0.01, step = 0.01, group = G5, active = execSizeMode == "Fixed contracts")
+string execTp1Mode     = input.string("Fixed R", "Target 1 — what the first target IS", options = ["Fixed R", "Nearest liquidity level"], group = G6, tooltip = "Fixed R puts the first target at a multiple of your risk, which is what the course does. Nearest level uses yesterday's or last week's high or low.")
+float  execTp1R        = input.float(3.5, "   ↳ First target (R)", minval = 0.5, maxval = 50.0, step = 0.5, group = G6, active = execTp1Mode == "Fixed R", tooltip = "How many times your risk the first target sits at. 5 is his number; this ships at 3.5, which is the setting being traded here.")
+float  execTp1Pct      = input.float(80, "   ↳ % banked at the first target", minval = 0, maxval = 100, step = 5, group = G6, tooltip = "How much you take off at the first target. 0 = take nothing and ride it all to the second. At 80 the runner is a fifth of the position, so the second target moves the result far less than the first one does.")
+bool   execUseTp1      = input.bool(true, "Previous day's low / high is a target", group = G6, tooltip = "Use yesterday's high or low as a target.")
+bool   execUseTp2      = input.bool(true, "Previous week's low / high is a target", group = G6, tooltip = "Use last week's high or low as a target.")
+bool   execBeOnShift   = input.bool(true, "Stop to breakeven when the confirmation timeframe shifts AGAINST the trade", group = G6, tooltip = "Moves the stop to your entry price as soon as the small timeframe turns against you.")
+string execStopFrom    = input.string("The gap", "Stop sits behind…", options = ["The gap", "The sweep extreme"], group = G6, tooltip = "The gap puts the stop just past the gap. The sweep puts it past the high or low the session made, so gap size stops mattering.")
 
-int    pbStructLen   = input.int(15, "   ↳ Structure pivot length", minval = 2, maxval = 50, group = G6, tooltip = "How the swing highs and lows are first found. Mostly affects warm-up. Leave it alone.")
-string pbConfTf      = input.string("1", "Confirmation timeframe", options = ["1", "3", "5", "15"], group = GS, tooltip = "The small timeframe we watch for a change of character. The video uses 1. It stays live even with confirmation switched off, because three other things read it: the breakeven-on-shift rule, the cancel-on-flip rule, and the SOS marker below.")
-string pbConfWhen    = input.string("Before the zone (rest a limit)", "   ↳ When the shift must happen", options = ["Before the zone (rest a limit)", "At the zone (enter at market)"], group = GS, active = pbRequireConf, tooltip = "Before: wait for the turn, then leave an order sitting in the gap. At: wait for price to reach the gap, then the turn, then buy at market.")
-string execZoneEntry  = input.string("Proximal edge", "Point of interest — where the limit rests in the zone", options = ["Proximal edge", "Midpoint", "Distal edge"], group = G6, active = not (pbRequireConf and pbConfWhen == "At the zone (enter at market)"), tooltip = "Where in the gap your order sits. Near edge fills most often; far edge gets a better price but often misses.")
-string execStopFrom   = input.string("The gap", "Stop sits behind…", options = ["The gap", "The sweep extreme"], group = G6, tooltip = "The gap puts the stop just past the gap. The sweep puts it past the high or low the session made, so gap size stops mattering.")
+bool   execUseWindows  = input.bool(true, "Only execute inside the course's hours", group = G7, tooltip = "Only take trades during the hours below. Orders waiting outside them are cancelled.")
+string execWinLdn      = input.string("0200-0500", "   ↳ London hours (New York clock)", group = G7, active = execUseWindows, tooltip = "New York clock. Our London session starts at 3am, so this really means 3am to 5am.")
+string execWinNy       = input.string("0700-1000", "   ↳ New York hours (New York clock)", group = G7, active = execUseWindows, tooltip = "New York clock. Our New York session starts at 8am, so this really means 8am to 10am.")
+
+string pbConfTf      = input.string("1", "Confirmation timeframe", options = ["1", "3", "5", "15"], group = G4, tooltip = "The small timeframe we watch for a change of character. The video uses 1. It stays live even with confirmation switched off, because three other things read it: the breakeven-on-shift rule, the cancel-on-flip rule, and the SOS marker.")
+string pbConfWhen    = input.string("Before the zone (rest a limit)", "   ↳ When the shift must happen", options = ["Before the zone (rest a limit)", "At the zone (enter at market)"], group = G5, active = pbRequireConf, tooltip = "Before: wait for the turn, then leave an order sitting in the gap. At: wait for price to reach the gap, then the turn, then buy at market.")
+string execZoneEntry  = input.string("Proximal edge", "Point of interest — where the limit rests in the zone", options = ["Proximal edge", "Midpoint", "Distal edge"], group = G5, active = not (pbRequireConf and pbConfWhen == "At the zone (enter at market)"), tooltip = "Where in the gap your order sits. Near edge fills most often; far edge gets a better price but often misses.")
 int    execSlBufTk     = input.int(20, "Stop buffer beyond the zone (ticks)", minval = 0, maxval = 500, group = G6, tooltip = "How far past the edge the stop sits. On gold a tick is one cent, so 20 is twenty cents.")
-int    execCancelBars = input.int(0, "Cancel an unfilled limit after N bars", minval = 0, maxval = 2000, group = G6, tooltip = "0 keeps the order until the session ends. It is always cancelled at the end of its session anyway.")
-bool   execCancelFlip = input.bool(true, "Cancel on a direction flip or an opposite shift", group = G6, tooltip = "Pull a waiting order when the trend turns the other way.")
+int    execCancelBars = input.int(0, "Cancel an unfilled limit after N bars", minval = 0, maxval = 2000, group = G5, tooltip = "0 keeps the order until the session ends. It is always cancelled at the end of its session anyway.")
+bool   execCancelFlip = input.bool(true, "Cancel on a direction flip or an opposite shift", group = G5, tooltip = "Pull a waiting order when the trend turns the other way.")
 bool   execBeAtTp1     = input.bool(true, "Stop to breakeven when the first target is reached", group = G6)
 int    execBeBufTk     = input.int(20, "   ↳ Breakeven buffer (ticks)", minval = 0, maxval = 500, group = G6, active = execBeAtTp1 or execBeOnShift, tooltip = "How far past your entry the breakeven stop sits, so you bank a few ticks instead of exactly nothing.")
 float  execTpFallbackR = input.float(3.0, "Fallback target (R) when no liquidity target is valid", minval = 0.0, maxval = 50.0, step = 0.5, group = G6, active = execTp1Mode == "Nearest liquidity level", tooltip = "If no level works as a target, use this many times risk instead. 0 = skip the trade.")
@@ -59,20 +59,26 @@ float  execMinRr       = input.float(1.0, "Minimum reward:risk to the first targ
 string execMinStopMode = input.string("Fixed $", "Minimum stop distance", options = ["Off", "% of price", "Fixed $", "x ATR(14)"], group = G7, tooltip = "Refuse a trade whose stop is too close to the entry. A tiny stop means a huge position, not small risk.")
 float  execMinStopVal  = input.float(4.0, "   ↳ Minimum stop floor (unit = mode above)", minval = 0.0, maxval = 100.0, step = 0.01, group = G7, active = execMinStopMode != "Off", tooltip = "The smallest stop allowed, in the unit you picked above. $4 of gold, MEASURED: trades whose stop was under $4 averaged -1.43R instead of -1R, and every loss worse than -3R in six years came from that band. Above $4 the average loser flattens out near -1.1R, so a bigger floor just costs you trades.")
 float  pbPoiMaxAtr     = input.float(0.0, "Maximum distance to the zone (x ATR14)", minval = 0.0, maxval = 20.0, step = 0.5, group = G7, active = not (pbRequireConf and pbConfWhen == "At the zone (enter at market)"), tooltip = "Refuse a gap further from price than this many average bar ranges. 0 = no limit.")
-float  execTimeStopHrs = input.float(0.0, "Time stop (hours, 0 = off)", minval = 0.0, maxval = 240.0, step = 1.0, group = G7, tooltip = "Close a trade open this long that has not reached its first target. 0 = off.")
+float  execTimeStopHrs = input.float(0.0, "Time stop (hours, 0 = off)", minval = 0.0, maxval = 240.0, step = 1.0, group = G6, tooltip = "Close a trade open this long that has not reached its first target. 0 = off.")
 
-bool  execShowPosBox = input.bool(true, "Draw the trade (entry, exit, drawdown, how far it ran)", group = G8, tooltip = "One drawing per trade. Dark green is what you made, light green how much further it went, red how far it went against you first.")
-bool  execShowLabels = input.bool(false, "   ↳ Label the trade (entry, exit, furthest, deepest, stop, result)", group = G8, active = execShowPosBox, tooltip = "Writes the prices and the R result on the chart. Handy when studying one trade; it also shortens how far the chart goes back.")
-float execBeBandR    = input.float(0.15, "   ↳ Breakeven band (R)", minval = 0, step = 0.05, group = G8, active = execShowPosBox, tooltip = "A trade finishing this close to zero is drawn as a breakeven instead of a win or a loss.")
-bool  showSetups     = input.bool(true, "Show the gap the order sat in, plus entry, stop and targets", group = G8, tooltip = "Draws the plan for trades that happened: the gap the order sat in, the entry, the stop and the targets.")
-bool  showBlockTag   = input.bool(true, "Mark missed setups (orange) and blocked ones (pink)", group = G8, tooltip = "Orange = everything lined up except the gap. Pink = everything lined up and one of your rules said no.")
-bool  showBlockDraw  = input.bool(true, "   ↳ Also draw the gap and the stop it was refused on", group = G8, active = showBlockTag, tooltip = "Draws the gap behind a missed or blocked tag, plus where the entry and stop would have been.")
-int   debugDays      = input.int(30, "   ↳ Only tag the last N days", minval = 1, maxval = 3650, group = G8, active = showBlockTag)
+bool   execShowConfLabel = input.bool(true, "Show entry confluence label", group = G8, tooltip = "Prints one label per trade. Hover it for the full breakdown; it recolours by result and shows the R on close.")
+string execLabelWhich    = input.string("All", "   ↳ keep labels for which results", options = ["All", "Wins only", "Losses only", "Losses + breakevens", "None"], group = G8, active = execShowConfLabel, tooltip = "Which trades keep their label once the result is known. The rest are deleted on the bar the trade closes.")
+float  execLabelOff      = input.float(6, "   ↳ label distance from price (ATR)", group = G8, minval = 1, maxval = 40, step = 1, active = execShowConfLabel, tooltip = "How far the label sits from the entry, in ATRs. Push it out so the hover opens over empty space instead of the candles.")
+bool   execShowPosBox    = input.bool(true, "Show position box (result)", group = G8, tooltip = "One drawing per trade. Dark green is what you made, light green how much further it went, red how far it went against you first.")
+bool   execShowExitLines = input.bool(true, "   ↳ Label the TP bands (TP1/TP2)", group = G8, active = execShowPosBox, tooltip = "Tags each exit at a target at its real fill price. Off = the trade is still drawn, just untagged.")
+bool   execShowLabels    = input.bool(false, "   ↳ Label the trade (entry, exit, furthest, deepest, stop)", group = G8, active = execShowPosBox, tooltip = "Writes those prices on the chart. Handy when studying one trade; it also shortens how far the chart goes back.")
+float  execBeBandR       = input.float(0.15, "Breakeven band (R)", minval = 0, step = 0.05, group = G8, tooltip = "A trade finishing within this many R of flat counts as a breakeven rather than a win or a loss.")
+bool   showSetups        = input.bool(true, "Show the gap the order sat in, plus entry, stop and targets", group = G8, tooltip = "Draws the plan for trades that happened: the gap the order sat in, the entry, the stop and the targets.")
+bool   showBlockTag      = input.bool(true, "Mark blocked trades on chart (pink)", group = G8, tooltip = "Drops a pink tag when everything lined up and the one-trade-at-a-time rule said no.")
+bool   showMissTag       = input.bool(true, "Show missed setups (all but one condition met, or better)", group = G8, tooltip = "Marks setups in orange that got everything but the gap and never traded, listing what was missing.")
+string missFilter        = input.string("Near misses only", "Which misses to draw", options = ["Near misses only", "All misses", "All conditions met only"], group = G8, active = showMissTag, tooltip = "Near misses met every condition, or price reached the gap and it still failed. All misses also shows gaps price never reached.")
+bool   showBlockDraw     = input.bool(true, "   ↳ Also draw the gap and the stop it was refused on", group = G8, active = showBlockTag or showMissTag, tooltip = "Draws the gap behind a missed or blocked tag, plus where the entry and stop would have been.")
+int    debugDays         = input.int(3, "Only draw debug callouts from the last N days (0 = all)", minval = 0, maxval = 3650, group = G8, active = showBlockTag or showMissTag, tooltip = "Only draw missed and blocked tags from the last N days. 0 = the whole history.")
 
-bool pbShowSess = input.bool(true, "Show sessions", group = G9, tooltip = "Boxes Tokyo, London and New York around their high and low - the levels the next session hunts. Intraday charts only.")
+bool pbShowSess = input.bool(true, "Show sessions", group = G10, tooltip = "Boxes Tokyo, London and New York around their high and low - the levels the next session hunts. Intraday charts only.")
 
-bool   showSosMark = input.bool(false, "Mark the shift of structure next to a setup", group = GS, tooltip = "Draws a line at the exact price the confirmation timeframe broke, labelled SOS. Only for setups that became a trade, a missed tag or a blocked tag. It works with confirmation switched OFF too - that is how you see what requiring it would have cost you.")
-string sosCmpTf    = input.string("5", "   ↳ Also mark this timeframe, to compare", options = ["Off", "1", "3", "5", "15"], group = GS, active = showSosMark, tooltip = "Purple dashed line where a second timeframe broke, so you can see if it would confirm better. Marking only - it never changes a trade. Set it to the SAME timeframe as your confirmation and it draws nothing, because it would be the same line twice.")
+bool   showSosMark = input.bool(false, "Mark the shift of structure next to a setup", group = G2, tooltip = "Draws a line at the exact price the confirmation timeframe broke, labelled SOS. Only for setups that became a trade, a missed tag or a blocked tag. It works with confirmation switched OFF too - that is how you see what requiring it would have cost you.")
+string sosCmpTf    = input.string("5", "   ↳ Also mark this timeframe, to compare", options = ["Off", "1", "3", "5", "15"], group = G2, active = showSosMark, tooltip = "Purple dashed line where a second timeframe broke, so you can see if it would confirm better. Marking only - it never changes a trade. Set it to the SAME timeframe as your confirmation and it draws nothing, because it would be the same line twice.")
 
 string sessAsia = "0900-1800"
 string tzAsia   = "Asia/Tokyo"
@@ -1029,9 +1035,68 @@ var box   pGot  = na
 var line  pEnt  = na
 var line  pExt  = na
 var line  pSl   = na
-var label pLbl  = na
+var int   cSeen = 0
 bool armedNow   = pendDir != 0 and pendBar == bar_index
 bool armedShort = armedNow and pendDir == -1
+
+// [doc 3] The entry confluence label — SOS Fade's pattern: grey while open, graded on close  -> docs/smc_session_sweep_strategy.md
+type TradeLbl
+    label  lb   = na
+    line   ln   = na
+    string head = ""
+    string body = ""
+var TradeLbl tlbl     = TradeLbl.new()
+var string   pendConf = ""
+
+f_confOpen(TradeLbl t, int dir, float px, float off, string body, bool showIt) =>
+    if execShowConfLabel and showIt
+        float ly = dir > 0 ? px - off : px + off
+        t.head := dir > 0 ? "▲ LONG" : "▼ SHORT"
+        t.body := body
+        t.ln   := line.new(bar_index, px, bar_index, ly, color = POS_OPENL, width = 1)
+        t.lb   := label.new(bar_index, ly, t.head, tooltip = t.head + "\n" + body, color = POS_OPEN, textcolor = TXT_DARK, style = dir > 0 ? label.style_label_up : label.style_label_down, size = size.small)
+
+f_confClose(TradeLbl t, float tradeR, float band) =>
+    if not na(t.lb)
+        bool   be   = math.abs(tradeR) <= band
+        bool   won  = not be and tradeR > 0
+        string res  = be ? "BREAKEVEN" : won ? "WIN" : "LOSS"
+        bool   keep = execLabelWhich == "All" or (execLabelWhich == "Wins only" and won) or (execLabelWhich == "Losses only" and not won and not be) or (execLabelWhich == "Losses + breakevens" and not won)
+        if keep
+            string line1 = t.head + "  ·  " + res + "  " + (tradeR >= 0 ? "+" : "") + str.tostring(tradeR, "#.##") + "R"
+            label.set_text(t.lb, line1)
+            label.set_tooltip(t.lb, line1 + "\n" + t.body)
+            label.set_color(t.lb, be ? POS_BE : won ? POS_WIN : POS_LOSS)
+            line.set_color(t.ln, be ? POS_BEL : won ? POS_WINL : POS_LOSSL)
+        else
+            label.delete(t.lb)
+            line.delete(t.ln)
+        t.lb := na
+        t.ln := na
+
+// The breakdown is written when the order arms, from the live flags, not from the gate code.
+if armedNow
+    bool   aShort = pendDir == -1
+    bool   aDir   = aShort ? dirDir == -1 : dirDir == 1
+    bool   aSwp   = aShort ? sweptHi : sweptLo
+    bool   aConf  = aShort ? confShort : confLong
+    float  aPool  = aShort ? poolHi : poolLo
+    float  aExt   = aShort ? swpHi : swpLo
+    float  aDist  = math.abs(pendStop - pendEntry)
+    string aSess  = rawSess == 1 ? "London took the Asian " : "New York took the London "
+    string aLvl   = (aShort ? "high " : "low ") + str.tostring(aPool, format.mintick) + (na(aExt) ? "" : ", ran to " + str.tostring(aExt, format.mintick))
+    string aCf    = not pbRequireConf ? "· Confirmation — not required, you have it switched off" : (aConf ? "✓" : "✗") + " Confirmation — the " + pbConfTf + "-minute changed character" + (na(cfPx) ? "" : " at " + str.tostring(cfPx, format.mintick))
+    string aPoi   = poiOff ? "· Point of interest — switched off, entry at market" : na(pendZTop) or na(pendZBot) ? "✗ Point of interest — no gap recorded" : "✓ Point of interest — the " + pbPoiTf + "-minute gap " + str.tostring(math.min(pendZTop, pendZBot), format.mintick) + " to " + str.tostring(math.max(pendZTop, pendZBot), format.mintick)
+    string aT1    = na(pendT1) ? "" : "\nTP1      " + str.tostring(pendT1, format.mintick) + (aDist > 0 ? " (" + str.tostring(math.abs(pendT1 - pendEntry) / aDist, "#.##") + "R)" : "")
+    string aT2    = na(pendT2) ? "" : "\nTP2      " + str.tostring(pendT2, format.mintick) + (aDist > 0 ? " (" + str.tostring(math.abs(pendT2 - pendEntry) / aDist, "#.##") + "R)" : "")
+    pendConf := "──────────────────\nMET\n" + (aDir ? "✓" : "✗") + " Direction — the " + pbDirTf + "-minute is on this side\n" + (aSwp ? "✓" : "✗") + " Sweep — " + aSess + aLvl + "\n" + aCf + "\n" + aPoi + "\n──────────────────\nPLAN\n" + (confAtZone or poiOff ? "Entry    at market, near " : "Entry    limit at ") + str.tostring(pendEntry, format.mintick) + "\nStop     " + str.tostring(pendStop, format.mintick) + " (" + str.tostring(aDist, format.mintick) + " away)" + aT1 + aT2
+
+if justFilled
+    cSeen := strategy.closedtrades
+    f_confOpen(tlbl, posDir, posEntry, nz(atr14) * execLabelOff, pendConf + "\nFilled   " + str.tostring(posEntry, format.mintick), execLabelWhich != "None")
+if justClosed and not na(closedR)
+    f_confClose(tlbl, closedR, execBeBandR)
+
 if showSetups and armedNow
     float zt = pendZTop
     float zb = pendZBot
@@ -1088,7 +1153,6 @@ if execShowPosBox and justFilled and not na(posEntry)
     pEnt  := line.new(bar_index, posEntry, bar_index, posEntry, color = POS_OPENL, width = 1)
     pSl   := na(posStop0) ? line(na) : line.new(bar_index, posStop0, bar_index, posStop0, color = POS_REDB, style = line.style_dashed, width = 1)
     pExt  := line(na)
-    pLbl  := label(na)
 
 if execShowPosBox and strategy.position_size != 0 and not na(pRan)
     box.set_right(pRan, bar_index)
@@ -1134,8 +1198,20 @@ if execShowPosBox and justClosed and not na(pRan)
         if not na(posStop0)
             label.new(lx, posStop0, "SL", style = label.style_label_right, color = POS_LOSS, textcolor = TXT_DARK, size = size.tiny)
 
-        int mx = int(math.round((lx + bar_index) / 2.0))
-        pLbl := label.new(mx, best, (be ? "Breakeven " : won ? "Won " : "Lost ") + str.tostring(closedR, "#.##") + "R", style = posDir == 1 ? label.style_label_down : label.style_label_up, color = be ? POS_BE : won ? POS_WIN : POS_LOSS, textcolor = TXT_DARK, size = size.small, tooltip = "Entry    " + str.tostring(posEntry, format.mintick) + "\nExit     " + str.tostring(exitPx, format.mintick) + "\nStop     " + str.tostring(posStop0, format.mintick) + "\nFurthest " + str.tostring(best, format.mintick) + "\nDeepest  " + str.tostring(worst, format.mintick) + "\nResult   " + str.tostring(closedR, "#.##") + "R")
+    // Tag each exit that reached a target at its real fill price, TP1 then TP2.
+    if execShowExitLines and strategy.closedtrades > cSeen
+        int tx = bar_index + 4
+        int tn = 0
+        for i = cSeen to strategy.closedtrades - 1
+            float xPx = strategy.closedtrades.exit_price(i)
+            if not na(posT1) and (posDir == 1 ? xPx >= posT1 : xPx <= posT1)
+                tn += 1
+                line.new(line.get_x1(pEnt), xPx, tx, xPx, color = TP_ANNOT, style = line.style_dashed, width = 1)
+                label.new(tx, xPx, " TP" + str.tostring(tn), color = color(na), textcolor = TP_ANNOT, style = label.style_label_left, size = size.small)
+
+// Entry markers, drawn with the position box. A scratch paints a box a few pixels tall, so these show where it opened.
+plotshape(execShowPosBox and strategy.position_size > 0 and strategy.position_size[1] <= 0, title = "Long entry",  style = shape.triangleup,   location = location.belowbar, color = POS_GREENB, size = size.small)
+plotshape(execShowPosBox and strategy.position_size < 0 and strategy.position_size[1] >= 0, title = "Short entry", style = shape.triangledown, location = location.abovebar, color = POS_REDB,   size = size.small)
 
 var int lastTagKey = -1
 int   tagCode  = sBlk >= 6 and sBlk <= 10 ? sBlk : lBlk >= 6 and lBlk <= 10 ? lBlk : 0
@@ -1148,7 +1224,16 @@ float tagDist  = tagShort ? sDist : lDist
 bool  tagTap   = confAtZone ? armTouched : (tagShort ? poiBearTap : poiBullTap)
 bool  tagFired = false
 int   tagSide  = legId * 2 + (tagShort ? 1 : 0)
-if showBlockTag and tagCode > 0 and not armedNow and time_close >= timenow - debugDays * 86400000 and not (tookLeg and tookSide == (tagShort ? -1 : 1))
+bool  isMiss   = tagCode > 0 and tagCode <= 9
+bool  okDir    = tagShort ? dirDir == -1 : dirDir == 1
+bool  okSwp    = tagShort ? sweptHi : sweptLo
+bool  okConf   = tagShort ? confShort : confLong
+int   cfTot    = 2 + (pbRequireConf ? 1 : 0) + (poiOff ? 0 : 1)
+int   cfHit    = (okDir ? 1 : 0) + (okSwp ? 1 : 0) + (pbRequireConf and okConf ? 1 : 0) + (not poiOff and not isMiss ? 1 : 0)
+// Near miss: every condition met, or price reached the gap and it still failed.
+bool  missPass = missFilter == "All misses" or (missFilter == "All conditions met only" ? cfHit == cfTot : cfHit == cfTot or tagTap)
+bool  tagShow  = tagCode == 10 ? showBlockTag : isMiss and showMissTag and missPass
+if tagShow and not armedNow and (debugDays == 0 or time_close >= timenow - debugDays * 86400000) and not (tookLeg and tookSide == (tagShort ? -1 : 1))
     int key = legId * 100 + tagCode * 2 + (tagShort ? 1 : 0)
     if key != lastTagKey
         lastTagKey := key
@@ -1157,14 +1242,8 @@ if showBlockTag and tagCode > 0 and not armedNow and time_close >= timenow - deb
         float anch = tagShort ? high + pad : low - pad
         bool  drawZ = showBlockDraw and not na(tagZTop) and not na(tagZBot)
         float aim  = drawZ ? (tagShort ? math.min(tagZTop, tagZBot) : math.max(tagZTop, tagZBot)) : (tagShort ? high : low)
-        bool  isMiss = tagCode <= 9
         color tagBg  = isMiss ? MISS_ORN  : BLK_PINK
         color tagLn  = isMiss ? MISS_ORNL : BLK_PINKL
-        bool   okDir  = tagShort ? dirDir == -1 : dirDir == 1
-        bool   okSwp  = tagShort ? sweptHi : sweptLo
-        bool   okConf = tagShort ? confShort : confLong
-        int    cfTot = 2 + (pbRequireConf ? 1 : 0) + (poiOff ? 0 : 1)
-        int    cfHit = (okDir ? 1 : 0) + (okSwp ? 1 : 0) + (pbRequireConf and okConf ? 1 : 0) + (not poiOff and not isMiss ? 1 : 0)
         string cfMet = str.tostring(cfHit) + " OF " + str.tostring(cfTot)
         string head  = (tagShort ? "▼ SHORT" : "▲ LONG") + " · " + cfMet + (isMiss ? "" : ", NO SLOT")
         if drawZ
@@ -1184,7 +1263,7 @@ if showBlockTag and tagCode > 0 and not armedNow and time_close >= timenow - deb
         string tipFar  = na(tagEdge) ? "" : "\n" + str.tostring(math.abs(close - tagEdge), format.mintick) + " away from price" + (na(atr14) or atr14 <= 0 ? "" : " (" + str.tostring(math.abs(close - tagEdge) / atr14, "#.#") + " average bar ranges)") + "." + (pbPoiMaxAtr > 0 ? "" : "\nYour max-distance filter is OFF, so that distance was never checked.")
         string tipGeom = na(tagStop) or na(tagDist) or na(tagEdge) ? "" : "\n\nTHE TRADE THAT DID NOT HAPPEN\n" + (poiOff ? "You would have gone in at market at " : tagTap ? "Entry would have been " : "Had price reached it: entry ") + str.tostring(tagEdge, format.mintick) + ", stop " + str.tostring(tagStop, format.mintick) + " — " + str.tostring(tagDist, format.mintick) + " apart. Your floor is " + str.tostring(minStopDist, format.mintick) + "."
         string tipGap  = (not hasZone ? "" : "\n\nTHE GAP\n" + str.tostring(math.min(tagZTop, tagZBot), format.mintick) + " to " + str.tostring(math.max(tagZTop, tagZBot), format.mintick) + ", " + str.tostring(math.abs(tagZTop - tagZBot), format.mintick) + " tall." + tipFar) + tipGeom
-        label bl = label.new(bar_index, anch, (tagShort ? "▼ " : "▲ ") + (isMiss ? str.tostring(cfHit) + "/" + str.tostring(cfTot) + " MISSED" : "BLOCKED"), style = tagShort ? label.style_label_down : label.style_label_up, color = tagBg, textcolor = TXT_DARK, size = size.small, tooltip = head + "\n──────────────────\n" + tipMet + "\n──────────────────\nWHY THERE WAS NO TRADE\n" + tipWhy + tipGap)
+        label bl = label.new(bar_index, anch, (tagShort ? "▼ " : "▲ ") + (isMiss ? str.tostring(cfHit) + "/" + str.tostring(cfTot) + " MISSED" : "TRADE BLOCKED"), style = tagShort ? label.style_label_down : label.style_label_up, color = tagBg, textcolor = TXT_DARK, size = size.small, tooltip = head + "\n──────────────────\n" + tipMet + "\n──────────────────\nWHY THERE WAS NO TRADE\n" + tipWhy + tipGap)
         array.push(tgLbl, bl)
         array.push(tgLK, tagSide)
 
