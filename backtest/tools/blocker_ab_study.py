@@ -65,32 +65,58 @@ ARMS = {
 }
 
 
-def run_arm(arm: str) -> tuple[str, pd.DataFrame, Counter]:
+class _SetupTap(list):
+    """The trade list, also recording the SOS bar of the setup each trade came from. A Trade does
+    not carry it; the execution's open-setup bar is still set when `_finalise_trade` appends."""
+
+    def __init__(self, ex):
+        super().__init__()
+        self._ex, self.sos_bars = ex, []
+
+    def append(self, t) -> None:
+        super().append(t)
+        self.sos_bars.append(getattr(self._ex, "_sos_bar_open", None))
+
+
+def replay(cfg_over: dict, eng_over: dict | None = None) -> tuple[pd.DataFrame, list]:
+    """The live bot's trades and block records with `cfg_over` applied to its config and
+    `eng_over` to its engine settings. `veto_study.py` replays through this too."""
     spec = importlib.import_module("strategies.python.sos_fade").LAB_STRATEGY
     cfg, _ = B.live_config(KEY, spec["config"])
-    cfg = dataclasses.replace(cfg, **ARMS[arm][2])
+    cfg = dataclasses.replace(cfg, **cfg_over)
+    eng = spec["strategy"].engine_config()
+    if eng_over:
+        eng = dataclasses.replace(eng, **eng_over)
     src = BarSource(server=B.SERVER)
     df = src.load(B.SYMBOL, "15", START, END)
     strat = build_strategy(
         spec["strategy"], cfg, initial_capital=B.CAPITAL, cost_profile=B.PROFILES["puprime_ecn"]
     )
+    ex = strat.execution
+    ex.trades = _SetupTap(ex)  # a Trade carries no setup; note the one open when it closes
     if cfg.exec_secondary:
         fill = src.load(B.SYMBOL, str(int(cfg.exec_sec_fill_tf_min)), START, END)
-        strat.run_dual(df, fill, warmup=B.WARMUP)
+        strat.run_dual(df, fill, engine_config=eng, warmup=B.WARMUP)
     else:
-        strat.run(df, warmup=B.WARMUP)
-    ex = strat.execution
+        strat.run(df, engine_config=eng, warmup=B.WARMUP)
     rows = []
-    for t in ex.trades:
+    for t, sos_bar in zip(ex.trades, ex.trades.sos_bars):
         ms = int(getattr(t, "entry_ms", 0) or 0)
         ts = pd.Timestamp(ms, unit="ms") if ms else df.index[min(t.entry_index, len(df) - 1)]
         rows.append(
-            dict(entry=ts, dir=int(t.dir), r=float(t.r), kind=getattr(t, "kind", "primary"))
-        )
+            dict(
+                entry=ts, dir=int(t.dir), r=float(t.r), kind=getattr(t, "kind", "primary"),
+                sos_bar=sos_bar,
+            )
+        )  # fmt: skip
     tr = pd.DataFrame(rows)
     tr["key"] = list(zip(tr.entry.dt.floor("min"), tr.dir))
-    blocks = Counter(c for b in ex.blocks for c in set(b.codes))  # every rule refusing a setup
-    return arm, tr, blocks
+    return tr, list(ex.blocks)
+
+
+def run_arm(arm: str) -> tuple[str, pd.DataFrame, Counter]:
+    tr, blocks = replay(ARMS[arm][2])
+    return arm, tr, Counter(c for b in blocks for c in set(b.codes))  # every rule refusing
 
 
 def max_dd(r: np.ndarray) -> float:

@@ -510,7 +510,16 @@ CLAUDE.md gets at most one index line.
   good trades or bad? One full replay per blocker switched off, `bot_confluence_study.py`'s replay
   and live config; baseline must reproduce Run 64 (278 trades, +162.1R). **MEASURED 2026-09-30:
   every arm is worse — keep all four**; the veto is worth 18.5R on one trade. Record: SOS Fade
-  optimization Run 66. No documented baseline moves: new standalone tool.
+  optimization Run 66. No documented baseline moves: new standalone tool. Its replay is shared:
+  `replay()` takes engine overrides too, and tags each trade with its setup's SOS bar at the close
+  (a Trade does not carry it).
+- **`tools/veto_study.py`** (new 2026-09-30) — the divergence / extreme-RSI veto taken apart: each
+  half off, extreme thresholds, divergence lifetime, and the divergence definition (pivot width, RSI
+  length, zone — set on the ENGINE, because the bot's own two settings reach none). 18 full
+  replays on `blocker_ab_study.py`'s replay, four gates fixed before the run. **MEASURED 2026-09-30:
+  the shipped veto is the best version tried**; four definition changes are proven harmful, and the
+  extreme half never decides a trade. Record: SOS Fade optimization Run 68. No documented baseline
+  moves: new standalone tool.
 - **`tools/direction_filter_study.py`** (new 2026-09-30) — would the JARVIS direction rows
   (`engines/directional_trend/`: weekly/daily bias, 4H/15m structure) as a skip filter have improved
   the live SOS Fade bot, secondary trades especially? Reuses `bot_confluence_study.py`'s replay,

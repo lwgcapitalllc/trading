@@ -6351,3 +6351,48 @@ trade by trade against a stored lab run. Displacement = shipped trades the new e
   0.618). The trend-row trigger would have taken it for +1.07R — one day, not evidence.
 - Agrees with Runs 27–31 (no-gap shift entries) and 64–65 (the trend rows as filter / size): after a
   loss, a pullback entry on the opposite shift has shown no edge by any trigger tried.
+
+## Run 68 — 2026-09-30: the divergence / extreme-RSI veto taken apart — the shipped version is the best one tried
+
+**The ask (Aaron):** is the veto hurting us — can it be loosened, or can what counts as a divergence be
+stretched? ⚠ The veto only ever refuses an ENTRY; it never closes a trade.
+**Basis:** `backtest/tools/veto_study.py` on `blocker_ab_study.py`'s replay — `sos_fade_demo`'s LIVE
+config, 2018-09-14 → 2026-09-29, PU Prime ECN, one position, M15 + the M5 re-entry feed, one full
+replay per arm. Baseline reproduces Runs 64 / 66: 278 trades, +162.1R, max DD 11.8R. Gates fixed before
+the run: better in both halves (split 2022-11-01), no one trade over half the gain, P(better) ≥ 0.90,
+ladder neighbours not worse. ⚠ Not reconciled against a stored lab run (same caveat as Run 66).
+⚠ **No unspent held-out window** — Run 65 spent 2018-09 → 2019-12 and 2025-08 → 2026-09.
+
+| Arm | Trades | Change | P(better) | 1st / 2nd half | Max DD |
+|---|---|---|---|---|---|
+| Veto off | 279 | −18.5 ± 15.5R | 0.00 | +0.0 / −18.5 | 11.8R |
+| Extreme-RSI half off | 278 | 0 | — | 0 / 0 | 11.8R |
+| Divergence half off | 279 | −18.5 ± 15.5R | 0.00 | +0.0 / −18.5 | 11.8R |
+| Extreme 75/25, 85/15, 90/10 (shipped 80/20) | 278 | 0 each | — | 0 / 0 | 11.8R |
+| Divergence lives 25 / 50 bars (shipped 100) | 279 | −18.5 ± 15.5R | 0.00 | +0.0 / −18.5 | 11.8R |
+| Divergence lives 150 bars | 278 | 0 | — | 0 / 0 | 11.8R |
+| Divergence lives 200 bars | 278 | −4.1 ± 3.5R | 0.10 | +0.0 / −4.1 | 11.8R |
+| Pivot width 3 (shipped 5) | 280 | −9.9 ± 4.5R | 0.00 | −2.1 / −7.8 | 13.9R |
+| Pivot width 7 | 279 | −5.4 ± 1.2R | 0.00 | −2.5 / −2.9 | 13.9R |
+| Pivot width 10 | 275 | −10.6 ± 4.1R | 0.00 | −3.2 / −7.4 | 14.6R |
+| RSI length 9 (shipped 14) | 284 | −6.0 ± 5.9R | 0.14 | −2.1 / −3.9 | 13.9R |
+| RSI length 21 | 276 | −27.7 ± 16.2R | 0.00 | −2.4 / −25.3 | 11.8R |
+| Divergence zone 30/70 (shipped 25/75) | 282 | −3.1 ± 1.1R | 0.00 | −2.1 / −1.0 | 13.9R |
+| Divergence zone 20/80 | 276 | −27.7 ± 16.2R | 0.00 | −2.4 / −25.3 | 11.8R |
+
+- **Reject — proven harmful:** pivot width 3, 7 and 10 and the 30/70 zone — each worse in both halves and
+  by more than twice its ±.
+- **Reject — not proven:** veto off, divergence half off, lifetimes 25 / 50 / 200, RSI length 9 and 21,
+  the 20/80 zone. The big ones all turn on the same trade: two losing shorts on 2025-10-20 take the slot
+  from the +16.48R short of 2025-10-21 (Runs 14, 66).
+- **The extreme-RSI half never decides a trade** at any threshold from 75 to 90 — every setup it
+  refuses is refused by something else too. Harmless; kept.
+- **The veto kills, it does not delay.** 77 setups were refused by it; none traded later once it lifted,
+  and switching it off adds only 2 trades — the other 75 are refused by another rule as well.
+- RSI length 21 and the 20/80 zone produce the same trade list: both drop the same few divergences
+  that bind.
+- 🔴 **Still broken, known since 2026-09-10 (`CLAUDE.md` → *Two divergence settings reach NO
+  engine*):** the bot's "RSI Length" and "Pivot Width" settings reach no engine, so a lab run at any
+  other value replays 14 / 5. This study set the engine directly for that reason — and this table is
+  the first measurement of what those two settings would actually do.
+- No bot, config or documented baseline moves.
