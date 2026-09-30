@@ -6303,6 +6303,8 @@ veto and the minimum stop distance blocking good trades or bad ones — should a
 **Basis:** `backtest/tools/blocker_ab_study.py`. `sos_fade_demo`'s LIVE config, 2018-09-14 →
 2026-09-29, PU Prime ECN, one position, M15 + the M5 re-entry feed, one full replay per arm so a freed
 slot is counted. Baseline reproduces Run 64 exactly: 278 trades, +162.1R, max DD 11.8R.
+⚠ **Not reconciled against a stored lab run** — it runs the lab's own replay seam, not a trade-list
+estimate, but no lab run with the live config exists to match it to (Run 64's lab check was on defaults).
 Trades matched by entry minute + side; ± is one standard error of the differing trades' sum.
 
 | Blocker switched off | Blocks in baseline | Added / displaced | Change | P(better) | Max DD |
