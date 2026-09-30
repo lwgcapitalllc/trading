@@ -505,6 +505,12 @@ CLAUDE.md gets at most one index line.
   effect reversed on the test set. **Two tools, two windows, no VWAP edge.**
   🔴 **The test set is SPENT for opening-range, pre-open-range and VWAP-side ideas.** ⚠ No Pine
   twin, no parity gate — lab findings. No documented baseline moves: new standalone tool.
+- **`tools/direction_filter_study.py`** (new 2026-09-30) — would the JARVIS direction rows
+  (`engines/directional_trend/`: weekly/daily bias, 4H/15m structure) as a skip filter have improved
+  the live SOS Fade bot, secondary trades especially? Reuses `bot_confluence_study.py`'s replay,
+  scoring and gates; 24 filters; reconciles against lab 168cc65e4a0f (257 of 278 matched — that run
+  used lab defaults). **MEASURED 2026-09-30: no filter passes gate 1**; skipping against-trend trades
+  costs 28–81R on the whole book. Test set NOT spent. Record: SOS Fade optimization Run 64.
 - **`tools/bot_confluence_study.py`** (new 2026-09-15) — would a kill-zone, 08:00–09:30, VWAP-side
   or opening-range filter have improved the two LIVE bots? Replays `sos_fade_demo` (M15 + its M5
   re-entry feed) and `extreme_leg_demo` (M5) with their live instance configs through

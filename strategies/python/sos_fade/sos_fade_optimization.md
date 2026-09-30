@@ -6236,3 +6236,41 @@ M15 bars of warm-up). 2018-11 → 2019-12: 85 armed, 50 into the zone, 29 no-gap
 
 **This closes the no-gap line on XAUUSD 15m through Run 63.** The breakout at the 0.0 is a small
 positive (+0.12R ± 0.09) that does not reach the declared confidence.
+
+## Run 64 — 2026-09-30: the JARVIS direction rows as a filter — none helps
+
+**The ask (Aaron):** does the directional trend (weekly and daily bias, 4H and 15m structure,
+`engines/directional_trend/`) help the secondary trades or cut losers?
+
+**Basis:** `backtest/tools/direction_filter_study.py`. `sos_fade_demo`'s LIVE config replayed in one
+pass 2018-09-14 → 2026-09-29, PU Prime ECN, one position: 278 trades, +162.1R (primary 174 / +123.7R,
+secondary 104 / +38.4R). Each trade tagged by each row WITH / AGAINST it at entry, from the last
+closed M15 bar. 24 filters (skip with / skip against × 4 rows × all / primary / secondary), gates
+fixed first: removed trades lose in both halves of 2020-01-01 → 2025-08-05, then a 5,000-shuffle
+luck bar. **Test set NOT spent.**
+⚠ **Reconcile: 257 of 278 match lab 168cc65e4a0f by entry minute and side** (21 study-only, 16
+lab-only). That lab run used the lab DEFAULT settings, not the live config — not traced further.
+
+**Result: no filter passes gate 1.** Every group a filter would skip made money in both halves.
+
+| Filter (explore, 199 trades, +135.0R) | Skips | Change to the book | P(better) |
+|---|---|---|---|
+| skip against daily bias, all | 85 | −80.8 ± 35.4R | 0.01 |
+| skip against 4H, all | 109 | −30.7 ± 15.9R | 0.03 |
+| skip against weekly, all | 97 | −28.3 ± 14.5R | 0.03 |
+| skip against 4H, secondary | 42 | −16.1 ± 11.1R | 0.07 |
+| skip against daily, secondary | 30 | −8.6 ± 9.8R | 0.19 |
+| skip against weekly, secondary | 36 | −4.4 ± 9.8R | 0.33 |
+
+(± is one standard error of the removed trades' sum; P(better) from the normal approximation.)
+
+- **Reject — proven harmful:** skipping trades against the daily, 4H or weekly on the whole book.
+- **Reject — not proven:** every secondary-only filter; each skips net winners.
+- **The 15m row is WITH every trade (278 of 278)** — SOS Fade already trades in 15m structure's
+  direction by construction, so that row adds nothing.
+- **Against the daily bias made MORE** (120 trades +92.4R vs with 109 / +63.4R) — a fade takes the
+  reversal of the prior day's push.
+- **Lead, not a result — 4H agreement as a SIZE signal:** explore trades with 4H averaged +1.16R
+  (90) against +0.28R (109), the same way round in both halves. Untested; needs its own declared
+  sizing test with the test set, and a sizing lead of this shape failed its test in 2026-09-15's
+  confluence study.
