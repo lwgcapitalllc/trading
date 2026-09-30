@@ -58,3 +58,7 @@
 2026-09-30 15:14:51,961 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
 2026-09-30 15:15:02,156 [INFO] place bearish primary limit 0.46L @ 4195.71 SL 4212.34854 TP none
 2026-09-30 15:15:02,328 [INFO] PENDING PLACED | ticket=396613557 | bearish 0.46L @ 4195.71 | SL=4212.35 TP=none
+2026-09-30 15:30:09,785 [INFO] re-size bearish primary limit T396613557
+2026-09-30 15:30:09,880 [INFO] PENDING CANCELLED | T396613557
+2026-09-30 15:30:09,880 [INFO] place bearish primary limit 0.42L @ 4193.32164 SL 4211.54028 TP none
+2026-09-30 15:30:10,024 [INFO] PENDING PLACED | ticket=396641948 | bearish 0.42L @ 4193.32 | SL=4211.54 TP=none
