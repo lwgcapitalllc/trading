@@ -67,6 +67,7 @@ becomes a thin adapter over it.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 from datetime import datetime, timezone
@@ -281,6 +282,18 @@ def _first_or_none(obj, *names):
     return None if value is _MISSING else value
 
 
+def _price_or_none(obj, *names):
+    """A price field, or None when it is absent OR not a finite number. A refusal made before
+    its stop was priced carries NaN, and NaN written to the record would be neither a price nor
+    an honest 'could not price' (rule 1) — and is not valid JSON either."""
+    value = _first_or_none(obj, *names)
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return None
+    return value if math.isfinite(value) else None
+
+
 def _one_or_list(obj, plural: str, singular: str):
     """A list field that one strategy carries as a list and another as a single value.
     ⚠ **The plural wins whenever it is CARRIED, even empty** — SOS Fade's `codes` can be `[]`,
@@ -369,6 +382,11 @@ class Ledger:
                 "dir": _first_or_none(block, "dir"),
                 "bar_time": _first_or_none(block, "time_ms", "ts_ms"),
                 "edge": _first_or_none(block, "edge", "entry_price"),
+                # The bracket the order would have carried, so a refusal can be graded in R
+                # afterwards (added 2026-09-30). None = the strategy could not price it.
+                "stop": _price_or_none(block, "stop", "stop_price"),
+                "tp1": _price_or_none(block, "tp1", "target_price"),
+                "tp2": _price_or_none(block, "tp2"),
                 "sos_bar": _first_or_none(block, "sos_bar"),
                 "codes": _one_or_list(block, "codes", "code"),
                 "labels": _first_or_none(block, "labels"),

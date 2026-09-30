@@ -273,6 +273,7 @@ Most-cited code: `extreme_leg_strategy`.
 - What the CHART draws: entry, DD, best, exit (2026-09-02)
 - It can be a LIVE bot now — the seams, and why they cost the replay nothing (2026-09-03)
 - 🔴 The exits are gated on bar TIME, never bar NUMBER — a re-warm renumbers bars (the 2026-09-24 halt)
+- 🔴 Its refusals reached the lab's chart at time 0, price 0, no reason — `Blocked` now carries the shared refusal names (2026-09-30)
 
 ### `notes/lab_settings_history.md` — A lab setting that was probed but never read
 

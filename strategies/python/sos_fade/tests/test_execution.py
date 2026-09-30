@@ -12,6 +12,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 _ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(_ROOT / "strategies" / "python"))
 
@@ -377,6 +379,37 @@ def test_a_refused_setup_is_recorded_with_the_reason_and_the_would_be_entry():
     assert b.labels == ["Final hour"]
     assert "16:00-18:00" in b.reasons[0]
     assert abs(b.edge - 103.82) < 1e-9           # where the limit would have rested
+
+
+@pytest.mark.parametrize("tp1_r", [-1.0, 2.0])
+def test_a_refusal_carries_the_bracket_the_order_would_have_rested_with(tp1_r):
+    """Added 2026-09-30 so a refusal can be graded in R afterwards. The same setup is stepped
+    twice — once refused (final hour), once armed — and the refusal's stop and second rung must
+    be the resting order's, and its first rung the one the FILL would set (`_first_rung`), which
+    is the fib rung by default and moves under a first target set in R.
+
+    Watched RED 2026-09-30: recording the fib `tp1` instead of `_first_rung`'s fails the
+    `tp1_r=2.0` case."""
+    refused = Execution(_cfg(exec_tp1_r=tp1_r))
+    refused.step(_sig(0, 104.0, 104.5, 103.9, 104.2, ny_hour=16), _seq_long_ready())
+    armed = Execution(_cfg(exec_tp1_r=tp1_r))
+    armed.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    (b,), p = refused.blocks, armed._pend_long
+    assert p is not None
+    assert b.stop == p.sl and b.tp2 == p.tp2
+    want_tp1 = p.tp1 if tp1_r < 0 else p.edge + tp1_r * (p.edge - p.sl)
+    assert abs(b.tp1 - want_tp1) < 1e-9
+    assert b.stop < b.edge < b.tp1
+
+
+def test_recording_a_refusal_does_not_count_a_target_fallback():
+    """`tp_level_fallbacks` is a reported statistic about ORDERS; a refusal pricing its bracket
+    must not inflate it. A named first rung sitting behind a long entry forces the fallback
+    (the same bar ARMED counts 1). Watched RED 2026-09-30 with `count=` dropped from `_bracket`."""
+    ex = Execution(_cfg(exec_tp1_level="0.886"))
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2, ny_hour=16), _seq_long_ready())
+    assert len(ex.blocks) == 1
+    assert ex.tp_level_fallbacks == 0
 
 
 def test_an_armed_setup_records_no_block():

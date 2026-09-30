@@ -358,6 +358,12 @@ class BlockedSetup:
     codes: List[int]      # 1-7, the Pine reason codes, precedence-ordered
     edge: float
     sos_bar: int
+    # The bracket the order WOULD have carried, priced by the same helpers as a real order, so a
+    # refusal can be graded in R after the fact. None = could not be priced (no live fib), never 0.
+    # `tp1` is the first rung as the fill would have set it; `tp2` is the fib rung behind it.
+    stop: Optional[float] = None
+    tp1: Optional[float] = None
+    tp2: Optional[float] = None
 
     @property
     def code(self) -> int:
@@ -2416,9 +2422,15 @@ class Execution:
             if key == self._blk_keys[slot]:
                 continue
             self._blk_keys[slot] = key
+            sl, tp1, tp2 = self._bracket(sig, edge, is_long, count=False)
+            if sl is not None:
+                # A refusal is always a PRIMARY — the re-entries have their own records.
+                tp1 = self._first_rung(dir_=1 if is_long else -1, entry=edge, stop=sl,
+                                       kind="primary", src=None, fib_tp1=tp1)
             self.blocks.append(BlockedSetup(
                 dir=1 if is_long else -1, index=sig.index, time_ms=sig.time_ms,
-                codes=list(cs), edge=float(edge), sos_bar=int(sos_bar)))
+                codes=list(cs), edge=float(edge), sos_bar=int(sos_bar),
+                stop=sl, tp1=tp1, tp2=tp2))
 
     def _stamp_account_clock(self, sig) -> None:
         """Tell the account the current bar time — unless something else owns the clock.
@@ -2546,10 +2558,8 @@ class Execution:
         fib = _freeze_fib(sig) if (long_armed or short_armed) else None
 
         if long_armed:
-            sl = self._sl_anchor(sig, long_edge, True) - cfg.exec_sl_buf_tk * cfg.mintick
+            sl, tp1, tp2 = self._bracket(sig, long_edge, True)
             dist = long_edge - sl
-            deep = long_edge <= sig.fibo_p3       # at/below 0.618
-            tp1, tp2 = self._ladder_levels(sig, deep, long_edge, 1)
             if self._stop_clears_floor(dist, long_edge) \
                     and not self._too_deep(sig, long_edge, True):
                 qty = self._qty_for_risk(cfg.exec_risk_pct, dist)
@@ -2565,10 +2575,8 @@ class Execution:
             self._pend_long = None
 
         if short_armed:
-            sl = self._sl_anchor(sig, short_edge, False) + cfg.exec_sl_buf_tk * cfg.mintick
+            sl, tp1, tp2 = self._bracket(sig, short_edge, False)
             dist = sl - short_edge
-            deep = short_edge >= sig.fibo_p3
-            tp1, tp2 = self._ladder_levels(sig, deep, short_edge, -1)
             if self._stop_clears_floor(dist, short_edge) \
                     and not self._too_deep(sig, short_edge, False):
                 qty = self._qty_for_risk(cfg.exec_risk_pct, dist)
@@ -2583,6 +2591,25 @@ class Execution:
         else:
             self._pend_short = None
 
+
+    def _bracket(self, sig, edge: float, is_long: bool, *, count: bool = True
+                 ) -> Tuple[Optional[float], Optional[float], Optional[float]]:
+        """`(stop, tp1, tp2)` for an order resting at `edge` — the ONE pricing both the order and
+        the blocked-setup record read, so a refusal can never be graded on a bracket the order
+        would not have had. `tp1` is the fib rung the order rests with; the fill may move it
+        (`_first_rung`). `count=False` keeps a reporting call out of `tp_level_fallbacks`.
+
+        All three None when the stop has no anchor (no live fib) — reachable only from
+        `_record_blocks`; a caller placing an order is already past `fibs_ready`."""
+        cfg = self._cfg
+        anchor = self._sl_anchor(sig, edge, is_long)
+        if anchor is None or sig.fibo_p3 is None:
+            return None, None, None
+        buf = cfg.exec_sl_buf_tk * cfg.mintick
+        sl = anchor - buf if is_long else anchor + buf
+        deep = edge <= sig.fibo_p3 if is_long else edge >= sig.fibo_p3   # at/past 0.618
+        tp1, tp2 = self._ladder_levels(sig, deep, edge, 1 if is_long else -1, count=count)
+        return sl, tp1, tp2
 
     def _gate_reasons(self, sig, dec, is_long: bool, armed: bool,
                       flat_window: bool) -> Tuple[str, ...]:
@@ -4460,7 +4487,7 @@ class Execution:
             return self._tp2, self._tp1
         return self._tp1, self._tp2
 
-    def _ladder_levels(self, sig, deep: bool, entry: float, dir_: int):
+    def _ladder_levels(self, sig, deep: bool, entry: float, dir_: int, *, count: bool = True):
         """The two fib prices this setup's rungs sit on — (tp1, tp2).
 
         🔴 **ONE FUNCTION BECAUSE IT WAS TWO COPIES.** The long and short blocks each carried the
@@ -4490,7 +4517,8 @@ class Execution:
             price = getattr(sig, attr, None)
             # `is None` and not falsy: a price of 0.0 is a price. Rule 1.
             if price is None or (price - entry) * dir_ <= 0:
-                self.tp_level_fallbacks += 1
+                if count:
+                    self.tp_level_fallbacks += 1
                 out.append(auto)
             else:
                 out.append(price)

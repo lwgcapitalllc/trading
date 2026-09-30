@@ -162,7 +162,11 @@ CLAUDE.md gets at most one index line.
   `build_blocked_setups`) is the same idea for the trades that never happened: a setup one of the
   strategy's own rules refused places no order, so it is in no trade list and this is its ONLY
   channel to the lab. Same duck-type discipline (`dir`/`time_ms`/`code`/`edge`/`label`/`reason`),
-  always present as a key, `[]` when a strategy records none. Full path:
+  always present as a key, `[]` when a strategy records none. **Since 2026-09-30 each row also
+  carries `stop`/`tp1`/`tp2`** — the bracket the order would have had, None (never 0, never NaN)
+  when the strategy did not price one — so a refusal can be graded in R. 🔴 **The extreme leg's
+  refusal carried NONE of these names until then**, so every one reached the chart at time 0,
+  price 0, no reason; its class now exposes the shared names as aliases. Full path:
   `command-center/backend/CLAUDE.md` → *Blocked setups*. **`missed_setups`** (added 2026-07-27,
   `build_missed_setups`) is its companion one step earlier in a setup's life: not "which ready trade
   did a rule refuse" but "how far did this setup get before it died". Same duck-type

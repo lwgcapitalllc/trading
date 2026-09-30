@@ -293,3 +293,19 @@ Full record: `algos/notes/telegram-and-notifications.md` → *A SETUP THREAD DID
   forks that replace `_place_entries` name nothing.
 - Reporting only: `replay_fingerprint.py` 2024-01 → 2026-08 — bars and 66 trades IDENTICAL.
   Detail: `algos/notes/telegram-and-notifications.md`.
+
+## A refusal carries the bracket it would have traded (2026-09-30)
+
+- `BlockedSetup` gained `stop`, `tp1`, `tp2` so a blocked setup can be graded in R afterwards —
+  Aaron's regression audit of the filters. **Reporting only: nothing reads them back.**
+- 🔴 **One pricing, two readers.** `_bracket()` is what `_place_entries` now prices a real order
+  with, and `_record_blocks` asks the same function — a second copy is how a refusal ends up
+  graded on a stop its order would never have had. `tp1` then goes through `_first_rung` as a
+  PRIMARY, because that is where the FILL would have put it (it moves under a first target in R).
+- ⚠ **`_ladder_levels(count=False)` on the record path**, or every refusal would inflate
+  `tp_level_fallbacks`, a statistic about ORDERS.
+- ⚠ All three are None when the fib is not live — never 0.
+- `bos` fills them from its own `_bos_stop` / `_targets`; `b_leg` inherits SOS Fade's.
+- Tests in `tests/test_execution.py`: the refused and the armed copy of one setup must carry the
+  same bracket (watched RED recording the fib `tp1` instead of the first rung), and a refusal must
+  not count a fallback (watched RED without `count=False`).

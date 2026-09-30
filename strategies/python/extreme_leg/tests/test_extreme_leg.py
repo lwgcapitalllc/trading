@@ -945,3 +945,32 @@ def test_each_nights_swap_is_converted_at_that_rollover():
     ex.resolve(11, exit_ts, high=105.0, low=99.0, open_=100.0)
     assert prof.seen == [0.01, 0.01]
     assert ex.trades[-1].costs_usd == pytest.approx(-0.02)
+
+
+# ── the lab's chart reads a refusal by the shared names (2026-09-30) ─────────
+
+
+def test_a_refusal_reaches_the_lab_chart_at_its_real_time_price_and_reason():
+    """Until 2026-09-30 every extreme-leg refusal reached the lab's chart at time 0, price 0 and
+    with no reason: the chart reads SOS Fade's field names and this class had none of them.
+    Watched RED against the class before the shared-name properties were added."""
+    from backtest.output import build_blocked_setups
+    from extreme_leg.execution import BLOCK_TEXT, Blocked
+
+    b = Blocked(5, 1790729700000, -1, BLOCK_TEXT[8], 8, 4176.69, 4190.0, 4150.0)
+    (row,) = build_blocked_setups([b])
+    assert row["time_ms"] == 1790729700000
+    assert row["edge"] == 4176.69
+    assert row["direction"] == "Short"
+    assert row["codes"] == [8]
+    assert row["reasons"] == [{"label": BLOCK_TEXT[8], "reason": BLOCK_TEXT[8]}]
+    assert (row["stop"], row["tp1"], row["tp2"]) == (4190.0, 4150.0, None)
+
+
+def test_an_unpriced_stop_reaches_the_chart_as_None_never_NaN():
+    from backtest.output import build_blocked_setups
+    from extreme_leg.execution import BLOCK_TEXT, Blocked
+
+    nan = float("nan")
+    (row,) = build_blocked_setups([Blocked(5, 1, 1, BLOCK_TEXT[2], 2, 4000.0, nan, nan)])
+    assert row["stop"] is None and row["tp1"] is None

@@ -110,6 +110,49 @@ class Blocked:
     stop_price: float
     target_price: float
 
+    # ── the shared refusal shape ────────────────────────────────────────────────
+    # 🔴 **The lab's chart reads a refusal by SOS Fade's names** (`backtest.output.
+    # build_blocked_setups`), and until 2026-09-30 this class had none of them — every extreme-leg
+    # refusal reached the chart at time 0, price 0, with no reason. These aliases are that shape;
+    # the fields above stay, because the Pine parity harness compares on them.
+    @property
+    def time_ms(self) -> int:
+        return self.ts_ms
+
+    @property
+    def edge(self) -> float:
+        return self.entry_price
+
+    @property
+    def codes(self) -> List[int]:
+        return [self.code]
+
+    @property
+    def labels(self) -> List[str]:
+        return [self.reason]
+
+    @property
+    def reasons(self) -> List[str]:
+        return [self.reason]
+
+    @property
+    def stop(self) -> Optional[float]:
+        """None when the ladder never priced one (a refusal before the stop, e.g. no swing) —
+        the engine carries NaN there, which is 'could not price', never a price."""
+        return _price_or_none(self.stop_price)
+
+    @property
+    def tp1(self) -> Optional[float]:
+        return _price_or_none(self.target_price)
+
+    @property
+    def tp2(self) -> Optional[float]:
+        return None    # one target, no second rung
+
+
+def _price_or_none(x) -> Optional[float]:
+    return float(x) if x is not None and math.isfinite(x) else None
+
 
 @dataclass
 class _LiveFill:

@@ -419,3 +419,5 @@ lost on all six settings. Switching one on here is a new experiment, and neither
 Evidence: `strategies/python/sos_fade/notes/exit_ladder_history.md`.
 
 ⚠ **2026-09-26: SOS Fade's default add became the "1m break" add and its re-entry fill clock 5m → 1m.** This bot inherits the new add setting but never adds (adding stays off), so no trade moved; the settings list gained the inherited "Breaks back" control so the undocumented-settings check stays green. Record: `strategies/python/sos_fade/sos_fade_optimization.md` → Run 50.
+
+⚠ **2026-09-30: a blocked setup now records the stop and targets it would have traded** — priced by this bot's own stop and target helpers, the first target moved as the fill would move it, None when the ladder cannot be priced. Reporting only; no trade moves. Rule and tests: `strategies/python/sos_fade/notes/signals_naming_and_refusals.md` → *A refusal carries the bracket*.

@@ -559,7 +559,19 @@ carried, even empty — SOS Fade's `code` property answers 0 on an empty list), 
 cannot read is WRITTEN with the error rather than raised: `_write`'s *a log must never crash the
 loop it observes* covered the file and not the fields. SOS Fade's rows do not move by a byte.
 Nine tests on the two strategies' REAL classes, `tests/test_ledger_refusal_fields.py`; 8 mutations
-RUN and killed. ⚠ **Reaches a bot by `git pull` plus a restart** — `algos/live/`, no promote.
+RUN and killed. ⚠ **Reaches a bot by PROMOTE only** — `algos/live/` joined the frozen snapshot
+2026-09-17 (`live_config.ORDER_PATH_ROOTS`); the "pull plus a restart" this line said was true
+only before then.
+
+✅ **A refusal row carries the BRACKET it would have traded, since 2026-09-30** — `stop`, `tp1`,
+`tp2` beside `edge`, so a blocked setup can be graded in R afterwards (a regression audit of the
+filters) instead of re-running the strategy. The strategy prices them with the SAME helpers its
+real order uses; `tp1` is the first rung as the FILL would set it. 🔴 **None means could not
+price, never 0** — the extreme leg carries NaN for a refusal made before its stop existed, and
+`_price_or_none` turns that into None (NaN is not a price, and not valid JSON). FFT and the
+session sweep record no refusals at all, so they write none. ⚠ **A bot still on older strategy
+code writes None for SOS Fade's bracket until it is promoted**; the extreme leg's fills straight
+away, because its refusal always carried the prices. Tests: `tests/test_ledger_refusal_fields.py`.
 
 ⚠ **Routing is ONE dict (`ledger._DECISION_EVENTS`) and it is TEST-ENFORCED.**
 `tests/test_ledger_streams.py` greps every `ledger.event("...")` call in `algos/live/` and fails if

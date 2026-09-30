@@ -564,6 +564,18 @@ class BosExecution(Execution):
             if key == self._bos_blk_keys[slot]:
                 continue
             self._bos_blk_keys[slot] = key
+            # The bracket the order would have rested with — `_build_pending`'s own helpers, and
+            # the first rung moved the way the fill would move it. Reporting only: a ladder that
+            # cannot be priced records None rather than costing the bar.
+            try:
+                tp1, tp2, _tp3 = self._targets(self._tier(edge, levels, bull=bull), levels, leg,
+                                               bull=bull)
+                if stop is not None:
+                    tp1 = self._first_rung(dir_=1 if bull else -1, entry=edge, stop=stop,
+                                           kind="primary", src=None, fib_tp1=tp1)
+            except (KeyError, TypeError):
+                tp1 = tp2 = None
             self.blocks.append(BosBlockedSetup(
                 dir=1 if bull else -1, index=sig.index, time_ms=sig.time_ms,
-                codes=codes, edge=float(edge), sos_bar=int(leg.bar)))
+                codes=codes, edge=float(edge), sos_bar=int(leg.bar),
+                stop=stop, tp1=tp1, tp2=tp2))
