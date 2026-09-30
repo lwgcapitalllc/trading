@@ -237,3 +237,29 @@
 2026-09-30 16:10:01,174 [INFO] Priority 3 on this account: waiting 19s for the bots above
 2026-09-30 16:15:01,246 [INFO] Priority 3 on this account: waiting 39s for the bots above
 2026-09-30 16:20:01,524 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-30 16:25:01,252 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-30 16:30:01,073 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-30 16:35:01,130 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-30 16:40:01,171 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-30 16:45:01,057 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-30 16:50:00,858 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-30 16:53:50,697 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-30 16:53:50,697 [INFO] Stop requested — shutting down.
+2026-09-30 16:53:50,697 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-30 16:53:50,702 [INFO] MT5 disconnected.
+2026-09-30 16:54:02,547 [INFO] Realign | RealignStrategy v355 | hash eb72bb17be46 | commit 5093e06f | frozen | LIVE
+2026-09-30 16:54:03,079 [INFO] Connected | #700152905 | $15,319.09 | PUPrime-Demo
+2026-09-30 16:54:03,079 [INFO] MT5 connection lock released
+2026-09-30 16:54:03,500 [INFO] Sizing against account balance $15,319.09
+2026-09-30 16:54:03,547 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 2.5% per trade).
+2026-09-30 16:54:03,563 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared signals channel
+2026-09-30 16:54:12,983 [INFO] Warmed 15000 bars (2026-07-16 06:20:00+00:00 → 2026-09-30 16:45:00+00:00) in 9.0s
+2026-09-30 16:54:12,983 [INFO] Equity re-anchored to the account after warm-up: 15,263.62 → 15,319.09
+2026-09-30 16:54:12,983 [INFO] Setup threads carried across the restart: 1 — 0 closed, 1 still open.
+2026-09-30 16:54:13,702 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
+2026-09-30 16:55:06,875 [INFO] Priority 3 on this account: waiting 13s for the bots above
+2026-09-30 17:00:00,931 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-30 17:05:01,113 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-30 17:10:01,107 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-30 17:15:01,183 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-30 17:20:01,167 [INFO] Priority 3 on this account: waiting 19s for the bots above
