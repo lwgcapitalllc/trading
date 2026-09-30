@@ -29,3 +29,13 @@
 2026-09-30 03:12:39,933 [INFO] Warmed the fast feed on 75000 M1 bars (2026-07-15 13:43:00+00:00 → 2026-09-30 03:11:00+00:00).
 2026-09-30 03:12:39,933 [INFO] Equity re-anchored to the account after warm-up: 12,103.90 → 10,287.06
 2026-09-30 03:12:40,636 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-30 14:30:04,435 [INFO] place bearish primary limit 0.28L @ 4195.71 SL 4213.6698 TP none
+2026-09-30 14:30:04,529 [INFO] PENDING PLACED | ticket=368731571 | bearish 0.28L @ 4195.71 | SL=4213.67 TP=none
+2026-09-30 14:45:04,839 [INFO] re-size bearish primary limit T368731571
+2026-09-30 14:45:04,917 [INFO] PENDING CANCELLED | T368731571
+2026-09-30 14:45:04,917 [INFO] place bearish primary limit 0.29L @ 4195.71 SL 4213.03596 TP none
+2026-09-30 14:45:05,016 [INFO] PENDING PLACED | ticket=368742591 | bearish 0.29L @ 4195.71 | SL=4213.04 TP=none
+2026-09-30 15:15:00,704 [INFO] re-size bearish primary limit T368742591
+2026-09-30 15:15:00,812 [INFO] PENDING CANCELLED | T368742591
+2026-09-30 15:15:00,812 [INFO] place bearish primary limit 0.3L @ 4195.71 SL 4212.34854 TP none
+2026-09-30 15:15:00,891 [INFO] PENDING PLACED | ticket=368760669 | bearish 0.3L @ 4195.71 | SL=4212.35 TP=none

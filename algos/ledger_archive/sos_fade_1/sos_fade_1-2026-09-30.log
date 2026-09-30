@@ -31,3 +31,30 @@
 2026-09-30 03:12:27,446 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
 2026-09-30 11:10:12,028 [INFO] Equity re-anchored to the account flat between trades: 14,862.76 → 14,862.23
 2026-09-30 11:36:59,252 [INFO] Equity re-anchored to the account flat between trades: 14,862.23 → 15,319.09
+2026-09-30 14:30:08,655 [INFO] place bearish primary limit 0.42L @ 4195.71 SL 4213.6698 TP none
+2026-09-30 14:30:08,764 [INFO] PENDING PLACED | ticket=396502730 | bearish 0.42L @ 4195.71 | SL=4213.67 TP=none
+2026-09-30 14:45:07,904 [INFO] re-size bearish primary limit T396502730
+2026-09-30 14:45:08,013 [INFO] PENDING CANCELLED | T396502730
+2026-09-30 14:45:08,013 [INFO] place bearish primary limit 0.44L @ 4195.71 SL 4213.03596 TP none
+2026-09-30 14:45:08,123 [INFO] PENDING PLACED | ticket=396541104 | bearish 0.44L @ 4195.71 | SL=4213.04 TP=none
+2026-09-30 15:14:13,201 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-30 15:14:13,201 [INFO] Stop requested — shutting down.
+2026-09-30 15:14:13,203 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-30 15:14:14,140 [INFO] MT5 disconnected.
+2026-09-30 15:14:22,986 [INFO] SOS Fade | SosFadeStrategy v336 | hash b9310a2e47d0 | commit 929baa63 | frozen | LIVE
+2026-09-30 15:14:23,528 [INFO] Connected | #700152905 | $15,319.09 | PUPrime-Demo
+2026-09-30 15:14:23,528 [INFO] MT5 connection lock released
+2026-09-30 15:14:23,934 [INFO] Sizing against account balance $15,319.09
+2026-09-30 15:14:23,934 [INFO] Re-entry fill clock: M1 — a second bar stream beside M15.
+2026-09-30 15:14:23,934 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-30 15:14:23,950 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared signals channel
+2026-09-30 15:14:23,950 [INFO] Cancelling stale pending order T396541104 from a previous run
+2026-09-30 15:14:23,950 [INFO] cancel stale pending T396541104
+2026-09-30 15:14:24,043 [INFO] PENDING CANCELLED | T396541104
+2026-09-30 15:14:27,603 [INFO] Warmed 5000 bars (2026-07-16 04:30:00+00:00 → 2026-09-30 14:45:00+00:00) in 3.4s
+2026-09-30 15:14:50,897 [INFO] Warmed the fast feed on 75000 M1 bars (2026-07-16 02:47:00+00:00 → 2026-09-30 15:13:00+00:00).
+2026-09-30 15:14:50,897 [INFO] Equity re-anchored to the account after warm-up: 18,024.65 → 15,319.09
+2026-09-30 15:14:50,913 [INFO] Setup threads carried across the restart: 1 — 0 closed, 1 still open.
+2026-09-30 15:14:51,961 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-30 15:15:02,156 [INFO] place bearish primary limit 0.46L @ 4195.71 SL 4212.34854 TP none
+2026-09-30 15:15:02,328 [INFO] PENDING PLACED | ticket=396613557 | bearish 0.46L @ 4195.71 | SL=4212.35 TP=none

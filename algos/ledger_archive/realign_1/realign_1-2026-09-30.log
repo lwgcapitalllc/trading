@@ -199,3 +199,29 @@
 2026-09-30 14:10:01,557 [INFO] Priority 3 on this account: waiting 18s for the bots above
 2026-09-30 14:15:01,426 [INFO] Priority 3 on this account: waiting 39s for the bots above
 2026-09-30 14:20:01,596 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-30 14:25:01,694 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-30 14:30:01,786 [INFO] Priority 3 on this account: waiting 38s for the bots above
+2026-09-30 14:35:01,749 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-30 14:40:02,831 [INFO] Priority 3 on this account: waiting 17s for the bots above
+2026-09-30 14:45:01,870 [INFO] Priority 3 on this account: waiting 38s for the bots above
+2026-09-30 14:50:01,750 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-30 14:55:01,797 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-30 15:00:01,934 [INFO] Priority 3 on this account: waiting 38s for the bots above
+2026-09-30 15:05:01,453 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-30 15:10:01,684 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-30 15:13:01,105 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-30 15:13:01,120 [INFO] Stop requested — shutting down.
+2026-09-30 15:13:01,120 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-30 15:13:02,418 [INFO] MT5 disconnected.
+2026-09-30 15:13:12,405 [INFO] Realign | RealignStrategy v354 | hash 8728d86be4f3 | commit 929baa63 | frozen | LIVE
+2026-09-30 15:13:12,978 [INFO] Connected | #700152905 | $15,319.09 | PUPrime-Demo
+2026-09-30 15:13:12,984 [INFO] MT5 connection lock released
+2026-09-30 15:13:13,423 [INFO] Sizing against account balance $15,319.09
+2026-09-30 15:13:13,438 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 2.5% per trade).
+2026-09-30 15:13:13,438 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared signals channel
+2026-09-30 15:13:25,583 [INFO] Warmed 15000 bars (2026-07-16 04:40:00+00:00 → 2026-09-30 15:05:00+00:00) in 11.8s
+2026-09-30 15:13:25,597 [INFO] Equity re-anchored to the account after warm-up: 15,263.62 → 15,319.09
+2026-09-30 15:13:25,630 [INFO] Setup threads carried across the restart: 1 — 0 closed, 1 still open.
+2026-09-30 15:13:26,603 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
+2026-09-30 15:15:07,271 [INFO] Priority 3 on this account: waiting 33s for the bots above
+2026-09-30 15:20:02,166 [INFO] Priority 3 on this account: waiting 18s for the bots above
