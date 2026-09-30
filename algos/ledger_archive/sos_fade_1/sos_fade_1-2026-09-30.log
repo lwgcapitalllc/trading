@@ -91,3 +91,26 @@
 2026-09-30 17:30:04,003 [INFO] PENDING MOVED | T396763245 → 4185.21 SL=4211.39
 2026-09-30 18:00:03,045 [INFO] move bearish primary limit T396763245 → 4185.21 SL 4211.1105
 2026-09-30 18:00:03,154 [INFO] PENDING MOVED | T396763245 → 4185.21 SL=4211.11
+2026-09-30 19:25:26,942 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-30 19:25:26,942 [INFO] Stop requested — shutting down.
+2026-09-30 19:25:26,942 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-30 19:25:26,944 [INFO] MT5 disconnected.
+2026-09-30 19:25:46,820 [INFO] SOS Fade | SosFadeStrategy v339 | hash 508da401e735 | commit 811f7486 | frozen | LIVE
+2026-09-30 19:25:47,352 [INFO] Connected | #700152905 | $15,319.09 | PUPrime-Demo
+2026-09-30 19:25:47,367 [INFO] MT5 connection lock released
+2026-09-30 19:25:47,758 [INFO] Sizing against account balance $15,319.09
+2026-09-30 19:25:47,773 [INFO] Re-entry fill clock: M1 — a second bar stream beside M15.
+2026-09-30 19:25:47,773 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-30 19:25:47,773 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared signals channel
+2026-09-30 19:25:47,773 [INFO] Cancelling stale pending order T396763245 from a previous run
+2026-09-30 19:25:47,773 [INFO] cancel stale pending T396763245
+2026-09-30 19:25:51,884 [INFO] PENDING CANCELLED | T396763245
+2026-09-30 19:25:54,728 [INFO] Warmed 5000 bars (2026-07-16 08:45:00+00:00 → 2026-09-30 19:00:00+00:00) in 2.7s
+2026-09-30 19:26:11,574 [INFO] Warmed the fast feed on 75000 M1 bars (2026-07-16 06:58:00+00:00 → 2026-09-30 19:24:00+00:00).
+2026-09-30 19:26:11,574 [INFO] Equity re-anchored to the account after warm-up: 18,024.65 → 15,319.09
+2026-09-30 19:26:11,589 [INFO] Setup threads carried across the restart: 1 — 0 closed, 1 still open.
+2026-09-30 19:26:12,261 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-30 19:30:03,197 [INFO] place bearish primary limit 0.29L @ 4185.21 SL 4211.1105 TP none
+2026-09-30 19:30:03,291 [INFO] PENDING PLACED | ticket=396873880 | bearish 0.29L @ 4185.21 | SL=4211.11 TP=none
+2026-09-30 20:15:00,671 [INFO] cancel bearish primary limit T396873880
+2026-09-30 20:15:00,763 [INFO] PENDING CANCELLED | T396873880
