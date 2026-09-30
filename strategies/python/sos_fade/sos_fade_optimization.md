@@ -6274,3 +6274,24 @@ lab-only). That lab run used the lab DEFAULT settings, not the live config — n
   (90) against +0.28R (109), the same way round in both halves. Untested; needs its own declared
   sizing test with the test set, and a sizing lead of this shape failed its test in 2026-09-15's
   confluence study.
+
+## Run 65 — 2026-09-30: 4H agreement as a SIZE signal — fails on the held-back years
+
+**The idea (Run 64's lead):** risk more when the 4H structure row agrees with the trade.
+**Basis:** Run 64's replay and tags, unchanged. Held-back = 2018-09-14 → 2019-12-31 and
+2025-08-06 → 2026-09-29 (79 trades). Sizing compared at the SAME average risk (2:1 with vs against,
+scaled so the mean weight is 1), so it cannot win by risking more overall.
+🔴 **The held-back years were not blind.** Run 64's printed row totals covered every year, so the
+held-back with / against split could be read by subtraction before this was declared. The tool now
+prints explore-only summaries. The numbers below are the full measurement; they read the same.
+
+| Window | With 4H | Against 4H | Difference | P(with better) | Flat R / max DD | 2:1 R / max DD |
+|---|---|---|---|---|---|---|
+| Explore | 90, +1.16R | 109, +0.28R | +0.88 ± 0.48 | 0.97 | +135.0 / 7.5 | +164.8 / 8.2 |
+| **Held-back** | 36, +0.29R | 43, +0.39R | **−0.10 ± 0.50** | **0.42** | +27.1 / 13.7 | +25.8 / 13.6 |
+| Pooled | 126, +0.91R | 152, +0.31R | +0.60 ± 0.37 | 0.95 | +162.1 / 11.8 | +190.5 / 11.7 |
+
+- **Reject — not proven.** The explore edge reverses on the held-back years; the pooled figure is
+  carried by the years the idea was found on.
+- Second sizing lead of this shape to fail its held-back check (2026-09-15, time of day, was first).
+- **The direction rows are closed as a filter or size signal for SOS Fade through Run 65.**

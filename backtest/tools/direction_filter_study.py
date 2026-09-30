@@ -164,16 +164,21 @@ def main() -> None:
     r = tr.r.to_numpy(float)
     ent = pd.DatetimeIndex(tr.entry)
 
+    # Summaries are EXPLORE ONLY. Until 2026-09-30 these covered every year, which showed the
+    # held-back years' with/against split before any test was declared (Run 64 -> Run 65).
+    ex = (ent >= EXPLORE[0]) & (ent < EXPLORE[1])
     for k in ("primary", "secondary"):
-        sel = kind == k
-        print(f"  {k}: {sel.sum()} trades, {r[sel].sum():+.1f}R, mean {r[sel].mean():+.2f}R")
-    for row in ROWS:
-        w, a = ft[f"{row}_WITH"].to_numpy(), ft[f"{row}_AGAINST"].to_numpy()
+        sel = (kind == k) & ex
         print(
-            f"  {row:>3}: with {w.sum():>3} ({r[w].sum():+6.1f}R)  against {a.sum():>3} ({r[a].sum():+6.1f}R)  neither {(~w & ~a).sum()}"
+            f"  {k} (explore): {sel.sum()} trades, {r[sel].sum():+.1f}R, mean {r[sel].mean():+.2f}R"
+        )
+    for row in ROWS:
+        w = ft[f"{row}_WITH"].to_numpy() & ex
+        a = ft[f"{row}_AGAINST"].to_numpy() & ex
+        print(
+            f"  {row:>3}: with {w.sum():>3} ({r[w].sum():+6.1f}R)  against {a.sum():>3} ({r[a].sum():+6.1f}R)  neither {(ex & ~w & ~a).sum()}"
         )
 
-    ex = (ent >= EXPLORE[0]) & (ent < EXPLORE[1])
     M_all = masks(ft, kind)
     M, rx, first = M_all[:, ex], r[ex], (ent[ex] < SPLIT)
     sc = table(

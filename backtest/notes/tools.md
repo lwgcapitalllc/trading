@@ -510,7 +510,7 @@ CLAUDE.md gets at most one index line.
   the live SOS Fade bot, secondary trades especially? Reuses `bot_confluence_study.py`'s replay,
   scoring and gates; 24 filters; reconciles against lab 168cc65e4a0f (257 of 278 matched — that run
   used lab defaults). **MEASURED 2026-09-30: no filter passes gate 1**; skipping against-trend trades
-  costs 28–81R on the whole book. Test set NOT spent. Record: SOS Fade optimization Run 64.
+  costs 28–81R on the whole book. Record: SOS Fade optimization Run 64. Run 65 then tested 4H agreement as a SIZE signal: fails on the held-back years (−0.10 ± 0.50R). ⚠ Its with/against summaries covered every year until 2026-09-30 and so exposed the held-back split; they now print explore only.
 - **`tools/bot_confluence_study.py`** (new 2026-09-15) — would a kill-zone, 08:00–09:30, VWAP-side
   or opening-range filter have improved the two LIVE bots? Replays `sos_fade_demo` (M15 + its M5
   re-entry feed) and `extreme_leg_demo` (M5) with their live instance configs through
