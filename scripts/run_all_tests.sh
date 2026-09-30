@@ -455,6 +455,22 @@ if "$PYTHON" strategies/tradingview/tools/build_export_twins.py --check; then
 else
   fail "a pine export twin is stale against its parent or its export block"
 fi
+# ⚠ SAME STEP, TWO MORE CHECKS, rather than renumbering. The extreme leg's PARENT is generated too,
+#   by its own builder, and a hand edit to the parent was found on 2026-09-30 that the builder would
+#   have silently deleted on the next run - the twin check above cannot see that drift.
+if "$PYTHON" strategies/tradingview/tools/build_extreme_leg.py --check; then
+  pass "the extreme leg's strategy file matches its builder"
+else
+  fail "extreme_leg_strategy.pine was edited by hand - move the change into tools/build_extreme_leg.py"
+fi
+# 🔴 The house chart standard (SOS Fade's panel, labels, box, triangles, pink blocked tag and missed-
+#   setup callout). Written down 2026-08-12, drifted, audited 2026-09-16, drifted again, and wired
+#   here on 2026-09-30 once every strategy file passed it - see strategies/tradingview/CLAUDE.md.
+if "$PYTHON" scripts/check_pine_conventions.py >/dev/null; then
+  pass "every strategy pine follows the SOS Fade chart standard"
+else
+  fail "a strategy pine is off the chart standard - run scripts/check_pine_conventions.py"
+fi
 
 # ── 19. The OFFLINE browser specs ───────────────────────────────────────────
 # The Bots page's and the price chart's specs, which replay recorded answers and load a development

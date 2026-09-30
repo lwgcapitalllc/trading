@@ -24,6 +24,13 @@ What it checks, per `strategies/tradingview/CLAUDE.md`:
      A hex outside the approved set in a strategy file is a colour somebody re-picked in a fork,
      which is exactly what Aaron asked to stop.
   4. **The export twin exists** and is not hand-kept.
+  5. **Each group number carries its contract NAME** (a provenance suffix is allowed), and **group 8
+     holds SOS Fade's annotation settings by label and default** — entry label, which-results
+     filter with "None", label distance 6 ATR, position box, TP band tags, breakeven band 0.15 R,
+     pink blocked tag reading "TRADE BLOCKED", and the missed-setup callout's three controls with
+     a 3-day limit. Added 2026-09-30: the presence-only version passed three files whose panels
+     were half-built, re-meant or switched off. Watched RED on the pre-fix copies of all five
+     non-conforming files, each for the reason the audit found, and green on SOS Fade and B-leg.
 
 ⚠ **It reads the PARENT, never the twin** — a twin is generated from its parent, so a convention
 checked on the twin would pass on a file nobody trades.
@@ -49,8 +56,43 @@ _TV = _ROOT / "strategies" / "tradingview"
 # it there first and copying it down — never by picking a new one in a fork.
 _WIN, _LOSS, _BE = "#26A69A", "#EF5350", "#FF9800"
 
-# Group numbers from the contract table. A file uses a SUBSET; it may not invent a number.
-_GROUPS = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
+# Group numbers from the contract table, and what each number MEANS. A file uses a SUBSET; it may
+# not invent a number. ⚠ Checking the number alone passed a panel whose "5" was execution hours —
+# the number is the address, so its name has to START with the contract's name. Anything after
+# (a provenance tag like "— his model") is free.
+_GROUP_NAMES = {
+    1: "confirmation table",
+    2: "market structure",
+    3: "what trades",
+    4: "what arms it",
+    5: "entry",
+    6: "stop & targets",
+    7: "filters",
+    8: "chart annotations",
+    9: "drawing: fibs",
+    10: "drawing: sessions",
+    11: "drawing: liquidity",
+    12: "debug",
+}
+_GROUPS = set(_GROUP_NAMES)
+
+# 🔴 Group 8 must carry SOS Fade's own annotation settings, by their panel LABEL and DEFAULT.
+# Presence of a box or a hex proved a layer existed, and three files passed while their panels
+# held half the controls, a different breakeven band and every annotation switched off by
+# default (2026-09-30 audit). (label pattern, required default or None, what it is)
+_G8_INPUTS = [
+    (r"Show entry confluence label", "true", "entry label toggle"),
+    (r"keep labels for which results", '"All"', "which-results label filter"),
+    (r"label distance from price \(ATR\)", "6", "label distance"),
+    (r"Show position box \(result\)", "true", "position box toggle"),
+    (r"Label the (TP|target) bands?", "true", "TP band tags"),
+    (r"Breakeven band \(R\)", "0.15", "breakeven band"),
+    (r"Mark blocked trades on chart \(pink\)", "true", "blocked tag toggle"),
+    (r"Show missed setups", "true", "missed-setup callout toggle"),
+    (r"Which misses to draw", None, "missed-setup filter"),
+    (r"Only draw debug callouts from the last N days", "3", "missed-setup day limit"),
+]
+_BLOCK_PINK = "#FF2E9A"
 
 # (label, at least one of these patterns must appear)
 _RULES = [
@@ -95,6 +137,31 @@ def _check(path: Path) -> list:
         fails.append(f"group constant(s) that are not numbered: {unnumbered[:4]}")
     if groups - _GROUPS:
         fails.append(f"input group number(s) not in the contract: {sorted(groups - _GROUPS)}")
+    for const, num in consts.items():
+        name = re.search(rf'\b{const}\s*=\s*"\d+\s*·\s*([^"]*)"', src).group(1).strip().lower()
+        want = _GROUP_NAMES.get(int(num))
+        if want and not name.startswith(want):
+            fails.append(f'group {num} is "{name}" — the contract says "{want}"')
+
+    # Each input call with the text up to its group. A wrapped call is read to its next few lines.
+    g8 = next((c for c, n in consts.items() if n == "8"), None)
+    lines = src.splitlines()
+    inputs = []
+    for i, ln in enumerate(lines):
+        m = re.search(r'input\.\w+\(\s*([^,]+?)\s*,\s*"([^"]*)"', ln)
+        if m:
+            inputs.append((m.group(1), m.group(2), " ".join(lines[i : i + 4])))
+    for pat, default, what in _G8_INPUTS:
+        hit = next((x for x in inputs if re.search(pat, x[1])), None)
+        if hit is None:
+            fails.append(f"no {what} setting (label matching '{pat}')")
+            continue
+        if g8 and not re.search(rf"group\s*=\s*{g8}\b", hit[2]):
+            fails.append(f"{what} setting is not in group 8")
+        if default is not None and hit[0] != default:
+            fails.append(f"{what} defaults to {hit[0]} — SOS Fade uses {default}")
+        if what == "which-results label filter" and '"None"' not in hit[2]:
+            fails.append('which-results label filter has no "None" option')
 
     for label, pats in _RULES:
         if not any(re.search(p, src) for p in pats):
@@ -110,6 +177,10 @@ def _check(path: Path) -> list:
     for need, what in ((_WIN, "WIN"), (_LOSS, "LOSS"), (_BE, "BREAKEVEN")):
         if need not in hexes:
             fails.append(f"does not use the standard {what} colour {need}")
+    if _BLOCK_PINK not in hexes:
+        fails.append(f"blocked tag is not the standard pink {_BLOCK_PINK}")
+    if "TRADE BLOCKED" not in src:
+        fails.append('blocked tag does not read "TRADE BLOCKED"')
 
     twin = path.with_name(path.stem + "_export.pine")
     block = _TV / "export_blocks" / path.name
