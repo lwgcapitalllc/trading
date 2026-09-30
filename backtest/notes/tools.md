@@ -505,6 +505,12 @@ CLAUDE.md gets at most one index line.
   effect reversed on the test set. **Two tools, two windows, no VWAP edge.**
   🔴 **The test set is SPENT for opening-range, pre-open-range and VWAP-side ideas.** ⚠ No Pine
   twin, no parity gate — lab findings. No documented baseline moves: new standalone tool.
+- **`tools/blocker_ab_study.py`** (new 2026-09-30) — are the live SOS Fade bot's four entry
+  blockers (final hour, divergence / RSI veto, minimum stop distance, dead-market floor) refusing
+  good trades or bad? One full replay per blocker switched off, `bot_confluence_study.py`'s replay
+  and live config; baseline must reproduce Run 64 (278 trades, +162.1R). **MEASURED 2026-09-30:
+  every arm is worse — keep all four**; the veto is worth 18.5R on one trade. Record: SOS Fade
+  optimization Run 66. No documented baseline moves: new standalone tool.
 - **`tools/direction_filter_study.py`** (new 2026-09-30) — would the JARVIS direction rows
   (`engines/directional_trend/`: weekly/daily bias, 4H/15m structure) as a skip filter have improved
   the live SOS Fade bot, secondary trades especially? Reuses `bot_confluence_study.py`'s replay,

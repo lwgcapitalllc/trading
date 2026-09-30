@@ -6295,3 +6295,30 @@ prints explore-only summaries. The numbers below are the full measurement; they 
   carried by the years the idea was found on.
 - Second sizing lead of this shape to fail its held-back check (2026-09-15, time of day, was first).
 - **The direction rows are closed as a filter or size signal for SOS Fade through Run 65.**
+
+## Run 66 — 2026-09-30: the four entry blockers, each switched off — keep all four
+
+**The ask (Aaron):** are the final-hour rule, the dead-market floor, the divergence / extreme-RSI
+veto and the minimum stop distance blocking good trades or bad ones — should any be loosened?
+**Basis:** `backtest/tools/blocker_ab_study.py`. `sos_fade_demo`'s LIVE config, 2018-09-14 →
+2026-09-29, PU Prime ECN, one position, M15 + the M5 re-entry feed, one full replay per arm so a freed
+slot is counted. Baseline reproduces Run 64 exactly: 278 trades, +162.1R, max DD 11.8R.
+Trades matched by entry minute + side; ± is one standard error of the differing trades' sum.
+
+| Blocker switched off | Blocks in baseline | Added / displaced | Change | P(better) | Max DD |
+|---|---|---|---|---|---|
+| Divergence / RSI veto | 94 | 2 (−2.0R) / 1 (+16.5R) | −18.5 ± 15.5R | 0.00 | 11.8R |
+| Market too quiet | 152 | 30 (−13.3R) / 17 (−6.3R) | −7.0 ± 6.7R | 0.15 | 12.0R |
+| Stop too tight | 9 | 6 (−2.4R) / 0 | −2.4 ± 4.2R | 0.28 | 11.8R |
+| Final hour | 186 | 6 (+1.3R) / 5 (+3.6R) | −2.3 ± 5.9R | 0.34 | **13.6R** |
+
+- **Reject — proven harmful:** dropping the veto. One trade decides it — two losers on 2025-10-20
+  take the slot from the +16.48R short of 2025-10-21 (the same trade Run 14 found the veto holding back).
+- **Reject — not proven:** dropping the dead-market floor (30 added: 4 winners, 18 losers; worse in
+  both halves), the stop floor (5 of 6 added lose) and the final hour (worse in both halves, deeper
+  drawdown).
+- **A block is rarely a lost trade.** 186 final-hour and 94 veto blocks became 6 and 2 extra trades
+  — most blocked setups never come back to the entry price.
+- ⚠ **The dead-market floor's gain is in-sample.** It was tuned on 2020–2026; over 2018–2019 dropping
+  it made about +1.9R. Kept as cheap protection, not as a proven edge.
+- No bot, config or documented baseline moves.
