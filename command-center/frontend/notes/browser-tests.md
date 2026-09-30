@@ -40,9 +40,12 @@ asserting on a formatter or on a locator.
 
 - **`check_period_rebase.mjs`** — the period filter's numeric identities. Needs the backend on
   :8000, so it is run by hand. Detail under *The period filter* above.
-- **`check_trade_geometry.mjs`** — the trade box's two PRICE rules: how far the adverse band
-  reaches, and whether the exit gets a marker. Needs nothing running, so it IS in the gate,
-  as **step 8 of `../../scripts/run_all_tests.sh`** — 25 cases, non-vacuity by mutation with the
+- **`check_trade_geometry.mjs`** — the trade box's PRICE rules: how far the adverse band
+  reaches, whether the exit gets a marker, (since 2026-09-26) the pip readings on the
+  `Best` / `DD` / exit chips, and (since 2026-09-27) which rung is named `TP1` — the nearest to
+  the entry, not the first in the strategy's ladder (only when every rung is ahead of the entry).
+  Needs nothing running, so it IS in the gate,
+  as **step 8 of `../../scripts/run_all_tests.sh`** — 43 cases, non-vacuity by mutation with the
   map RUN rather than reasoned. **The rules and why each exists live in
   `src/components/ChartPanel/CLAUDE.md`; do not restate them here.**
 

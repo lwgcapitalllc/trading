@@ -109,7 +109,8 @@ the stack's `mode` and returns a `basis` naming which book produced the numbers:
 | `screen` | the stack is a screen | every leg had its own full account, so any subset is honestly additive |
 | `shared` | every leg on | the shared replay, exactly as it ran |
 | `solo` | one leg on, and it has a stored control | that leg's SOLO replay — genuinely *if the others never existed* |
-| `unmeasured` | anything else | nobody replayed it, so there is nothing to show |
+| `combo` | 2+ legs on, short of all (since 2026-09-27) | that mix's OWN shared replay — `useStackCombo` |
+| `unmeasured` | a mix whose replay is not stored yet, or cannot exist | the replay's progress, or why not |
 
 🔴 **Before this, a subset was composed from the SHARED trades**, which answers *what did this leg
 contribute to an account the others built* and reads as *what this leg made*. Measured on
@@ -139,6 +140,23 @@ trade risks $16,925,791 of a balance SOS Fade grew rather than $3,102 of its own
   model has dropped while it sat on disk. See `../backend/CLAUDE.md`.
 - ⚠ **A shared stack replayed before 2026-08-10 has no control book**, so it lands on `unmeasured`
   rather than inventing one. `backend/scripts/backfill_stack_solo.py` re-derives it.
+
+## Any mix of strategies can be switched on — each mix is REPLAYED (2026-09-27)
+
+Aaron: *"I should be able to toggle as many strategies off and see any combination ... I just need
+to have at minimum 1 on."* The `unmeasured` refusal above answered every two-of-three with *no
+numbers*. It is now the `combo` basis: the page asks `GET /backtests/stacks/{id}/combos?ids=…`, and
+a mix that is not stored is POSTed, which queues its replay first in line on the backend
+(`../backend/notes/stacks.md` → *Any mix of a shared stack's legs*). `UnmeasuredCard` shows the
+replay's progress meanwhile, and the refusal or failure if there is one.
+
+- 🔴 **Still never composed from the full book** — the rule above stands; the mix is its own replay.
+- ⚠ **The per-leg R rows read the book ON SCREEN (`bookOf`)**, not always the full shared one. The
+  cap can move R (SOS Fade 171.57R in all three, 172.65R alone), so a row must match its curve.
+- ⚠ **`useStackCombo` never re-queues a FAILED mix on its own** — only `useRetryStackCombo` (the
+  card's *Try again*) does, or a mix that always fails would replay on every window focus.
+- ⚠ **A new stack replays every mix of up to five legs as soon as it finishes**, so its toggles are
+  instant; an older stack replays each mix the first time it is switched to.
 
 ## A loss-recovery leg is a TICK BOX ON ITS PARENT, never a row in the picker (2026-08-21)
 

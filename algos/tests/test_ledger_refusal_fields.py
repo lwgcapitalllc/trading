@@ -111,7 +111,8 @@ def test_the_extreme_legs_refusal_is_WRITTEN_not_raised(tmp_path):
     assert row["reasons"] == [BLOCK_TEXT[BLK_NEWS]]
     # Fields this strategy does not carry are the record's one null — never invented.
     assert row["sos_bar"] is None
-    assert row["labels"] is None
+    # Its one reason doubles as its label since 2026-09-30 (the shared refusal shape).
+    assert row["labels"] == [BLOCK_TEXT[BLK_NEWS]]
 
 
 def test_the_bar_that_carried_an_extreme_leg_refusal_reaches_its_broker_check(tmp_path):
@@ -136,10 +137,50 @@ def test_the_bar_that_carried_an_extreme_leg_refusal_reaches_its_broker_check(tm
     assert [row["kind"] for row in _rows(tmp_path)] == ["bar", "blocked"]
 
 
+# ── the bracket, so a refusal can be graded in R (added 2026-09-30) ─────────
+
+
+def test_the_extreme_legs_refusal_records_its_stop_and_target(tmp_path):
+    """Watched RED 2026-09-30 before the three fields were written."""
+    Ledger(tmp_path, "extreme_leg_demo").blocked(_extreme_refusal())
+    (row,) = _rows(tmp_path)
+    assert (row["stop"], row["tp1"], row["tp2"]) == (4290.0, 4330.0, None)
+
+
+def test_an_unpriced_stop_is_recorded_as_None_never_NaN(tmp_path):
+    """A refusal made before the ladder priced a stop carries NaN. NaN is neither a price nor an
+    honest 'could not price' (rule 1), and not valid JSON. Watched RED with `math.isfinite`
+    dropped from the ledger's price reader."""
+    nan = float("nan")
+    b = ExtremeBlocked(5003, _T, -1, BLOCK_TEXT[BLK_NEWS], BLK_NEWS, 4300.0, nan, nan)
+    Ledger(tmp_path, "extreme_leg_demo").blocked(b)
+    raw = next(tmp_path.glob("decisions-*.jsonl")).read_text(encoding="utf-8")
+    assert "NaN" not in raw
+    (row,) = _rows(tmp_path)
+    assert row["stop"] is None and row["tp1"] is None
+
+
+def test_sos_fades_refusal_records_its_bracket(tmp_path):
+    b = BlockedSetup(
+        dir=1,
+        index=10,
+        time_ms=_T,
+        codes=[4],
+        edge=4124.64,
+        sos_bar=9,
+        stop=4118.22,
+        tp1=4140.0,
+        tp2=4155.0,
+    )
+    Ledger(tmp_path, "sos_fade_demo").blocked(b)
+    (row,) = _rows(tmp_path)
+    assert (row["stop"], row["tp1"], row["tp2"]) == (4118.22, 4140.0, 4155.0)
+
+
 # ── the shape that already worked, which must not move by a byte ─────────────
 
 
-def test_sos_fades_refusal_row_does_not_move_by_a_byte(tmp_path):
+def test_sos_fades_refusal_row_keeps_its_fields_and_order(tmp_path):
     b = BlockedSetup(dir=-1, index=10, time_ms=_T, codes=[3, 7], edge=4321.5, sos_bar=9)
     Ledger(tmp_path, "sos_fade_demo").blocked(b)
     (row,) = _rows(tmp_path)
@@ -148,6 +189,10 @@ def test_sos_fades_refusal_row_does_not_move_by_a_byte(tmp_path):
         ("dir", -1),
         ("bar_time", _T),
         ("edge", 4321.5),
+        # Added 2026-09-30 — the bracket, None here because this refusal carries none.
+        ("stop", None),
+        ("tp1", None),
+        ("tp2", None),
         ("sos_bar", 9),
         ("codes", [3, 7]),
         ("labels", b.labels),

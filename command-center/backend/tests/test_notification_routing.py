@@ -214,3 +214,56 @@ def test_a_stress_test_sends_nothing():
                 assert not any(a.name.endswith("notify") for a in node.names), (
                     f"{path.name}:{node.lineno} imports the Telegram notifier"
                 )
+
+
+# ── the send log, mirrored from algos/shared/notify_log.py (2026-09-26) ──────────────────────
+
+
+def test_every_send_is_written_to_the_send_log_in_the_algos_format(monkeypatch, tmp_path):
+    """The Command Center's PROMOTED / STARTING / STOPPED messages reach the same log format the
+    box writes, so one reader reads either machine's. A failed send is logged DROPPED with why.
+
+    ⚠ Proven by mutation (2026-09-26): deleting the `log_send` call inside `_sent` turns this red."""
+    import json as _json
+
+    monkeypatch.setenv("LWG_NOTIFY_DIR", str(tmp_path / "log"))
+    _creds(monkeypatch, telegram_token="T", telegram_health_chat="-100health")
+
+    class _Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_a):
+            return False
+
+        def read(self):
+            return _json.dumps({"ok": True, "result": {"message_id": 31}}).encode()
+
+    monkeypatch.setattr(notify.urllib.request, "urlopen", lambda req, timeout=None: _Resp())
+    text = "📦 PROMOTED · SOS Fade · LIVE\nv1 → v2 · deployed\nRestarting it now."
+    assert notify.send_telegram_id(text, notify.HEALTH, bot="sos_fade_demo", account=34957946) == 31
+
+    def _boom(req, timeout=None):
+        raise OSError("network down")
+
+    monkeypatch.setattr(notify.urllib.request, "urlopen", _boom)
+    assert notify.send_telegram_id(text, notify.HEALTH) is None
+
+    (path,) = sorted((tmp_path / "log").glob("*.jsonl"))
+    sent, dropped = [_json.loads(x) for x in path.read_text(encoding="utf-8").splitlines()]
+    assert (sent["outcome"], sent["label"], sent["subject"]) == (
+        "sent",
+        "PROMOTED",
+        "SOS Fade · LIVE",
+    )
+    assert (sent["message_id"], sent["bot"], sent["account"]) == (31, "sos_fade_demo", 34957946)
+    assert dropped["outcome"] == "dropped" and "network down" in dropped["reason"]
+    # The fields the algos side writes on every line (`notify_log.record`) — read from its source,
+    # never restated, so a rename there fails here.
+    # ⚠ Off THIS checkout, not `cfg.MONOREPO_ROOT`: config.json names one machine's main clone, so
+    # a worktree would read a different tree from the one under test.
+    here = Path(__file__).resolve().parents[3]
+    src = (here / "algos" / "shared" / "notify_log.py").read_text(encoding="utf-8")
+    for field in ("ts", "kind", "outcome", "label", "subject", "bot", "account", "room"):
+        assert f'"{field}"' in src, f"the algos log no longer writes {field!r}"
+        assert field in sent, f"the Command Center log does not write {field!r}"

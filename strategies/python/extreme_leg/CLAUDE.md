@@ -118,6 +118,9 @@ moving those numbers.
   and the reason a filter pays here is that refusing a setup genuinely buys the next one.
 - Fork `engines/liquidity/` or `engines/sessions/` to make this side agree with a Pine. When they
   disagree, one of them is wrong and the gate says which — see the table above for how that went.
+- Read `self._cfg.point_value` for a money figure. Read `self._fx.at(<the moment it happened>)` —
+  on a non-dollar symbol the constant is a one-day snapshot of an exchange rate. Sizing divides
+  by it too (it did not until 2026-09-27). See `backtest/notes/broker-data.md` → *WIRED*.
 - Add a field to `ExtremeLegConfig` that has no Pine input behind it. No `cfg_*` column can carry
   it, so the gate would leave it at this side's default and never see a disagreement about it.
 
@@ -270,6 +273,7 @@ Most-cited code: `extreme_leg_strategy`.
 - What the CHART draws: entry, DD, best, exit (2026-09-02)
 - It can be a LIVE bot now — the seams, and why they cost the replay nothing (2026-09-03)
 - 🔴 The exits are gated on bar TIME, never bar NUMBER — a re-warm renumbers bars (the 2026-09-24 halt)
+- 🔴 Its refusals reached the lab's chart at time 0, price 0, no reason — `Blocked` now carries the shared refusal names (2026-09-30)
 
 ### `notes/lab_settings_history.md` — A lab setting that was probed but never read
 
@@ -281,3 +285,5 @@ Most-cited code: `extreme_leg.meta.json`.
 **Read before touching:** `setups.py`, what this bot sends to the signals room, or its setup key.
 
 - One thread per armed sweep, announced on the 5m shift — measured, and proven not to move a trade (2026-09-16)
+
+⚠ **2026-09-26: the live contract gained `add_exit_price`** (where the scale-in lots bank). This bot never adds, so it answers None and nothing it trades moved. Detail: `algos/notes/account-anchor-scale-in-and-targets.md`.

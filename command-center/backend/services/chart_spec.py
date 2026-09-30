@@ -46,6 +46,7 @@ from services.fvg_overlays import GROUP_FVG, build_fvg_overlays
 from services.liquidity_overlays import GROUPS as GROUPS_LIQ
 from services.liquidity_overlays import build_liquidity_overlays
 from services.ob_overlays import GROUP_OB, build_ob_overlays
+from services.pip_size import pip_size
 from services.structure_overlays import (
     GROUP_INTERNAL,
     GROUP_INTERNAL_HISTORIC,
@@ -471,9 +472,35 @@ def _build_trades(
         # trail taking the whole position gives one leg per still-open bracket, all at one
         # price. They are one line on the chart, so they are one chip: drawing the second
         # stacks a duplicate 15px below and reads as two separate fills.
+        #
+        # 🔴 A SCALE-IN LOT BANKING ON ITS OWN IS NOT THE TRADE'S EXIT (2026-09-28). The strategy
+        # records that fill as a leg too, so a trade with three adds drew FOUR `Exit` chips across
+        # its box and read as exiting four times (Aaron, run 12bd4b64ae2e, the long of
+        # 2020-07-16). Each lot's close is already drawn by the `Scale-in detail` layer in its own
+        # box, so here a leg matching a lot's recorded close — same bar, price and reason — is
+        # left out. ⚠ The LAST leg is never dropped: a stop or force-close takes the adds WITH the
+        # base in one leg carrying the same bar/price/reason as each lot, and that leg is the
+        # trade's exit. A run stored before lots recorded their close matches nothing and draws as
+        # it always did.
+        lot_closes = {
+            (int(a["exit_ms"]), round(float(a["exit_price"]), 5), str(a.get("exit_reason") or ""))
+            for a in (p.get("adds") or [])
+            if isinstance(a, dict)
+            and isinstance(a.get("exit_ms"), (int, float))
+            and isinstance(a.get("exit_price"), (int, float))
+        }
+        raw_legs = [lg for lg in p.get("legs") or [] if isinstance(lg.get("price"), (int, float))]
         profit_legs: list = []
-        for lg in p.get("legs") or []:
-            if not isinstance(lg.get("price"), (int, float)):
+        for j, lg in enumerate(raw_legs):
+            if (
+                j < len(raw_legs) - 1
+                and (
+                    int(lg.get("ms") or 0),
+                    round(float(lg["price"]), 5),
+                    str(lg.get("reason") or ""),
+                )
+                in lot_closes
+            ):
                 continue
             lp = float(lg["price"])
             leg = {
@@ -908,6 +935,22 @@ def _build_structure(
     return overlays, indicators
 
 
+def served_chart_spec_bytes(run_id: str) -> Optional[bytes]:
+    """The cached spec as the route serves it: the bytes on disk plus the instrument's pip.
+
+    ⚠ The pip is APPENDED to the bytes rather than parsed in, because not parsing is the whole
+    point of the byte path (see `cached_chart_spec_bytes`). It is stamped at serve time for the same
+    reason `_with_pip_size` is: a cache built before the field existed must still carry it."""
+    raw = cached_chart_spec_bytes(run_id)
+    if raw is None:
+        return None
+    row = lab_db.get_run(run_id)
+    pip = pip_size(row["instrument"]) if row else None
+    body = raw.rstrip()[:-1].rstrip()
+    sep = b"" if body.endswith(b"{") else b","
+    return body + sep + b'"pipSize":' + json.dumps(pip).encode() + b"}"
+
+
 def cached_chart_spec_bytes(run_id: str) -> Optional[bytes]:
     """The cached ChartSpec as the JSON BYTES on disk, or None if there is no usable cache.
 
@@ -965,10 +1008,20 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
         spec_path = run_dir / "chart_spec.json"
         if spec_path.exists() and not refresh:
             try:
-                return json.loads(spec_path.read_text())
+                return _with_pip_size(json.loads(spec_path.read_text()))
             except (ValueError, OSError):
                 pass  # rebuild on a corrupt cache
-        return _build_chart_spec_locked(run_id, row, run_dir, spec_path)
+        return _with_pip_size(_build_chart_spec_locked(run_id, row, run_dir, spec_path))
+
+
+def _with_pip_size(spec: dict) -> dict:
+    """Stamp the instrument's pip on the spec as it is SERVED, never into the cache.
+
+    ⚠ Stamped here rather than built in because a cached spec is never rebuilt on its own: a field
+    added at build time would reach only runs built after it, and every older run's chart would
+    silently lack its pip readings. `None` = no settled pip convention — see `pip_size`."""
+    spec["pipSize"] = pip_size(spec.get("instrument", ""))
+    return spec
 
 
 _RUN_LOCKS: dict[str, threading.Lock] = {}
@@ -1347,6 +1400,7 @@ def build_stack_chart_spec(stack_id: str, refresh: bool = False) -> Optional[dic
 
     return {
         "instrument": src["instrument"],
+        "pipSize": pip_size(src["instrument"]),
         "baseTimeframe": src["baseTimeframe"],
         "runTimeframe": src.get("runTimeframe", src["baseTimeframe"]),
         "historyStartMs": src.get("historyStartMs"),

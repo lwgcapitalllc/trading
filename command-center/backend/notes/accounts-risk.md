@@ -942,3 +942,12 @@ both tests were fixed. The import-path test was watched red against the unfixed 
   every 4s and the bars arrived in ~20s on both real accounts. A pending answer is never cached. A
   failed background load is remembered for 60s with its reason, so the page stops waiting and says
   why instead of restarting the job on every poll.
+
+---
+
+## The account's chart carries the pip size too (2026-09-26)
+
+`chart.pipSize` off `services/pip_size.py`, the same field the backtest chart carries, so the
+optional pip readings on `Best` / `DD` / exit work on a live account's chart as well. It was
+missing when the feature first shipped. Test: `test_the_account_chart_carries_the_pip_size`,
+watched red with the line removed.

@@ -229,6 +229,17 @@ def test_a_setup_with_no_zone_yet_does_not_print_an_empty_price_line():
     assert "Zone" not in out, out
 
 
+def test_a_market_entry_setup_prints_its_stop_and_target_without_a_zone():
+    """Realign enters at market, so it never has a zone — and the price line hung off the zone,
+    so its root printed no prices at all. Went RED on that code before the fix."""
+    out = alerts.format_watching(
+        snap(confluences=conf(False), zone=None, stop=3297.7, targets=(3331.2,))
+    )
+    assert out.splitlines()[-1] == "Stop 3,297.70 · TP1 3,331.20", out
+    no_stop = alerts.format_watching(snap(confluences=conf(False), zone=None, targets=(3331.2,)))
+    assert no_stop.splitlines()[-1] == "TP1 3,331.20", no_stop
+
+
 def test_no_message_ever_renders_a_blank_or_whitespace_only_line():
     """Telegram collapses nothing; a blank line is visible padding in a channel whose whole
     complaint was verbosity. `alert()` drops empties, and this asserts every formatter actually

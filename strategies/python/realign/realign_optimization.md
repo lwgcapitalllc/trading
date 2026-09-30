@@ -1000,6 +1000,237 @@ it off stops being sweepable**, which is the one comparison anyone would want. F
 **Nothing in the inverse measurement above changes** — it was always run on shipped defaults, and
 the REAL arm still matches the control exactly.
 
+### Run 15 — skip a trade whose target is already behind the entry (`realign_min_rr = 0.0`) (2026-09-27)
+
+**Question:** the Pine refuses a setup whose target is not beyond the entry (`tgtLong > close`);
+this Python takes it unless `realign_min_rr` is set. Is the skip worth adopting?
+
+**Basis:** a FULL replay of lab run `f3a846ce6018`'s settings and costs (PU Prime `XAUUSD.p` 5m,
+2020-01-01 → 2026-09-25, the last cached day), charged, one position slot, split 2023-05-01. Both
+rows replayed end to end — never rows dropped from a finished list (the minimum-stop guard's
+cheap estimate once got its sign wrong that way).
+
+| `realign_min_rr` | trades | sum R | avg R | PF | maxDD R | 1st half | 2nd half | ex-best |
+|---|---|---|---|---|---|---|---|---|
+| **None (shipped — takes it)** | 115 | **+88.53** | +0.770 | 2.99 | 6.07 | +39.15 | +49.38 | +51.91 |
+| 0.0 (skips it, = the Pine guard) | 107 | +85.57 | +0.800 | 3.02 | 6.07 | +38.75 | +46.82 | +48.95 |
+
+- **It removes exactly the 8 target-behind trades and adds none** — the freed slot was taken by
+  nothing, so this is the trades' own worth: **−2.96R**.
+- **Worse in BOTH halves and without the best trade; drawdown unchanged.** Better per trade (+0.800
+  against +0.770) only because it drops eight trades that were net winners.
+- **Verdict: the default stays `None`.** The Pine/Python difference stays open for the parity gate
+  to settle; on this book the Python's behaviour is the better one.
+
+Script (run from the repo root with `command-center/backend/.venv/bin/python`):
+`/private/tmp/claude-501/-Users-alwg-trading/3619773e-ac87-4dae-9496-7625f1822f5f/scratchpad/skip/skip.py`
+— ⚠ a scratch path; it replays the stored run's params through `services.python_runner`'s own
+config, cost and lot-ceiling helpers, the same way the lab does.
+
+### Run 16 — the early 1m trigger (`realign_early_1m`) — FAILS, ships OFF (2026-09-27)
+
+**Idea (Aaron):** inside the window the 5m trigger waits in (after the 5m has gone counter and set
+the dip extreme), enter at the close of a 1m bar that completes a trade-way shift of structure
+then a trade-way break; any counter 1m break resets it. Stop = the dip extreme known then + the
+same 20 ticks. Every gate unchanged; the 5m trigger still fires if no 1m entry was made. Built in
+`early.py` / `dual.py`; canonical structure engine on 1m at swing length 10.
+🔴 **The code is NOT on `main`** — it is parked on branch `research/realign-early-1m` (commit
+`ed51728c`, 16 tests, 17 mutations watched red) so the result can be re-run. Never merge it.
+
+**Pre-declared, before any row was read:** basis = lab run `f3a846ce6018`'s params and costs (PU
+Prime `XAUUSD.p`, $10k, charged, one slot, full exit ladder), fitting window 2020-01-01 →
+2025-08-05, split 2023-05-01. PASS only if early-on beats early-off on total R AND both halves AND
+R without the best trade, with max drawdown no worse than +10%. Held-back 2025-08-06 → 2026-09-25
+touched only on a PASS.
+
+✅ **Control:** switch off, 2020-01-01 → 2026-09-25 — 115 trades, +88.53R, the same entries and the
+same sum R as the stored lab run; the two-stream replay with the switch off is identical trade for
+trade.
+
+| row (fitting window) | trades | sum R | avg R | PF | maxDD R | 1st half | 2nd half | ex-best |
+|---|---|---|---|---|---|---|---|---|
+| **early off, min_rr None (shipped)** | 97 | **+80.01** | +0.825 | 3.27 | **5.07** | +39.15 | +40.86 | +43.39 |
+| early ON, min_rr None | 116 | +78.15 | +0.674 | 2.51 | 6.30 | +36.12 | +42.03 | +41.53 |
+| early off, min_rr 0.0 | 90 | +76.88 | +0.854 | 3.30 | 5.07 | +38.75 | +38.13 | +40.26 |
+| early ON, min_rr 0.0 | 109 | +74.04 | +0.679 | 2.51 | 6.30 | +36.26 | +37.78 | +37.42 |
+
+- 🔴 **FAIL on both rows**: lower total, lower first half, lower ex-best, drawdown +24%. Only the
+  second half at min_rr None improves (+1.17R). **The held-back window was not touched.**
+- **The mechanism is the pre-study's, now through the real ladder:** 45 setups entered EARLIER on
+  the 1m (26 better, 19 worse) for **+14.83R** — the better price is real. But **19 NEW trades**
+  from setups the 5m never triggered: 1 winner, 16 full stops, **−16.69R**. No 5m trade was lost.
+- The row at min_rr 0.0 says the same (41 earlier +14.34R, 19 new −17.19R).
+- **The 2026-09-18 long** (5m entry 4377.69): early-on enters 16:11 at **4362.10**, stop 19.52
+  away (against 35.11). The target 4367.52 is then IN FRONT of it, halfway rung hit inside the
+  same 5m bar, stop lifted to breakeven and taken the next bar: **−0.02R** (the shipped 5m entry
+  booked −0.17R). Read off a full-window replay run for this one trade; no held-back total computed.
+
+⚠ **Lab finding only — there is no Pine counterpart.** ⚠ The early entry's 5m bar is managed on
+its post-entry minutes only; a 1m trigger inside the 5m bar that publishes a 15m close still sees
+the pre-close setup (the 5m path's own publication delay). Neither flatters the ON row.
+⚠ **The one variant this leaves open** is "early entries only on setups the 5m then confirms" —
+that is not tradeable as stated (it needs the future 5m trigger), so it is not a lead.
+
+Commands (scratch, reproducible): `scratchpad/early_build/launch.sh` runs every row through
+`early_replay.py` (worktree code, main checkout's lab DB and bar cache, read-only);
+`report.py fit | repro | trade` scores them. Full path:
+`/private/tmp/claude-501/-Users-alwg-trading/3619773e-ac87-4dae-9496-7625f1822f5f/scratchpad/early_build/`.
+
+### Run 17 — the 1m entry on ONLY the 8 target-behind trades, and cutting them — both rejected (2026-09-27)
+
+**Question (Aaron):** Run 16 put the 1m entry on every setup. Put it on only the 8 setups Run 15
+found with the target already behind the 5m entry — does an earlier entry save them? And judged
+on drawdown and per-trade return rather than profit, should they be cut altogether?
+
+**Basis:** full window 2020-01-01 → 2026-09-25, Run 16's saved rows (`full_off_dual`,
+`full_on_none`) plus one new row at min_rr 0.0 to name the 8. The 8 are swapped for their early-ON
+versions; no swapped trade overlaps another, so the one slot is not disturbed. ⚠ **This is an
+UPPER BOUND, not a tradeable rule** — a setup is known to be target-behind only when the 5m fires,
+and every 1m entry that changed came before that.
+
+| setup (armed) | dir | 5m R | 1m version |
+|---|---|---|---|
+| 2020-06-02 | short | −0.81 | 1m −1.19 |
+| 2022-04-19 | short | +1.63 | no 1m signal, same |
+| 2022-10-04 | long | −0.42 | 1m −0.41 |
+| 2024-11-19 | long | +3.17 | 1m +5.00 |
+| 2025-07-10 | long | +0.24 | no 1m signal, same |
+| 2025-07-15 | long | −0.03 | 1m −1.01 (entered 11h early, full stop) |
+| 2025-07-24 | short | −0.65 | no 1m signal, same |
+| 2026-09-16 (held-back) | long | −0.17 | 1m −0.02 |
+
+| row | trades | sum R | avg R | PF | maxDD R | 1st half | 2nd half | ex-best | @5% risk | maxDD % | return / DD |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| **shipped** | 115 | **+88.53** | +0.770 | 2.99 | 6.07 | +39.15 | +49.38 | +51.91 | x18.7 | 26.7% | **66.0** |
+| 1m on the 8 only | 115 | +89.17 | +0.775 | 2.95 | 6.07 | +38.78 | +50.39 | +52.55 | — | — | — |
+| cut the 8 | 107 | +85.57 | +0.800 | 3.02 | 6.07 | +38.75 | +46.82 | +48.95 | x16.4 | 26.7% | 57.4 |
+
+- **1m on the 8: +0.64R, all of it one trade** (2024-11-19, +1.83R); without it −1.19R. Lower
+  first half and PF, and it is the hindsight ceiling. Rejected.
+- **Cutting the 8: drawdown identical** (6.07R, 26.7% at 5% risk, longest losing run 7 either
+  way). Avg R rises +0.030 only because the 8 averaged +0.37R, below the book's +0.77R but still
+  positive; the total falls 2.96R and compounded return 18.7x → 16.4x for the same pain. Avg
+  R / stdev unchanged (0.183 vs 0.184). Rejected — **the default stays `None`**.
+
+Scripts: `oracle8.py` and `cut.py` beside Run 16's in the same scratch folder.
+
+### Run 18 — how wide can the stop buffer go before it costs? (`realign_sl_buf_tk`) — stays 20 (2026-09-27)
+
+**Question (Aaron):** the stop sits a buffer beyond the counter-move extreme. Stretch that buffer
+as far as it goes before it hurts profit.
+
+**Basis:** shipped main-branch Realign (momentum filter on, 5% risk), PU Prime `XAUUSD.p` 5m.
+Fitting window 2018-09-14 → 2025-08-05; held back 2025-08-06 → 2026-09-25, checked once.
+**Rule declared before the run:** the widest buffer whose total R, return per drawdown and
+total-without-the-best-trade all stay at or above the 20-tick run. Paired difference by entry day
+and direction, bootstrap chance of being better.
+
+| buffer | trades | W/L/S | sum R | PF | maxDD R | 1st half | 2nd half | ex-best | @5% | maxDD % | ret/DD | vs 20 | P(better) |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **20 ($0.20, shipped)** | 109 | 35/46/28 | **+81.59** | 3.11 | 5.77 | +34.23 | +47.36 | +44.97 | 14.9x | 25.6 | 54.4 | — | — |
+| 50 | 109 | 36/45/28 | +83.01 | 3.24 | 5.35 | +31.72 | +51.30 | +48.55 | 17.3x | 23.9 | 68.3 | +1.43 ± 6.98 | 0.55 |
+| 75 | 109 | 36/45/28 | +78.86 | 3.14 | 5.26 | +29.64 | +49.22 | +46.01 | 15.3x | 23.6 | 60.6 | −2.73 ± 7.76 | 0.34 |
+| 100 | 109 | 36/45/28 | +75.04 | 3.04 | 5.18 | +27.76 | +47.28 | +43.66 | 13.6x | 23.3 | 54.2 | −6.54 ± 8.74 | 0.21 |
+| 150 | 109 | 36/44/29 | +68.51 | 2.89 | 5.06 | +24.50 | +44.01 | +39.70 | 11.2x | 22.9 | 44.4 | −13.08 ± 10.86 | 0.10 |
+| 200 | 109 | 36/43/30 | +62.51 | 2.73 | 5.06 | +21.76 | +40.75 | +35.87 | 9.2x | 23.4 | 35.0 | −19.08 ± 12.90 | 0.05 |
+| 300 | 109 | 35/42/32 | +53.93 | 2.56 | 5.05 | +18.44 | +35.49 | +30.80 | 7.1x | 22.8 | 26.5 | −27.66 ± 16.48 | 0.02 |
+| 500 | 109 | 36/38/35 | +43.47 | 2.41 | 4.93 | +13.29 | +30.18 | +25.16 | 5.2x | 22.9 | 18.3 | −38.12 ± 21.75 | 0.01 |
+| 750 | 109 | 37/31/41 | +38.39 | 2.62 | 4.47 | +9.77 | +28.62 | +23.87 | 4.7x | 20.9 | 17.7 | −43.19 ± 26.17 | 0.02 |
+| 1000 | 109 | 36/30/43 | +32.42 | 2.54 | 4.84 | +7.52 | +24.90 | +20.38 | 3.8x | 22.3 | 12.7 | −49.17 ± 29.04 | 0.02 |
+
+Held back (14 trades, median stop $32): 20 → +0.72R, 50 → +0.58R, 75 → +0.47R, 100 → +0.37R.
+
+- **50 ticks is the widest that passes the rule, and its gain is noise** (+1.4R ± 7.0, 55%), with
+  a LOWER first half and a slightly worse held-back window. **Reject — not proven.**
+- **Past ~75 ticks it costs; from 200 it is Reject — proven harmful** (≤ 5% chance better).
+- **Why:** the same setups fire either way. A wider stop only shrinks the position, so every
+  winner pays fewer R and more trades end as scratches; losses barely fall. Drawdown improves
+  only 5.8R → ~5R however wide it goes.
+- ⚠ The buffer is fixed dollars while gold went $1,200 → $4,300: median stop $9.37 in the fit
+  window vs $32 held back, so the buffer matters less every year. A volatility-scaled buffer is
+  the only open follow-up here, and nothing above suggests it would help.
+
+Scripts: `run.py`, `sweep.sh`, `score.py` in the session scratch folder `full2018/`.
+
+### Run 19 — the breakeven buffer as a share of the trade's risk — ADOPTED at 10% (2026-09-27)
+
+**Question (Aaron):** cover the cost of scratches — find the safest, widest breakeven buffer. This
+is the buffer the stop moves to at TP1, not Run 18's stop buffer, which never touches a scratch.
+
+**Starting point:** scratches already covered their costs at the shipped 30 ticks — 28 scratches
+averaging +0.016R each, 6 of them small losses.
+
+**Basis:** as Run 18 (fit 2018-09-14 → 2025-08-05, held back 2025-08-06 → 2026-09-25, paired
+against the shipped 30-tick run, same pre-declared rule). Three shapes: fixed ticks, a fraction
+of the trade's frozen entry risk, and that fraction floored at the trade's accrued cost.
+
+| buffer | W/L/S | sum R | PF | maxDD R | 1st half | 2nd half | ex-best | @5% | maxDD % | ret/DD | scratch R | vs 30 tk | P |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **30 ticks (was shipped)** | 35/46/28 | +81.59 | 3.11 | 5.77 | +34.23 | +47.36 | +44.97 | 14.9x | 25.6 | 54.4 | +0.44 | — | — |
+| 60 ticks | 34/44/31 | +79.90 | 3.08 | 7.13 | +31.79 | +48.10 | +43.28 | 13.8x | 30.6 | 41.8 | +0.76 | −1.69 ± 2.24 | 0.28 |
+| 100 ticks | 38/43/28 | +81.38 | 3.14 | 6.66 | +32.61 | +48.77 | +44.76 | 14.8x | 28.9 | 47.8 | +1.13 | −0.21 ± 2.23 | 0.52 |
+| 150 ticks | 43/44/22 | +78.51 | 3.06 | 6.45 | +31.08 | +47.43 | +41.89 | 13.0x | 28.2 | 42.5 | +1.04 | −3.07 ± 3.39 | 0.18 |
+| 200 ticks | 48/43/18 | +77.51 | 3.04 | 6.25 | +29.28 | +48.23 | +40.89 | 12.4x | 27.4 | 41.7 | +0.47 | −4.07 ± 4.37 | 0.18 |
+| 300 ticks | 52/43/14 | +80.59 | 3.12 | 5.84 | +30.97 | +49.62 | +43.97 | 14.5x | 26.0 | 51.9 | +0.31 | −1.00 ± 4.32 | 0.44 |
+| 5% of risk | 35/45/29 | +82.14 | 3.14 | 5.75 | +34.24 | +47.90 | +45.52 | 15.3x | 25.5 | 56.1 | +0.74 | +0.55 ± 0.26 | 1.00 |
+| **10% of risk (shipped)** | 35/44/30 | **+82.74** | 3.16 | **5.70** | +34.04 | +48.70 | +46.12 | 15.8x | 25.3 | **58.4** | +1.56 | **+1.15 ± 0.62** | **0.95** |
+| 12.5% of risk | 35/44/30 | +80.37 | 3.10 | 5.68 | +31.29 | +49.08 | +43.75 | 14.2x | 25.2 | 52.2 | +2.04 | −1.22 ± 3.03 | 0.37 |
+| 15% of risk | 35/43/31 | +79.16 | 3.08 | 5.48 | +31.82 | +47.34 | +42.54 | 13.4x | 24.5 | 50.6 | +2.38 | −2.43 ± 3.68 | 0.29 |
+| 17.5% of risk | 51/43/15 | +77.58 | 3.03 | 6.72 | +29.86 | +47.72 | +40.96 | 12.4x | 29.1 | 39.3 | +0.08 | −4.01 ± 4.22 | 0.18 |
+| 20% of risk | 54/43/12 | +78.18 | 3.05 | 6.67 | +30.08 | +48.10 | +41.56 | 12.8x | 28.9 | 40.8 | −0.27 | −3.41 ± 4.21 | 0.22 |
+| 30% of risk | 54/43/12 | +77.90 | 3.05 | 6.48 | +29.69 | +48.21 | +41.28 | 12.7x | 28.3 | 41.3 | +0.10 | −3.69 ± 4.36 | 0.21 |
+| 5% + cost floor | 32/43/34 | +78.43 | 3.07 | 6.68 | +32.09 | +46.34 | +41.81 | 12.9x | 29.0 | 40.9 | +1.25 | −3.16 ± 2.82 | 0.13 |
+| 10% + cost floor | 33/43/33 | +79.66 | 3.10 | 6.63 | +32.47 | +47.18 | +43.04 | 13.7x | 28.8 | 44.0 | +2.31 | −1.93 ± 2.81 | 0.29 |
+
+Held back (14 trades, 3 scratches): 30 ticks +0.72R, 5% +0.84R, **10% +0.99R**, 12.5% +1.07R,
+15% +1.14R — every fraction row +0.13 to +0.43R, no scratch lost.
+
+- **Adopt 10% of risk: +1.15R ± 0.62, P 0.95**, drawdown 5.77R → 5.70R, first half flat
+  (−0.19R), held back +0.28R. The widest row passing the rule on every count.
+- **12.5-15%: Reject — not proven.** Held back likes them, the fit does not (−1.2R to −2.4R ±
+  3-4, first half −2.4R to −2.9R).
+- **17.5% and up: Reject — not proven, drawdown worse (6.5-6.7R).** The buffer turns scratches
+  into wins (W 35 → 54) by stopping runners early.
+- **Fixed ticks above 30 and the cost floor: Reject — not proven**, every one with a WORSE
+  drawdown. A fixed distance is the wrong shape on an instrument that went $1,200 → $4,300.
+- ⚠ **Small, by construction** — about +1R over seven years; scratches were already paying for
+  themselves. The value is that the buffer now scales with the stop.
+
+**Shipped:** `RealignConfig` pins "Fraction of stop" / 0.10; `realign_strategy.pine` gains the
+same three inputs (mode, fraction, cap at 75%) with the same default, and `compare_realign.py`
+decodes the mode from an export (an older export reads as "Ticks"). ⚠ The Pine's fraction branch
+has no export yet, so it is ungated; the four goldens are all "Ticks" and stay PARITY OK.
+Scripts: `sweep_be.sh`, `sweep_be2.sh`, `score_be.py` beside Run 18's.
+
+### Run 20 — a tighter trail once a winner is deep in profit — REJECTED, proven harmful (2026-09-27)
+
+**Question (Aaron, parked since before demo):** once a trade is well in profit, trail it tighter.
+**Tested shape:** once the trade's best excursion reaches N × its entry risk, the runner trail
+anchors on the 5m (chart) frame's confirmed swings instead of the 15m's. Scratch hook on
+`_step_core`, same after-the-step timing as the shipped overwrite; never built into the port.
+
+**Basis:** fit window 2018-09-14 → 2025-08-05, Run 19's shipped defaults (10% breakeven
+cushion), paired against that baseline.
+
+| switch at | sum R | PF | maxDD R | 1st half | 2nd half | ex-best | best trade | ret/DD | vs base | P |
+|---|---|---|---|---|---|---|---|---|---|---|
+| **never (shipped)** | **+82.74** | 3.16 | 5.70 | +34.04 | +48.70 | +46.12 | 36.62 | **58.4** | — | — |
+| always (5m trail) | +40.17 | 2.03 | 5.70 | +14.05 | +26.12 | +24.79 | 15.38 | 14.9 | −42.57 ± 26.65 | 0.04 |
+| 1R | +43.30 | 2.14 | 5.70 | +14.05 | +29.25 | +27.91 | 15.38 | 18.0 | −39.44 ± 26.59 | 0.06 |
+| 2R | +43.08 | 2.13 | 5.70 | +14.05 | +29.03 | +27.70 | 15.38 | 17.8 | −39.66 ± 26.49 | 0.06 |
+| 3R | +45.22 | 2.18 | 5.70 | +13.54 | +31.68 | +29.84 | 15.38 | 19.6 | −37.52 ± 23.99 | 0.04 |
+| 4R | +43.60 | 2.14 | 5.70 | +14.07 | +29.54 | +28.22 | 15.38 | 17.8 | −39.14 ± 22.75 | 0.02 |
+| 6R | +46.69 | 2.22 | 5.70 | +12.81 | +33.88 | +31.30 | 15.38 | 20.3 | −36.05 ± 17.53 | 0.00 |
+| 10R | +53.76 | 2.41 | 5.70 | +12.81 | +40.96 | +38.38 | 15.38 | 27.7 | −28.98 ± 16.69 | 0.04 |
+
+- **Reject — proven harmful at every threshold** (P ≤ 0.06). Even at 10R, touching only 3
+  trades, it gives back 29R: the +36.6R winner becomes +15.4R every time.
+- **Drawdown does not move (5.70R in every row)** — the tighter trail buys no smoothness.
+- The 15m trail IS the edge on this strategy (Run 13 said the same of the % ratchet). Not built,
+  so there is nothing to reuse for other bots.
+
+Scripts: `sweep_tr.sh` and the `tight_r=` hook in `run.py`, beside Run 18's.
+
 ---
 
 # Flat before the close — Aaron's no-weekend-holds switch (2026-09-19)

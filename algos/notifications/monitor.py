@@ -29,12 +29,6 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-try:
-    import requests
-except ImportError:
-    print("pip install requests")
-    sys.exit(1)
-
 # DERIVED, not hardcoded — same reason as algos/shared/bot_state.py. A literal
 # "C:/trading/algos" is correct on the VPS and silently wrong everywhere else, which makes
 # this file untestable off the box.
@@ -49,11 +43,11 @@ import bot_state as _bot_state
 from alert_format import CRITICAL, OK, WARNING, alert  # noqa: E402
 
 # Telegram credentials are resolved from the environment or the git-ignored
-# algos/credentials.json — never pasted here. See algos/shared/credentials.py.
-from credentials import telegram_credentials  # noqa: E402
-from notify import HEALTH, chat_for  # noqa: E402
+# algos/credentials.json — never pasted here, and read by `notify` itself on every send.
+from notify import HEALTH, flush_outbox, send_telegram_id  # noqa: E402
 
-TELEGRAM_TOKEN, GROUP_CHAT, ADMIN_CHAT = telegram_credentials()
+sys.path.insert(0, str(ALGOS_ROOT / "notifications"))
+from daily_summary import maybe_send as maybe_send_daily_summary  # noqa: E402
 
 # Bots emit a log line roughly every ~60s. Some branches (SMC outside kill zone,
 # "manage trades only") can sleep up to ~2-3 min. 5 min is a safe floor.
@@ -86,7 +80,7 @@ BOTS = {
 MAX_BOT_RESTARTS = 3
 
 
-def send_alert(message: str, account=None):
+def send_alert(message: str, account=None, bot=None):
     """Every message this watchdog sends is HEALTH — offline, restarted, stalled, recovered.
 
     Not one of them is a trade, which is the whole reason the routing exists: this module alone
@@ -100,17 +94,14 @@ def send_alert(message: str, account=None):
     alerts about the box itself — the chat bot being down, an unreadable bot list — which belong
     to nobody's account. An account with no health channel of its own keeps the shared room, live
     accounts included.
+
+    🔴 **Through `notify.send_telegram_id` since 2026-09-26, never its own request.** It posted
+    straight to Telegram (with Markdown parsing on, which the catalog already said was gone), so
+    none of its messages reached the send log, none was retried after a network blip, and the
+    health policy could not see the one sender that produces OFFLINE, RESTARTED and STALLED.
+    `bot` is the bot KEY, for the log and the policy's memory.
     """
-    dest, _dedicated = chat_for(HEALTH, account=account)
-    if not TELEGRAM_TOKEN or not dest:
-        print(f"Alert dropped (Telegram not configured): {message[:80]}")
-        return
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    data = {"chat_id": dest, "text": message, "parse_mode": "Markdown"}
-    try:
-        requests.post(url, json=data, timeout=10)
-    except Exception as e:
-        print(f"Alert failed: {e}")
+    send_telegram_id(message, HEALTH, account=account, bot=bot, markdown=False)
 
 
 def load_state() -> dict:
@@ -393,6 +384,7 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                 send_alert(
                     alert(CRITICAL, "OFFLINE", name, "The process is gone. Restarting it now."),
                     account,
+                    bot=bot_key,
                 )
             _bot_state.set_status(bot_key, "offline")
         else:
@@ -400,6 +392,7 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                 send_alert(
                     alert(OK, "BACK ONLINE", name, "It is running again. Nothing to do."),
                     account,
+                    bot=bot_key,
                 )
             bot_state["stop_suppressed"] = False
             bot_state["restart_tries"] = 0
@@ -435,6 +428,17 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
             bot_state["stop_suppressed"] = True
             return bot_state
 
+        # 🔴 **A Stop pressed on a bot that is ALREADY down is still a stop (2026-09-27).** The
+        # suppress key used to be read only at the running -> down transition above, so a bot that
+        # crashed first could never be stood down: no process to write a shutdown record, the
+        # transition long gone, and a live one paged hourly for ever. Richard's extreme leg, on an
+        # unfunded account, did exactly that until this line.
+        suppress_key = cfg.get("suppress_key", "")
+        if suppress_key and _is_stop_suppressed(suppress_key):
+            print(f"{bot_key}: stopped on request while already down - standing down")
+            bot_state["stop_suppressed"] = True
+            return bot_state
+
         tries = bot_state.get("restart_tries", 0)
         if tries < MAX_BOT_RESTARTS:
             print(f"{bot_key} is DOWN. Restart attempt {tries + 1}/{MAX_BOT_RESTARTS}...")
@@ -450,6 +454,7 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                         "Worth checking the log for why it stopped.",
                     ),
                     account,
+                    bot=bot_key,
                 )
                 _bot_state.set_status(bot_key, "running")
             else:
@@ -470,6 +475,7 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                     "— check its log.",
                 ),
                 account,
+                bot=bot_key,
             )
         return bot_state
 
@@ -503,6 +509,7 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                     "Restart it from the command center, or check its log.",
                 ),
                 account,
+                bot=bot_key,
             )
             bot_state["stale_alerted"] = True
             _bot_state.set_status(bot_key, "stalled")
@@ -517,6 +524,7 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                     "Nothing to do.",
                 ),
                 account,
+                bot=bot_key,
             )
             _bot_state.set_status(bot_key, "running")
         bot_state["stale_alerted"] = False
@@ -538,10 +546,132 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                     "Fix the watchlist in config.json.",
                 ),
                 account,
+                bot=bot_key,
             )
             alerted_today[sym] = today
     bot_state["unresolved_symbols_alerted"] = alerted_today
 
+    return bot_state
+
+
+# ── A Command Center action that never came back ─────────────────────────────────────────────
+#
+# 🔴 **Since 2026-09-26 a deploy, start or restart is ONE message**: the Command Center sends it and
+# the bot EDITS it into the outcome once it is online (`runner._finish_action`), and the bot's own
+# STOPPED is held. That removes the ONLINE a reader used to wait for — so the silence after a
+# failed restart has to be broken by something that is still running. This is it: the record the
+# Command Center writes (`<instance>/alert_thread.json`) is consumed by the bot's ONLINE, so a record
+# still there three minutes after it was written is a bot that did not come back.
+#
+# ⚠ Never held (`alert_policy.NEVER_HOLD`), and said once per action (the message id is remembered).
+# ⚠ An older Command Center writes no `sent_at`; the send time is recovered from the 15-minute
+# expiry it always wrote. An expired or unreadable record says nothing — the watchdog's own OFFLINE
+# and the bot's WILL NOT START still cover a bot that is down.
+ACTION_GRACE_SECONDS = 180
+_ACTION_TTL_SECONDS = 900
+_ACTION_VERB = {"promote": "deployed and restarted", "restart": "restarted", "start": "started"}
+
+
+def check_action(bot_key: str, bot_state: dict, account, name: str, now=None) -> dict:
+    """Send NOT BACK ONLINE when a Command Center action's record outlives its grace. NEVER raises."""
+    now = time.time() if now is None else now
+    try:
+        path = _bot_state.BOT_INSTANCES[bot_key] / "alert_thread.json"
+        rec = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(rec, dict) or float(rec.get("expires_at", 0)) < now:
+            return bot_state
+        sent_at = float(rec.get("sent_at") or float(rec["expires_at"]) - _ACTION_TTL_SECONDS)
+        mid = rec.get("message_id")
+    except (OSError, ValueError, TypeError, KeyError):
+        return bot_state
+    if now - sent_at < ACTION_GRACE_SECONDS or bot_state.get("action_alerted") == mid:
+        return bot_state
+    from alert_format import when
+
+    verb = _ACTION_VERB.get(str(rec.get("action") or ""), "restarted")
+    send_alert(
+        alert(
+            CRITICAL,
+            "NOT BACK ONLINE",
+            name,
+            f"The command center {verb} it at "
+            f"{when(datetime.fromtimestamp(sent_at, tz=ZoneInfo('UTC')))} and it has not come back "
+            f"online in {int((now - sent_at) // 60)} minutes.",
+            "It is not trading. Check its log - usually a version pin, the MT5 login or a startup "
+            "error.",
+        ),
+        account,
+        bot=bot_key,
+    )
+    bot_state["action_alerted"] = mid
+    return bot_state
+
+
+# ── A LIVE bot that is halted or down is said again every hour ──────────────────────────────
+#
+# 🔴 **Since 2026-09-26, the counterweight to every hold in `alert_policy`.** One HALTED or one
+# unrecovered OFFLINE at 3am is one line that scrolls away; on real money that is not enough. So a
+# bot on a LIVE account (the account registry's `kind`) that is halted, or down without anybody
+# having stopped it, gets one REMINDER an hour until it clears. The first hour is covered by the
+# real-time alert itself, so the first reminder comes an hour after the condition was first seen.
+#
+# ⚠ Demo accounts get none — Aaron's call. ⚠ A bot stopped on purpose (`stop_suppressed`) is not
+# down. ⚠ Never held (every REMINDER label is in `alert_policy`'s never-held set).
+REMINDER_EVERY_SECONDS = 3600
+
+
+def _span_words(seconds: float) -> str:
+    minutes = int(seconds // 60)
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours} h {minutes} min" if hours else f"{minutes} min"
+
+
+def check_reminder(bot_key: str, bot_state: dict, account, name: str, now=None) -> dict:
+    """Send the hourly REMINDER for a LIVE bot that is halted or down. NEVER raises."""
+    now = time.time() if now is None else now
+    try:
+        if _bot_state.account_kind(account) != "live":
+            bot_state.pop("reminder", None)
+            return bot_state
+        condition, why = None, ""
+        if bot_state.get("running") is False and not bot_state.get("stop_suppressed"):
+            condition = "down"
+        elif bot_state.get("running") is True:
+            live = _bot_state.read_bot(bot_key)
+            if str(live.get("bridge_state") or "").lower() == "halted":
+                condition, why = "halted", str(live.get("halt_reason") or "")
+        rem = bot_state.get("reminder") or {}
+        if condition is None:
+            bot_state.pop("reminder", None)
+            return bot_state
+        if rem.get("condition") != condition:
+            bot_state["reminder"] = {"condition": condition, "since": now, "last": now}
+            return bot_state
+        if now - float(rem.get("last", now)) < REMINDER_EVERY_SECONDS:
+            return bot_state
+        lasted = _span_words(now - float(rem.get("since", now)))
+        if condition == "halted":
+            text = alert(
+                CRITICAL,
+                "REMINDER — HALTED",
+                name,
+                f"Halted for {lasted}{f': {why}' if why else ''}. It is placing nothing.",
+                "Check the account, then restart it. This repeats every hour until it clears.",
+            )
+        else:
+            text = alert(
+                CRITICAL,
+                "REMINDER — DOWN",
+                name,
+                f"Down for {lasted}, and nobody stopped it. It is not trading.",
+                "Start it from the command center, or check its log. This repeats every hour "
+                "until it is back.",
+            )
+        send_alert(text, account, bot=bot_key)
+        rem["last"] = now
+        bot_state["reminder"] = rem
+    except Exception as e:  # noqa: BLE001 — a reminder may never stop the watchdog's pass
+        print(f"{bot_key}: reminder check failed ({e})")
     return bot_state
 
 
@@ -649,6 +779,13 @@ def main():
     state = load_state()
     today = datetime.now(TEXAS).date().isoformat()
 
+    # FIRST, before anything this pass might add: deliver what is already due — messages that
+    # failed for a transient reason, and faults the health policy has been holding to see whether
+    # they clear. Stamps the heartbeat that tells the policy a deliverer is alive. Never raises.
+    counts = flush_outbox()
+    if counts.get("sent") or counts.get("retry") or counts.get("dropped"):
+        print(f"Outbox: {counts}")
+
     # One process list for the whole pass — see `_PASS`.
     _PASS.clear()
     _PASS["procs"] = _query_process_list()
@@ -672,8 +809,15 @@ def main():
                 continue
             try:
                 state[bot_key] = check_bot(bot_key, state, today)
+                account = _bot_state.read_account(bot_key)
+                name = _bot_state.labelled(BOTS[bot_key]["name"], account)
+                state[bot_key] = check_action(bot_key, state[bot_key], account, name)
+                state[bot_key] = check_reminder(bot_key, state[bot_key], account, name)
             except Exception as e:
                 print(f"Error checking {bot_key}: {e}")
+        # Once a day at 08:00 Chicago: what the health rooms did NOT show — held, late, given up —
+        # built from the send log alone (`daily_summary.py`, 2026-09-26). Never raises.
+        state["daily_summary"] = maybe_send_daily_summary(state.get("daily_summary") or {})
     finally:
         _PASS.clear()
 

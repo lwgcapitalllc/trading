@@ -696,6 +696,11 @@ three bullets up was not being kept.** Story and the verification: `../docs/BACK
   required_timeframes(...)`.** The chart is always in the feed set, so a run whose CHART is 1m
   makes the membership test true and would fire the dual replay with the secondary switched
   OFF. Pinned by an AST test that also refuses a `getattr(config, "exec_secondary")` here.
+- 🔴 **The fast feed was loaded for the RE-ENTRY only until 2026-09-28**, so every lab run with
+  SOS Fade's level memory on and the re-entry off could not fire the level memory at all. The
+  fast feed is now loaded when ANY setting in SOS Fade's `dual_clock.FAST_CLOCK_FLAGS` is on
+  (re-entry, level memory, the 1-minute SOS-then-BOS entry). `run_feeds.py` keeps a pinned copy
+  of that list, and `test_run_feeds.py` fails when the two disagree.
 
 ## Comparing two runs — the BASIS before the result
 
@@ -815,3 +820,50 @@ for ever. A test fails the day that route gains a model. `GET /stress-tests/runn
 The single-run runner hands the loaded frame's bar size to the strategy as it builds it (see
 `backtest/notes/architecture.md`), so FFT on 5m bars now fails with its own reason instead of
 completing on 0 trades (run 2db0e08a8ccc). Pinned in `tests/test_python_runner.py`, watched red.
+
+## An identical rerun is served from a cache — `services/run_result_cache.py` (2026-09-27)
+
+A backtest is a pure function of its inputs, and the lab reruns the same basis constantly — a
+retry, a comparison, a stress child, a sweep point already measured. `_execute` now fingerprints
+the run after its bars load and, on a match, finishes the job with the stored results and says so
+in the job message ("identical to an earlier run - reused its results").
+
+- 🔴 **The key is EVERY input:** the whole spec except `job_id`, the bytes of every bar frame
+  replayed, the conversion-rate series, the source of `backtest/`, `engines/`, `strategies/python/`
+  (tests and exports excluded), the news calendar, this runner, and the Python/numpy/pandas
+  versions. Any code edit is a miss on purpose — the app does not reload on a strategy edit (see
+  `command-center/CLAUDE.md`), so a cache keyed without the code would serve superseded answers.
+- ⚠ **Refuses rather than guesses.** An input it cannot fingerprint (an object-dtype column, an
+  unrecognised rate provider) gives no key and the run replays. A result that would not come back
+  from JSON exactly — a tuple, an int turned float — is not stored.
+- ⚠ **Fails open** — a corrupt or half-written file is a miss. Files live in `data/run_cache/`
+  (git-ignored), newest 2,000 kept.
+- ⚠ **Covers single runs and everything built on them (sweeps, stress children).** The native
+  optimizer grid (`_execute_opt`) is a separate path and is NOT cached.
+- MEASURED on run 7760823a639e's settings over 2025-01-01..2025-04-01: first run 15.8s, identical
+  rerun 6.2s (the rest is loading and fingerprinting the bars), results equal field for field; a
+  one-tick slippage change replayed in full. Tests: `tests/test_run_result_cache.py` (9), three
+  watched red by mutation.
+- MEASURED on the full 2020-01-01..2026-09-27 window, same settings, driven through
+  `start_backtest`: fresh run 335.0s, 246 trades; identical rerun 10.0s, same 246 trades. A second
+  fresh run in between also missed, correctly: another session edited `backtest/` while the first
+  was replaying, so the code key had changed. ⚠ While two people edit the replay code daily, expect
+  misses — every edit resets the cache, by design. ⚠ The same run took 976s in the lab server on
+  2026-09-27 (run 7760823a639e) and 335s here; why is unmeasured.
+
+## Every python run saves how long it took AND how much of that was computing (2026-09-27)
+
+`reports/lab/<run_id>/replay_timing.json`, written by `_RunClock` in `services/python_runner.py`:
+elapsed seconds, the run thread's own CPU seconds, their ratio, the machine's load average at both
+ends, the core count, and whether the result came from the rerun cache.
+
+- 🔴 **Why:** run 7760823a639e took 976s in the lab; the identical replay took 335s standalone, and
+  a 3-month run the same afternoon took 20s in the lab against 16-19s standalone. Nothing recorded
+  what the machine was doing, so the 976s could not be explained after the fact. **A CPU share well
+  under 1 means the run was WAITING (other load, the GIL), not computing** — slow code shows a
+  share near 1.
+- ⚠ **A cache hit carries its own timing, never the stored run's**, and timing is never written
+  into the cache — the next hit would inherit a stranger's numbers.
+- ⚠ Python runs only; the file is removed on a rerun that carries none. Not shown on the page —
+  read the file.
+- MEASURED live, run f4d596d79a0f: 13.5s elapsed, 11.5s computing, share 0.853.

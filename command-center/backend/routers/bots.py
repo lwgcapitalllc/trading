@@ -725,7 +725,11 @@ def _notify_telegram(text: str, *, bot_key: str = "", account=None):
     thread is the only thing that says they are one event.
     """
     return send_telegram_id(
-        text, notify.HEALTH, chat_id=_account_health_chat(bot_key=bot_key, account=account)
+        text,
+        notify.HEALTH,
+        chat_id=_account_health_chat(bot_key=bot_key, account=account),
+        bot=bot_key or None,
+        account=account,
     )
 
 
@@ -3833,8 +3837,27 @@ def _instance_dir(bot_key: str) -> str:
 _ALERT_THREAD_TTL_SECONDS = 900
 
 
-def _set_alert_thread(bot_key: str, message_id) -> bool:
+def _health_room(bot_key: str) -> str:
+    """The room `_notify_telegram` sends this bot's messages to — its account's health channel,
+    else the shared one. Written into the thread record so the bot can EDIT the message there.
+    `""` on any failure, which makes the bot fall back to replying. NEVER raises."""
+    try:
+        return _account_health_chat(bot_key=bot_key) or notify.chat_for(notify.HEALTH) or ""
+    except Exception:
+        return ""
+
+
+def _set_alert_thread(
+    bot_key: str, message_id, *, action: str = "promote", chat: str = "", from_version: str = ""
+) -> bool:
     """Tell the bot which message its next lifecycle alerts should reply to.
+
+    🔴 **Since 2026-09-26 it also says WHICH action, in WHICH room, from WHICH version**, and a bot
+    on current code EDITS this message into the outcome once it is online (`runner._finish_action`)
+    — a deploy is one message, not PROMOTED + STOPPED + ONLINE. The bot's own STOPPED is held while
+    the record is live (`alert_policy`, the STOPPED row). The box's watchdog sends NOT BACK ONLINE if
+    the record is still there three minutes after `sent_at`. A bot on older code ignores the new
+    fields and replies as it always did.
 
     Returns whether the id reached the box. **Nothing branches on it** — the promote does not
     care — but a helper that may fail must be ABLE to say so, and this one could not: the first
@@ -3860,8 +3883,16 @@ def _set_alert_thread(bot_key: str, message_id) -> bool:
         # unthreaded", with nothing in between to read afterwards.
         print(f"bots: no root message id for {bot_key} — its deploy alerts will not be threaded")
         return False
+    now = _time.time()
     payload = json.dumps(
-        {"message_id": int(message_id), "expires_at": _time.time() + _ALERT_THREAD_TTL_SECONDS}
+        {
+            "message_id": int(message_id),
+            "expires_at": now + _ALERT_THREAD_TTL_SECONDS,
+            "sent_at": now,
+            "action": action,
+            "chat": str(chat or ""),
+            "from_version": str(from_version or ""),
+        }
     )
     # Over STDIN, not argv — the JSON carries braces and quotes, and `^`-escaping those through
     # cmd is the kind of quoting that works until the day a value changes shape. The same
@@ -5023,19 +5054,102 @@ def get_bot_version(bot_name: str):
     # The run's own `startup` records ride the SAME connection — they say which checkout the
     # running process started on (`_running_code`). Same window and same plain token as the
     # snapshot's read of them, for the same reasons (see `_fetch_vps_snapshot`).
-    reg = next((b for b in _BOTS if b.key == bot_key), None)
-    if reg is not None:
-        cmd += " & echo. & echo ===STARTS==="
-        for month in _ledger_months(datetime.now(timezone.utc)):
-            cmd += (
-                " & findstr /c:startup"
-                rf" {_VPS_INSTANCES}\{reg.instance_dir}\ledger\health-{month}-*.jsonl 2>nul"
-            )
+    cmd += _starts_cmd(bot_key, "STARTS")
 
-    raw = _ssh(cmd)
-    parts = _parse_sections(raw, "head")
+    parts = _parse_sections(_ssh(cmd), "head")
+    return _build_version(
+        bot_key,
+        rec,
+        parts.get("head", ""),
+        parts.get("ahead", ""),
+        parts.get("state", ""),
+        parts.get("starts"),
+    )
+
+
+def _starts_cmd(bot_key: str, marker: str) -> str:
+    """The shell fragment that prints this bot's `startup` records under `===<marker>===`."""
+    reg = next((b for b in _BOTS if b.key == bot_key), None)
+    if reg is None:
+        return ""
+    out = f" & echo. & echo ==={marker}==="
+    for month in _ledger_months(datetime.now(timezone.utc)):
+        out += (
+            " & findstr /c:startup"
+            rf" {_VPS_INSTANCES}\{reg.instance_dir}\ledger\health-{month}-*.jsonl 2>nul"
+        )
+    return out
+
+
+@router.get("/versions", response_model=dict[str, BotDeployedVersion])
+def get_bot_versions():
+    """Every bot's version, in TWO round trips for the whole fleet — the rows' source (2026-09-24).
+
+    🔴 **Why.** The rows asked `/{bot}/version` once per bot — two SSH calls each, capped at three
+    at a time, and started only after the status read — so the pills trickled in seconds after
+    the rest of the page, and nothing re-read them on a timer, so a deploy made anywhere but this
+    page (the CLI, the trading-box tool, the other laptop) left them stale until a reload. Aaron:
+    *"the version pill is always slow to update or load"*. The page now polls THIS every minute.
+
+    ⚠ **Built by `_build_version`, the same function as the one-bot read**, and the page seeds
+    each bot's own cache entry from it — so a row and the bot's panel can never disagree.
+    ⚠ Two calls, not one: the second needs each bot's promoted commit, which is in the first.
+    ⚠ A bot whose sections did not come back is LEFT OUT, never given an empty record — absent
+    means "not answered", and the page renders it as unread (rule 1).
+    """
+    keys = [b.key for b in _BOTS]
+    first = "cd " + _VPS_REPO + " & git rev-parse --short HEAD"
+    for k in keys:
+        u = k.upper()
+        first += (
+            rf" & echo. & echo ===DEPLOYED_{u}=== & type {_VPS_INSTANCES}\{k}\deployed.json 2>nul"
+        )
+        state_path = _bot_state_path(k)
+        if state_path:
+            first += f" & echo. & echo ===STATE_{u}=== & type {state_path} 2>nul"
+        first += _starts_cmd(k, f"STARTS_{u}")
+    parts = _parse_sections(_ssh(first), "head")
+
+    recs: dict[str, dict] = {}
+    for k in keys:
+        if f"deployed_{k}" not in parts:
+            continue
+        try:
+            raw = parts[f"deployed_{k}"]
+            recs[k] = json.loads(raw) if raw.strip() else {}
+        except json.JSONDecodeError:
+            recs[k] = {}
+
+    second = "cd " + _VPS_REPO
+    for k, rec in recs.items():
+        second += (
+            f" & echo. & echo ===AHEAD_{k.upper()}==="
+            f" & git rev-list --count {rec.get('promoted_commit') or 'HEAD'}..HEAD"
+        )
+    ahead = _parse_sections(_ssh(second), "head") if recs else {}
+
+    # Side by side: each build compares against THIS repo's git history (~0.75s a bot, MEASURED),
+    # and one after another that was 7s of a 9s read. Git reads are safe to run concurrently.
+    def build(k: str) -> BotDeployedVersion:
+        return _build_version(
+            k,
+            recs[k],
+            parts.get("head", ""),
+            ahead.get(f"ahead_{k}", ""),
+            parts.get(f"state_{k}", ""),
+            parts.get(f"starts_{k}"),
+        )
+
+    with bot_versions.one_reading(), ThreadPoolExecutor(max_workers=max(1, len(recs))) as pool:
+        return dict(zip(recs, pool.map(build, recs)))
+
+
+def _build_version(
+    bot_key: str, rec: dict, head: str, ahead_raw: str, state_raw: str, starts: str | None
+) -> BotDeployedVersion:
+    """One bot's version card from what the box returned — shared by the one-bot and fleet reads."""
     try:
-        ahead = int(parts.get("ahead", "0").strip().splitlines()[-1])
+        ahead = int(ahead_raw.strip().splitlines()[-1])
     except (ValueError, IndexError):
         ahead = 0
 
@@ -5048,7 +5162,7 @@ def get_bot_version(bot_name: str):
     # rather than failed — the record alone is still the best reading there is.
     started: float | None = None
     try:
-        state = json.loads(parts.get("state", "").strip() or "{}")
+        state = json.loads(state_raw.strip() or "{}")
         mine = state.get(bot_key) or {}
         running_hash = mine.get("source_hash", "") or ""
         s = mine.get("started")
@@ -5120,12 +5234,12 @@ def get_bot_version(bot_name: str):
         strategy_version=rec.get("strategy_version"),
         files=rec.get("files", 0),
         params=deployed_params,
-        repo_commit=parts.get("head", "").strip().splitlines()[0] if parts.get("head") else "",
+        repo_commit=head.strip().splitlines()[0] if head.strip() else "",
         commits_ahead=ahead,
         running_hash=running_hash,
         params_drift=drift,
         compare=comparison,
-        running_code=_running_code(parts.get("starts"), started),
+        running_code=_running_code(starts, started),
     )
 
 
@@ -5308,6 +5422,16 @@ def _finish_promote(
 
     ok = reported
     restarted = False
+    # 🔴 **A DEPLOY NEVER STARTS A BOT THAT WAS NOT RUNNING (2026-09-27).** "Restart" means put a
+    # RUNNING process onto the new code. Until this check it meant kill-then-launch whatever the bot
+    # was doing, so deploying to a stopped bot STARTED it: two bots on an unfunded live account were
+    # launched that way, crashed on its $0 balance, and the watchdog — which had seen them start and
+    # nobody stop them — paged the shared room every hour. A stopped bot keeps the new code pinned
+    # and runs it when somebody starts it. ⚠ *Could not ask* (None) is not *running* either: a
+    # running bot left on older code says so on its badge, while a stopped one launched on a guess
+    # may trade real money.
+    was_running = _bot_running_state(bot_key) if (ok and req.restart) else None
+    restart = bool(ok and req.restart and was_running is True)
     # 🔴 **NOTHING NEW TO LOAD: SAY SO AND LEAVE THE BOT ALONE (2026-09-23).** promote.py has
     # already refused to rewrite a snapshot identical to the one the bot is running and has brought
     # its record up to date; stopping and starting the process here would cancel whatever it has
@@ -5323,7 +5447,7 @@ def _finish_promote(
     # day — leaves the new code pinned and the OLD process running. The retry then found nothing to
     # build and, before this check, refused to restart, so no deploy could ever move the bot onto
     # code already pinned. The process's own report decides it; see `_running_older_code`.
-    stale = _running_older_code(bot_key) if (ok and nothing_new and req.restart) else False
+    stale = _running_older_code(bot_key) if (nothing_new and restart) else False
     if ok and nothing_new and not stale:
         _notify_telegram(
             alert(
@@ -5353,7 +5477,7 @@ def _finish_promote(
             ),
             bot_key=bot_key,
         )
-        _set_alert_thread(bot_key, root)
+        _set_alert_thread(bot_key, root, action="restart", chat=_health_room(bot_key))
     elif ok:
         # 🔴 SENT BEFORE THE RESTART, and the ordering is the feature rather than a detail.
         # A deploy produces THREE messages from TWO machines — this one, then the bot's own
@@ -5371,19 +5495,33 @@ def _finish_promote(
             if (was_v is not None or now_v is not None)
             else ""
         )
+        if restart:
+            next_step = "Restarting it now."
+        elif not req.restart:
+            next_step = "Restart it to pick the new version up."
+        elif was_running is False:
+            next_step = "It is stopped, so it was left stopped - it runs this code when started."
+        else:
+            next_step = "Could not tell whether it is running, so it was not restarted - restart it if it is."
         root = _notify_telegram(
             alert(
                 "📦",
                 "PROMOTED",
                 _bot_label(bot_key),
                 joined([moved, "deployed"]) or "The new code is deployed.",
-                "Restarting it now." if req.restart else "Restart it to pick the new version up.",
+                next_step,
             ),
             bot_key=bot_key,
         )
-        if req.restart:
-            _set_alert_thread(bot_key, root)
-    if ok and req.restart:
+        if restart:
+            _set_alert_thread(
+                bot_key,
+                root,
+                action="promote",
+                chat=_health_room(bot_key),
+                from_version=_vlabel(was_v) if was_v is not None else "",
+            )
+    if restart:
         # Kill it and let SYS_MONITOR bring it back — that path is exercised every time the
         # watchdog fires, so it is the one most likely to work. The suppress key is NOT
         # written: this stop is meant to be undone, immediately.
@@ -6080,19 +6218,30 @@ def start_bot(bot_name: str):
 def _start_bot(bot_name: str):
     """Launch a single bot via startup_coordinator.py --bot <key> (via WMI).
     Individual BOT_* scheduled tasks are Disabled — schtasks /run does nothing.
+
+    🔴 **The message goes BEFORE the launch since 2026-09-26**, as the root the bot edits into
+    ONLINE once it is up — one message per start, where STARTING was always followed by ONLINE. The
+    same ordering, for the same reason, as the promote's root.
     """
     _, bot_key = _resolve_bot(bot_name)
     _refuse_if_benched(bot_key)
+    root = _notify_telegram(
+        alert(
+            "▶️",
+            "STARTING",
+            _bot_label(bot_key),
+            "Requested from the command center.",
+            "This message will say when it is online.",
+        ),
+        bot_key=bot_key,
+    )
+    _set_alert_thread(bot_key, root, action="start", chat=_health_room(bot_key))
     try:
         out = _launch_bot(bot_key)
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
-    display = _bot_label(bot_key)
-    _notify_telegram(
-        alert("▶️", "STARTING", display, "Requested from the command center."), bot_key=bot_key
-    )
     return {"status": "ok", "output": out}
 
 
@@ -6121,15 +6270,26 @@ def _stop_bot(bot_name: str):
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
     display = _bot_label(bot_key)
-    _notify_telegram(
-        alert(
-            "⏹",
-            "STOPPED",
-            display,
-            "Stopped from the command center. It will not come back on its own.",
-        ),
-        bot_key=bot_key,
+    text = alert(
+        "⏹",
+        "STOPPED",
+        display,
+        "Stopped from the command center. It will not come back on its own.",
     )
+    # 🔴 **One STOPPED per stop (2026-09-26).** A bot that shut itself down cleanly has already
+    # said STOPPED from the box, so this second one is held — written to the send log, not sent.
+    # It is still SENT when the bot had to be terminated, because then the bot said nothing.
+    if "shut down cleanly" in (out or ""):
+        notify.log_send(
+            notify.HEALTH,
+            "held",
+            text,
+            _health_room(bot_key),
+            bot=bot_key,
+            reason="the bot's own STOPPED already said it",
+        )
+    else:
+        _notify_telegram(text, bot_key=bot_key)
     return {"status": "ok", "output": out}
 
 
@@ -6145,6 +6305,19 @@ def _restart_bot(bot_name: str):
     """Kill this bot's process, wait 3 s, then relaunch via startup_coordinator --bot."""
     _, bot_key = _resolve_bot(bot_name)
     _refuse_if_benched(bot_key)
+    # 🔴 BEFORE the kill since 2026-09-26: this is the root the bot edits into RESTARTED once it is
+    # back, and the bot's own STOPPED is held while it is live — one message per restart.
+    root = _notify_telegram(
+        alert(
+            "🔄",
+            "RESTARTING",
+            _bot_label(bot_key),
+            "Requested from the command center.",
+            "This message will say when it is back online.",
+        ),
+        bot_key=bot_key,
+    )
+    _set_alert_thread(bot_key, root, action="restart", chat=_health_room(bot_key))
     try:
         _suppress_stop_alert(bot_key)  # must run before kill so monitor skips crash alert
         stop_out = _kill_bot(bot_key)
@@ -6154,8 +6327,4 @@ def _restart_bot(bot_name: str):
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
-    display = _bot_label(bot_key)
-    _notify_telegram(
-        alert("🔄", "RESTARTING", display, "Requested from the command center."), bot_key=bot_key
-    )
     return {"status": "ok", "output": f"{stop_out}\n{start_out}".strip()}

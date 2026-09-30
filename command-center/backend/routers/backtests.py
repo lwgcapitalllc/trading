@@ -1078,7 +1078,7 @@ async def get_chart_spec(run_id: str, refresh: bool = False) -> Response:
     report a healthy run as missing — so a cache miss falls through to the build, which is the only
     thing that can tell an unbuilt spec from an unknown run."""
     if not refresh:
-        cached = await asyncio.to_thread(chart_spec.cached_chart_spec_bytes, run_id)
+        cached = await asyncio.to_thread(chart_spec.served_chart_spec_bytes, run_id)
         if cached is not None:
             return Response(content=cached, media_type="application/json")
     spec = await asyncio.to_thread(chart_spec.build_chart_spec, run_id, refresh)

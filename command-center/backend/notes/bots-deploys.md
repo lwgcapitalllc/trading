@@ -148,6 +148,16 @@ own banner and ledger keep the OLD stamp until its next deploy, while this page 
 count — expected for one deploy, not a fault. ⚠ **A change to a LOOSE MODULE names that module as
 its tree** (equality, not `startswith(tree + "/")`), or it named no tree and read as a merge.
 
+🔴 **RESEARCH SCRIPTS STOPPED SHIPPING AND COUNTING, 2026-09-26.** `backtest/` is copied wholesale,
+so every study script in `backtest/tools/` rode in every snapshot and every edit to one marked every
+bot behind. Aaron noticed after working only on SOS Fade and seeing every bot "8 behind" (7 were real
+and 1 was a study script). MEASURED: 58 of the 214 commits counted in the 30 days to that date
+touched nothing but those scripts. `package_deps.SKIP_TREES` drops them from the copier and the
+count together. It is matched by PATH, because a strategy's own `tools/` (its parity harness) still
+ships. All nine bots' snapshots were built without the folder that day, and the deploy's import
+check passed on each. ⚠ **EVERY VERSION NUMBER DROPPED A SECOND TIME** (Realign v414 → v326), and
+the bot's own stamp keeps the old number until its next deploy, as in 2026-09-10.
+
 ⚠ **Not the lab's own `strategy_versions` registry, and the reason is the whole design.** That
 table is content-addressed and monotonic and it hashes the **strategy package**, while a bot runs
 that package plus `engines/` and `backtest/` — which is where most of the logic lives, and is
@@ -1054,3 +1064,71 @@ process closed at its step, a reused pid not holding the bot, the launch grace, 
 the one-shot answering with the result. Six mutations run, each red. End to end: a real worker
 process, launched by a parent that exited at once, stamped its pid and recorded its failure (a
 deliberately invalid request, so nothing reached the box).
+
+
+## `GET /bots/versions` — every bot's version in two round trips (2026-09-24)
+
+The Bots page rows asked `/bots/{bot}/version` once per bot — two SSH calls each, capped at three —
+and nothing polled them, so the pills filled last and a deploy made off the page left them stale.
+The rows now read this route once, every minute.
+
+- **Built by `_build_version`, the same function as the one-bot read**, and the page writes each
+  answer into that bot's own cache entry, so a row and the panel can never disagree.
+  `tests/test_bot_versions_fleet.py` scripts one box, asks it both ways and requires identical
+  answers bot for bot (red when a bot is handed another's commit count).
+- **Two SSH calls whatever the fleet**: the first reads every bot's `deployed.json`, state file and
+  `startup` records; the second counts each bot's commits ahead, which needs the promoted commit
+  the first returned. A bot whose sections did not come back is LEFT OUT, never given an empty
+  record.
+- **The local comparison was the slow half, not the box.** MEASURED: box 1.8s, comparison ~0.8s a
+  bot, 3.5s of it re-parsing each strategy's imports (`trees_for`). `bot_versions.one_reading()`
+  keeps every git answer and every `trees_for` result while the repo's STATE — HEAD, upstream and
+  `git status --porcelain` — is unchanged, so a repeat read is ~2.6–3s for the fleet. A `fetch`
+  clears the memo, because it can bring in a commit an earlier answer said was missing.
+
+### Every Telegram send from this app is written to the send log (2026-09-26)
+
+- `services/notify.py → log_send` writes one JSON line per send — `sent` with its message id, or
+  `dropped` with why — in the SAME format the box writes (`algos/shared/notify_log.py`), under this
+  machine's `algos/logs/notify/`. `_notify_telegram` passes the bot key and account so a line says
+  which bot it was about.
+- ⚠ It is the LAPTOP's log. The box's daily summary reads the box's folder only, so a Command
+  Center message is never counted there. No outbox on this side: an action here has a person
+  looking at the page.
+- Pinned by `tests/test_notification_routing.py::test_every_send_is_written_to_the_send_log_in_the_algos_format`,
+  which reads the algos file for the field names rather than restating them.
+
+### 🔴 A deploy, start or restart is ONE message, edited by the bot into its outcome (2026-09-26)
+
+- `_start_bot` and `_restart_bot` now send their message BEFORE they touch the bot (the promote
+  always did) and `_set_alert_thread` writes `action`, `chat` (`_health_room`), `from_version` and
+  `sent_at` beside the id. A bot on current code edits that message into DEPLOYED / ONLINE /
+  RESTARTED once it is up and holds its own STOPPED; the box's watchdog says NOT BACK ONLINE if the
+  record is still there after three minutes. Rules and the mixed-version behaviour:
+  `algos/notes/telegram-and-notifications.md` → *Stage 2*.
+- `_stop_bot` sends its STOPPED only when the bot had to be TERMINATED; after a clean shutdown the
+  bot's own STOPPED already said it, and this one is logged `held`.
+- ⚠ A promote still launches with `_launch_bot` directly — it sends no STARTING of its own.
+- Tests: `tests/test_one_message_per_action.py`.
+
+## 🔴 A deploy never STARTS a bot that was not running (2026-09-27)
+
+**What happened.** A deploy at 16:54 UTC went to two STOPPED bots on Richard's live account
+35710389, which is unfunded. `_finish_promote` treated "restart" as kill-then-launch whatever the
+bot was doing, so it LAUNCHED both. Both refused to start on the $0.00 balance. The watchdog had
+seen the extreme leg start and nobody stop it, so it read the death as a crash: three restarts,
+then a "REMINDER — DOWN" every hour into the shared health room (the account names no health room
+of its own, so health falls back there by design). The Bots page said Stopped throughout, because
+it reads the process list, and the watchdog's "stopped on purpose" flag is a different fact.
+
+**The rule now.** `_finish_promote` asks `_bot_running_state` once, after the build, and restarts
+only on `True`. `False` pins the new code and leaves the bot stopped — the PROMOTED message says so
+and it runs the code when someone starts it. `None` (could not ask) is NOT running either: a
+running bot left on older code shows it on its badge, while a stopped bot launched on a guess may
+trade real money. The nothing-new "running older code" retry is gated the same way.
+
+**TESTED:** `tests/test_bot_promote.py` — stopped, could-not-ask, and nothing-new-on-a-stopped-bot.
+All three went RED with the gate removed; the could-not-ask one went RED on `is not False`.
+
+⚠ **This does not clear a bot the watchdog already believes crashed.** That needs a stop request
+(the bot's record says it was asked to stop), which the watchdog honours even for a dead process.

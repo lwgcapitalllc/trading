@@ -181,6 +181,13 @@ class SosFadeStrategy:
         parity harnesses — the engines need history before their output is real)."""
         from backtest.replay import EngineStack, iter_bars
 
+        cfg = self.config
+        if getattr(cfg, "exec_scale_in", False) and getattr(cfg, "exec_scale_mode", "") == "1m break":
+            # One frame has no 1-minute breaks to read, so this mode would never add — a run
+            # that reads as "never adds" when it means "could not see its feed". Refuse.
+            raise ValueError("exec_scale_mode='1m break' needs the 1-minute fast feed — "
+                             "replay it with run_dual(df15, df1m), not run().")
+
         # Tick mode resolves each bar against [bar_open, bar_open + duration), so it needs the
         # timeframe. Inferred from the frame rather than configured: the data IS the source of
         # truth here, and a hand-set duration that disagreed with it would silently read the
@@ -232,9 +239,9 @@ class SosFadeStrategy:
         values — `algos/live/feed.timeframe_for_minutes`. Rule 1: off and cannot-have must not
         arrive as the same answer.
         """
-        if not self.config.exec_secondary:
+        from .dual_clock import fast_tf_minutes, uses_fast_clock
+        if not uses_fast_clock(self.config):
             return None
-        from .dual_clock import fast_tf_minutes
 
         return fast_tf_minutes(self.config)
 
@@ -251,6 +258,34 @@ class SosFadeStrategy:
             major_length=(engine_config or self.engine_config()).major_length,
         )
 
+    @staticmethod
+    def _fast_structure_stream(clock, df1m):
+        """Swap the dual clock's fast structure feed for a replay of a stored run of it, or for a
+        recorder that keeps this run's stream. Returns (stream key, recorder or None).
+
+        The key is the fast frame's bytes, the swing length, and the source of `secondary.py`
+        and the canonical structure engine — edit either and the stream is recomputed. No key
+        (anything that cannot be fingerprinted) means compute live, exactly as before.
+        """
+        from pathlib import Path
+
+        import market_structure
+        from backtest.replay import recorded
+
+        from . import secondary
+
+        sources = (Path(secondary.__file__), Path(market_structure.__file__).parent)
+        k = recorded.key(
+            "sos_fade.structure_fast", df1m, {"major_length": clock._major_length}, sources
+        )
+        stored = recorded.load(k)
+        if stored is not None and len(stored) == len(df1m.index):
+            clock.struct_fast = secondary.PlayedStructure1m(stored)
+            return k, None
+        rec = secondary.RecordingStructure1m(major_length=clock._major_length)
+        clock.struct_fast = rec
+        return k, rec
+
     def run_dual(self, df15, df1m, engine_config=None, warmup: int = 0,
                  progress=None, should_cancel=None) -> "SosFadeStrategy":
         """Replay the PRIMARY on 15m and the SECONDARY (the sniper re-entry) on a FASTER frame, on one merged
@@ -263,8 +298,8 @@ class SosFadeStrategy:
         `df15` / `df1m` are canonical frames (UTC DatetimeIndex, open/high/low/close) over the same
         window.
 
-        ⚠ THE SECOND FRAME'S TIMEFRAME IS THE CALLER'S CHOICE and is 5m by default since
-        2026-08-21 (`exec_sec_fill_tf_min`), not 1m — the parameter is still named `df1m` because
+        ⚠ THE SECOND FRAME'S TIMEFRAME IS THE CALLER'S CHOICE and is 1m by default since
+        2026-09-26 (`exec_sec_fill_tf_min`; 5m from 2026-08-21) — the parameter is still named `df1m` because
         renaming a public parameter moves every caller, and the name is the one thing here that
         cannot be trusted to say what the feed is. Nothing in this method assumes a minute.
 
@@ -299,6 +334,13 @@ class SosFadeStrategy:
         for b15 in iter_bars(df15):
             clock.push_primary(b15)
 
+        # 🔴 The fast structure stream depends on the fast bars and the swing length ONLY, so it is
+        # replayed from disk when this exact frame has been run before, and recorded otherwise.
+        # MEASURED 2026-09-27: 2.50s to compute 87,985 bars, 0.30s to load. Lab only — the live
+        # runner builds its own DualClock and never comes through here. Trades are identical
+        # either way: see `notes/secondary_reentry.md` → the fast structure stream is recorded.
+        stream_key, recording = self._fast_structure_stream(clock, df1m)
+
         # progress/cancel are optional hooks so a lab run keeps a live bar + a working Stop button
         # (the fast stream is the long one). Both no-ops when not supplied.
         n1 = len(df1m.index)
@@ -318,6 +360,11 @@ class SosFadeStrategy:
         for ps in clock.drain_primary():
             if ps.bar.index >= warmup:
                 self.decisions.append(ps.dec)
+        # Only a COMPLETE stream is stored — the cancel path above returns before this line.
+        if recording is not None and len(recording.outputs) == n1:
+            from backtest.replay import recorded
+
+            recorded.save(stream_key, recording.outputs)
         # df15, not df1m: the recovery replays 15m structure, the same stream the primary read.
         # The cancel path above deliberately does NOT come here — a cancelled run has a partial
         # book, and appending recovery trades to it would report a rule applied to half a record.

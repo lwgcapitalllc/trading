@@ -23,9 +23,10 @@ from routers import bots
 
 @pytest.fixture
 def vps(monkeypatch):
-    state = {"out": "", "cmds": [], "killed": [], "launched": []}
+    state = {"out": "", "cmds": [], "killed": [], "launched": [], "running": True}
 
     monkeypatch.setattr(bots, "_ssh", lambda c: (state["cmds"].append(c), state["out"])[1])
+    monkeypatch.setattr(bots, "_bot_running_state", lambda k: state["running"])
     monkeypatch.setattr(bots, "_kill_bot", lambda k: state["killed"].append(k) or "")
     monkeypatch.setattr(bots, "_launch_bot", lambda k: state["launched"].append(k) or "")
     monkeypatch.setattr(bots, "_notify_telegram", lambda *_a, **_k: None)
@@ -224,7 +225,7 @@ def test_the_root_is_sent_BEFORE_the_bot_is_stopped(vps, sent, monkeypatch):
     order: list[str] = []
     monkeypatch.setattr(bots, "_notify_telegram", lambda m, *a, **k: order.append("alert") or 1)
     monkeypatch.setattr(bots, "_kill_bot", lambda k: order.append("kill") or "")
-    monkeypatch.setattr(bots, "_set_alert_thread", lambda *a: order.append("thread"))
+    monkeypatch.setattr(bots, "_set_alert_thread", lambda *a, **_k: order.append("thread"))
     vps["out"] = f"  pinned abc123\n{bots._VERSION_MARK} 164 165\n{bots._PROMOTE_OK}"
     bots.promote_bot("sos_fade_demo", REQ)
     assert order == ["alert", "thread", "kill"]
@@ -243,7 +244,7 @@ def test_no_thread_is_written_when_no_restart_was_asked_for(vps, sent, monkeypat
     """Without a restart the bot sends neither STOPPED nor ONLINE, so there is nothing to
     thread — and a file left in the instance directory would parent whatever it sends next."""
     wrote: list = []
-    monkeypatch.setattr(bots, "_set_alert_thread", lambda *a: wrote.append(a))
+    monkeypatch.setattr(bots, "_set_alert_thread", lambda *a, **_k: wrote.append(a))
     vps["out"] = f"  pinned abc123\n{bots._PROMOTE_OK}"
     bots.promote_bot(
         "sos_fade_demo", BotPromoteRequest(pull=False, allow_dirty=False, restart=False)
@@ -402,6 +403,40 @@ def test_an_ordinary_deploy_still_restarts(vps):
     r = bots.promote_bot("fft_1", REQ)
     assert r.nothing_new is False
     assert r.restarted is True and vps["killed"] == ["fft_1"]
+
+
+def test_a_deploy_to_a_STOPPED_bot_leaves_it_stopped(vps, sent):
+    """2026-09-27: a deploy to two stopped bots on an unfunded live account STARTED them; both
+    crashed on the $0 balance and the watchdog paged the shared room hourly, because it had seen
+    them start and nobody stop them. A deploy puts a running bot onto new code — it never starts
+    one. MUTATION: drop `and was_running is True` from `restart` → red."""
+    vps["out"] = f"  pinned abc123\n{bots._PROMOTE_OK}"
+    vps["running"] = False
+    r = bots.promote_bot("fft_1", REQ)
+    assert r.ok is True and r.restarted is False
+    assert vps["killed"] == [] and vps["launched"] == []
+    assert "left stopped" in sent[-1] and "Restarting it now" not in sent[-1]
+
+
+def test_a_deploy_that_CANNOT_TELL_whether_the_bot_runs_does_not_launch_it(vps, sent):
+    """Could-not-ask is not running (rule 1). Guessing wrong one way leaves a running bot on older
+    code, which its badge shows; guessing wrong the other way starts a stopped bot on real money.
+    MUTATION: test `was_running is not False` instead of `is True` → red."""
+    vps["out"] = f"  pinned abc123\n{bots._PROMOTE_OK}"
+    vps["running"] = None
+    r = bots.promote_bot("fft_1", REQ)
+    assert r.restarted is False and vps["launched"] == []
+    assert "Could not tell" in sent[-1]
+
+
+def test_NOTHING_NEW_on_a_STOPPED_bot_never_reads_as_older_code_to_restart(vps, sent, monkeypatch):
+    """The older-code retry restarts a process that is behind. A stopped bot has no process, so
+    it must never get there. MUTATION: drop `restart` from the `stale` condition → red."""
+    vps["out"] = f"{bots._NOOP_MARK}\n{bots._PROMOTE_OK}"
+    vps["running"] = False
+    monkeypatch.setattr(bots, "_running_older_code", lambda k: True)
+    r = bots.promote_bot("fft_1", REQ)
+    assert r.restarted is False and vps["launched"] == []
 
 
 def test_the_NOTHING_NEW_marker_is_stripped_from_what_the_user_reads(vps):

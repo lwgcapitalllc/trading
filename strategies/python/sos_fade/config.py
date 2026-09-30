@@ -429,7 +429,10 @@ class SosFadeConfig:
     #   across all 21 combos (~−2R for every 10% moved off the runner). The runner is the edge.
     #   NOTE this is `BLegConfig`'s parent, so the B-LEG bot inherits 0/0 too — intended, both bots
     #   share one exit ladder.
-    exec_be_buf_tk: float = 30.0       # "Breakeven buffer (ticks)"
+    exec_be_buf_tk: float = 35.0       # "Breakeven buffer (ticks)"
+    #   30 → 35 on 2026-09-29: `sos_fade_optimization.md` Run 58, measured on the LAB (+0.4 ± 0.1R,
+    #   P 1.00, no trade flips). 60 was shipped for a day off a study that did not match the lab and
+    #   lost −3.7 ± 6.0R there. The children that inherit this (B-LEG, BOS, Realign) PIN 30.
     #   ⚠ A FIXED price offset, applied identically whatever the trade is risking. That is what
     #   `exec_be_buf_mode` exists to replace — see below.
     exec_be_arm_r: float = -1.0        # "Protect the stop after a move of (R)"
@@ -594,9 +597,22 @@ class SosFadeConfig:
     #       2 adds, cap 1.0x 211.59R  maxDD 8.72R  67 losers  worst -2.06R  ret/DD 24.26
     #   Dropping the affordability test and adding a flat 1x instead cost 11 extra LOSING
     #   trades — that difference is what the `locked / per_unit` line buys.
-    exec_scale_mode: str = "Trail"     # "↳ Where it adds" (Pine execScaleMode)
-    #   ∈ {"Trail", "BOS retest"}. WHERE the add happens. The SIZE rule above is unchanged by
-    #   this — only the moment and the price move.
+    exec_scale_mode: str = "1m break"  # "↳ Where it adds" (Pine execScaleMode)
+    #   ∈ {"Trail", "BOS retest", "1m break"}. WHERE the add happens. The SIZE rule above is
+    #   unchanged by the first two — only the moment and the price move.
+    #   "1m break" (2026-09-25, PYTHON ONLY — no Pine twin, so the parity gate cannot see it):
+    #   from the second target, after a bounce against the trade, the SECOND 1-minute internal
+    #   break back in its direction adds at market; every lot shares the trailing stop and is
+    #   sized net of costs. Needs `exec_secondary` on with `exec_sec_fill_tf_min = 1`, because
+    #   the re-entry's fast feed is the only 1-minute stream the lab and the live runner load.
+    #   Chosen to PROTECT WINNERS, not for R — see `execution._place_break_add`.
+    #   🔴 THE DEFAULT SINCE 2026-09-26 (Aaron's call, Run 50), together with the 15m candle rule
+    #   inside it, `exec_scale_brk_n` = 2 and `exec_scale_tp_mode` = "H4 H/L". MEASURED
+    #   2020-01-01 → 2026-09-24, PU Prime ECN, 251 trades, against no adds (167.4R, dd 7.49R):
+    #       "Trail", ride                    +55.7R  46 trades worse  dd 8.92R  (54.4R from 5 trades)
+    #       "1m break" + candle + H4 bank     +5.2R   4 trades worse  dd 7.49R  0 winners scratched
+    #   ⚠ The Pine cannot run it, so the Pine's default stays "Trail" and the two DIFFER here on
+    #   purpose; the parity gate reads the mode off the export and never compares this one.
     #   "Trail" adds at MARKET on the bar the trail ratchets. "BOS retest" waits for the next
     #   confirmed break of structure our way and RESTS A LIMIT at the level that break cleared.
     #
@@ -624,6 +640,13 @@ class SosFadeConfig:
     #   buys raw return and reliably pays for it in drawdown. "Trail 3 x 0.5x" is the cell where
     #   that trade is closest to fair and the only one better than baseline on BOTH axes over the
     #   full book. Say that plainly rather than quoting the ALL column alone.
+    exec_scale_brk_n: int = 2          # "↳ 1-minute breaks back before it adds"
+    #   "1m break" only: how many 1-minute internal breaks back in the trade's direction, after
+    #   a bounce, before the add fires. MEASURED (Run 50, candle rule on, banked at H4 H/L):
+    #       1  +7.3R  58 adds  15 winners grown / 16 shrunk (-7.5R)
+    #       2  +5.2R  22 adds  11 winners grown /  4 shrunk (-2.1R)   ← default
+    #       3  +0.8R   7 adds   5 winners grown /  1 shrunk (-0.2R)
+    #   One buys 2R for four times the winners shrunk; three almost never adds. Python only.
     exec_scale_max_adds: int = 3       # "↳ How many times it may add" (Pine execScaleAdds)
     #   A ceiling, not a schedule: the next add is refused until the trail has ratcheted PAST
     #   the stop the last one was sized against. Without that a stalling runner re-adds every
@@ -682,7 +705,7 @@ class SosFadeConfig:
     #   to the STOP, which trails up behind price, so the LAST add is the cheapest one. Small-
     #   first in fact had the lowest drawdown (9.05 vs 11.04). Flat is kept because it is simpler
     #   and nothing measured argues against it.
-    exec_scale_tp_mode: str = "Ride"   # "↳ Where the adds take profit" (execScaleTpMode)
+    exec_scale_tp_mode: str = "H4 H/L" # "↳ Where the adds take profit" (execScaleTpMode)
     #   ∈ {"Ride", "Prev week H/L", "Prev day H/L", "H4 H/L"}. WHERE the scale-in lots bank.
     #   "Ride" leaves them on the trailing stop, closing pro-rata with the base ladder — the
     #   behaviour every measurement before 2026-08-19 was taken on. The other three rest the adds
@@ -697,6 +720,11 @@ class SosFadeConfig:
     #   A comment naming another field's default is a SECOND copy of that default, and it goes
     #   stale the moment the first one moves, with nothing to fail. Say what a setting DOES and
     #   let the field declare its own value.
+    #   🔴 "H4 H/L" SINCE 2026-09-26 (Run 50), for the "1m break" add: a target does not reduce
+    #   the damage (the adds that hurt are stopped before any target), but H4 H/L is the one
+    #   bank that cut the trades made worse (8 → 5) and put drawdown back at no-adds' 7.49R.
+    #   Aaron: "I don't feel comfortable having scaling entries just running." The Pine's
+    #   default stays "Ride"; the gate reads this off the export.
     #
     #   🔴 MEASURED 2026-08-19 (Run 22), RE-MEASURED the same day after the resting-order fix
     #   below. XAUUSD 15m 2018-09-13 → 2026-08-14, PU Prime ECN costs, Trail 3 x 0.5x, 182
@@ -846,9 +874,12 @@ class SosFadeConfig:
     exec_rev_exit: str = "Off"          # "Reversal exit: what it does"
     #   ∈ {"Off", "Bank half", "Tighten to the trail", "Close"}. OFF by default and inert.
     #   WHAT FIRES IT: a shift of structure AGAINST an open primary, printed on the FAST frame
-    #   (`exec_sec_fill_tf_min`, 5 minutes by default) — Aaron's own definition of a reversal,
+    #   (`exec_sec_fill_tf_min`) — Aaron's own definition of a reversal,
     #   2026-09-22: *"if we're getting a shift of structure and then break of structure coming
     #   back towards us on lower time frames, that tells me price is reversing."*
+    #   ⚠ EVERY MEASUREMENT BELOW WAS TAKEN ON A 5-MINUTE FAST FRAME. The default fill clock is 1
+    #   minute since 2026-09-26, so switching this on at the defaults reads 1-minute shifts — a
+    #   different, unmeasured rule. Set the fill clock to 5 to reproduce these numbers.
     #
     #   🔴 IT READS A DIFFERENT CHART FROM THE ONE THE TRADE WAS FOUND ON, AND THAT IS THE POINT.
     #   A 15m reversal is confirmed long after the turn: by the time the bar closes the profit has
@@ -902,6 +933,20 @@ class SosFadeConfig:
     #   a Pine change as well as a Python one.
     exec_rev_level_touches: int = 2    # "↳ Rejections of the same level before it acts"
     #   Read only when the trigger is "Level rejected". 2 = the second failed visit.
+    exec_rev_arm_at: str = "R"         # "↳ Arm on"
+    #   ∈ {"R", "Target 2 price"}. "R" (default) is the measured rule: the best must reach
+    #   `exec_rev_arm_r`. "Target 2 price" arms once the trade's best fast-frame price has
+    #   reached its OWN second fib target — Aaron's arming point, 2026-09-25, off a live short
+    #   that ran past target 2, shifted against on 5m and gave most of it back. Default = inert.
+    exec_rev_giveback_pct: float = 50.0  # "↳ Give-back stop: share of the open profit handed back (%)"
+    #   Read only by the "Give-back stop" action. Once a shift against the trade fires it, a stop
+    #   rests where this share of the open profit (entry -> best so far) is gone: a short at 4370
+    #   with a best of 4291 at 50 rests at 4330.5. Re-priced off the best on every fast bar, so it
+    #   only ever tightens, and it never loosens the ladder's own stop. If price is already past it
+    #   when the shift prints, the trade leaves at the next fast bar's open.
+    exec_rev_need_bos: bool = False    # "↳ Need a break our way before the shift"
+    #   When on, the shift only counts if a fast-frame break of structure IN the trade's
+    #   direction printed after the rule armed and before the shift. Off = inert.
     exec_time_stop_hrs: float = 36.0   # "Time stop (hours)"
     #   Calendar hours since the FILL, weekends included — the same clock a swap is charged on, and
     #   the one a reader can check against a chart. Read only when the mode is not "Off".
@@ -1213,7 +1258,7 @@ class SosFadeConfig:
     #   Ordering the ladder removes that, which is the honest cost of ordering the ladder.
     #   ⚠ Read ONLY when exec_secondary is on.
 
-    exec_sec_fill_tf_min: int = 5      # "Re-entry fill clock (minutes)"
+    exec_sec_fill_tf_min: int = 1      # "Re-entry fill clock (minutes)"
     #   WHICH BAR STREAM THE RE-ENTRY'S RESTING ORDER IS FILLED AGAINST in a backtest. The primary
     #   always replays on 15m; this is the second feed `run_dual` walks alongside it.
     #
@@ -1222,8 +1267,11 @@ class SosFadeConfig:
     #   fills the order at a worse price than really traded, so it UNDERSTATES, which is the safe
     #   direction. MEASURED 2026-08-21, XAUUSD 2018-09-14 → 2026-08-20, matched basis:
     #     1m  2,804,720 bars  234 trades  +147.56R   (the most faithful)
-    #     5m    561,795 bars  234 trades  +145.61R   ← default: 1/5 the data, 1.3% off
+    #     5m    561,795 bars  234 trades  +145.61R   (the default until 2026-09-26; 1.3% off)
     #     15m   187,286 bars  233 trades  +136.36R   (7.6% off — this is where it starts to hurt)
+    #   🔴 1 SINCE 2026-09-26, because the default add ("1m break") reads 1-minute structure off
+    #   this same feed and refuses anything else. It is also the most faithful reading above.
+    #   ⚠ Every default run now loads 1m bars — 5x the data — and a 1m history floor bounds it.
     #   ⚠ **Do not read the 5m default as "the strategy trades on 5m".** Nothing about the setup,
     #   the entry price or the stop is 5-minute; only the simulated fill is.
     #   ⚠ A finer feed also bounds the WINDOW by that timeframe's measured history floor, which is
@@ -1269,7 +1317,7 @@ class SosFadeConfig:
     #   the setup that armed it, and every bar it waits is a bar that setup gets older while the
     #   price it rests at does not move.
     #   ⚠ **The unit is FILL-CLOCK bars, so it moves with `exec_sec_fill_tf_min`** — 12 is one hour
-    #   at the 5-minute default and five hours at 25. It is counted in bars rather than minutes
+    #   at a 5-minute clock, 12 minutes at the 1-minute default, five hours at 25. It is counted in bars rather than minutes
     #   because that is what the re-entry path is stepped on; a minutes field would silently mean
     #   something different on every fill clock.
     #   ⚠ **It counts bars the order was ALIVE, never bars since the primary closed.** A run's
@@ -1942,6 +1990,19 @@ class SosFadeConfig:
     #   the fill clock: 24 is two hours on the shipped 5-minute feed. ⚠ Read only when
     #   exec_lvl_confluence is "Shift confirms".
 
+    # ── The 1-minute SOS-then-BOS entry ────────────────────────────────────────────────
+    exec_shift_entry: bool = False     # "Enter on a 1m SOS then BOS"
+    #   REPLACES the resting limit. With it on no first-trade limit is placed at all: a setup
+    #   that has SOS'd and tagged the 0.5 waits for the 1-minute structure to print an SOS and
+    #   then a BOS in its direction, and enters at market on the next 1-minute open. Stop at the
+    #   15m 1.0; the whole position comes off at the first target (`exec_tp1_level`/`exec_tp1_r`,
+    #   the 15m 0.0 when no R is set). The zone's gap is not read. Rules: `shift_entry.py`.
+    #   Screened 2026-09-28 (`backtest/tools/generic_ltf_trigger.py`): +0.26R a trade net on
+    #   GBPJPY (184, z +3.2) and +0.19R on GBPUSD (176, z +2.4) — a screen, no position slot.
+    #   ⚠ Needs the fill clock at 1 minute (`exec_sec_fill_tf_min = 1`), refused otherwise.
+    #   ⚠ Sized at the full `exec_risk_pct` — it is the first trade, not a re-entry.
+    #   ⚠ No Pine counterpart; the parity gate is blind to it.
+
     def __post_init__(self) -> None:
         """Refuse a Custom SL ratio outside (0, 1.0], and a time stop of 0 hours — LOUDLY,
         at construction.
@@ -2079,6 +2140,21 @@ class SosFadeConfig:
                 f"{self.exec_nogap_arm!r}. It gates the no-FVG fallback entry and is read only "
                 "when exec_req_fvg is False."
             )
+        if self.exec_scale_in and self.exec_scale_mode == "1m break" and (
+                not self.exec_secondary or int(self.exec_sec_fill_tf_min) != 1):
+            # Refused, never quietly degraded: without a 1-minute fast feed no break ever
+            # arrives, and the run would read as "this mode never adds" rather than "this run
+            # could not see the feed it needs" — rule 1.
+            raise ValueError(
+                "exec_scale_mode='1m break' reads 1-minute structure, and the only 1-minute "
+                "stream the lab and the live runner load is the re-entry's fast feed. Turn "
+                "exec_secondary on and set exec_sec_fill_tf_min to 1 (got exec_secondary="
+                f"{self.exec_secondary!r}, exec_sec_fill_tf_min={self.exec_sec_fill_tf_min!r}).")
+        if self.exec_scale_in and self.exec_scale_mode == "1m break" and int(
+                self.exec_scale_brk_n) < 1:
+            raise ValueError(
+                f"exec_scale_brk_n must be >= 1, got {self.exec_scale_brk_n!r}. It counts the "
+                "1-minute breaks back after a bounce; 0 would add on the bounce itself.")
         if self.exec_scale_in and self.exec_scale_gate not in (
                 "Stop improved", "Past the last add"):
             raise ValueError(
@@ -2134,9 +2210,10 @@ class SosFadeConfig:
                 "exec_entry_block_from equals exec_entry_block_to — an empty window that reads "
                 "as a rule switched on. Leave both empty to mean off.")
         if self.exec_rev_exit not in (
-                "Off", "Bank half", "Tighten to the trail", "Close"):
+                "Off", "Bank half", "Tighten to the trail", "Close", "Give-back stop"):
             raise ValueError(
-                "exec_rev_exit is 'Off', 'Bank half', 'Tighten to the trail' or 'Close'. "
+                "exec_rev_exit is 'Off', 'Bank half', 'Tighten to the trail', 'Close' or "
+                "'Give-back stop'. "
                 f"Got {self.exec_rev_exit!r}. A typed value that is not a mode must never fall "
                 "through to a default — that replays a whole book against a rule nobody chose."
             )
@@ -2148,6 +2225,19 @@ class SosFadeConfig:
         if self.exec_rev_level_touches < 1:
             raise ValueError(
                 f"exec_rev_level_touches must be at least 1, got {self.exec_rev_level_touches}.")
+        if self.exec_rev_arm_at not in ("R", "Target 2 price"):
+            raise ValueError(
+                "exec_rev_arm_at is 'R' or 'Target 2 price'. "
+                f"Got {self.exec_rev_arm_at!r}. A typed value that is not a choice must never "
+                "fall through to a default.")
+        if not isinstance(self.exec_rev_need_bos, bool):
+            raise ValueError(
+                f"exec_rev_need_bos is True or False, got {self.exec_rev_need_bos!r}.")
+        if self.exec_rev_exit == "Give-back stop" and not (0 < self.exec_rev_giveback_pct < 100):
+            raise ValueError(
+                "exec_rev_giveback_pct must be above 0 and below 100 — at 0 the stop sits on the "
+                "best price and closes the trade on the next tick, at 100 it sits on the entry. "
+                f"Got {self.exec_rev_giveback_pct}.")
         if self.exec_rev_exit != "Off" and self.exec_rev_arm_r <= 0:
             raise ValueError(
                 "exec_rev_arm_r must be a positive number of R — at 0 the reversal exit arms on "
@@ -2392,6 +2482,12 @@ class SosFadeConfig:
                 raise ValueError(
                     f"exec_be_cost_conflict must be one of {conflicts}, got "
                     f"{self.exec_be_cost_conflict!r}.")
+
+        if self.exec_shift_entry and int(self.exec_sec_fill_tf_min) != 1:
+            raise ValueError(
+                f"exec_shift_entry reads 1-minute structure and needs the fill clock at 1 minute; "
+                f"exec_sec_fill_tf_min is {self.exec_sec_fill_tf_min!r}. A shift read off slower "
+                f"bars is a different signal from the one that was measured.")
 
         # ── Level memory ────────────────────────────────────────────────────────────────
         # Every one of these REFUSES rather than clamps, for the reason the rest of this method

@@ -392,6 +392,56 @@ absence and a deliberate 1.0 read identically at the call site and mean very dif
 ⚠ 13 tests, offline (the source is injected). Three mutations run, each killing exactly one test:
 allowing backwards extrapolation, accepting a non-positive close, and accepting an empty series.
 
+## 🔴 The conversion is WIRED into every replay path (2026-09-27)
+
+**Until this date `data/fx.py` was built and nothing used it** except one research script. Every
+lab run, sweep and stack on GBPJPY priced every trade at the 2026-09-17 snapshot rate, and the
+extreme leg and FFT strategies passed NO conversion to swap at all — a yen swap charged as dollars,
+156x too large.
+
+**One decision point, one install point.**
+- `fx.rate_provider_for(source, symbol, start, end)` decides the conversion from the symbol's
+  NAME: the second three letters are the quote currency, the pair is `USDxxx` (inverted) or
+  `xxxUSD` for EUR/GBP/AUD/NZD, and it carries the traded symbol's broker suffix so the rate comes
+  off the same feed. **Hourly bars**, started 14 days before the run so the first bar already has
+  a closed rate. `None` for a dollar-quoted symbol — nothing is installed and gold is untouched.
+- `replay.build_strategy(..., rate_provider=)` installs it through
+  `strategy.execution.set_rate_provider`. The lab run, the optimizer (serial and pooled) and the
+  stack's `LegSpec` all pass it.
+
+**Three refusals, so a yen run cannot go quietly wrong:**
+- a strategy with no `set_rate_provider` REFUSES a rate (`smc_session_sweep`, `loss_recovery`
+  today — both would need the seam before trading a non-dollar symbol);
+- a config whose `symbol` needs a conversion and was given none REFUSES at `build_strategy`, on
+  every path. To use the snapshot knowingly, pass `constant_rate(config.point_value)`;
+- a name that is not a readable currency pair REFUSES in `rate_provider_for` (never "USD").
+
+**Each money figure converts at its own moment**, through `fx.QuoteConversion` in the extreme leg
+and FFT (SOS Fade and its forks keep their own per-bar `_pv`): size at the entry, P&L at the exit,
+risk at the entry, swap at each rollover. Commission is already dollars and is never converted.
+
+🔴 **The extreme leg sized WITHOUT the conversion** — `equity x risk% / distance`, the defect SOS
+Fade's `_qty_for_risk` fixed on 2026-09-17. At 1.0 the two agree; on GBPJPY every trade was 1/156th
+of its stated dollar risk. Fixed here.
+
+⚠ **`RateSeries.from_frame` keyed each close at its bar's OPEN until this date** — a daily bar
+priced a 10:00 fill at that evening's close. Lookahead. Now keyed at the close (open + one bar).
+Run 37 (`sos_fade_optimization.md`) used daily bars under the old keying; its R figures do not
+depend on the rate, so its verdict stands, but its dollar figures would move on a re-run.
+
+MEASURED — gold is byte-identical: the extreme leg on XAUUSD.p M5, 2024-01-01 → 2026-09-01,
+189,331 bars, PU Prime ECN costs, before and after: 51 trades, $15,536.083396, 21.812949R,
+costs -$331.099416, identical to the last digit.
+
+## A profile says which instrument it was measured on — `AccountProfile.instrument` (2026-09-27)
+
+The lab chooses a cost profile by broker ACCOUNT, and every account has a gold profile. Nothing
+checked the pairing, so the lab's only GBPJPY run (778b7389b0bf) was billed **gold's** costs:
+a 0.12 spread (12 cents on gold, 12 pips on a yen pair against a measured 1.5), gold's swap table,
+and a 100-unit lot. Every profile now names its instrument explicitly, and
+`python_runner._cost_profile` refuses a run on any other symbol, naming the profile that fits —
+or saying none is measured yet. `""` refuses too; a blank never means "any".
+
 ## `puprime_ecn_gbpjpy` — the first non-USD-quoted profile (2026-09-17)
 
 Every figure MEASURED on 2026-09-17 off demo 700152905:

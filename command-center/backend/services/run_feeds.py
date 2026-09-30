@@ -59,7 +59,8 @@ EXTRA_FEEDS: dict[str, FeedSpec] = {
     # merged clock via `strategy.run_dual`, so this feed's measured history floor bounds the run's
     # window just as hard as the chart's does.
     #
-    # 🔴 5, not 1, since 2026-08-21, and the OWNER of that number is the strategy
+    # 🔴 1 since 2026-09-26 (5 from 2026-08-21): the strategy's default add ("1m break") reads
+    # 1-minute structure off this same feed. The OWNER of that number is the strategy
     # (`sos_fade/config.py::exec_sec_fill_tf_min`) — this is a copy, and
     # `tests/test_run_feeds.py` fails if the two ever disagree. It is a copy rather than an import
     # because this module bounds the WINDOW before any strategy is constructed, and a value it
@@ -67,8 +68,18 @@ EXTRA_FEEDS: dict[str, FeedSpec] = {
     # ⚠ It is a measurement-accuracy figure, not a strategy one: live, the broker fills a resting
     # limit at the price that trades. MEASURED over 7.9 years — 1m +147.56R, 5m +145.61R (1/5 the
     # bars), 15m +136.36R. Full table in the strategy's config beside the field.
-    "exec_secondary": FeedSpec(param="exec_sec_fill_tf_min", default=5),
+    "exec_secondary": FeedSpec(param="exec_sec_fill_tf_min", default=1),
+    # The two other triggers that trade on the SAME fill clock, so they load the same feed at the
+    # same setting. 🔴 Until 2026-09-28 only the re-entry was listed here, so a lab run with the
+    # level memory on and the re-entry off loaded no fast feed and booked none of its trades.
+    "exec_lvl_memory": FeedSpec(param="exec_sec_fill_tf_min", default=1),
+    "exec_shift_entry": FeedSpec(param="exec_sec_fill_tf_min", default=1),
 }
+
+# A COPY of `strategies/python/sos_fade/dual_clock.py::FAST_CLOCK_FLAGS` — every setting that
+# trades on the fill clock. A copy for the reason `default` above is one; pinned to the owner by
+# `tests/test_run_feeds.py`.
+FAST_CLOCK_FLAGS = ("exec_secondary", "exec_lvl_memory", "exec_shift_entry")
 
 # The one extra feed the runner knows how to LOAD (`strategy.run_dual`). Adding a row to
 # EXTRA_FEEDS gets that feed BOUNDED without teaching the runner to fetch it — the window
@@ -171,8 +182,12 @@ def uses_secondary(params: Any) -> bool:
     that reads fine: `1 in required_timeframes(...)` is true for a run whose CHART is 1m,
     so it would fire `run_dual` with the secondary switched off. Naming the question puts
     that mistake somewhere a test can hold it.
+
+    ⚠ "Secondary" here means the second FEED, not the re-entry: any trigger that trades on the
+    fill clock (`FAST_CLOCK_FLAGS`) needs it. They all read the re-entry's clock setting, so the
+    runner's `extra_feed_minutes(SECONDARY_FLAG, ...)` is the right minutes for every one.
     """
-    return _flag(params, SECONDARY_FLAG)
+    return any(_flag(params, f) for f in FAST_CLOCK_FLAGS)
 
 
 def enabled_feed_flags(params: Any) -> list[str]:

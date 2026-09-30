@@ -180,3 +180,17 @@ def test_implements_contract_does_not_CALL_the_method_to_find_out():
             raise RuntimeError("should never be called by a shape check")
 
     assert implements_contract(Explodes()) is True
+
+
+# ── the research-feed fields (2026-09-28) ────────────────────────────────────────────────────
+def test_a_strategy_that_says_nothing_about_the_touch_reads_as_NOT_ASKED_never_as_no():
+    """Rule 1: None = unasked, False = measured. RED against defaulting `touched` to False, which
+    would make every strategy without the field look like one whose setups never reached a zone."""
+    s = _snap()
+    assert s.touched is None and s.leg is None
+
+
+def test_a_leg_that_is_not_a_pair_is_refused():
+    """RED against dropping the check — the feed unpacks (extreme, origin)."""
+    with pytest.raises(ValueError, match="leg"):
+        _snap(leg=(1.0,))

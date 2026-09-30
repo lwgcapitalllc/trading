@@ -494,6 +494,11 @@ class _FakeExecution:
         """
         return self._full_exit
 
+    def add_exit_price(self):
+        """Where the scale-in lots bank, or `None` to ride them. Always present, for the reason
+        `full_exit_price` is: it is in the live contract. A test sets `_add_exit` to aim the adds."""
+        return getattr(self, "_add_exit", None)
+
     def planned_full_exit_price(self, pend):
         """The whole-position target an order being PLACED would carry, or `None`.
 
@@ -1070,7 +1075,7 @@ def _filled_entry(name_for_messages):
 
 def test_the_ENTRY_alert_names_the_bot_as_the_RUNNER_says_it_never_by_its_key():
     """MUTATION: hand `format_entry` the order-comment key again -> red."""
-    _b, entry = _filled_entry(lambda: "SOS Fade · LIVE")
+    _b, entry = _filled_entry(lambda room=None: "SOS Fade · LIVE")
     assert entry.splitlines()[-1] == "SOS Fade · LIVE"
     assert "BOT_TEST" not in entry
 
@@ -1078,9 +1083,27 @@ def test_the_ENTRY_alert_names_the_bot_as_the_RUNNER_says_it_never_by_its_key():
 def test_a_HALT_names_the_bot_as_the_runner_says_it():
     """The most consequential message the bridge sends, in the one health room both kinds share —
     so it is the one that most needs to say LIVE. MUTATION: name the halt by the key -> red."""
-    b, _ops, _ledger, notes = _bridge(_FakeExecution(), name_for_messages=lambda: "SOS Fade · LIVE")
+    b, _ops, _ledger, notes = _bridge(
+        _FakeExecution(), name_for_messages=lambda room=None: "SOS Fade · LIVE"
+    )
     b.halt("the fleet was stopped")
     assert notes[-1].splitlines()[0] == "⛔ HALTED · SOS Fade · LIVE"
+
+
+def test_the_bridge_names_the_ROOM_it_writes_to():
+    """The entry goes to the trades room and asks for that room's name; a halt goes to health and
+    asks with no room, so it keeps LIVE/demo. MUTATION: drop `notify.TRADE` from the entry -> red."""
+    rooms = []
+
+    def name(room=None):
+        rooms.append(room)
+        return "SOS Fade"
+
+    b, _entry = _filled_entry(name)
+    assert "trade" in rooms
+    rooms.clear()
+    b.halt("the fleet was stopped")
+    assert rooms == [None]
 
 
 def test_with_no_name_given_the_bridge_says_what_it_always_said():
@@ -1095,7 +1118,7 @@ def test_a_name_that_cannot_be_worked_out_costs_the_TAG_never_the_alert():
     or the position record written straight after the entry alert. MUTATION: drop the try in
     `_message_name` -> red."""
 
-    def boom():
+    def boom(room=None):
         raise RuntimeError("registry unreadable")
 
     b, _ops, _ledger, notes = _bridge(_FakeExecution(), name_for_messages=boom)
@@ -1108,7 +1131,7 @@ def test_a_name_that_cannot_be_worked_out_costs_the_TAG_never_the_alert():
 def test_the_order_comment_and_restart_record_keep_the_KEY():
     """The key is an IDENTIFIER — MT5 order comments and the restart record are matched on it —
     so the message name must never leak into it."""
-    b, _entry = _filled_entry(lambda: "SOS Fade · LIVE")
+    b, _entry = _filled_entry(lambda room=None: "SOS Fade · LIVE")
     assert b._strategy_name == "BOT_TEST"
 
 
@@ -1246,9 +1269,12 @@ def test_a_HALT_is_health_not_a_trade():
     assert notes and "HALTED" in notes[0]
 
 
-def test_closing_a_position_reports_pnl_and_r():
+def test_closing_a_position_reports_pnl_and_r(monkeypatch):
     """Risk is measured off the BROKER's fill and the stop actually attached — R has to
     describe the trade that happened, not the one that was intended."""
+    # The SIZED rendering, forced: sizes were hidden 2026-09-24..27 and this went red unnoticed.
+    # Shown again as shipped; forcing it keeps this case about the counts whatever the switch says.
+    monkeypatch.setattr(live_bridge.alerts, "SHOW_SIZE", True)
     ops = _FakeMt5Ops()
     ops.positions = [_Pos(901, 0, 3290.0, 0.42, 3280.0)]
     ex = _FakeExecution(pos_dir=1)
@@ -1265,6 +1291,25 @@ def test_closing_a_position_reports_pnl_and_r():
     assert closed["r_multiple"] == pytest.approx(3.0)
     # The exit alert leads with the OUTCOME, not the word "exit" — see algos/live/alerts.py.
     assert any("WIN" in n and "Made $1,260.00" in n for n in notes)
+
+
+def test_the_REAL_close_message_hides_dollars_in_follower_mode(monkeypatch):
+    """The same close through the real bridge with sizes switched OFF: R, never dollars. The
+    formatters are pinned in test_follower_mode.py; this proves the bridge passes the switch."""
+    monkeypatch.setattr(live_bridge.alerts, "SHOW_SIZE", False)
+    ops = _FakeMt5Ops()
+    ops.positions = [_Pos(901, 0, 3290.0, 0.42, 3280.0)]
+    ex = _FakeExecution(pos_dir=1)
+    b, ops, ledger, notes = _bridge(ex, mt5ops=ops)
+    b.sync(_Dec(stop=3280.0), _Sig())
+    ops.positions = []
+    ops.deal = (3320.0, 1260.0)
+    ex._pos_dir = 0
+    b.sync(_Dec(), _Sig())
+
+    win = [n for n in notes if "WIN" in n]
+    assert win and "+3.00R" in win[0]
+    assert "$" not in win[0] and "lot" not in win[0].lower()
 
 
 def test_a_position_cancels_any_leftover_resting_order():
@@ -3866,6 +3911,83 @@ def test_the_STOP_travels_with_the_target_so_the_ratchet_is_not_undone():
     assert ("move_sl", 555, 3285.0, 3320.0) in ops.actions
 
 
+# ── the ADD lots' own bank level (2026-09-26) ─────────────────────────────────
+#
+# 🔴 The "1m break" add banks its lots at the H4 high/low and the emulator fills them THERE.
+# Without a broker target the bridge could only close them at market on the next 15m close.
+
+
+def test_an_ADD_ticket_carries_the_ADD_bank_level_and_the_base_does_not():
+    """The add lot gets its own level; the base keeps riding with no target of its own.
+
+    MUTATION: give every ticket `whole` (drop the per-leg choice) and this goes red — the add
+    would get no target at all. MUTATION: give the base the add level and the second assert goes
+    red. Both watched red 2026-09-26.
+    """
+    b, ops, ledger, _, dec = _targeted_position(full_exit=None)
+    b._ex._add_exit = 3310.0
+    b._sync_take_profit(dec, ops.positions)
+    assert ("move_sl", 556, 3280.0, 3310.0) in ops.actions
+    assert not [a for a in ops.actions if a[0] == "move_sl" and a[1] == 555]
+
+
+def test_an_ADD_ticket_takes_whichever_target_price_reaches_FIRST():
+    """The strategy banks an add at the first of its own level and the whole-position target,
+    so the broker must hold the NEARER one — for a long, the lower.
+
+    MUTATION: take `max` for a long in `_nearer` and this goes red (3320 would be sent). Watched
+    red 2026-09-26.
+    """
+    b, ops, _, _, dec = _targeted_position(full_exit=3320.0)
+    b._ex._add_exit = 3310.0
+    b._sync_take_profit(dec, ops.positions)
+    assert ("move_sl", 556, 3280.0, 3310.0) in ops.actions
+    assert ("move_sl", 555, 3280.0, 3320.0) in ops.actions
+
+
+def test_a_SHORT_adds_nearer_target_is_the_HIGHER_price():
+    """The mirror case — a short's first target is the higher of the two.
+
+    MUTATION: drop the direction and always take `min` and this goes red. Watched red 2026-09-26.
+    """
+    assert live_bridge._nearer(3200.0, 3210.0, -1) == 3210.0
+    assert live_bridge._nearer(3200.0, 3210.0, 1) == 3200.0
+    assert live_bridge._nearer(None, 3210.0, -1) == 3210.0
+    assert live_bridge._nearer(3200.0, None, 1) == 3200.0
+
+
+def test_a_strategy_that_cannot_name_its_ADD_level_HALTS_but_only_once_it_holds_an_add():
+    """Rule 1: *never implemented* must not read as *ride the adds*. And a bot that never adds
+    must never reach this halt, which is why it is asked only when an add ticket is open.
+
+    MUTATION: ask unconditionally (drop `has_adds`) and the flat-of-adds half goes red. Watched
+    red 2026-09-26.
+    """
+    b, ops, _, _, dec = _targeted_position()
+    b._ex.add_exit_price = None
+    ops.positions = ops.positions[:1]  # the base alone: nothing to bank
+    b._sync_take_profit(dec, ops.positions)
+    assert b.state is not live_bridge.BridgeState.HALTED
+    b2, ops2, _, _, dec2 = _targeted_position()
+    b2._ex.add_exit_price = None
+    b2._sync_take_profit(dec2, ops2.positions)
+    assert b2.state is live_bridge.BridgeState.HALTED
+
+
+def test_the_1m_BREAK_add_is_ACCEPTED_and_a_resting_add_is_still_REFUSED():
+    """ "1m break" buys at market on the 15m close, the same placement "Trail" uses.
+
+    MUTATION: drop "1m break" from `_MARKET_ADD_MODES` and this goes red. Watched red 2026-09-26.
+    """
+    c = _add_config()
+    c.exec_scale_mode = "1m break"
+    c.fill_model = "bar"
+    live_bridge.assert_supported(c)
+    c.exec_scale_mode = "BOS retest"
+    with pytest.raises(live_bridge.UnsupportedStrategyConfig, match="rests a LIMIT"):
+        live_bridge.assert_supported(c)
+
+
 def test_a_FAILED_target_is_alerted_and_recorded_and_does_NOT_halt():
     """A broker rejects a target on the wrong side of the market or inside its stop level. The
     honest consequence is that this one trade exits the old way — a divergence worth saying out
@@ -4333,6 +4455,113 @@ def test_a_trade_SHRUNK_to_fit_says_how_much_of_its_size_it_took():
     assert "event:budget_shrunk" in ledger.kinds()
 
 
+def test_a_SHRINK_that_kept_all_its_size_is_recorded_but_NOT_announced():
+    """A grant of 99.6% is a shrink to the account (it compares at one part in a billion) and the
+    message rendered it as "it took 100% of its intended size" — a warning about nothing, seen in
+    the health room in September 2026. The ledger row stays; the message waits for a real cut.
+
+    Mutation run RED 2026-09-26: removing the `>= 100` guard in `_on_contention` sent it.
+    """
+    b, _, ledger, notes, acct = _armed_bridge(market=True)
+    assert _ask(acct, 500.0, room=498.0) == 498.0
+    assert not [n for n in notes if "TRADE SHRUNK" in n]
+    assert "event:budget_shrunk" in ledger.kinds()
+    assert _ask(acct, 500.0, room=300.0) == 300.0
+    assert [n for n in notes if "TRADE SHRUNK" in n], "a real cut in the same episode still speaks"
+
+
+def test_a_RESTING_bot_is_told_its_ORDER_shrank_never_that_a_trade_is_on():
+    """🔴 FFT, 2026-09-29: "the trade is on at the reduced size" about a limit that never filled.
+
+    Mutation run RED 2026-09-30: forcing the market wording back on every bot failed both asserts.
+    """
+    b, _, _, notes, acct = _armed_bridge(market=False)
+    assert _ask(acct, 500.0, room=300.0) == 300.0
+    body = "\n".join(notes)
+    assert "ORDER SHRUNK" in body
+    assert "nothing has filled yet" in body
+    assert "TRADE SHRUNK" not in body and "is open" not in body
+
+
+def test_an_ask_ABOVE_the_usual_share_says_so_in_percent():
+    """FFT asked 7.5% while known as a 5% bot (its sweep setups size 1.5x) and read as impossible.
+
+    Mutation run RED 2026-09-30: returning "" from `_risk_share_note` failed the first assert.
+    """
+    from backtest.portfolio.account import SoloAccount
+
+    ex = _ExSized(SoloAccount(balance=10_000.0), risk_pct=5.0)
+    b, _, _, notes = _bridge(ex, account_risk_cap_pct=10.0)
+    b._account_balance = lambda: 10_000.0
+    b._entry_style = lambda: "limit"
+    b.refresh_account_room()
+    assert _ask(ex._account, 750.0, room=500.0) == 500.0
+    body = "\n".join(notes)
+    assert "7.5% of the balance" in body, body
+    assert "above its usual 5%" in body, body
+
+
+def test_an_UNREADABLE_balance_prints_no_percentage_at_all():
+    """Rule 1: a percentage off an invented balance is worse than none."""
+    b, _, _, notes, acct = _armed_bridge(market=False)
+    b._account_balance = lambda: None
+    acct.external_room = 300.0
+    assert _ask(acct, 500.0, room=300.0) == 300.0
+    body = "\n".join(notes)
+    assert "ORDER SHRUNK" in body and "% of the balance" not in body
+
+
+def _shrunk_then_restored_bridge():
+    """A resting order placed shrunk by the real account, then offered at full size."""
+    from backtest.portfolio.account import SoloAccount
+
+    ex = _ExSized(SoloAccount(balance=10_000.0))
+    ex.planned_full_exit_price = lambda pend: None
+    b, ops, ledger, notes = _bridge(ex, account_risk_cap_pct=10.0)
+    b._account_balance = lambda: 10_000.0
+    b._entry_style = lambda: "limit"
+    b.refresh_account_room()
+    assert _ask(ex._account, 1_000.0, room=500.0) == 500.0  # the shrink, as the account makes it
+    b._sync_slot(live_bridge.PRIMARY_LONG, _Pend(1, 3300.0, 50.0, 3290.0), _Sig())
+    b.refresh_account_room()  # a new bar; nothing cut it yet
+    return b, ops, ledger, notes
+
+
+def test_a_shrunk_order_RE_PLACED_at_full_size_says_so_once():
+    """FFT, 2026-09-29: 0.3 → 0.45 lots at 15:46 and nobody was told the warning was over.
+
+    Mutation run RED 2026-09-30: removing the `_announce_restored` call left no message.
+    """
+    b, ops, ledger, notes = _shrunk_then_restored_bridge()
+    b._sync_slot(live_bridge.PRIMARY_LONG, _Pend(1, 3300.0, 100.0, 3290.0), _Sig())
+    restored = [n for n in notes if "BACK TO FULL SIZE" in n]
+    assert len(restored) == 1, notes
+    assert "0.5 → 1 lots" in restored[0]
+    assert "event:budget_restored" in ledger.kinds()
+
+
+def test_a_re_size_that_is_STILL_trimmed_is_not_called_full_size():
+    """More room but not all of it is a bigger shrunk order, not good news.
+
+    Mutation run RED 2026-09-30: dropping the `_budget_seen` check sent BACK TO FULL SIZE.
+    """
+    b, ops, ledger, notes = _shrunk_then_restored_bridge()
+    b._budget_seen.add(1)  # the strategy's sizing on this bar was cut again
+    b._sync_slot(live_bridge.PRIMARY_LONG, _Pend(1, 3300.0, 100.0, 3290.0), _Sig())
+    assert ops.actions[-1][:3] == ("place", "bullish", 1.0), (
+        "the re-size itself must happen, or this proves nothing"
+    )
+    assert not [n for n in notes if "BACK TO FULL SIZE" in n]
+
+
+def test_a_re_size_on_a_side_never_told_shrunk_says_nothing():
+    """A balance change after another bot's trade closes re-sizes orders too. Not news."""
+    b, ops, ledger, notes = _shrunk_then_restored_bridge()
+    b._shrink_told.clear()
+    b._sync_slot(live_bridge.PRIMARY_LONG, _Pend(1, 3300.0, 100.0, 3290.0), _Sig())
+    assert not [n for n in notes if "BACK TO FULL SIZE" in n]
+
+
 def test_a_size_that_FITS_says_nothing_at_all():
     """The alert must fire on the cut, never on the asking — or every bar is an alert."""
     b, _, _, notes, acct = _armed_bridge()
@@ -4534,7 +4763,7 @@ def test_a_FULL_hand_close_is_booked_as_yours_and_the_bot_keeps_trading(tmp_path
     assert closed["price"] == 4291.98 and closed["ticket"] == ticket
     assert closed["r_multiple"] == pytest.approx(348.6 / (35.46 * 0.14 * 100), rel=1e-3)
     assert ex.close_requested == live_bridge.MANUAL_CLOSE_REASON
-    assert notes[-1].splitlines()[0] == "✋ CLOSED BY YOU · +0.7R"
+    assert notes[-1].splitlines()[0] == "✋ CLOSED BY YOU · +0.70R"
     from position_state import read as read_record
 
     assert read_record(tmp_path) is None
@@ -4761,6 +4990,7 @@ def _reentry_bridge():
     ex = _ExSized(SoloAccount(balance=10_000.0))
     ex.cfg.exec_sec_risk_pct = 50.0
     ex.planned_full_exit_price = lambda pend: None  # the bridge halts on a strategy without it
+    ex.add_exit_price = lambda: None  # likewise, once an add ticket is open
     b, ops, _, _ = _bridge(ex, account_risk_cap_pct=10.0)
     b._account_balance = lambda: 10_000.0
     b.refresh_account_room()
@@ -4921,8 +5151,11 @@ def test_a_new_trade_does_not_inherit_the_last_trades_announced_R():
     assert b._stop_r_said is None and b._pos_stop0 == 0.0
 
 
-def test_a_banked_partial_is_announced_with_what_is_still_running():
+def test_a_banked_partial_is_announced_with_what_is_still_running(monkeypatch):
     """Size coming off is the trade being managed. It was recorded and never said."""
+    # The SIZED rendering, forced: sizes were hidden 2026-09-24..27 and this went red unnoticed.
+    # Shown again as shipped; forcing it keeps this case about the counts whatever the switch says.
+    monkeypatch.setattr(live_bridge.alerts, "SHOW_SIZE", True)
     b, ops, ledger, notes = _in_trade(lots=0.42)
     b._notify_partial_banked(banked=0.17, before=0.42, after=0.25)
     assert notes[-1].startswith("💰 PART BANKED")
@@ -4962,12 +5195,15 @@ def test_a_message_that_throws_cannot_cost_a_stop_move():
     assert b.state is not live_bridge.BridgeState.HALTED
 
 
-def test_BANKING_size_off_a_live_position_is_ANNOUNCED_at_its_call_site():
+def test_BANKING_size_off_a_live_position_is_ANNOUNCED_at_its_call_site(monkeypatch):
     """Rule 7: the ledger event proves nothing about the message. This drives the real
     reconciliation rather than the notifier, so a refactor that drops the send is caught here.
 
     MUTATION: remove the send from `_sync_partials` → red with only the entry message in the room.
     """
+    # The SIZED rendering, forced: sizes were hidden 2026-09-24..27 and this went red unnoticed.
+    # Shown again as shipped; forcing it keeps this case about the counts whatever the switch says.
+    monkeypatch.setattr(live_bridge.alerts, "SHOW_SIZE", True)
     b, ops, ledger, notes = _open_bank(qty=1.0, filled=0.5, held=1.0)
     notes.clear()
     b.sync(_Dec(stop=3280.0), _Sig())
@@ -4977,13 +5213,16 @@ def test_BANKING_size_off_a_live_position_is_ANNOUNCED_at_its_call_site():
     assert "Took 0.50 of 1.00 lots off · 0.50 still running" in banked[0]
 
 
-def test_ADDING_to_a_winner_is_ANNOUNCED_at_its_call_site_and_counts_the_BROKER_book():
+def test_ADDING_to_a_winner_is_ANNOUNCED_at_its_call_site_and_counts_the_BROKER_book(monkeypatch):
     """The entry message stated a size and a risk, and this makes both stale. Rule 3 is the other
     half: the figure is the difference between two reads of the broker's own book, so a refused
     or rejected add announces nothing rather than size the account does not hold.
 
     MUTATION: report `pend.qty` instead of the difference → red on the lots.
     """
+    # The SIZED rendering, forced: sizes were hidden 2026-09-24..27 and this went red unnoticed.
+    # Shown again as shipped; forcing it keeps this case about the counts whatever the switch says.
+    monkeypatch.setattr(live_bridge.alerts, "SHOW_SIZE", True)
     b, ops, ledger, notes = _scaled_bridge(base_qty=100.0, base_lots=1.0)
     b._ex._adds = [[3300.0, 20.0]]
     notes.clear()
@@ -4992,3 +5231,19 @@ def test_ADDING_to_a_winner_is_ANNOUNCED_at_its_call_site_and_counts_the_BROKER_
     assert len(added) == 1
     assert "Added 0.20 lots at about 3,300.00" in added[0]
     assert "1.20 lots now open" in added[0]
+
+
+def test_an_add_is_STILL_ANNOUNCED_with_sizes_switched_off(monkeypatch):
+    """2026-09-27 (Aaron: "show when we scale in"): with sizes off the add used to post nothing,
+    so a follower's thread stopped describing the trade. Now it says the bot added, without lots.
+
+    MUTATION: restore the `and alerts.SHOW_SIZE` gate at the bridge's add -> red (nothing sent)."""
+    monkeypatch.setattr(live_bridge.alerts, "SHOW_SIZE", False)
+    b, ops, ledger, notes = _scaled_bridge(base_qty=100.0, base_lots=1.0)
+    b._ex._adds = [[3300.0, 20.0]]
+    notes.clear()
+    _add_bar(b, [_add_intent(qty=20.0, price=3300.0)])
+    added = [n for n in notes if n.startswith("➕ ADDED TO POSITION")]
+    assert len(added) == 1, "the add was not announced"
+    assert "Added to the position at about 3,300.00" in added[0]
+    assert "lots" not in added[0]

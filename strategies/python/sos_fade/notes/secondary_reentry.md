@@ -525,3 +525,30 @@ detail in the build notes. **PARITY:** `compare_strategy.py` exit 0 on `4fef8` a
 
 ⚠ **NOT USABLE LIVE, and no new refusal was needed** — `algos/live/bridge.py` already refuses
 `exec_secondary` outright, so the whole re-entry layer including both new values is covered.
+
+## The fast structure stream is recorded and replayed in the lab (2026-09-27)
+
+`run_dual` swaps the dual clock's fast structure feed for a replay of a stored run of it
+(`PlayedStructure1m`) when this exact fast frame has been run before, and for a recorder
+(`RecordingStructure1m`) otherwise — see `_fast_structure_stream` in `strategy.py`. The store is
+`backtest/replay/recorded.py`, on disk under `backtest/cache/streams/`.
+
+- 🔴 **Why it is safe:** the stream depends on the fast bars and the swing length only — no
+  strategy setting reaches it — and each `M1State` is a frozen dataclass of plain values that
+  never changes after its bar (checked on 87,985 one-minute bars: every state's repr at emission
+  equals its repr after the whole run). The clock reads nothing off the feed but the returned
+  state and `conf_high` / `conf_low`, which the state carries.
+- ⚠ **Keyed on the fast frame's bytes, the swing length, and the source of `secondary.py` and
+  `engines/market_structure/`.** Edit either and it recomputes. No key means compute live.
+- ⚠ **Lab only.** The live runner builds its own `DualClock` and never calls `run_dual`, and a
+  live bot runs its frozen `deployed/` snapshot besides. Nothing here reaches a trade.
+- ⚠ The replay REFUSES a bar out of sequence; only a complete stream is stored (a cancelled run
+  returns before the save).
+- MEASURED: 87,985 bars compute 2.50s, load 0.30s. `replay_fingerprint.py` 2024-01-01..2026-09-26
+  `--secondary`: recording run 56.2s, replaying run 43.3s, bars 64,750 and trades 110 IDENTICAL —
+  and the trade digest equals the one captured before any 2026-09-27 speed change. Tests:
+  `tests/test_recorded_fast_structure.py`.
+- MEASURED, full window: run 7760823a639e's settings, 2020-01-01..2026-09-27, 15m + 1m, rerun
+  cache off, through the lab runner. Stream computed 266.9s, stream replayed 189.4s, 246 trades
+  each, whole result identical key by key (the per-run timing block excluded; it always differs).
+

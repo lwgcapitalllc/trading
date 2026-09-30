@@ -20,6 +20,7 @@ would be inventing a durability guarantee the rest of the lab doesn't make.
 
 from __future__ import annotations
 
+import os
 import sys
 import threading
 import time
@@ -29,9 +30,9 @@ from typing import Any, Dict, Optional
 
 import config as cfg
 
-# Stdlib-only, imports nothing from services — safe at module scope despite this module sitting
+# None of these imports anything from services — safe at module scope despite this module sitting
 # inside the runner_dispatch import cycle.
-from services import run_feeds, strategy_import
+from services import run_feeds, run_result_cache, strategy_import
 
 _MONOREPO = Path(cfg.MONOREPO_ROOT)
 if str(_MONOREPO) not in sys.path:
@@ -279,6 +280,10 @@ def _cost_profile(spec: dict):
             f"account, so it must be one of: {sorted(PROFILES)}"
         )
     base = PROFILES[broker]
+    if spec.get("instrument"):
+        # Every run path refuses a spec with no instrument before it gets here (`_execute`, the
+        # stack runner reads `settings["instrument"]`), so an absent one is a unit test's spec.
+        _refuse_other_instrument(base, spec["instrument"])
 
     bid_ask = "bid_ask_fills" in on
     return AccountProfile(
@@ -292,6 +297,36 @@ def _cost_profile(spec: dict):
         spread=base.spread if ("spread" in on or bid_ask) else 0.0,
         bid_ask_fills=bid_ask,
     )
+
+
+def _refuse_other_instrument(base, symbol: str) -> None:
+    """Refuse to charge one instrument's measured costs on another's run.
+
+    🔴 A profile is picked by broker ACCOUNT, and every account has a gold profile. Until
+    2026-09-27 nothing checked the pairing, so the lab's only GBPJPY run was billed gold's spread
+    (12 pips instead of 1.5), gold's swap and gold's 100-unit lot. See `AccountProfile.instrument`.
+    """
+    suffix = base.symbol_suffix or ""
+    bare = symbol[: -len(suffix)] if suffix and symbol.endswith(suffix) else symbol
+    if not base.instrument or bare.upper() != base.instrument.upper():
+        from backtest.fills import PROFILES
+
+        fits = sorted(
+            k
+            for k, p in PROFILES.items()
+            if p.instrument.upper() == bare.upper() and p.server == base.server
+        )
+        raise ValueError(
+            f"broker profile {base.name!r} holds costs measured on "
+            f"{base.instrument or 'an unrecorded instrument'}, and this run is on {symbol}. "
+            f"Charging them would bill one market's spread, swap and lot size on another. "
+            + (
+                f"Use {', '.join(fits)}."
+                if fits
+                else f"No profile on {base.server or 'this broker'} is measured on {bare} yet — "
+                f"measure it (algos/notes/broker-cost-measurement.md) or run with costs off."
+            )
+        )
 
 
 def _timeframe_minutes(spec: dict) -> int:
@@ -406,6 +441,7 @@ def _execute(job_id: str, spec: dict) -> None:
     from backtest.output import build_results
     from backtest.replay import build_strategy, frame_minutes
 
+    clock = _RunClock()
     class_name = spec.get("strategy_class")
     found = _resolve(class_name)
     if found is None:
@@ -433,12 +469,20 @@ def _execute(job_id: str, spec: dict) -> None:
 
     config = _build_config(entry["config"], spec.get("params") or {}, symbol)
     capital = float(spec.get("deposit") or _DEFAULT_CAPITAL)
+    # The quote-to-dollar conversion, per bar, off the SAME broker's feed — None for a symbol
+    # already in dollars, which installs nothing. See `backtest.data.fx.rate_provider_for`.
+    from backtest.data.fx import rate_provider_for
+
+    rate = rate_provider_for(
+        BarSource(server=bar_server(spec)), symbol, spec["start_date"], spec["end_date"]
+    )
     strategy = build_strategy(
         entry["strategy"],
         config,
         initial_capital=capital,
         cost_profile=_cost_profile(spec),
         max_lots=_max_lots(spec),
+        rate_provider=rate,
         # The spacing of the bars that CAME BACK, so a strategy that cannot read this frame
         # refuses here rather than finishing on 0 trades (FFT on 5m did, 2026-09-22).
         timeframe_minutes=frame_minutes(df),
@@ -475,10 +519,13 @@ def _execute(job_id: str, spec: dict) -> None:
         )
         if df1m.empty:
             raise ValueError(
-                f"exec_secondary is on but no {fill_tf}m bars loaded for {symbol} over "
+                f"a fill-clock trigger is on but no {fill_tf}m bars loaded for {symbol} over "
                 f"[{spec['start_date']}, {spec['end_date']}] — check the broker serves {fill_tf}m "
                 f"history for this window (or turn the secondary off)."
             )
+        cache_key = run_result_cache.key(spec, (df, df1m), rate)
+        if _serve_cached(job_id, cache_key, clock):
+            return
         _set(job_id, pct=2, message=f"Testing {len(df):,} × 15m + {len(df1m):,} × {fill_tf}m bars…")
 
         def _prog(i: int, n: int) -> None:
@@ -490,6 +537,9 @@ def _execute(job_id: str, spec: dict) -> None:
 
         strategy.run_dual(df, df1m, progress=_prog, should_cancel=lambda: _cancelled(job_id))
     else:
+        cache_key = run_result_cache.key(spec, (df,), rate)
+        if _serve_cached(job_id, cache_key, clock):
+            return
         _set(job_id, pct=2, message=f"Testing {len(df):,} bars…")
         _replay(job_id, strategy, df, len(df))
 
@@ -522,6 +572,8 @@ def _execute(job_id: str, spec: dict) -> None:
         missed=getattr(strategy.execution, "misses", None),
         lot_capped=getattr(_acct, "lot_capped", None),
     )
+    run_result_cache.write(cache_key, results)  # stored WITHOUT this attempt's timing
+    results = {**results, "replay_timing": clock.stamp(served_from_cache=False)}
     _set(
         job_id,
         status="complete",
@@ -529,6 +581,65 @@ def _execute(job_id: str, spec: dict) -> None:
         results=results,
         message=f"{len(strategy.execution.trades)} trades",
     )
+
+
+class _RunClock:
+    """How long a run took AND how much of that time it actually spent computing.
+
+    🔴 Written because run 7760823a639e took 976s in the lab while the identical replay took 335s
+    in a standalone process and 20s-for-3-months matched standalone the same afternoon — and
+    nothing recorded why. Wall time alone cannot tell slow code from a starved run. This thread's
+    own CPU time can: a run whose CPU share is well under 1.0 was WAITING (other processes on the
+    machine, other threads holding the GIL), not computing. The machine's load average at both
+    ends names the likely culprit. Written to `reports/lab/<run_id>/replay_timing.json`.
+    """
+
+    def __init__(self) -> None:
+        self._wall0 = time.time()
+        self._cpu0 = time.thread_time()
+        self._load0 = _load_avg()
+
+    def stamp(self, served_from_cache: bool) -> dict:
+        wall = time.time() - self._wall0
+        cpu = time.thread_time() - self._cpu0
+        return {
+            "served_from_cache": served_from_cache,
+            "wall_seconds": round(wall, 2),
+            "thread_cpu_seconds": round(cpu, 2),
+            # None, not 0, for an instant run — a share of nothing is not a measurement.
+            "cpu_share": round(cpu / wall, 3) if wall > 0.5 else None,
+            "load_avg_start": self._load0,
+            "load_avg_end": _load_avg(),
+            "cpu_count": os.cpu_count(),
+            "started_at": self._wall0,
+        }
+
+
+def _load_avg() -> Optional[list]:
+    try:
+        return [round(x, 2) for x in os.getloadavg()]
+    except OSError:  # not every platform has one; unknown is None, never zeros
+        return None
+
+
+def _serve_cached(job_id: str, cache_key: Optional[str], clock: "_RunClock") -> bool:
+    """Finish the job off an identical earlier run's stored results, if there is one.
+
+    Only a run whose spec, bars, conversion rates and code all match byte for byte can hit — see
+    `services/run_result_cache.py`. Returns False (replay normally) on any miss."""
+    results = run_result_cache.read(cache_key)
+    if results is None:
+        return False
+    n = len(results.get("engine_trades") or [])
+    results = {**results, "replay_timing": clock.stamp(served_from_cache=True)}
+    _set(
+        job_id,
+        status="complete",
+        pct=100,
+        results=results,
+        message=f"{n} trades (identical to an earlier run - reused its results)",
+    )
+    return True
 
 
 def _replay(job_id: str, strategy, df, total: int) -> None:
@@ -785,6 +896,7 @@ def _run_opt(job_id: str, spec: dict) -> None:
 
 
 def _execute_opt(job_id: str, spec: dict) -> None:
+    from backtest.data.fx import rate_provider_for
     from backtest.data.source import BarSource
     from backtest.optimizer import Combo, run_sweep
 
@@ -872,7 +984,7 @@ def _execute_opt(job_id: str, spec: dict) -> None:
         )
         if fast_df.empty:
             raise ValueError(
-                f"exec_secondary is on but no {fill_tf}m bars loaded for {symbol} over "
+                f"a fill-clock trigger is on but no {fill_tf}m bars loaded for {symbol} over "
                 f"[{spec['start_date']}, {spec['end_date']}] — check the broker serves {fill_tf}m "
                 f"history for this window (or turn the secondary off for the sweep)."
             )
@@ -888,6 +1000,10 @@ def _execute_opt(job_id: str, spec: dict) -> None:
         should_cancel=lambda: _cancelled(job_id),
         cost_profile=_cost_profile(spec),
         fast_df=fast_df,
+        # Every combo converts through the same per-bar rate a single run would — see _execute.
+        rate_provider=rate_provider_for(
+            BarSource(server=bar_server(spec)), symbol, spec["start_date"], spec["end_date"]
+        ),
     )
 
     if _cancelled(job_id):

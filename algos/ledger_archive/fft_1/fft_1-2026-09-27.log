@@ -1,0 +1,57 @@
+2026-09-27 01:12:56,998 [ERROR] TRADING OFF: the broker has switched trading off for this account — it is read-only. Every order this bot sends will be refused.
+2026-09-27 01:16:47,699 [INFO] Trading is allowed on this account again.
+2026-09-27 03:23:47,195 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-27 03:23:47,195 [INFO] Stop requested — shutting down.
+2026-09-27 03:23:47,195 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-27 03:23:47,716 [INFO] MT5 disconnected.
+2026-09-27 03:23:54,640 [INFO] FFT | FftStrategy v412 | hash 0b94d7d706aa | commit 604cdd55 | frozen | LIVE
+2026-09-27 03:23:55,162 [INFO] Connected | #700152905 | $14,862.76 | PUPrime-Demo
+2026-09-27 03:23:55,162 [INFO] MT5 connection lock released
+2026-09-27 03:23:55,328 [INFO] Sizing against account balance $14,862.76
+2026-09-27 03:23:55,328 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-27 03:23:55,328 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared signals channel
+2026-09-27 03:24:01,971 [INFO] Warmed 45000 bars (2026-08-12 03:18:00+00:00 → 2026-09-25 20:55:00+00:00) in 6.2s
+2026-09-27 03:24:01,971 [INFO] Equity re-anchored to the account after warm-up: 17,465.32 → 14,862.76
+2026-09-27 03:24:02,471 [INFO] Watching for closed M1 bars (poll 10s). Ctrl-C to stop.
+2026-09-27 16:51:29,023 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-27 16:51:29,023 [INFO] Stop requested — shutting down.
+2026-09-27 16:51:29,023 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-27 16:51:29,023 [INFO] MT5 disconnected.
+2026-09-27 16:51:34,813 [INFO] FFT | FftStrategy v325 | hash 8ee69d10b91f | commit b12025a3 | frozen | LIVE
+2026-09-27 16:51:34,828 [INFO] Waiting for MT5 lock (held by extreme_leg_1_700152905, 1s)...
+2026-09-27 16:51:38,347 [INFO] Connected | #700152905 | $14,862.76 | PUPrime-Demo
+2026-09-27 16:51:38,347 [INFO] MT5 connection lock released
+2026-09-27 16:51:38,487 [INFO] Sizing against account balance $14,862.76
+2026-09-27 16:51:38,487 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-27 16:51:38,487 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared signals channel
+2026-09-27 16:51:45,769 [INFO] Warmed 45000 bars (2026-08-12 03:18:00+00:00 → 2026-09-25 20:55:00+00:00) in 6.8s
+2026-09-27 16:51:45,784 [INFO] Equity re-anchored to the account after warm-up: 17,465.32 → 14,862.76
+2026-09-27 16:51:46,253 [INFO] Watching for closed M1 bars (poll 10s). Ctrl-C to stop.
+2026-09-27 18:22:02,135 [WARNING] Heartbeat write failed: [WinError 5] Access is denied: 'C:\\trading\\algos\\markets\\fx\\instances\\fft_1\\bot_state.json.24140.tmp' -> 'C:\\trading\\algos\\markets\\fx\\instances\\fft_1\\bot_state.json'
+2026-09-27 22:01:06,820 [WARNING] 2944 bars missed — re-warming the engines rather than resuming with a hole in the stream.
+2026-09-27 22:01:06,820 [INFO] Sizing against account balance $14,862.76
+2026-09-27 22:01:27,838 [INFO] Warmed 45000 bars (2026-08-12 03:20:00+00:00 → 2026-09-27 22:00:00+00:00) in 19.8s
+2026-09-27 22:01:27,854 [INFO] Equity re-anchored to the account after warm-up: 17,465.32 → 14,862.76
+2026-09-27 22:05:08,786 [INFO] Priority 4 on this account: waiting 31s for the bots above
+2026-09-27 22:10:00,949 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-27 22:15:01,070 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-27 22:20:00,914 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-27 22:25:00,812 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-27 22:30:00,623 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-27 22:35:00,953 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-27 22:40:00,884 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-27 22:45:00,579 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-27 22:50:00,604 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-27 22:55:00,804 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-27 23:00:00,737 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-27 23:05:00,830 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-27 23:10:00,589 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-27 23:15:00,738 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-27 23:20:00,546 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-27 23:25:00,624 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-27 23:30:00,673 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-27 23:35:00,777 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-27 23:40:00,836 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-27 23:45:00,819 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-27 23:50:00,909 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-27 23:55:00,958 [INFO] Priority 4 on this account: waiting 39s for the bots above

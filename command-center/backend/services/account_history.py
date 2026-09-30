@@ -49,6 +49,7 @@ from typing import Any, Callable, Iterable, Optional
 from config import MONOREPO_ROOT
 
 from services import broker_clock
+from services.pip_size import pip_size
 
 log = logging.getLogger("ACCOUNT_HISTORY")
 
@@ -711,6 +712,9 @@ def build_history(
     chart_symbol = next((p["symbol"] for p in positions if p["symbol"]), "")
     chart = {
         "instrument": chart_symbol,
+        # Same field the backtest chart carries, so the pip readings on Best / DD / exit work here
+        # too. `None` = no settled pip convention for this symbol — see `pip_size`.
+        "pipSize": pip_size(chart_symbol),
         "baseTimeframe": CHART_TIMEFRAME,
         "runTimeframe": CHART_TIMEFRAME,
         "historyStartMs": candles[0]["time"] if candles else None,

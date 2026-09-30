@@ -118,3 +118,60 @@ export function exitSide(
   if (d < -EPS) return 'adverse'
   return 'flat'
 }
+
+/**
+ * How far `price` sits from the entry, in PIPS, signed so FAVOURABLE is positive on both a long
+ * and a short — `Best` reads +, `DD` reads −, an exit reads whichever way it closed.
+ *
+ * `null` when the instrument has no pip size, which is the chart's cue to print nothing: a pip
+ * reading off a guessed size would be a confident wrong number on every chip (rule 1).
+ */
+export function pipsFrom(
+  entryPrice: number,
+  price: number,
+  sign: Sign,
+  pipSize: number | null | undefined
+): number | null {
+  if (typeof pipSize !== 'number' || !(pipSize > 0)) return null
+  return ((price - entryPrice) * sign) / pipSize
+}
+
+/** `+152.3p` / `−38.0p` — one decimal, always signed, a real minus sign. */
+export function fmtPips(pips: number): string {
+  const r = Math.round(pips * 10) / 10
+  if (r === 0) return '0.0p'
+  return `${r > 0 ? '+' : '\u2212'}${Math.abs(r).toFixed(1)}p`
+}
+
+/**
+ * The chart NAME of each exit rung, by the order price REACHES them — `names[i]` names the rung
+ * at ladder position `i`. The nearest to the entry is `TP1`, the next `TP2`, and so on.
+ *
+ * 🔴 **Ladder position is not reach order, and the chart used to name by ladder position.** A
+ * re-entry prices its first rung off RISK and its second off the 15m fib, so the second can sit
+ * nearer — the short of 2026-08-26 on run 7760823a639e drew `TP2 / Exit` above `TP1`. The stop
+ * already climbs by distance (`execution.py` → `_stage_rungs`: breakeven at the NEARER rung, the
+ * floor at that nearer rung's price once the further one is reached), so naming by distance makes
+ * `TP1` / `TP2` mean on the chart what they mean to the stop. Aaron's call, 2026-09-27.
+ *
+ * ⚠ Only the NAMES move. The strategy's own ladder order, and which rung banks what, are
+ * untouched. With no entry price there is no distance to measure, so ladder order stands.
+ * ⚠ A tie keeps ladder order — the sort is stable.
+ * 🔴 **Only when EVERY rung is on the profit side of the entry.** A rung behind the entry is not
+ * reached by price moving in the trade's favour, so "nearest first" measures it backwards: Realign
+ * long T115 on st_6b6b71a5d5 (2026-09-18) bought above a target the setup had already passed, and
+ * the chart named its halfway rung TP2 and the old high TP1. Ladder order stands there.
+ */
+export function rungNames(prices: number[], entryPrice: number | undefined, sign: Sign): string[] {
+  const order = prices.map((_, i) => i)
+  const allAhead =
+    typeof entryPrice === 'number' && prices.every((p) => (p - entryPrice) * sign >= 0)
+  if (allAhead) {
+    order.sort((a, b) => (prices[a] - entryPrice!) * sign - (prices[b] - entryPrice!) * sign)
+  }
+  const names: string[] = new Array(prices.length)
+  order.forEach((ladderIdx, rank) => {
+    names[ladderIdx] = `TP${rank + 1}`
+  })
+  return names
+}

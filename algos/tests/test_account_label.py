@@ -99,6 +99,18 @@ def test_two_copies_of_one_strategy_are_told_apart_by_their_ACCOUNTS(registry):
     assert live != demo
 
 
+def test_the_trades_and_setups_rooms_get_NO_tag_and_health_keeps_it(registry):
+    """Aaron, 2026-09-27: the channel already says demo or live. A live account's trades and
+    setups rooms are its own, so those rooms hold one kind; the health room can hold both, and
+    keeps the tag. MUTATION: drop the room check in `labelled` -> red."""
+    from notify import HEALTH, SIGNAL, TRADE
+
+    assert bot_state.labelled("SOS Fade", _LIVE, TRADE) == "SOS Fade"
+    assert bot_state.labelled("SOS Fade", _DEMO, SIGNAL) == "SOS Fade"
+    assert bot_state.labelled("SOS Fade", _LIVE, HEALTH) == "SOS Fade · LIVE"
+    assert bot_state.labelled("SOS Fade", _LIVE) == "SOS Fade · LIVE"
+
+
 def test_an_unclassifiable_account_keeps_the_PLAIN_name(registry):
     """No tag rather than a guessed one — the plain name is what every message said before."""
     assert bot_state.labelled("SOS Fade", 111) == "SOS Fade"

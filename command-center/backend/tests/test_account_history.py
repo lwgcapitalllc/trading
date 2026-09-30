@@ -21,6 +21,7 @@ from pathlib import Path
 import pytest
 from services import account_history as ah
 from services import broker_clock
+from services.pip_size import pip_size
 
 ACCOUNT = 111
 OTHER = 222
@@ -641,3 +642,11 @@ def test_an_answer_still_waiting_on_bars_is_not_cached():
     assert ah.cached(999, lambda: next(answers))["bars_pending"] is True
     assert ah.cached(999, lambda: next(answers))["bars_pending"] is False
     ah._cache.clear()
+
+
+def test_the_account_chart_carries_the_pip_size(archive):
+    """RED before 2026-09-26: the account chart had no pip size, so the Best / DD / exit pip
+    readings the backtest chart shows were silently absent on a live account's chart."""
+    out = _build(archive)
+    assert out["chart"]["pipSize"] == pip_size(out["chart"]["instrument"])
+    assert out["chart"]["pipSize"] is not None  # the fixture trades a symbol with a convention

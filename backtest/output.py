@@ -29,6 +29,7 @@ warns about. Same for regime tags (the lab tags `daily_pnl` itself) and `cagr`.
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone
 from typing import Any, Iterable, Optional, Sequence
 
@@ -479,10 +480,23 @@ def build_blocked_setups(blocks: Optional[Sequence[Any]]) -> list[dict]:
                 "codes": [int(c) for c in (getattr(b, "codes", None) or [])],
                 "reasons": reasons,
                 "edge": _round(float(getattr(b, "edge", 0.0)), 5),
+                # The bracket the order would have carried — what lets a refusal be graded in R.
+                # None when the strategy did not price one; never 0, which is a price.
+                "stop": _price_or_none(getattr(b, "stop", None)),
+                "tp1": _price_or_none(getattr(b, "tp1", None)),
+                "tp2": _price_or_none(getattr(b, "tp2", None)),
             }
         )
     out.sort(key=lambda r: r["time_ms"])
     return out
+
+
+def _price_or_none(x: Any) -> Optional[float]:
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return None
+    return _round(v, 5) if math.isfinite(v) else None
 
 
 # How many confluences a full setup has. A property of the CONTRACT, not of any strategy: the

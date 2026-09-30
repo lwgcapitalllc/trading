@@ -44,7 +44,8 @@ from strategies.python.sos_fade.execution import (  # noqa: E402
 def _sig(is_long=True):
     """The same leg the setup-contract fixture uses: ash 105 / asl 90, stop anchor 0.886 = 95."""
     return SimpleNamespace(
-        fibo_p2=100.0, fibo_p3=98.0, fibo_p4=97.0, fibo_p5=96.0, fibo_p6=95.0, fibo_p10=94.0,
+        fibo_p2=100.0, fibo_p3=98.0, fibo_p4=97.0, fibo_p5=96.0, fibo_p6=95.0, fibo_p7=105.0,
+        fibo_p10=94.0,
         fibo_dir=1 if is_long else -1, fibo_ash=105.0, fibo_asl=90.0,
         low=102.5 if is_long else 91.0, high=104.0 if is_long else 93.5,
     )
@@ -216,7 +217,8 @@ def _ctx(ex, tight=False, quiet=False, ready=True):
         m.zone = True
         m.fvg = True
     return ex._setup_context(_sig(), m, True, arm_swp=True, arm_div=False,
-                             veto=False, late=False, htf_any=False, tight=tight, quiet=quiet)
+                             veto=False, late=False, htf_any=False, tight=tight, quiet=quiet,
+                             touched=ready)
 
 
 def test_a_ready_setup_refused_by_the_stop_floor_SAYS_SO():
@@ -319,7 +321,8 @@ def _place(ex, is_long=False, veto=False):
 
 def _watching(ex, slot=1):
     ex._setup_ctx[slot] = dict(key="K", side=-1 if slot else 1, confluences=(), zone=None,
-                               stop=None, blocked_by=(), tradeable=True, announce_resting=True)
+                               stop=None, blocked_by=(), tradeable=True, announce_resting=True,
+                               touched=None, leg=None)
     return [s for s in ex.live_setups() if s.key == "K"][0]
 
 

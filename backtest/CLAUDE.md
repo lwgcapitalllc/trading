@@ -159,6 +159,7 @@ broker-swap-does-not-inherit.
   `test_engine_config_pins_every_input_the_pine_moved_off_its_default` now asserts all four pins so the
   shared default is free to move again. **Corollary: never "tidy" an `EngineConfig` default without
   first checking which consumers read it unpinned — a stale-looking default may be load-bearing.**
+- 🔴 **No study number is quoted until `tools/study_vs_lab.py` has reconciled it against a lab run, or it is labelled "not reconciled"** — and a study reads its setups through `setup_feed.py`, never miss records (a hindsight anchor turned the lab's −0.06R into a study's +0.26R). Detail: `notes/study-reconciliation.md`.
 - **Never build a second copy of a canonical engine here.** This package *replays* `engines/`; it
   imports them, it does not reimplement structure/fib/fvg/rsi/liquidity/sessions detection.
 - **Every write to `backtest/cache/` goes through `data/atomic.py`** — `atomic_write_*` for the
@@ -310,16 +311,24 @@ listed below under the notes file that now holds it.
 - A trade is graded on the last bar that had already CLOSED, never the bar containing its entry
 - Read the range, never the middle number — a range crossing zero means the reading told us nothing
 - MEASURED 2026-09-17: the three shipped labels separate neither market behaviour nor money, and 78% of bars are called trending
+- `tools/generic_zone_turn.py`, `tools/generic_poc_study.py`, `tools/generic_fx_patterns.py`, `tools/generic_ltf_trigger.py` — SOS Fade Generic screens: does a zone touch turn, does the leg's volume POC mark it, does any hour, weekday, pool or depth change it on FX (all NO), and does a 1-5 minute structure shift inside the zone call the turn. ⚠ **The 2026-09-27 "YES, +0.26R GBPJPY / +0.19R GBPUSD" was a hindsight anchor and is NOT reconciled** — rebuilt on the point-in-time feed 2026-09-28, GBPJPY 1m matches lab run `8bcf06ffa418` trade for trade and every pattern loses after costs. Numbers: `docs/SOS_FADE_GENERIC_SPEC.md`
 - `tools/trade_export.py` — replay ANY registered strategy for its entry times and R, when the rich report's shape does not fit (2026-09-17)
-- `replay/registry.py` — which packages declare the contract, in ONE place; being in it is not a promise every tool can drive it (2026-09-17)
+- `replay/registry.py` — which packages declare the contract, in ONE place; being in it is not a promise every tool can drive it (2026-09-17). `sos_fade_generic` added 2026-09-27 — listed by `trade_export.py` (never run there yet), not by `run_report.py`
 - `regime_study/swap_cut.py` — MEASURED 2026-09-19: the candidate swapped IN as the extreme leg's market cut is a WORSE gate (110 trades / +46.8R / 9.61R worst run vs the shipped 146 / +87.3R / 6.00R), though not significantly worse than random thinning. No strategy file touched (2026-09-19)
 - `regime_study/candidate.py` — the candidate reading: two scales, bands ranked against the instrument's own past, nothing fitted. NOT an engine, no strategy imports it (2026-09-17)
+
+### `notes/study-reconciliation.md` — Reconciling a study against the lab
+
+**Read before touching:** writing a research study, quoting a study's number, `setup_feed.py`, or `tools/study_vs_lab.py`.
+
+- The rule, the hindsight anchor that made it necessary, and the GBPJPY reconciliation (2026-09-28)
 
 ### `notes/setups-contract.md` — The setups.py contract
 
 **Read before touching:** a strategy's blocked/missed-setup reporting.
 
 - `setups.py` — the contract a strategy fills in to report what it is WATCHING (2026-08-13)
+- `touched` / `leg`, and `setup_feed.py` — the point-in-time feed a study reads (2026-09-28)
 
 ### `notes/portfolio-stack.md` — Portfolio stacking and the venue ceiling
 
@@ -347,4 +356,7 @@ listed below under the notes file that now holds it.
 **Read before touching:** the bar loop's performance or the cost pill's scale-in charging.
 
 - The bar loop reads COLUMN ARRAYS, never `df.iterrows()` (2026-08-26)
+- On the 1-minute feed the loop is walked 2.4M times; timestamps are boxed in one pass (2026-09-27)
+- `replay/recorded.py` stores a per-bar stream; only a FROZEN output may be recorded (2026-09-27)
 - 🔴 The Costs pill UNDER-CHARGED every trade that scaled in (2026-09-07)
+- 🔴 An add banked at its own level was charged as a base exit too — page swap 7% low on the default add (2026-09-27)

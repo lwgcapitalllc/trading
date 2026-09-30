@@ -109,7 +109,9 @@ def test_run_dual_primary_is_identical_to_run_when_secondary_off():
     # the default here would silently turn this into a test of the secondary path — and it would
     # still pass, because this synthetic 1m stream never arms one. A parity test that stops
     # exercising the branch it names is worse than no test.
-    cfg = SosFadeConfig(exec_secondary=False)
+    # The add pinned to "Trail": the default "1m break" add (2026-09-26) needs the fast feed
+    # this test switches off, and would refuse rather than run.
+    cfg = SosFadeConfig(exec_secondary=False, exec_scale_mode="Trail")
     a = SosFadeStrategy(cfg).run(df15)
     b = SosFadeStrategy(cfg).run_dual(df15, df1m)
     assert a.decisions == b.decisions           # Decision/Fill are dataclasses → structural ==
@@ -1104,7 +1106,8 @@ def test_zero_or_negative_reentry_risk_is_REFUSED_not_clamped():
         with pytest.raises(ValueError, match="exec_sec_risk_pct"):
             SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_risk_pct=bad)
     # ...and it is not asked at all when re-entries are off, same as every other re-entry input.
-    assert SosFadeConfig(exec_secondary=False, exec_sec_risk_pct=0.0).exec_sec_risk_pct == 0.0
+    assert SosFadeConfig(exec_secondary=False, exec_scale_mode="Trail",
+                         exec_sec_risk_pct=0.0).exec_sec_risk_pct == 0.0
 
 
 # ── RECLAIM ENTRY — the swept-stop re-entry ──────────────────────────────

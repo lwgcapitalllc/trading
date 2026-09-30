@@ -450,7 +450,10 @@ def assert_supported(strategy_config) -> None:
     # can reach a terminal.
     if getattr(strategy_config, "exec_scale_in", False):
         mode = getattr(strategy_config, "exec_scale_mode", "Trail")
-        if mode != "Trail":
+        # ⚠ "1m break" is accepted for the same reason "Trail" is: it buys AT MARKET on the 15m
+        # close it decides on, so the same placement path mirrors it (2026-09-26). Every other
+        # mode rests a limit, which this bridge has no path for.
+        if mode not in _MARKET_ADD_MODES:
             raise UnsupportedStrategyConfig(
                 f"exec_scale_mode={mode!r} rests a LIMIT for the scale-in lot and waits for price "
                 f"to come back to it. This bridge places an add AT MARKET, on the bar the "
@@ -466,6 +469,18 @@ def assert_supported(strategy_config) -> None:
             "against historical tick data; live, the broker resolves fills and its real prices "
             "are recorded by the ledger."
         )
+
+
+def _nearer(a: Optional[float], b: Optional[float], direction: int) -> Optional[float]:
+    """The target price reaches FIRST for a trade in `direction`; either may be `None`."""
+    if a is None or b is None:
+        return b if a is None else a
+    return min(a, b) if direction > 0 else max(a, b)
+
+
+#: The scale-in modes that buy the add AT MARKET on the bar the strategy decides it, which is the
+#: only placement this bridge mirrors. Anything else rests a limit and is refused.
+_MARKET_ADD_MODES = ("Trail", "1m break")
 
 
 def assert_hedging_for_scale_in(strategy_config, *, hedging) -> None:
@@ -594,7 +609,7 @@ class OrderBridge:
         # number the strategy sizes against - see `_account_balance`.
         sizing_basis_adjustment: float = 0.0,
         instance_dir: Optional[Path] = None,
-        name_for_messages: Optional[Callable[[], str]] = None,
+        name_for_messages: Optional[Callable[[Optional[str]], str]] = None,
         trail_alert_step_r: float = DEFAULT_TRAIL_ALERT_STEP_R,
     ) -> None:
         self._mt5 = bot_mt5
@@ -630,6 +645,8 @@ class OrderBridge:
         # its name plus LIVE or demo, worked out per message from the account; the key stays on
         # the MT5 order comments and on the restart record, which are identifiers, not prose.
         # ⚠ A caller that passes nothing gets the key, exactly as before.
+        # It is handed the ROOM (`notify.TRADE`, or None for health): the fills drop the tag
+        # because the trades room already says demo or live (2026-09-27).
         self._message_name_fn = name_for_messages
 
         self.state = BridgeState.LIVE
@@ -672,6 +689,12 @@ class OrderBridge:
         # next cut on it speaks again. Without it the first refusal would be the only one this bot
         # ever reported.
         self._budget_seen: set[int] = set()
+        # Sides whose RESTING order was announced as shrunk and not yet announced as restored.
+        # Deliberately NOT tied to the episode above: the episode ends when a bar goes uncut, but
+        # the good news is the RE-PLACE at full size, which `_sync_slot` does after that bar.
+        # Cleared when the strategy stops wanting the order (filled or cancelled), so a later,
+        # unrelated re-size — a balance change after another bot's trade closes — says nothing.
+        self._shrink_told: set[int] = set()
         # The same idea for the PARTIAL path, keyed on the cause rather than on a side: a
         # position that cannot be banked re-offers the identical problem on every 15m bar, and
         # an alert per bar is one nobody reads by the third. Cleared when a bank succeeds and
@@ -725,7 +748,7 @@ class OrderBridge:
         self._pos_alert_id = None
         self.halt_reason: str = ""
 
-    def _message_name(self) -> str:
+    def _message_name(self, room=None) -> str:
         """What a message calls this bot (see `name_for_messages` above). NEVER raises and never
         returns empty: it is evaluated INSIDE the calls that report a fill and a halt, and a name
         that could not be worked out must cost the LIVE/demo tag — never the message, and never
@@ -734,7 +757,7 @@ class OrderBridge:
         if fn is None:
             return self._strategy_name
         try:
-            return str(fn() or "") or self._strategy_name
+            return str(fn(room) or "") or self._strategy_name
         except Exception:
             return self._strategy_name
 
@@ -2009,7 +2032,7 @@ class OrderBridge:
         self._notify(
             alerts.format_exit(
                 show_size=alerts.SHOW_SIZE,
-                strategy=self._message_name(),
+                strategy=self._message_name(notify.TRADE),
                 symbol=self._mt5.symbol,
                 exit_price=price,
                 pnl_usd=pnl,
@@ -2413,9 +2436,8 @@ class OrderBridge:
         # answers `[]` for both, and this path only runs with a base position already adopted —
         # so a zero read means the book could not be read, and the difference would then report
         # the WHOLE position as size just added. Rule 1, arriving through a subtraction.
-        # ⚠ An add posts nothing in follower mode — see `alerts.SHOW_SIZE`. The message's whole job
-        # is keeping a stated size current, and no size is stated, so there is nothing to correct.
-        if gained > 1e-9 and held_before > 0 and alerts.SHOW_SIZE:
+        # An add is announced whether or not sizes are shown (2026-09-27) — see `alerts.SHOW_SIZE`.
+        if gained > 1e-9 and held_before > 0:
             self._notify_scaled_in(
                 added=gained,
                 now=self._our_lots(positions),
@@ -2594,7 +2616,7 @@ class OrderBridge:
         self._pos_alert_id = self._notify(
             alerts.format_entry(
                 show_size=alerts.SHOW_SIZE,
-                strategy=self._message_name(),
+                strategy=self._message_name(notify.TRADE),
                 symbol=self._mt5.symbol,
                 direction=side,
                 entry=p.price_open,
@@ -2886,6 +2908,7 @@ class OrderBridge:
             # The strategy no longer wants an order here, so nothing is waiting to be re-sent.
             self._retry.pop(slot, None)
             self._reject_alerted[slot] = ""
+            self._shrink_told.discard(direction)
             if held is not None:
                 self._drop_rest(slot, held, "cancel")
             self._refused[slot] = ""
@@ -2920,6 +2943,8 @@ class OrderBridge:
             if not self._drop_rest(slot, held, "re-size"):
                 return
             self._place(slot, lots, pend, sig, plan)
+            if lots > held.lots and self._rest[slot] is not None:
+                self._announce_restored(direction, held.lots, lots)
             return
 
         if self._moved(held.price, pend.edge) or self._moved(held.sl, pend.sl):
@@ -3096,6 +3121,14 @@ class OrderBridge:
             self._ledger.event("budget_cut", **fields)
         else:
             self._ledger.event("budget_shrunk", **fields)
+        # 🔴 **A "shrink" that kept all of its size is not news (2026-09-26).** The account logs a
+        # shrink whenever the grant is below the ask by more than one part in a billion
+        # (`account._GRANT_EPS`), so a grant of 99.7% is a shrink there — and the message rendered
+        # it as "it took 100% of its intended size", which is a warning about nothing. The ledger
+        # row above still records it; the message waits for a cut a reader could see. Checked
+        # BEFORE the episode signature, so a real cut later in the same episode still speaks.
+        if not blocked and wanted and round(granted / wanted * 100.0) >= 100:
+            return
         signature = f"{'blocked' if blocked else 'shrunk'}:{reason}"
         if self._budget_alerted.get(direction) == signature:
             return
@@ -3118,17 +3151,85 @@ class OrderBridge:
             )
             return
         kept = (granted / wanted * 100.0) if wanted else 0.0
+        # 🔴 **A resting bot's shrink is an ORDER, not a trade (2026-09-30).** This said "the
+        # trade is on" for every bot, and on FFT it was a limit that never filled — re-placed at
+        # full size an hour later and then cancelled, with no word of either. The market bot's
+        # shrink IS its fill, so only it may say a trade is open.
+        market = self._entry_style() == "market"
+        if market:
+            title = "TRADE SHRUNK — SHARED ACCOUNT"
+            what = "trade opened"
+            after = (
+                "It is open at the smaller size, so a win or a loss will be smaller in dollars "
+                "than usual."
+            )
+        else:
+            title = "ORDER SHRUNK — SHARED ACCOUNT"
+            what = "order went in"
+            after = (
+                "The order is waiting at the smaller size and nothing has filled yet. If room "
+                "frees up first, the bot puts it back to full size and says so."
+            )
+            self._shrink_told.add(direction)
         self._notify(
             alert(
                 WARNING,
-                "TRADE SHRUNK — SHARED ACCOUNT",
+                title,
                 self._message_name(),
-                f"A {side} setup went on SMALLER than this bot wanted. It asked for "
-                f"${wanted:,.2f} of risk and the account had ${granted:,.2f} free, "
-                f"so it took {kept:,.0f}% of its intended size.",
-                "The trade is on at the reduced size, so its dollars will be smaller than "
-                "usual while its R is unchanged. This will not repeat while the same setup "
-                "keeps being trimmed.",
+                f"The account's shared risk limit was nearly used up by other bots, so a "
+                f"{side} {what} smaller than planned. It wanted to risk "
+                f"${wanted:,.2f}{self._risk_share_note(wanted)}, only ${granted:,.2f} was "
+                f"free, so it took {kept:,.0f}% of its size.",
+                after,
+                "No repeat of this message while the same setup stays trimmed.",
+            ),
+            notify.HEALTH,
+        )
+
+    def _risk_share_note(self, wanted: float) -> str:
+        """`wanted` as a share of the balance, and why it differs from the bot's usual share.
+
+        🔴 **Why this exists:** the FFT alert asked for 7.5% from a bot everybody knows as a 5%
+        bot — its strategy sizes one kind of setup at 1.5x — and read as impossible. Stated
+        generically (above or below the usual) because the reason lives in the strategy.
+
+        ⚠ Rule 1: an unreadable balance or an undeclared usual share prints NOTHING rather than
+        a percentage worked out from an invented number. Never raises — it sits inside an alert.
+        """
+        try:
+            basis = self._account_balance()
+            usual = getattr(getattr(self._ex, "cfg", None), "exec_risk_pct", None)
+            if not basis or not wanted:
+                return ""
+            pct = wanted / basis * 100.0
+            if usual is None or abs(pct - float(usual)) < 0.05:
+                return f" ({pct:.1f}% of the balance)"
+            way = "above" if pct > float(usual) else "below"
+            return (
+                f" ({pct:.1f}% of the balance — {way} its usual {float(usual):g}% because its "
+                f"strategy sizes this kind of setup differently)"
+            )
+        except Exception:
+            return ""
+
+    def _announce_restored(self, direction: int, was_lots: float, now_lots: float) -> None:
+        """A shrunk resting order has just been re-placed at FULL size — say so, once.
+
+        ⚠ Only for a side we TOLD was shrunk, and only when nothing cut it this bar: a re-size
+        that is still trimmed (a bit more room, not all of it) is not "back to full size".
+        """
+        if direction not in self._shrink_told or direction in self._budget_seen:
+            return
+        self._shrink_told.discard(direction)
+        side = "bullish" if direction > 0 else "bearish"
+        self._ledger.event("budget_restored", dir=direction, was_lots=was_lots, lots=now_lots)
+        self._notify(
+            alert(
+                OK,
+                "ORDER BACK TO FULL SIZE",
+                self._message_name(),
+                f"Room freed up on the account, so the {side} order that was shrunk is back to "
+                f"its full size ({was_lots:g} → {now_lots:g} lots). It has not filled yet.",
             ),
             notify.HEALTH,
         )
@@ -4346,6 +4447,7 @@ class OrderBridge:
         try:
             self._notify(
                 alerts.format_scaled_in(
+                    show_size=alerts.SHOW_SIZE,
                     lots_added=added,
                     lots_now=now,
                     price=price,
@@ -4589,6 +4691,32 @@ class OrderBridge:
         price = float(price)
         return price if math.isfinite(price) and price > 0 else None
 
+    def _wanted_add_take_profit(self) -> Optional[float]:
+        """The price the strategy banks its scale-in lots at, or `None` to ride them.
+
+        🔴 **WHY THE ADDS NOW FILL AT THEIR BANK LEVEL (2026-09-26).** The "1m break" add banks at
+        the H4 high/low and the emulator fills it THERE; without a broker target the lots were
+        only closed by `_sync_add_size` at market on the next 15m close — up to a whole bar from
+        the price the backtest booked. The market close stays as the safety net.
+
+        ⚠ **A strategy that cannot answer HALTS**, for the reason `_wanted_take_profit` gives:
+        read defensively, *never implemented* and *ride them* are one value. It is only asked when
+        an add ticket is open, so a bot that never adds is never halted by it.
+        """
+        if not callable(getattr(self._ex, "add_exit_price", None)):
+            self._halt(
+                "This strategy holds scale-in lots but cannot say where it banks them, so the "
+                "bridge cannot put their target on the broker. The usual cause is a git pull "
+                "moving algos/ ahead of the frozen strategy: run promote.py for this bot, then "
+                "restart it."
+            )
+            return None
+        price = self._ex.add_exit_price()
+        if price is None:
+            return None
+        price = float(price)
+        return price if math.isfinite(price) and price > 0 else None
+
     def _order_take_profit(self, pend, at_market: bool) -> Optional[float]:
         """The target to put on an order being SENT, or `None` for no target.
 
@@ -4671,17 +4799,24 @@ class OrderBridge:
         ⚠ **No positions passed means CANNOT ASK, so nothing is sent and nothing is claimed** —
         rule 1, and the same reading `_sync_add_stops` gives an empty list.
         """
-        want = self._wanted_take_profit()
+        whole = self._wanted_take_profit()
         # The stop that TRAVELS with the target is the one `_sync_stop` just kept — a hand-tightened
         # stop included — or this instruction would loosen it in the act of setting a target.
         stop = self._effective_stop(getattr(dec, "stop", None))
-        if want is None or stop is None or self._pos_ticket is None or not positions:
+        if stop is None or self._pos_ticket is None or not positions:
             return
+        # 🔴 **ASKED ONLY WHEN AN ADD TICKET EXISTS (2026-09-26)** — a bot that never adds never
+        # reaches the halt inside, so this seam cannot stop a strategy that has no adds to bank.
+        has_adds = any(int(p.ticket) != self._pos_ticket for p in positions)
+        add_want = self._wanted_add_take_profit() if has_adds else None
         for p in positions:
-            if not self._moved(getattr(p, "tp", None), want):
-                continue
             ticket = int(p.ticket)
             leg = "base" if ticket == self._pos_ticket else "add"
+            # An add closes at whichever comes FIRST — its own bank level or the whole-position
+            # target — because the strategy banks it at the first of the two the bar reaches.
+            want = whole if leg == "base" else _nearer(whole, add_want, self._ex._pos_dir)
+            if want is None or not self._moved(getattr(p, "tp", None), want):
+                continue
             ok = self._exec(
                 lambda t=ticket: self._mt5.move_sl(t, stop, tp=want),
                 f"set target T{ticket} {getattr(p, 'tp', None)} → {want} ({leg})",

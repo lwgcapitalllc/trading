@@ -178,6 +178,22 @@ _SYMBOL_TRADE_MODES = {0: "disabled", 1: "long only", 2: "short only", 3: "close
 _SYMBOL_TRADE_FULL = 4
 
 
+def refused_summary(names, shown: int = 3) -> str:
+    """`3 settings need a restart: a, b, c and 22 more.` — for SETTINGS NOT APPLIED (2026-09-26).
+
+    It listed every refused setting with both values until this date: up to 25 raw names and
+    reprs in one message, which is a log line, not an alert. The full detail still goes to the
+    log and the ledger; the message says how many and names the first few.
+    """
+    names = [str(n) for n in names]
+    if not names:
+        return ""
+    head = ", ".join(names[:shown])
+    more = len(names) - shown
+    noun = "setting needs" if len(names) == 1 else "settings need"
+    return f"{len(names)} {noun} a restart: {head}{f' and {more} more' if more > 0 else ''}."
+
+
 def trading_block(account, terminal, symbol, symbol_name: str) -> tuple[bool | None, str | None]:
     """Whether this account may TRADE right now, off what the terminal reported: `(allowed, why)`.
 
@@ -205,6 +221,14 @@ def trading_block(account, terminal, symbol, symbol_name: str) -> tuple[bool | N
             return False
         return not bool(value)
 
+    # ⚠ FIRST, and only on an explicit False (2026-09-26): a terminal that has lost the broker's
+    # server refuses every order too, and naming it as "the broker switched trading off" sends the
+    # reader to the broker instead of to the box. On 19 Sep both accounts' terminals went "read-only"
+    # in the same second, four times, ~40 s each — a box-side drop is the likelier reading, though
+    # which flag moved then was not recorded. A terminal that does not carry the field (every test
+    # double) is not treated as disconnected.
+    if terminal is not None and getattr(terminal, "connected", None) is False:
+        return False, "the terminal has lost its connection to the broker's server"
     if said_no(account, "trade_allowed"):
         return False, "the broker has switched trading off for this account — it is read-only"
     if said_no(account, "trade_expert"):
@@ -553,6 +577,16 @@ class LiveRunner:
         log.propagate = False  # the root logger is not this package's to write through
         return log
 
+    def _name_for(self, room=None) -> str:
+        """`_label` for a message going to `room` — the plain name in the trades and setups rooms,
+        which hold one account kind each (`bot_state.labelled`). NEVER raises, like `_label`."""
+        try:
+            import bot_state
+
+            return bot_state.labelled(self.cfg.display_name, self.cfg.account, room)
+        except Exception:
+            return self._label
+
     @property
     def _label(self) -> str:
         """This bot's name as a MESSAGE says it: its strategy's name plus LIVE or demo, worked out
@@ -680,6 +714,9 @@ class LiveRunner:
                 token_key=self.cfg.telegram_token_key,
                 reply_to=reply_to,
                 account=self.cfg.account,
+                # The bot KEY names the message in the send log and keys the health policy's
+                # memory (`shared/alert_policy.py`) — routing never reads it.
+                bot=self.cfg.bot_key,
                 # 🔴 Everything this bot sends is built by `alerts.py`, which is plain text BY
                 # DESIGN ("Plain text, no Markdown, ever" — a name, a symbol or a traceback is
                 # full of underscores). Asking Telegram to parse it can only corrupt it, and it
@@ -722,13 +759,9 @@ class LiveRunner:
     def alert_thread_path(self) -> Path:
         return self.cfg.instance_dir / self.ALERT_THREAD_FILE
 
-    def _deploy_thread(self):
-        """The Telegram message id this bot's deploy alerts should reply to, or None.
-
-        ⚠ **Every failure answers None**, which means *send it unthreaded* — the behaviour this
-        bot had before the file existed. A notifier convenience must never be able to cost a
-        lifecycle message, and there is no failure here worth a log line at the volume this runs.
-        """
+    def _deploy_thread_record(self):
+        """The live deploy-thread record as a dict, or None — expired, missing, unreadable, or not
+        an object. Every failure answers None, which means *no thread*."""
         import json as _json
         import time as _t
 
@@ -740,10 +773,73 @@ class LiveRunner:
                 return None
             if float(raw.get("expires_at", 0)) < _t.time():
                 return None
-            mid = int(raw.get("message_id") or 0)
-            return mid or None
+            return raw
         except (OSError, ValueError, TypeError):
             return None
+
+    def _deploy_thread(self):
+        """The Telegram message id this bot's deploy alerts should reply to, or None.
+
+        ⚠ **Every failure answers None**, which means *send it unthreaded* — the behaviour this
+        bot had before the file existed. A notifier convenience must never be able to cost a
+        lifecycle message, and there is no failure here worth a log line at the volume this runs.
+        """
+        try:
+            mid = int((self._deploy_thread_record() or {}).get("message_id") or 0)
+            return mid or None
+        except (ValueError, TypeError):
+            return None
+
+    #: What the Command Center's one message becomes once the bot is back, per action.
+    _ACTION_DONE = {
+        "promote": ("📦", "DEPLOYED"),
+        "restart": (OK, "RESTARTED"),
+        "start": (OK, "ONLINE"),
+    }
+
+    def _finish_action(self, facts: str, version_line: str) -> bool:
+        """Turn the Command Center's message for THIS action into what happened — one message per
+        deploy, start or restart, never three (2026-09-26). True when the edit landed.
+
+        The Command Center sends one message stating the ask (*Restarting it now*) and writes its id,
+        room and action into `alert_thread.json`; this edits that message in place once the bot is
+        ONLINE. ⚠ **False means nothing was edited, and the caller then sends ONLINE the old way** —
+        an older Command Center that wrote no action or room, a refused edit, anything. Losing the
+        ONLINE is the one outcome this may not have.
+
+        ⚠ **Edited with the DEFAULT token**, never this bot's own `telegram_token_key`: the Command
+        Center sent the message, and a Telegram bot can only edit its own messages.
+        """
+        try:
+            rec = self._deploy_thread_record() or {}
+            action, chat, mid = rec.get("action"), rec.get("chat"), rec.get("message_id")
+            if action not in self._ACTION_DONE or not chat or not mid:
+                return False
+            icon, label = self._ACTION_DONE[action]
+            if action == "promote":
+                was = str(rec.get("from_version") or "").strip()
+                now_v = self.cfg.version_label
+                first = (
+                    f"{was} → {now_v}, back online"
+                    if was and was != now_v
+                    else f"{now_v}, back online"
+                )
+            elif action == "restart":
+                first = "Restarted from the command center — back online."
+            else:
+                first = "Started from the command center."
+            from notify import edit_telegram
+
+            return edit_telegram(
+                str(chat),
+                mid,
+                alert(icon, label, self._label, first, facts, version_line),
+                account=self.cfg.account,
+                bot=self.cfg.bot_key,
+            )
+        except Exception as e:  # noqa: BLE001 — a convenience; the plain ONLINE is the fallback
+            self.log.warning(f"Could not edit the command center's message: {e}")
+            return False
 
     def clear_alert_thread(self) -> None:
         """Consume the deploy thread. Called once the bot is ONLINE — the last message that
@@ -1561,7 +1657,7 @@ class LiveRunner:
                 log=self.log,
                 categories=cats,
                 digits=getattr(self.cfg, "digits", 2),
-                display=self._label,
+                display=self._name_for("signal"),  # its room says demo/live
                 # The size the BROKER is holding, read off the placed order. Passing the
                 # bridge's own method rather than a number is what makes the alert layer
                 # broker-free: it never learns what a lot is, it is handed one. A bot with no
@@ -1600,11 +1696,20 @@ class LiveRunner:
                 # produce them is the exception, and a silent signals room reads exactly like a
                 # quiet market — `extreme_leg_demo` logged this line for days before anyone saw
                 # it. Once per start, never per bar.
+                # ⚠ In the house shape since 2026-09-26, with the VERSION in its body: the health
+                # policy sends it ONCE per bot per strategy version (`alert_policy`, NO SETUP
+                # MESSAGES is `sticky`), where it used to arrive on every restart — 21 times in
+                # three weeks for one fact that had not changed.
                 self._notify_health(
-                    f"{self._label}: no setup messages. Its strategy "
-                    f"({self.cfg.strategy_class}) does not report its setups yet, so the signals "
-                    f"room will stay silent for this bot. Trades and health messages are "
-                    f"unaffected."
+                    alert(
+                        WARNING,
+                        "NO SETUP MESSAGES",
+                        self._label,
+                        f"Its strategy ({self.cfg.strategy_class}, {self.cfg.version_label}) does "
+                        f"not report its setups yet, so the signals room will stay silent for this "
+                        f"bot.",
+                        "Trades and health messages are unaffected. Said once per version.",
+                    )
                 )
                 return
             if not cats:
@@ -2169,8 +2274,9 @@ class LiveRunner:
                 # The cap must measure against the SAME number the strategy sizes against.
                 sizing_basis_adjustment=getattr(self.cfg, "sizing_basis_adjustment", 0.0),
                 instance_dir=self.cfg.instance_dir,
-                # The fills and halts say "SOS Fade · LIVE", not the bot key — see `_label`.
-                name_for_messages=lambda: self._label,
+                # The fills say "SOS Fade" and the halts "SOS Fade · LIVE", never the bot key — the
+                # bridge names the room it is writing to (`_name_for`).
+                name_for_messages=self._name_for,
                 # How much the locked R must improve before another stop-move message goes into
                 # the trade's thread. Every bot takes the default; see `live_config`.
                 trail_alert_step_r=self.cfg.trail_alert_step_r,
@@ -2213,27 +2319,25 @@ class LiveRunner:
 
         # `thread=True` on both lifecycle messages a promote causes. ONLINE is the LAST of the
         # three, so it consumes the thread below — a deploy is finished once the bot is back.
-        self._notify_health(
-            alert(
-                OK,
-                "ONLINE",
-                self._label,
-                joined(
-                    [
-                        "Trading live" if not self.dry_run else "Dry run — it will place no orders",
-                        f"{self.cfg.symbol} {self.cfg.timeframe}",
-                        # `probe_link` is the ONE way this class asks for a balance — it returns None
-                        # when the terminal cannot be reached, and `money()` renders that as "unknown"
-                        # rather than $0.00. A startup banner reporting a fabricated zero would be the
-                        # blind-terminal defect of 2026-08-04 all over again, in the first message the
-                        # bot ever sends.
-                        money(self.probe_link()[1]),
-                    ]
-                ),
-                f"{self.cfg.version_label} ({self.source_hash[:8]}) · account {self.cfg.account}",
-            ),
-            thread=True,
+        facts = joined(
+            [
+                "Trading live" if not self.dry_run else "Dry run — it will place no orders",
+                f"{self.cfg.symbol} {self.cfg.timeframe}",
+                # `probe_link` is the ONE way this class asks for a balance — it returns None
+                # when the terminal cannot be reached, and `money()` renders that as "unknown"
+                # rather than $0.00. A startup banner reporting a fabricated zero would be the
+                # blind-terminal defect of 2026-08-04 all over again, in the first message the
+                # bot ever sends.
+                money(self.probe_link()[1]),
+            ]
         )
+        version_line = (
+            f"{self.cfg.version_label} ({self.source_hash[:8]}) · account {self.cfg.account}"
+        )
+        # A Command Center deploy, start or restart said one message; turn it into the outcome
+        # rather than adding another (2026-09-26). Anything short of a landed edit sends ONLINE.
+        if not self._finish_action(facts, version_line):
+            self._notify_health(alert(OK, "ONLINE", self._label, facts, version_line), thread=True)
         self.clear_alert_thread()
 
         return self._loop()
@@ -3134,10 +3238,10 @@ class LiveRunner:
                     WARNING,
                     "SETTINGS NOT APPLIED",
                     self._label,
-                    "Its config changed on disk but the new values were refused, so it is still "
-                    "trading the ones it started with.",
-                    f"Refused: {detail}",
-                    "Restart it to take them.",
+                    "Its config changed on disk in ways a running bot cannot take, so it is still "
+                    "trading the settings it started with.",
+                    refused_summary([k for k, _a, _b in blocked]),
+                    "Restart it to apply them.",
                 )
             )
             return

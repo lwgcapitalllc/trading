@@ -185,3 +185,12 @@ in a replay time order and bar order are identical, so the trade list cannot mov
 re-run, see the commit). The FFT bot had the same gate and got the same fix. SOS Fade and Realign
 store an entry number but never gate on it. Tests: two in `tests/test_live_seams.py`, both watched
 RED against the old gates.
+
+## 🔴 Its refusals reached the lab's chart at time 0, price 0, no reason (fixed 2026-09-30)
+
+The lab's chart reads a refusal by SOS Fade's field names (`time_ms`, `edge`, `codes`, `labels`,
+`reasons`), and `Blocked` had none of them — so every extreme-leg refusal in every run landed at
+1970 with no price and no reason. Nothing raised. `Blocked` now exposes those names as read-only
+aliases, plus `stop` / `tp1` / `tp2` (None for a NaN stop, and `tp2` always None — one target).
+The original fields stay because the parity harness compares on them. Tests: the last two in
+`tests/test_extreme_leg.py`, watched RED on the class without the aliases.

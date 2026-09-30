@@ -42,6 +42,10 @@ Standing rules for anything recorded here:
 | 43 | 2026-09-23 | 🟢 **THE SCALE-IN BUDGET RE-EARNED after the sizing fix** — 37 cells, 3 arms (old sizing / fixed sizing / fixed + the new re-arm gate) x 1-4 adds x 3 caps, XAUUSD.p 15m 2018-09-14 → 2026-08-14, PU Prime ECN costs | **The budget is unchanged (`Trail` 3 x 0.5x) and it is now chosen on the rule the bot runs.** The fix makes MORE money at LESS drawdown at nearly every cell, and **restores the worst trade to -2.07R in all 24 scaled cells** where the old rule degraded to -2.86R at 4 x 2.0x. 🔴 **Run 21's caveat no longer holds** — the shipped cell now beats not-scaling on ret/DD on BOTH books (22.51 vs 19.98, EX20 18.08 vs 16.71). The new gate costs 12.79R for 0.11R of drawdown and **ships OFF** — but it WINS at 4 adds, so re-measure before raising the count. | **SHIPPED (gate default reverted to `Stop improved`) — ✅ PARITY PROVEN — a second golden (4 adds, 2.0x) is green on the fix and RED on the pre-fix sizing at bar 6,120.** |
 | 44 | 2026-09-23 | 🔴 **THE LEVEL MEMORY REPLAYED INSIDE THE BOT** — rest a limit again at the price a primary already entered at, once the setup is dead and price has travelled 1R away; half-width stop, 2R target, 3-day hold. Four replays, XAUUSD.p 15m+5m 2020-01-01 → 2026-09-21, PU Prime ECN costs | **Run 42's +16.35R screen did not survive the position slot.** The 65 trades it adds are worth **+0.85R in 6.5 years** (+0.80R without their best one) and 2025 carries all of it; one collision on 2023-01-12 cost a **+22.31R** primary. Replayed **215.7R vs 227.5R** with the re-entry on and **150.7R vs 168.1R** primary-only. Two defects found by RUNNING it: the memory resurrected itself (141 trades), and the report tool could not reach the fast clock with the re-entry off. | **MEASURED NEGATIVE — `exec_lvl_memory` ships Off and stays Off** |
 | 45 | 2026-09-23 | 🔴 **THREE PRE-REGISTERED FILTERS ON THE LEVEL MEMORY** — only while the original gap is still open, only after a liquidity sweep on the trade's side, or no limit at all and a market entry on a fast shift after the tap. Same window, bars and costs as Run 44 | **All three fail.** The gap filter beat the book with the re-entry on (+230.8R vs +227.5R, 22 trades +2.33R) and then LOST primary-only (166.1R vs 168.1R, first half −3.97R). The sweep filter hardly filters (66 trades vs 65) and hits the same +22.31R collision (+215.7R). The shift entry never fired — 2 chances in 2025, both wider than 1R. | **MEASURED NEGATIVE — `exec_lvl_confluence` stays None, `exec_lvl_memory` stays Off** |
+| 46 | 2026-09-25 | 🟢 **THE SCALE-IN REDESIGN — WHERE an add goes, judged on PROTECTING WINNERS, not on R** (Aaron: *"not to make more money... less drawdown on these scaling entries and less of my winners turn into losers or scratches"*). 15 placements, all sharing the trailing stop: today's market-on-trail, 15m/5m/1m structure breaks after a bounce, fib 38/50/62 limits, fib+gap, and limits at day/week/session/H4 levels. XAUUSD.p 15m 2020-01-01 → 2026-09-24, PU Prime ECN | **The SECOND 1-minute internal break back after a bounce wins on the goal**: built and replayed on the dual clock (251 trades, re-entries on, 1m fill clock): **16 trades made worse vs 46, NO winner scratched vs 5, worst drop 7.86R vs 8.92R** (7.49R with no adds), for **+26.8R over no adds vs +55.7R**. Per-add stops behind the bounce were REJECTED (3 in 4 stopped). Key levels never beat it; 5m/15m structure is too rare to fire. | **BUILT as `exec_scale_mode = "1m break"` — fixed the same day to also need the 1m trend agreeing (8 worse, 23 adds, +18.3R) — NOT the default — Python only, no parity gate possible (the Pine has no 1m feed)** |
+| 48 | 2026-09-26 | **THE 5m GIVE-BACK STOP AFTER THE SECOND TARGET** (Aaron, on the 2026-09-21 short) — after TP2, a 5m shift against the trade rests a stop at 50% (also 38.2 / 61.8) of the open profit handed back; optional break-first gate. Same basis as Run 47 | **Fires on 4 of 250 trades at 50%: +2.15R, +0.36R without the chart trade** — noise, because the shipped trail after TP2 is usually tighter already. Tracing it found a real defect: the fast path could close a trade after its own stop was hit, at a worse price — fixed. | **BUILT, OFF by default — kept as the first of a family of structure-specific scale-out rules. Python only.** |
+| 55 | 2026-09-27 | 🔴 **A TAKE-PROFIT PER SESSION** (Aaron) — while inside a session, close the whole trade at T R. 5 sessions x 1/2/3/5/8R, full replay, Run 50 basis | **All 25 arms lose 22–112R; none beats R/DD 23.0.** Best: rollover 5R, 150.6R vs 172.6R. The runners that go 15–30R make the book, and any target cuts them. | **MEASURED NEGATIVE — no session target** |
+| 56 | 2026-09-27 | 🔴 **CUT AN ADD AT ITS OWN ENTRY** (Aaron, on the 2026-09-21 short) — once an add has moved our way by 0 / 0.25 / 0.5 / 1R of its own risk, close that lot if price returns to its entry; base untouched. Run 50 basis | **No gain.** 0R: 169.0R vs 172.6R (14 cut, 7 trades worse); 0.25R: 171.3R; 0.5R and 1R: 172.8R (+0.2R, 1 cut). Drawdown 7.49R in every arm. | **MEASURED NEGATIVE — adds keep the shared stop** |
 | 23 | 2026-08-19 | **THE SECONDARY (1m re-entry), END TO END** — 7 levers, 26 replays: the entry gates (swept-stop re-entry, zone depth) and then the exit ladder (depth cap, 1m direction filter, where breakeven fires, banking at TP1). | **The entry gates are already right and the exit ladder was not.** Every loosened door is worse, monotonically. Depth 2/3/5/unlimited are byte-identical (n=1 in 6.6 years). Banking part of a re-entry at TP1 is the first change in 26 replays that works — win/loss 1/1 → 4/1 — and it costs the tail. | measured, **nothing adopted** |
 | 24 | 2026-08-19 | 🔴 **THE LOSS-RECOVERY LEG** — nine stop placements and six exit ladders on the 25%-size counter-trade taken after every SOS Fade loss (`strategies/python/loss_recovery/`). Not a sweep of this bot's params; its population is SOS Fade's 62 real stop-outs. | **Nothing beat the shipped rule, and its best-looking challenger was five trades.** A stop on the CHoCH bar's own extreme scores +24.4R against +16.2R on a 7x tighter stop with lower drawdown — and **−7.4R once its best five are deleted**, where the shipped stop survives at +2.3R. `soft_stop_r=-0.3` is the one free change: same net R, avg loss −1.01R → −0.30R, win 58% → 37%. Everything else lost. | measured, **nothing adopted; `loss_recovery` still ships `enabled=False`** |
 
@@ -5347,3 +5351,888 @@ docstring).
 
 ⚠ **No parity gate covers any of this** — the Pine has no fast clock and no level memory. Lab finding only.
 
+## Run 46 — 2026-09-25: the scale-in redesign — where an add goes, judged on protecting winners
+
+**The question (Aaron, 2026-09-24):** adds should go *"not on the push but as deep into the
+retracement as possible right after you have a confirmation that price has turned"*, every lot on
+the trade's own trailing stop, and the goal is *"less drawdown on these scaling entries and less of
+my winners turn into losers or scratches — not making more money."*
+
+**Basis, every arm:** XAUUSD.p 15m (and 5m / 1m where named), PU Prime, 2019-12-12 → 2026-09-24,
+warm-up 1000, trades scored from 2020-01-01, `puprime_ecn` costs, 3 adds, cap 0.5x, adds from the
+second target, shared stop, shipped sizing. Scratch harnesses patched per INSTANCE
+(`retrace_grid.py`, `level_grid.py`); nothing in the repo moved to take them. "Worse" / "~0" count
+trades that added against the SAME trade with no adds.
+
+| where the add goes | extra R | worst drop R | worse | winners → ~0 | adds |
+|---|---|---|---|---|---|
+| no adds | — | 5.98 | 0 | 0 | 0 |
+| today (market, on the trail) | +43.3 | 7.27 | 42 | 5 | 112 |
+| **1m internal break, 2nd back after a bounce** | **+24.1** | **6.45** | **14** | **0** | **40** |
+| 1m internal first break back | +11.9 | 7.94 | 25 | 3 | 69 |
+| fib 38 / 50 / 62 limit | +31.7 / +29.0 / +20.6 | 6.67 / 6.62 / 6.52 | 31 / 28 / 25 | 5 / 5 / 4 | 98 / 90 / 82 |
+| gap inside the 38.2-61.8 band | +9.7 | 6.84 | 20 | 1 | 37 |
+| weekly level / daily / session / H4 / any | +12.4 / +11.8 / +18.5 / +24.4 / +37.2 | 6.38 / 7.44 / 7.47 / 7.93 / 8.61 | 8 / 18 / 23 / 29 / 30 | 1 / 0 / 2 / 4 / 5 | 21 / 46 / 54 / 66 / 86 |
+| any level, then the 1m break | +16.4 | 7.03 | 13 | 1 | 35 |
+| 5m internal break | −0.1 | 5.98 | 2 | 0 | 4 |
+| 15m internal break | never fired | | | | 0 |
+
+**Built and re-measured in the engine** (`exec_scale_mode = "1m break"`, `run_dual`, re-entry on,
+1-minute fill clock, sized NET of costs): 251 trades — no adds 167.4R dd 7.49R; today 223.1R
+(+55.7) dd 8.92R, 46 worse, 5 scratched, 131 adds; **1m break 194.2R (+26.8) dd 7.86R, 16 worse,
+0 scratched, 45 adds**; identical trade set in all three.
+
+- 🔴 **Per-add stops behind the bounce were built first and REJECTED**, by Aaron and by the
+  numbers: 3 in 4 adds stopped on the next wiggle, +17R to +25R, up to 18 scratches. Every lot
+  shares the trailing stop.
+- ⚠ **Key levels were tested because Aaron asked, and none beat the plain 1m break on the goal.**
+  Weekly levels hurt the fewest trades (8) on only 21 adds in 6.6 years — too few to trust.
+- ⚠ **The 5m and 15m engine's internal structure is too coarse** — ~3 breaks a day on 5m, none
+  inside a trade on 15m — so "a lower-timeframe break" here has to mean one minute.
+- ⚠ **The study decided adds at the 15m close and filled at the next 15m open**; the best case
+  (fill at the break's own 1m close) was worth +0.7R. The build keeps the 15m order path.
+- 🔴 **Python only.** The Pine has no 1-minute feed, so the parity gate can never see this mode.
+  It needs `exec_secondary` on with `exec_sec_fill_tf_min = 1` and refuses otherwise.
+- ⚠ **Not the default.** Trail stays shipped; switching is Aaron's call, and it needs a promote.
+
+### 🔴 Fix, same day: the 1-minute TREND must point the trade's way too
+
+Aaron, on the chart: *"it should never add if price is reversing... it should only add if price is
+going in the direction of the trade."* **MEASURED: 23 of 42 adds fired while the fast feed's
+EXTERNAL trend still pointed against the trade** — two small internal breaks back printed inside a
+bounce that was still the bigger 1-minute move. The add now also requires that trend to agree; a
+break back while it does not is ignored and a later one re-checks.
+
+Same dual-clock replay as above, 251 trades: **1m break 185.7R (+18.3 over no adds), worst drop
+7.86R, 8 trades made worse (was 16), 7 better, 0 scratched, 23 adds.** Curve: monthly Sharpe 1.32
+(1.23 today, 1.46 no adds), longest time below a high 453 days (828 today, 417 no adds), fit to a
+straight line R² 0.890 (0.868 today, 0.902 no adds).
+
+
+### 🔴 Negative, same day: a 15m / 5m / 1m trend gate on either add rule
+
+Aaron: test the 15m, 5m and 1m trend — alone and in every combination — as a filter to keep
+adding. Scratch replay (not shipped), same basis as above: each timeframe's trend is the canonical
+structure engine's external direction as of the last bar CLOSED at the decision, 15m and 5m
+precomputed, 1m the live fast feed. Trail gated at its 15m-close placement; "1m break" gated at each
+1m break. Sanity: the ungated arms and "1m break + 1m" reproduce the numbers above exactly.
+
+| Rule + gate | R | +R | worst drop | worse | better | scratched | adds | mo Sharpe | under water | R² |
+|---|---|---|---|---|---|---|---|---|---|---|
+| no adds | 167.4 | — | 7.49 | — | — | — | 0 | 1.46 | 417 d | 0.902 |
+| Trail, no gate / 15m | 223.1 | 55.7 | 8.92 | 46 | 25 | 5 | 131 | 1.23 | 828 d | 0.868 |
+| Trail + 5m | 219.2 | 51.8 | 9.17 | 45 | 24 | 7 | 129 | 1.21 | 828 d | 0.869 |
+| Trail + 1m | 215.4 | 48.0 | 9.00 | 44 | 24 | 8 | 128 | 1.20 | 828 d | 0.867 |
+| Trail + 5m+1m (= all three) | 214.3 | 46.9 | 9.00 | 43 | 23 | 8 | 126 | 1.19 | 828 d | 0.867 |
+| 1m break, no gate / 15m | 194.2 | 26.8 | 7.86 | 16 | 12 | 0 | 45 | 1.25 | 453 d | 0.897 |
+| 1m break + 5m | 190.3 | 22.8 | 7.86 | 12 | 10 | 0 | 37 | 1.28 | 453 d | 0.898 |
+| **1m break + 1m (shipped)** | 185.7 | 18.3 | 7.86 | 8 | 7 | 0 | 23 | 1.32 | 453 d | 0.890 |
+| 1m break + 5m+1m (= all three) | 182.2 | 14.8 | 7.86 | 8 | 6 | 0 | 21 | 1.34 | 453 d | 0.892 |
+
+- **The 15m trend never blocks an add** on either rule — by the second target the 15m structure
+  already points the trade's way, so any combination with 15m equals the same set without it.
+- **No gate rescues Trail.** Its damage is WHERE it buys (on the push), not trend direction; gating
+  removes 5 adds and makes every column worse, scratched winners 5 → 8.
+- **Adding 5m on top of the shipped 1m gate buys nothing** — the same 8 trades made worse, 2 adds
+  and 3.5R fewer, Sharpe 1.32 → 1.34 is noise. Not worth a third feed. The shipped rule stays.
+
+## Run 47 — 2026-09-25: stop and trail by R reached, bank-half re-run, and the reserved 2018-19 window SPENT
+
+**The question (Aaron):** stop giving back so much open profit — move to breakeven or start the
+trail at different R levels, and leave when price is "clearly reversing".
+
+**Basis:** `backtest/tools/run_report.py --strategy sos_fade --symbol XAUUSD.p --server PUPrime_Demo
+--cost-profile puprime_ecn --no-regime`, dual 15m+5m, shipped defaults otherwise, 2020-01-01 →
+2026-09-20 unless named. Scored in R on exit order (scratch `score.py`). Baseline **249 trades /
++227.5R / 8.42R max drawdown / 27.0 return per drawdown**. Trail start at X R is the give-back guard
+at a 0.01% hand-back with "Hand to the trail", which hands over on the first bar past X R.
+
+| Change | R | Max DD (R) | R / DD |
+|---|---|---|---|
+| Baseline | 227.5 | 8.42 | 27.0 |
+| Trail from 3R / 2.5R / 4R | 210.1 / 207.1 / 206.2 | 6.03 / 6.03 / 8.42 | **34.8** / 34.3 / 24.5 |
+| Trail from 2R / 1R / 1R tight (0.5%) | 174.1 / 148.9 / 105.1 | 7.16 / 6.03 / 6.03 | 24.3 / 24.7 / 17.4 |
+| Breakeven at 1R / 0.75R / 0.5R | 190.2 / 164.0 / 155.1 | 6.66 / 7.86 / 6.72 | 28.6 / 20.9 / 23.1 |
+| Breakeven at 2.5R and 3R | 227.5 | 8.42 | 27.0 (inert — TP1 already moved it) |
+| Half the risk left at 1.5R | 219.3 | 7.62 | 28.8 |
+| Breakeven + trail combinations | 167–173 | | worse than either alone |
+| Bank 25% at fib target 1 | 210.6 | 7.15 | 29.5 |
+| Bank 50% at fib target 1 | 193.7 | 6.18 | 31.3 |
+| Bank 50% + trail from 3R | 177.8 | 5.84 | 30.5 |
+
+- 🔴 **Early breakeven and early trailing lose outright.** Everything armed below 2.5R costs 37–122R.
+- ⚠ **Trail from 3R is the best return per drawdown here, and it rests on a handful of trades**:
+  2025-10-21 (+24.94R → +3.60R), 2023-04-03 (−7.02R), 2020-08-27 (−3.93R) against 2022-06-09 (+2.91R)
+  and 2021-02-10 (+3.76R). The same shape the give-back guard showed on 2026-09-22 (one 2022 stretch).
+  Not adopted.
+- **Bank 50% re-run on today's code: −33.8R, and not one trade's doing** — the largest single hit
+  is 2024-11-08 (−11.8R); without it, still −22.1R. It buys drawdown (8.42 → 6.18R) with the runners.
+  Run 40's verdict (33.6 vs 31.8) does not survive the current book: 31.3 vs 27.0 is still ahead on
+  R/DD, at 15% of total R. Not adopted.
+- 🔴 **Reversal signals, 42 signal × frame × arm rows, all lose** — `backtest/notes/tools.md` →
+  *`exit_study.py --separation`*. Nothing seen in real time tells a pause from a turn on this book.
+
+### 🔴 The reserved window, 2018-09-14 → 2019-12-31 — spent, and the strategy LOSES there
+
+Pass rule stated before the run: a candidate passes only if its R/DD is at least the baseline's and
+its total R is positive.
+
+| Reserved window | Trades | R | Max DD (R) |
+|---|---|---|---|
+| Baseline | 27 | **−13.0** | 13.04 |
+| Trail from 3R / 2.5R | 27 | −13.0 | 13.04 (inert — no trade reached 2.5R) |
+| Bank 50% (± trail 3R) | 27 | −11.1 | 11.17 |
+| Baseline, no costs | 27 | −10.4 | |
+| Baseline, dead-market floor off | 36 | −11.8 | |
+
+- 🔴 **27 trades, 5 wins, none above ~1.2R.** In 2020–2026 no run of 27 consecutive trades lost more
+  than 7.3R (223 windows), and every one held a winner above 1.5R. This is outside anything the
+  explore window contains.
+- **Not costs, not the dead-market floor** (rows above).
+- 🔴 **Not checkable against a second broker: Vantage and PU Prime serve BYTE-IDENTICAL M15 bars
+  before 2020** (100% of 2018–19 rows equal, volume included; 43% in 2020, ~0 from 2021). Both
+  carry the same back-filled history, so a Vantage replay is the same test — it returned the same
+  27 trades to the cent.
+- **The bars are clean**: ~75.7 bars per trading day, no zero-range bars, no outsized gaps.
+- **It is the quietest gold in the data**: median daily range 0.73% (2018) and 0.85% (2019) against
+  0.99–2.03% for every later year; median 15m bar 0.073% against ≥0.085%.
+- ⚠ **Quiet is a fit, not a proof**: 2023 was nearly as quiet (0.99%) and made +35.4R, while 2021–22
+  (1.06–1.15%) made ~0. The market-condition labels cannot help — 248 of 276 entries are TRENDING.
+- 🔴 **What it means for the book: 4 of 8 years are flat or losing (2018, 2019, 2021, 2022).** The
+  money is 2020 and 2023–26, gold's big trending years. Size and expectations should assume multi-
+  year flat stretches are normal for this strategy.
+- ⚠ **There is no untouched data left** on this broker. Any later choice is judged on data that has
+  already been looked at, so it needs a larger margin to count.
+
+## Run 48 — 2026-09-26: the 5m give-back stop after the second target — built, kept OFF
+
+**The question (Aaron, on the 2026-09-21 short):** *"we passed TP2, we did a break of structure and
+then there was a shift of structure... that shift in five minutes signals time to get out as soon as
+price retraces at least 50 percent... it won't be the only rule but it could be a rule."*
+
+**The rule as built** — "Reversal exit: what it does" = "Give-back stop", "Arm on" = "Target 2
+price": primary positions only; once the trade's best has reached its own second target, a 5m shift
+of structure against the trade rests a stop where the chosen share of the entry→best profit is handed
+back. It follows the best and only tightens; if price is already past it when the shift prints, the
+trade leaves at the next 5m open. "Need a break our way before the shift" adds a 5m break of
+structure in the trade's direction after arming. ⚠ 50% of the LAST LEG cannot be the rule — a shift
+has already retraced all of it — so the share is of the whole trade's open profit.
+
+**Basis:** same as Run 47 (dual 15m+5m, XAUUSD.p PU Prime ECN, 2020-01-01 → 2026-09-20). Baseline
+**250 trades / +227.49R / 8.42R max drawdown / 27.0**.
+
+| Arm | R | Max DD (R) | R / DD | Trades changed | Net | Net without its biggest |
+|---|---|---|---|---|---|---|
+| Give back 50% | 229.64 | 8.63 | 26.6 | 4 | +2.15 | +0.36 |
+| 50% + break first | 229.64 | 8.63 | 26.6 | 4 | identical — every shift already had its break |
+| Give back 38.2% | 227.64 | 8.12 | 28.0 | 10 | +0.15 | +3.95 (the −3.80 on 2020-08-18) |
+| Give back 61.8% | 228.49 | 9.15 | 25.0 | 3 | +0.99 | −0.16 |
+
+- **How often it applies:** 65 of 160 primaries reached their second target, 23 printed a 5m shift
+  after it, **6 handed back 50% before the shipped trail closed them**. After the second target the
+  shipped runner trail is usually already tighter, so the rule rarely binds.
+- **The chart trade does what Aaron saw:** 2026-09-21 short −0.02R → **+1.77R** (50%), +2.15R (38.2%).
+  It is most of the 50% arm's gain; the rest is noise either way. 2021-10-19 long lost 0.73R (ran to 4.9R).
+- 🔴 **Defect found by tracing it, and fixed:** the fast-clock path could close a trade AFTER its own
+  ladder stop had been hit on the same 15m bar, at a worse price (2022-08-03 long: stop hit 14:00,
+  shift 14:05, closed at the 14:10 open, +0.18R → −0.94R). The fast path now yields to the trade's own
+  stop. It affected the older reversal exits too; re-run after the fix, "Close" armed at 1R / 2R is
+  still **−23.2R / −17.9R** (2024-11-08 alone −17.1R), so their verdict stands.
+- **Kept, OFF by default** — Aaron's plan (2026-09-26) is a family of structure-specific scale-out
+  rules, each cutting only its own kind of trade, with other strategies re-entering what gets cut.
+  This is the first. Python only; the Pine has no counterpart, so no parity gate is possible for it.
+  Both existing goldens still pass with it off.
+- ⚠ A new field joins the position record — a live promote with an open position needs
+  `algos/tools/migrate_position_record.py` first.
+
+## Run 49 — 2026-09-26: the anatomy of the entry and the runner — six studies, nothing adopted
+
+**The question (Aaron, from the 2022-07-14 and 2021-10-24 charts):** is the gap drawn right, should
+news spikes be skipped, should the order rest at the deeper gap, why do we never fill at the exact
+turn, and do AGGRESSIVE legs (a few big candles, stacked gaps) retrace deeper and give back the runner?
+
+**Basis, every study:** XAUUSD.p 15m (+5m fast clock) PU Prime ECN, shipped config, 5% risk, built
+through `backtest.replay.build_strategy`, 2020-01-01 → 2026-09-24, full replays unless named.
+Baseline **250 trades / +227.49R / 8.42R (29.00%) / 27.01 R per drawdown / halves +92.64 / +134.85
+(split 2023-05-14) / +86.48R with the top 5 removed**. Winner rule stated before every run: beat R
+per drawdown, beat R in both halves, keep the lead with the top 5 removed. Scratch harnesses and
+full tables are session-local and not kept; the numbers below are the record.
+
+### 1. The gap definition — the shipped one stays
+
+| Gap variant | Trades | R | Max DD (R) | R / DD | Top 5 off |
+|---|---|---|---|---|---|
+| Shipped (0.1% minimum, close to invalidate) | 250 | 227.49 | 8.42 | 27.01 | 86.48 |
+| 0.04% minimum | 392 | 191.50 | 27.56 | 6.95 | 50.49 |
+| Wick invalidates instead of close | 249 | 226.44 | 8.42 | 26.88 | 85.43 |
+| Size floor 0.3 x ATR(14) instead of 0.1% | 393 | 195.63 | 23.70 | 8.26 | 54.62 |
+| Shrink to the unfilled part, dies when filled | 254 | 147.81 | 7.35 | 20.12 | 35.21 |
+| Dies when a wick reaches its midpoint | 174 | 179.20 | 5.77 | 31.08 | 66.60 |
+| Dies on first touch | 132 | 107.92 | 4.70 | 22.99 | 36.59 |
+| Shrink, and dies below the 0.1% floor | 178 | 167.39 | 5.22 | 32.05 | 54.79 |
+
+- 🔴 **The two variants that beat R per drawdown do it by trading less** — they lose 48–60R and the
+  top-5-removed lead. None passes. 2022-07-14's two losses (−1.01R, −1.03R) were correct behaviour,
+  not a bug: the 15m chart had one bullish gap that day and the re-entry was a reclaim with no gap.
+
+### 2. Skip setups built on a news spike — fails (2021+ only, the news cache's floor)
+
+Baseline over 2021-01-01 → 2026-09-24: **218 trades / +164.70R / 8.12R / 20.29**.
+
+| Skip the setup when | Trades | R | R / DD | Top 5 off | Skipped (R) |
+|---|---|---|---|---|---|
+| A high-impact release is within 1h of the leg's start | 185 | 158.28 | 24.98 | 47.12 | 33 (+6.43) |
+| A release is within 1h of the shift | 170 | 140.80 | 23.33 | 29.86 | 48 (+23.91) |
+| Any release falls inside the leg | 117 | 108.94 | 21.08 | 4.78 | 101 (+55.76) |
+| A market-moving release falls inside the leg | 140 | 145.04 | 19.56 | 35.43 | 78 (+19.67) |
+
+- Every row fails the halves or the top-5 test; the skipped setups were net positive every time.
+
+### 3. Rest the order at the DEEPER gap — fails, and finds a defect
+
+- 0 of 250 trades had a smaller gap nested inside the one used. 59 had a second, deeper gap in the
+  zone (+41.68R); price reached its near edge on 35 (+11.62R) and never on 24 (+30.06R, 20 winners).
+
+| Entry at | Trades | R | Max DD | R / DD | Halves | Top 5 off |
+|---|---|---|---|---|---|---|
+| The nearest deeper gap | 236 | 195.91 | 11.05R / 40.66% | 17.73 | 82.27 / 113.65 | 54.90 |
+| The deepest gap | 232 | 192.05 | 11.05R / 42.11% | 17.38 | 77.96 / 114.08 | 51.04 |
+
+- 🔴 **Fill-conditional selection**: the deeper price is better only on the trades that come to it;
+  the strongest setups never do (22 and 26 setups lost, worth +14.79R and +24.68R).
+- ⚠ **Defect, not hit by the shipped book:** a re-entry's price and stop are frozen once placed, so
+  a price jump past both fills it on the wrong side of its own stop (seen in the variant:
+  2020-08-27 short limit 1949.09, stop 1955.02, filled 1974.32). Low priority, unfixed.
+
+### 4. Why the fill is never the exact turn — no level predicts it (1m paths)
+
+- Winners turn a median **0.38R past the fill** (middle half 0.16–0.57R), around fib 0.79, against a
+  median fill of 0.64. Only 19.6% turn within 0.1R of the fill. Median time to the turn 13 minutes.
+- Chance of reaching +1R falls with depth: 63% at the fill, 45% by 0.4R deeper, 20% by 0.7R, 5% by 0.9R.
+- Liquidity levels, sweeps, order blocks, equal highs/lows, the 0.618 / 0.702 / 0.786 fibs,
+  candlestick patterns, RSI divergence and session do not separate turns from failures once depth
+  is allowed for. 23 of 29 trades that reached an equal high/low stopped out; 14 of 20 at a prior-day level.
+- Waiting for a 1m or 5m confirmation loses R every way tried (+24.1R vs +61R; +2.9R vs +32R) —
+  it prints 0.7–1.0R off the turn.
+- The one candidate, the deeper gap's FAR edge (12 trades), fades at a wider tolerance and traded
+  makes +20.0R against +23.0R shipped on the same 91 setups. Parked.
+
+### 5. Aggressive leg + stacked gaps → deep retrace? — not on this book
+
+Pattern = 2+ consecutive leg-direction candles with body ≥ 1 x ATR(14), and 2+ live gaps from the
+leg in the 0.5–0.886 zone at the fill. The 2021-10-25 short qualifies (3-bar leg, filled 0.58,
+rallied to 0.88, scratched +0.05R).
+
+| | Trades | R | Loss rate | Mean R | Reached 0.786 | Reached 0.886 |
+|---|---|---|---|---|---|---|
+| Pattern | 34 | +54.80 | 26% | +1.61 | 50% | 9% |
+| Everything else | 216 | +172.69 | 42% | +0.80 | 64% | 25% |
+
+- Loss-rate difference p = 0.09 and points AGAINST the hypothesis; the halves disagree.
+- Limits at 0.702 / 0.786 on pattern trades would miss 13 / 17 setups worth +17.3R / +24.1R.
+- ⚠ **Compact legs are the exception on depth**: of the 8 trades with a leg of ≤ 15 bars and 2+
+  candles ≥ 1.5 x ATR, 7 retraced past 0.786 (the eighth, 2026-09-17 01:30, went deep on its
+  re-entry). They still made +10.9R with 2 stop-outs. Too few for a rule.
+
+### 6. Close 100% at the second target (or the 0 fib) on aggressive legs — fails
+
+Flag = 3+ consecutive candles ≥ 1 x ATR(14) in the leg, computed at entry, first entries only.
+The second target is the 0 fib only on shallow entries (78 of 160), so both were run.
+
+| Variant | Trades | R | Max DD | R / DD | Halves | Top 5 off | Tests |
+|---|---|---|---|---|---|---|---|
+| Close at the second target, flagged | 250 | 221.32 | 8.12R / 28.87% | 27.26 | 86.51 / 134.81 | 80.31 | pass / fail / fail |
+| Close at the 0 fib, flagged | 250 | 227.02 | 8.12R / 28.86% | 27.96 | 92.65 / 134.36 | 86.00 | pass / fail / fail |
+| Close at the second target, all trades | 249 | 114.06 | 8.91R / 29.20% | 12.80 | 52.43 / 61.63 | 87.25 | fail / fail / pass |
+
+- The drawdown pass is one trade (2021-09-27 short, +0.55R → +1.56R). The two sensitivity flags
+  and the compact-leg flag fail the same way.
+- **On the 7 flagged trades that reached the second target the trail added +6.17R** (+21.15R vs
+  +14.98R): three ran on for +9.6R (2020-08-18 +6.40R), three gave back 3.5R.
+- Across the 81 trades that reached their second target, the trail adds +110.85R (median −0.55R;
+  51 give back −57.3R, 25 run on +168.1R). By pattern: aggressive legs +3.07R each vs +1.10R.
+- ⚠ **Hypothesis only — legs of ≤ 15 bars:** the trail made −0.33R each (14 trades) vs +1.72R, the
+  one split of ~10 whose interval excludes zero; it crosses zero on first entries alone and the
+  pre-registered compact-leg exit still lost 3R. Needs another instrument or forward data.
+
+- **Verdict, all six: keep the gap definition, the entry and the exits as shipped** (Aaron,
+  2026-09-26). This agrees with Runs 1, 40, 47 and 48 — the runner is the edge.
+
+## Run 50 — 2026-09-26: the "1m break" add, finished — start point, target, candle rule, break count; live adds turned OFF
+
+**The question (Aaron):** start adds at TP1 instead of TP2? Take profit on adds instead of letting
+them run ("I don't feel comfortable having scaling entries just running")? Only add on a candle
+moving the trade's way? One, two or three 1m breaks back? And how does all of it compare with the
+"Trail" rule the LIVE bot actually runs (which scratched the 2026-09-11 winner with three adds at
+the top)? His goal throughout: fewer winners hurt, less drawdown — not more R.
+
+**Basis, every arm:** XAUUSD.p 15m + 1m PU Prime Demo bars 2019-12-12 → 2026-09-24, trades from
+2020-01-01, `puprime_ecn` charged, `exec_secondary` on at a **1-minute** fill clock (the "1m break"
+rule refuses anything else), 3 adds x 0.5x, built through `backtest.replay.build_strategy`.
+**251 trades**. "Worse / better" = trades whose R moved against / towards the no-adds replay of the
+same trade. Scratch harnesses are session-local; the numbers are the record.
+
+| Arm | +R over no adds | Worse | Better | Max DD (R) | Sharpe (monthly) | Adds |
+|---|---|---|---|---|---|---|
+| No adds | 0 (167.4R) | 0 | 0 | 7.49 | 1.46 | 0 |
+| **LIVE "Trail", ride** | **+55.7** | **46** | 25 | **8.92** | 1.23 | 131 |
+| LIVE "Trail", banked at H4 H/L | +28.8 | 33 | 39 | 8.12 | 1.41 | 131 |
+| "1m break" from TP2, ride (Run 46) | +18.3 | 8 | 7 | 7.86 | 1.32 | 23 |
+| "1m break" from **TP1**, ride | +18.1 | 15 | 8 | 7.94 | — | 34 |
+| "1m break", bank at +1R of the add's own risk | +7.0 | 8 | 7 | 7.54 | 1.40 | 23 |
+| "1m break", bank at +1.5R / +2R | +9.7 / +10.9 | 8 | 7 | 7.86 | — | 23 |
+| "1m break", bank at the first swing past +1R | +11.8 | 8 | 7 | 7.86 | — | 23 |
+| "1m break", bank at prev-day H/L | +2.0 | 6 | 10 | 7.86 | 1.42 | 23 |
+| "1m break", bank at H4 H/L | +4.4 | 5 | 11 | 7.49 | 1.43 | 23 |
+| **"1m break" + 15m candle rule, bank at H4 H/L** | **+5.2** | **4** | 11 | **7.49** | 1.43 | 22 |
+| "1m break" + 15m candle rule, ride | +18.5 | 7 | 7 | 7.86 | 1.32 | 22 |
+
+- 🔴 **LIVE "Trail" is 5 trades.** 54.4R of its +55.7R comes from its best 5 trades (one alone
+  +25.8R); the other 68 trades it touches net +1.3R, and it costs −17.9R on the ones it hurts and
+  turns **8 winners into scratches or losses**. In the replay it hurt 3 of the last 4 trades —
+  2026-09-11 +1.29R → −0.01R, 2026-09-17 +0.44R → +0.24R, 2026-09-21 +0.59R → −0.02R.
+  **Decision: live adds OFF** (`sos_fade_demo` config, same commit as this run).
+- 🔴 **Starting at TP1 is a measured negative**: the 11 extra adds are tiny (the stop is only at
+  breakeven, so the flat-at-stop size is small), 8 of them land on scratch trades, and it doubles the
+  trades made worse for −0.2R.
+- 🔴 **A target does not reduce the damage — it only caps the upside.** The worst per-trade change is
+  −1.42R under every R-multiple target, because the adds that hurt are stopped before any target.
+  Only the H4 H/L bank cuts the trades made worse (8 → 5) and puts drawdown back at the no-adds 7.49R.
+- ⚠ **The 1m candle rule is a no-op by construction**: a 1m break back only counts on a candle that
+  CLOSES past the level, so the firing candle already closes the trade's way — 0 of 23 adds changed.
+  **The 15m candle rule** (the 15m bar the add is decided on must close the trade's way; failing it
+  keeps waiting, never spends the push) blocked 1 add (2020-09-28) and moved 2 later: 5 → 4 worse.
+
+**Break count, "1m break" + 15m candle rule:**
+
+| Breaks back | Banked at H4 H/L: +R / adds / grown / shrunk | Ride: +R / grown / shrunk |
+|---|---|---|
+| 1 | +7.3 / 58 / 15 (+14.8R) / 16 (−7.5R) | +22.4 / 13 / 18, 1 winner scratched |
+| **2** | **+5.2 / 22 / 11 (+7.4R) / 4 (−2.1R)** | +18.5 / 7 / 8 |
+| 3 | +0.8 / 7 / 5 (+1.0R) / 1 (−0.2R) | +1.3 / 4 / 2 |
+
+- ✅ **Two stays.** One buys 2R for four times the winners shrunk; three almost never adds. Every
+  H4-banked arm keeps 0 winners scratched, 0 losers worsened and drawdown at 7.49R — adds only exist
+  after TP2, so they cannot touch a loser.
+- **The recommended add, all four together:** "1m break", two breaks back, 15m candle rule, banked at
+  H4 H/L. Its whole contribution is small (+5.2R in 6.7 years) and that is the point — it is the
+  version that protects winners. ⚠ Python only, no Pine, no parity gate; live needs a 1-minute fast
+  feed on the bot and a promote, so live adds stay OFF until that ships.
+- ✅ **SHIPPED as the backtest default, 2026-09-26.** A run with no add settings now gets exactly this
+  add on a 1-minute fill clock. MEASURED through the real defaults on this run's basis: 251 trades,
+  172.6R, +5.2R over no adds, drawdown 7.49R, Sharpe 1.43. The fill clock moving 5m → 1m on its own
+  costs 5.3R (adds off: 172.7 → 167.4), all of it re-entries filling a few minutes apart. ⚠ A run on
+  one frame, or with re-entries off, now refuses under the default add and must turn adds off or
+  pick another add.
+
+## Run 51 — 2026-09-26: between the first and second target — 32 exit rules, 9 splits, nothing adopted
+
+**The question (Aaron):** the give-back map put the biggest leak in main trades that reach the first
+target and never the second. Find things to act on there — one rule or several, per kind of price
+structure, closing all or banking part; cutting some runners is acceptable because another strategy
+can re-enter them.
+
+**Basis:** XAUUSD.p 15m, PU Prime Demo bars, trades 2020-01-01 → 2026-09-24, `puprime_ecn` charged,
+`--no-regime`, shipped defaults. **251 trades / +172.64R / 7.49R max drawdown**,
+halves +75.6R / +97.0R split at 2023-05-14. ⚠ **This is not Run 50's 167.4R because the "1m break"
+add is ON** — it was in the working tree when this was replayed and became the backtest default in
+7f783c34 (whose own figure is 172.6R), so these numbers reproduce from that commit onward.
+**Method:** one observation replay logged every 5m bar of every open trade; each rule was then
+walked over those bars (armed the 5m bar after the best price reaches the first target, disarmed for
+good at the second, the trade's own stop wins any bar it is touched on, a market exit fills at the
+next 5m open, shorts buy back at the ask). A screen, not a replay — it would only pick what to
+replay, and nothing got that far. Scratch harnesses are session-local; the numbers are the record.
+**Pass rule, stated before any result:** net > +3R, positive in both halves, positive without its
+single biggest gain, drawdown no deeper than baseline.
+
+**The population:** 108 main trades reached the first target. **43 stalled, netting −0.9R. The 65
+that ran made +178.0R.**
+
+| Rule (close 100% / bank 50%) | Fired | Net R | Runners (>2R) cut | Max DD |
+|---|---|---|---|---|
+| Stall 30m / 1h / 2h / 4h / 8h / 16h | 93–43 | −34.3 to −17.5 / half that | 23–15 | 5.9–6.0 |
+| Give back 38% / 50% of the open gain | 83 / 75 | −26.8 / −27.7 | 18 / 15 | 6.0 |
+| Give back 62% / 75% | 61 / 54 | −7.6 / −8.7 | 7 / 6 | 6.0 / 6.2 |
+| 5m shift against → out | 32 | −15.7 / −7.8 | 9 | 7.49 |
+| 5m shift against → give back 38–62% | 29–22 | −16.8 to −13.9 | 9–5 | 7.49 |
+| 5m close back under the first target | 88 | −28.3 / −14.1 | 20 | 6.0 |
+| 5m close back under half-way to it | 54 | **−2.8 / −1.4** | 5 | 6.4 / 7.0 |
+
+- 🔴 **All 32 fail the pass rule on net R.** Every one cuts 5–23 of the trades that go on to make more
+  than 2R, and the stalls it saves are worth −0.9R in total — there is almost nothing to save.
+- 🔴 **The drawdown cuts are the 2022-06-09 trade again** — the same one Run 40's half-bank, the give-back guard
+  and the no-entry window caught. Several rules lift return per drawdown (baseline 23.0; give back
+  62% 27.6), but put that one trade back and every one falls BELOW baseline (19.1–21.9). Not an edge.
+- **Splits at the moment the first target is reached** — stall rate, then R, then first half / second
+  half. Every group is positive in both halves, so no group is safe to cut:
+
+| Split | Highest stall rate | Lowest stall rate |
+|---|---|---|
+| Session | late NY 60% (10 trades, +4.4R, +0.7 / +3.7) | London 27% |
+| Weekday | Monday 61% (18, +11.4R, +6.6 / +4.8) | Thursday 23% |
+| First-target distance | ≤0.76R 46% | >0.76R 28% (+110.6R) |
+| Gap between targets | 0.88–1.18R 56% (+27.3R, +11.8 / +15.5) | <0.88R 17% |
+| Time to reach the target, shift against before it, our own breaks, closed beyond it, bar range | 36–48% | 37–40% — no signal |
+
+- ⚠ **The strongest separators (weekday, gap between targets) are one feature slice each out of
+  nine tried, on 18–36 trades** — below what a rule could be built on even if the group were negative.
+- ✅ **Decision: leave this stage alone.** The stalls are the price of the runners — about 1R to keep
+  +178R. Aaron's plan fits: a separate strategy that re-enters after a stall costs the runners nothing,
+  where every exit rule here pays for its saves out of them.
+
+## Run 52 — 2026-09-26: before the first target — 36 exit rules on main trades, 46 on re-entries, nothing adopted
+
+**The question:** after Run 51, the stage before the first target — can a time stop, an early
+breakeven, a tighter stop or a structure exit cut the losers without costing the winners?
+
+**Basis:** Run 51's replay and method, unchanged (251 trades / +172.64R / 7.49R max drawdown, the
+"1m break" add on as shipped since 7f783c34). Rules arm on the first 5m bar after entry and disarm for good once the best
+price reaches the trade's first target. Every trade passes through this stage, so a rule touches
+winners as well as losers. Same pass rule, stated before any result.
+
+**The population:** main trades — 52 never reached the first target (−49.95R, 47 full losers), 108
+did (+177.11R). Re-entries — 54 never reached theirs (−48.09R), 37 did (+93.57R). ⚠ A re-entry's
+first target sits about 3.25R out, so "before the first target" is a much longer stretch for it.
+
+**Main trades, 100% / 50%:**
+
+| Rule | Fired | Net R | Losers saved | Winners hurt |
+|---|---|---|---|---|
+| No progress after 1–8h (below 0.25R or 0.5R) → out | 110–50 | −64.5 to −31.9 / half | 34–15 | 31–13 |
+| Breakeven after 0.3 / 0.5 / 0.75R | 50 / 28 / 15 | −45.0 / −31.7 / −25.6 | 18 / 12 / 7 | 17 / 10 / 7 |
+| Stop to −0.5R after 0.3 / 0.5R | 31 / 20 | −29.3 / −13.3 | 18 / 12 | 6 / 5 |
+| 5m shift against → out (any / only underwater) | 43 / 37 | −25.9 / −9.9 | 18 / 18 | 10 / 7 |
+| 5m close past −0.5 / −0.75R → out | 70 / 44 | −52.5 / **−7.9** | 40 / 35 | 11 / 2 |
+
+- 🔴 **0 of 36 pass; every one loses on net R.** The closest, cutting at a −0.75R close, saves 35
+  losers and still loses 7.9R — more trades come back from −0.75R to finish flat or ahead than the
+  cut saves. The full 1R stop is earning its keep.
+
+**Re-entries** — the same rules plus breakeven and +0.5R locks after 1.0 / 1.5 / 2.0R:
+
+- 🔴 **0 of 46 pass.** Best nets: a −0.75R close cut +0.82R (drawdown deeper, 8.31R), a 5m shift
+  while underwater −0.73R. Everything else −1.8R to −33R.
+- 🔴 **The drawdown cuts are one half only.** Breakeven after 0.3R at half size takes max drawdown
+  7.49R → 5.24R for −14.5R, and several others lift return per drawdown, but all of it is in the
+  2020–2023 half (return per drawdown 10.1 → 12.3–14.8). In the later half every one is worse
+  (18.1 → 16.3–17.3). Not an edge.
+
+- ⚠ **Found on the way, not fixed:** 25 re-entries carry a "TP1" exit reason in the trade list but
+  closed at their own stop price, never having reached that target. Check the label before reading
+  the exit-reason column for re-entries.
+- ✅ **Decision: management before the first target stays as shipped.** The losses at this stage are
+  the cost of the entries, which Run 49 already examined; with Runs 51 and 52 no exit stage from entry
+  to the second target has a rule worth adopting.
+
+## Run 53 — 2026-09-26: Run 40's half-bank at the first target, re-measured on today's defaults — no longer earns
+
+**The question:** Run 40 found banking 50% at fib target 1 the best return per drawdown (33.6 against
+31.8). That was measured with the old "Trail" adds on. Does it still hold now that the "1m break" add
+is the default (7f783c34)?
+
+**Basis:** `backtest/tools/run_report.py`, XAUUSD.p, PU Prime Demo bars, trades 2020-01-01 →
+2026-09-24, `puprime_ecn` charged, `--no-regime`, shipped defaults; only `exec_tp1_pct` varies.
+Ranked in R. Halves split at 2023-05-14.
+
+| Banked at target 1 | Total R | Max DD (R) | Return/DD | Return/DD by half | Without the 2022-06-09 trade | Top 10 winners |
+|---|---|---|---|---|---|---|
+| 0% (shipped) | 172.64 | 7.49 | 23.0 | 10.1 / 18.1 | 23.0 | 115.6R |
+| 25% | 155.72 | 6.52 | 23.9 | 11.2 / 15.4 | 21.2 | 98.4R |
+| 50% | 138.81 | 5.84 | 23.8 | 12.1 / 12.7 | 19.3 | 81.2R |
+
+- 🔴 **The gain is gone.** Return per drawdown moves 23.0 → 23.9 at a cost of 17–34R, and the whole of
+  the drawdown cut is the 2020–2023 half — the 2022 stretch again. In the later half both are worse,
+  and with the 2022-06-09 trade held at baseline both fall below shipped.
+- **Why it changed:** the "Trail" adds made the book lumpier, so banking had more to smooth. The
+  "1m break" add banks its own lots at the H4 high/low and leaves drawdown where it was without adds,
+  so there is little left for the bank to buy.
+- ✅ **Decision: bank nothing at target 1 stays.** Run 40's verdict describes the book with "Trail"
+  adds and must not be quoted for the shipped one. With Runs 51–53, no give-back fix that closes all
+  or part of the trade has survived; Aaron's re-entry strategy is the open route.
+
+## Run 54 — 2026-09-27: the time stop at 2h / 4h / 8h, by full replay — every one loses
+
+**The question:** what do the losers share, and does a short clock cut them? Run 1 of the time
+stop swept 24–48h only, and Run 52 tested "no progress → out" by simulation, not by replay.
+
+**What the losers share** (run `ab08dc6c90c7`, 245 trades: 100 lost / 92 won / 53 scratch):
+they fail fast (median hold 1.9h against 13.3h for winners), 45 of 100 never reached +0.25R, and
+almost all are a clean −1R at the stop. Re-entries lose 60% of decided trades against 46% for
+main entries, and are still net positive. 15 losers were past +1R first — Run 52's give-back.
+⚠ Depth reached, best excursion and hold time are OUTCOMES, not predictors.
+
+**Basis:** copied field for field from `ab08dc6c90c7` — XAUUSD.p M15, 2020-01-01 → 2026-09-26,
+`puprime_ecn` (bid/ask fills + commission 1.0/side + swap), consistent sizing, shipped defaults;
+only the clock's hours vary ("Before TP1 only"). Halves split 2023-05-01. R is from entry/exit/stop
+price only (adds and partials not counted) — the lab's profit factor counts everything and ranks
+the same way.
+
+| Clock | Run | Cut by clock | Total R | First half | Second half | PF | Max DD % | Worst streak |
+|---|---|---|---|---|---|---|---|---|
+| **36h (shipped)** | `8790c4dd2fb6` | 5 | **183.6** | 84.2 | 99.4 | **4.65** | 26.85 | 5 |
+| 8h | `47ec61fd6465` | 32 | 142.6 | 51.3 | 91.4 | 3.65 | 27.14 | 7 |
+| 4h | `00311c5f769f` | 59 | 104.4 | 32.8 | 71.6 | 2.59 | 26.48 | 7 |
+| 2h | `d14efbdc9d94` | 82 | 104.4 | 36.7 | 67.7 | 2.24 | 30.09 | 8 |
+
+- 🔴 **Every shorter clock loses, in both halves, and the loss grows as the clock shortens.** No
+  drawdown is bought either. The fresh 36h control reproduced `ab08dc6c90c7` exactly.
+- **Why:** a loser that fails fast is only visible after the fact. In its first hours it looks the
+  same as a winner that has not started, and the winners are worth far more.
+- ✅ **Decision: the 36h clock stays.** Together with Run 52, a short time stop is closed —
+  replay and simulation agree.
+
+## Run 55 — 2026-09-27: a take-profit per session — every one of 25 arms loses
+
+**The question (Aaron):** set a target per session; if the trade reaches it, get out. Pinned as:
+while a 15m bar is inside session S (New York time: Asia 19–03, London 03–08, NY morning 08–12,
+NY afternoon 12–17, rollover 17–19), if the trade is T R in profit (its own initial stop
+distance), the WHOLE trade, adds included, closes at the target as a resting limit would, or at
+the bar's open when the bar opens past it. Outside S nothing changes. A bar touching both the
+target and the stop is left to the shipped path.
+
+**Why it was asked:** a give-back split on the same basis put 392R of peak-to-exit give-back at
+Asia 25%, London 15%, NY morning 43%, NY afternoon 15%, rollover 2%.
+
+**Basis:** Run 50 (shipped defaults with the "1m break" add, PU Prime ECN, `run_dual(15m, 1m)`,
+trades from 2020-01-01), full replay per arm, one session at a time, T = 1 / 2 / 3 / 5 / 8R.
+
+| Session | Best arm | R (vs 172.6) | Max DD R (vs 7.49) | R/DD (vs 23.0) | Exits at target |
+|---|---|---|---|---|---|
+| Asia | 3R+ | 121.6 (−51.0) | 7.74 | 15.7 | 28 |
+| London | 8R | 124.4 (−48.2) | 7.49 | 16.6 | 12 |
+| NY morning | 8R | 127.3 (−45.3) | 7.49 | 17.0 | 6 |
+| NY afternoon | 3R+ | 135.5 (−37.1) | 6.03 | 22.5 | 27 |
+| Rollover | 5R+ | 150.6 (−22.1) | 7.49 | 20.1 | 10 |
+
+- 🔴 **All 25 arms lose 22–112R, and none beats the baseline on return over drawdown.** Tighter
+  targets lose most (Asia 1R: −111.5R). The combined arm was not run — five losers do not add up
+  to a winner.
+- **Why:** the book is made by a few runners that go 15–30R. A target in any session cuts
+  them, and even an 8R target costs 4–8R per exit. Give-back is the price of holding those runners.
+- **1R, 2R and 3R often cut the same trades** because many are already past all three when the
+  session opens, so they close at its first bar. That is the rule as dictated, not a harness fault.
+- ✅ **Decision: no session target.** Together with Runs 40, 47 and 51–54, taking profit earlier
+  in any form stays closed on this strategy.
+
+## Run 56 — 2026-09-27: cut an add when price returns to its own entry — no gain
+
+**The question (Aaron, on the 2026-09-21 short):** if an add went our way, then came back to its
+own entry, why keep it on the shared stop? Pinned as: once an add has moved in our favour by more
+than A x its own risk (add entry to the shared stop), close THAT lot if price returns to its entry.
+The base position and the other adds are untouched.
+
+**Basis:** Run 50 (shipped "1m break" add, PU Prime ECN, `run_dual(15m, 1m)`, trades from
+2020-01-01), full replay per arm; 22 adds in 251 trades.
+
+| Arm | Total R | vs no adds (167.4) | Max DD R | Lots cut | Trades worse / better |
+|---|---|---|---|---|---|
+| Shipped (shared stop) | 172.6 | +5.2 | 7.49 | 0 | 4 / 11 |
+| Cut after any move (0R) | 169.0 | +1.6 | 7.49 | 14 | 7 / 5 |
+| Cut after 0.25R | 171.3 | +3.9 | 7.49 | 3 | 4 / 10 |
+| Cut after 0.5R | 172.8 | +5.4 | 7.49 | 1 | 3 / 11 |
+| Cut after 1R | 172.8 | +5.4 | 7.49 | 1 | 3 / 11 |
+
+- 🔴 **Cutting early loses; cutting late does almost nothing.** Most adds that dip back to entry go
+  on to pay, and the +0.2R at 0.5R is one lot.
+- The 2026-09-21 chart trade is unchanged in every arm (+0.59R).
+- ✅ **Decision: adds keep the shared stop.**
+
+## Run 57 — 2026-09-27: the breakeven cushion as a share of risk, re-tested on today's setup — every arm loses
+
+**The question (Aaron):** Realign adopted a cushion of 10% of the trade's risk (its Run 19). Does
+the same help SOS Fade, whose Runs 17 and 26 both lost on the older 10%-risk setup and were judged
+without a paired difference?
+
+**Basis:** the live bot's own settings (`algos/markets/fx/instances/sos_fade_demo/config.json`:
+M15, XAUUSD.p, 5% risk, re-entry leg on, fill feed as the lab uses it), PU Prime ECN costs from lab
+run f3a846ce6018, 2018-09-14 to 2025-08-05. Full replay per arm. Paired difference by entry day and
+direction against the shipped 30-tick cushion, bootstrap P(better). Pass rule set beforehand: total
+R, return per drawdown and total without the best trade all at or above the baseline.
+
+| Arm | Trades | W / L / S | Total R | Max DD R | Without best | Ret/DD at 5% | Diff vs 30 ticks | P(better) |
+|---|---|---|---|---|---|---|---|---|
+| 30 ticks (shipped) | 226 | 78 / 98 / 50 | +123.5 | 11.94 | +96.9 | 176 | — | — |
+| 5% of risk | 226 | 77 / 99 / 50 | +121.4 | 12.44 | +94.8 | 155 | −2.1 ± 2.4 | 0.21 |
+| 10% of risk | 228 | 74 / 100 / 54 | +113.2 | 12.00 | +86.6 | 110 | −10.3 ± 6.9 | 0.04 |
+| 20% of risk | 229 | 107 / 100 / 22 | +115.5 | 11.51 | +88.9 | 128 | −8.0 ± 7.0 | 0.11 |
+| 10% of risk + cost | 228 | 73 / 97 / 58 | +114.8 | 11.82 | +88.2 | 121 | −8.7 ± 6.9 | 0.09 |
+| 20% of risk + cost | 229 | 107 / 97 / 25 | +117.0 | 11.45 | +90.4 | 138 | −6.5 ± 7.1 | 0.18 |
+
+- 🔴 **No arm passes; the held-back window was not opened.** 10% of risk is proven harmful
+  (P 0.04); the rest are not proven.
+- The wider cushions do make scratches pay (scratch R +0.8 → up to +4.1) but lose more than that on
+  trades that would have run: a cushion measured off SOS Fade's wide stops sits far enough away to
+  change which trades survive to the target.
+- ✅ **Decision: SOS Fade keeps the 30-tick cushion.** Three runs (17, 26, 57) now agree; don't
+  re-open without a new mechanism.
+
+## Run 58 — 2026-09-28: a wider tick cushion — study said 60; the LAB says 35 (see the re-measure below)
+
+**The question (Aaron):** how far can the 30-tick breakeven cushion widen — 35, 40, 50? The aim is
+to cover costs on scratches without giving back winners.
+
+**Basis:** identical to Run 57 (live bot settings, 5% risk, re-entry leg on, PU Prime ECN costs from
+f3a846ce6018). Fit 2018-09-14 to 2025-08-05, held-back 2025-08-06 to 2026-09-25. Same paired
+difference and pass rule.
+
+| Cushion | Trades | W / L / S | Total R | Max DD R | Without best | Ret/DD at 5% | Diff vs 30 | P(better) |
+|---|---|---|---|---|---|---|---|---|
+| 30 ticks (shipped) | 226 | 78 / 98 / 50 | +123.5 | 11.94 | +96.9 | 176 | — | — |
+| 35 | 226 | 78 / 98 / 50 | +124.0 | 11.81 | +97.4 | 182 | +0.5 ± 0.1 | 1.00 |
+| 40 | 226 | 78 / 99 / 49 | +123.5 | 11.68 | +96.9 | 179 | −0.0 ± 1.1 | 0.53 |
+| 45 | 226 | 79 / 99 / 48 | +124.0 | 11.54 | +97.4 | 185 | +0.5 ± 1.1 | 0.74 |
+| 50 | 226 | 82 / 99 / 45 | +124.5 | 11.41 | +97.9 | 192 | +1.0 ± 1.1 | 0.82 |
+| **60** | 227 | 86 / 98 / 43 | **+126.2** | **11.01** | **+99.6** | **214** | **+2.7 ± 1.3** | **0.97** |
+| 80 | 227 | 84 / 98 / 45 | +120.2 | 10.72 | +93.6 | 167 | −3.3 ± 6.3 | 0.35 |
+
+Held-back window (52 trades each, identical trades in every arm):
+
+| Cushion | Total R | Max DD R | Diff vs 30 | P(better) |
+|---|---|---|---|---|
+| 30 | +38.05 | 3.61 | — | — |
+| 35 | +38.07 | 3.61 | +0.02 | 1.00 |
+| 45 | +38.10 | 3.61 | +0.05 | 1.00 |
+| 50 | +38.12 | 3.61 | +0.07 | 1.00 |
+| 60 | +38.15 | 3.61 | +0.10 | 1.00 |
+
+- ⚠ **Withdrawn 2026-09-29 — the study did not match the lab (below).** Study said: adopt 60 ticks, +2.7 ± 1.3R, P 0.97 on the fit window; drawdown 11.9 → 11.0R, ret/DD 176 → 214.
+- The rise is smooth from 35 to 60 and breaks at 80 (its first half drops 4R), so 60 is not a lone
+  lucky number — but it is the best of six, so read the fit gain as slightly flattering.
+- The held-back window agrees in direction and is small (+0.1R): only 9 of its 52 trades ever
+  reach breakeven, so there is little for the cushion to act on there.
+- ✅ **Applied 2026-09-28 on Aaron's go:** the Python and Pine defaults are 60, and so are the
+  three SOS Fade bots' settings (`sos_fade_demo` live, `sos_fade_1` and `sos_fade_2` demo). B-LEG,
+  BOS and Realign inherit this setting and now PIN 30 — none was measured at 60. A running bot
+  picks the value up on its next restart.
+
+### Run 58 re-measured ON THE LAB — 2026-09-29: 60 is withdrawn, 35 adopted
+
+🔴 **The table above is a scratch study, and it did not reconcile with the lab.** Aaron's own lab
+runs showed 60 ticks making less than 30 (c228c166211e vs 467118f513e9). Matched trade by trade, the
+study against lab c228c166211e disagreed on 35 trades out of ~270 and on the R of 19 shared ones
+(re-entry fill timing differs), and it kept the 2020-08-18 short at +6R at every width when the lab
+stops it out at 60. So every width was re-run on the lab itself.
+
+**Basis:** SOS Fade lab default settings, 2018-09-14 → 2026-09-29, PU Prime ECN, bid/ask fills +
+$1/side commission + swap, consistent sizing, 5% risk, 100-lot ceiling. Only the cushion moves.
+Paired by entry time and direction against 30 ticks (12bd4b64ae2e); held-back from 2025-08-06.
+
+| Cushion | Run | Total R | Max DD R | Without best | W / L / S | Diff vs 30 | P(better) | Held-back diff |
+|---|---|---|---|---|---|---|---|---|
+| 30 | 12bd4b64ae2e | +163.6 | 11.99 | +137.0 | 100 / 117 / 56 | — | — | — |
+| **35** | 168cc65e4a0f | **+164.0** | **11.93** | **+137.4** | 102 / 117 / 54 | **+0.4 ± 0.1** | **1.00** | +0.02 |
+| 40 | 8de8b497c4bf | +163.4 | 11.87 | +136.7 | 102 / 118 / 53 | −0.25 ± 1.1 | 0.38 | +0.03 |
+| 45 | 3ac3c6ec5ce4 | +164.3 | 11.81 | +137.7 | 104 / 118 / 52 | +0.7 ± 1.2 | 0.76 | +0.05 |
+| 50 | 10772aab47d0 | +164.9 | 11.62 | +138.2 | 104 / 117 / 53 | +1.25 ± 2.1 | 0.74 | +0.07 |
+| 55 | 62b1025532c8 | +165.2 | 11.58 | +138.6 | 104 / 117 / 53 | +1.6 ± 2.1 | 0.79 | +0.09 |
+| 60 | 447d9eb8de38 | +159.9 | 11.54 | +133.3 | 103 / 117 / 54 | −3.7 ± 6.0 | 0.31 | +0.10 |
+
+- ✅ **Adopt 35: +0.4 ± 0.1R, P 1.00.** It changes no trade's outcome, only lifts scratches, and is ≥ 30 on
+  total, drawdown and without-best. Small, but the only width that is not noise.
+- ❌ **40–55: Reject — not proven.** Each lifts scratches but turns the 2021-05-19 long from +0.75R to
+  −0.27R and swaps two or three trades, so the gap sits inside its noise.
+- ❌ **60: Reject — not proven** (−3.7 ± 6.0R): the 2020-08-18 short goes +5.82R → +0.07R. 55 sits
+  just under that cliff — do not read its +1.6R as a sweet spot; a slightly different path moves the cliff.
+- ✅ **Applied 2026-09-29 on Aaron's go:** Python and Pine defaults, and all three SOS Fade bots' settings,
+  now 35. B-LEG, BOS and Realign still pin 30.
+## Run 59 — 2026-09-28: the no-gap setups on the current book — facts only, no entry rule tested
+
+**The question (Aaron):** of every setup that came back into the zone with no fair-value gap, how
+many turned without being stopped and made a new high (new low for shorts), how many were stopped
+and then made one, and how many were simply stopped? Then: how did the stopped-then-recovered ones
+behave, and how far did the ones that held the 1.0 run?
+
+**Basis:** lab run 467118f513e9 — XAUUSD.p, M15 with the 1m feed, 2020-01-01 to 2026-09-29, PU Prime
+ECN, its full stored settings, built the lab's way. The replay reproduced **247 of 247 trades**
+(157 primaries, 90 re-entries). Gap state read ONCE, on the first bar in the zone (Run 32's rule).
+Outcomes walked on M1 from the first M1 bar that reached the 0.5; stop and extreme frozen at
+arrival. No costs. Scripts were run from a session scratchpad and are **not** in the repo.
+
+**The funnel**
+
+| Step | Count |
+|---|---|
+| Armed SOS setups with fibs | 612 |
+| Came back into the zone (0.5 / 0.618 tag) | 375 |
+| Gap on arrival (138 traded) | 170 |
+| No gap on arrival | 205 |
+| No gap on arrival and never traded — **the pool** | **186** |
+
+⚠ "Never traded" also contains setups refused for the late-day block, a veto or an open position —
+not only for the missing gap.
+
+**Outcome of the 186** — A new extreme before any stop touch; B stop first, new extreme later;
+C stop, no new extreme; D neither.
+
+| Stop | Horizon | A | B | C | D |
+|---|---|---|---|---|---|
+| 1.0 | 1 day | 86 | 20 | 66 | 14 |
+| 1.0 | **5 days** | **93** | **58** | **35** | 0 |
+| 1.0 | 20 days | 93 | 80 | 13 | 0 |
+| 0.886 (the run's stop) | 1 day | 77 | 29 | 68 | 12 |
+| 0.886 | **5 days** | **83** | **68** | **35** | 0 |
+| 0.886 | 20 days | 83 | 90 | 13 | 0 |
+
+- 5 days, 1.0 stop: long 44 / 20 / 15, short 49 / 38 / 20. Every year 2020–2025 looks alike; 2026
+  is the one year C leads (7 of 16).
+- No same-M1-bar ties between stop and extreme.
+
+**How the stopped-then-recovered (B, 68) behaved against the stopped-for-good (C, 35)** — 0.886
+stop, 5 days, structure from the canonical engine on 15m and on M1 resampled to 5m.
+
+| Class | 15m B \| C | 5m B \| C |
+|---|---|---|
+| Pure sweep — pierced, closed back, no break against | 9 \| 0 | 9 \| 0 |
+| Break against, then with-trade SOS back | 17 \| 22 | 35 \| 29 |
+| Past the 1.0, no shift back | 41 \| 13 | 23 \| 6 |
+| Other | 1 \| 0 | 1 \| 0 |
+
+- The stop candle closing back on the trade side: 51% of B, 46% of C — no difference.
+- Stop touch to new extreme, B: quartiles 8.8h / 25.7h / 77.8h.
+- **Shift against then shift back is MORE common in C than B** (15m 63% vs 25%; 5m 83% vs 51%), so
+  it is not a recovery signal. Pure sweep points the right way on 9 cases.
+- Depth and time beyond the stop separate B from C, but partly by construction (B's window ends at
+  the new extreme, C's runs the full 5 days). Not tested at a fixed cut-off.
+
+**How far the 93 that held the 1.0 ran** — entry the 0.5, stop the 1.0, so the 0.0 is exactly +1R;
+furthest point before the 1.0 is touched.
+
+| Reached | The 93, 5 days | The 93, 1 day | All 186, 5 days | All 186, 1 day |
+|---|---|---|---|---|
+| ≥1R | 93 (100%) | 86 | 93 (50%) | 86 (46%) |
+| ≥1.5R | 77 | 63 | 77 (41%) | 63 (34%) |
+| ≥2R | 60 (65%) | 42 | 60 (32%) | 42 (23%) |
+| ≥3R | 46 (49%) | 21 | 46 (25%) | 21 (11%) |
+| ≥4R | 31 | 11 | 31 (17%) | 11 (6%) |
+| ≥5R | 21 | 5 | 21 (11%) | 5 (3%) |
+
+- The 93, 5 days: max R quartiles 1.81 / 2.96 / 4.89; median time to 1R 3.7h, 2R 12.1h, 3R 28.2h.
+  Long median 3.35R, short 2.87R.
+- In "all 186", a setup that touched the 1.0 first counts as −1R; at 5 days none sat between the
+  two.
+- Rough reading, no costs: a 1R target on all 186 is 93 wins against 93 losses, ≈0R. A 2R target is
+  −6R to +27R — 33 setups reached 1–2R and were not followed to a stop or the horizon.
+
+**Status:** facts recorded, no entry rule built or replayed. The 93 are only known in hindsight; no
+signal tested in Runs 27–36 or here picks them out in advance.
+
+## Run 60 — 2026-09-28: a lower-frame structure sequence that picks out Run 59's winners — none
+
+**The question (Aaron):** of Run 59's 186 no-gap setups, do the 93 that made the new extreme before
+the 1.0 share a 1m or 5m structure pattern — a shift, a break, or a sequence such as break against
+> shift with > break with — that the 93 losers do not?
+
+**Method, declared before the results.** Same pool and walk as Run 59. Events from the canonical
+structure engine at its default swing length (the one the strategy's replay uses), on M1 and on M1
+resampled to 5m: swing and internal, break and shift, with and against — 16 event types. Window:
+from the first M1 bar at the 0.5 until price is +0.25R toward the 0.0 (R = 0.5 → 1.0) or the 1.0
+touch, whichever is first; nothing later counts. Events ordered by bar close time. 4,368 candidates
+(16 singles, 256 ordered pairs, 4,096 ordered triples). Search 2020–23, check 2024–26; minimum 15
+and 8 setups; pass = +10pp over that half's baseline in BOTH halves. 200 label shuffles within each
+half for the chance rate.
+
+- Baselines: 55.4% (112 setups) in 2020–23, 41.9% (74) in 2024–26.
+- The window is short: median 1 event per setup, 56 of 186 with none. Only 17 candidates met the
+  minimum n.
+- **Passers: 0.** Shuffled labels: median 0, 95th percentile 4. The best search-half lift was
+  +1.2pp and fell to −11.1pp in the check half.
+- The sequences Aaron named: 5m shift with — 7 and 5 setups, below baseline in the search half.
+  1m shift with — 43.2% vs 55.4%, then 45.2% vs 41.9%. 1m break against > shift with > break
+  with — 41.2% vs 55.4%, then 44.4% vs 41.9%. The same triple on 5m formed in time on 2 setups in
+  6.7 years.
+- "Shift against" looks like a loser marker only because windows that end at the 1.0 are losers by
+  definition; among windows that reached +0.25R first it is within noise.
+
+**Verdict: Reject — not proven.** Agrees with Run 34 on a different pool and winner definition.
+
+🔴 **Correction to Run 34's tool** (`nogap_winner_patterns.py` on `research/nogap-shift-5m`): it built
+each sequence as all 1m events followed by all 5m events, never sorted by time, so its CROSS-FRAME
+pairs were not real time orderings. Its same-frame results — which carried its verdict — stand.
+
+## Run 61 — 2026-09-28: a stop order at a fib level of the leg after the turn — fairly priced
+
+**The question (Aaron):** once price turns from the zone toward the 0.0, at which fib level of the
+same leg does reaching it mean price usually goes on to the new extreme?
+
+**Method.** Run 59's 186 setups and walk. Levels 0.45 to 0.1 (11). For each: how many reached it
+before the 1.0 and how many then went beyond the 0.0. Then a stop order filled exactly at the level
+on first touch, two stops (the 1.0; beyond the turn — the furthest adverse price since arrival plus
+0.02 of the leg), targets 1R / 2R / the 0.0 — 66 cells. PU Prime ECN costs: spread 0.12 plus $1 a
+side per lot, 0.14/oz round trip; slippage unmeasured, swap excluded.
+
+| Level | Reached | Went beyond the 0.0 | Break-even win rate to the 0.0, 1.0 stop |
+|---|---|---|---|
+| 0.45 | 174 | 53.4% | 55% |
+| 0.382 | 158 | 58.9% | 62% |
+| 0.318 | 131 | 71.0% | 68% |
+| 0.236 | 119 | 78.2% | 76% |
+| 0.15 | 104 | 89.4% | 85% |
+| 0.1 | 103 | 90.3% | 90% |
+
+- Continuation rises with depth only because losers drop out; it tracks the break-even rate within
+  about 3 points at every level. The leg is fairly priced.
+- 13 of 66 cells are positive in both halves after costs, nearly all at 0.286 or deeper. Best three
+  by their worse half: +0.11 to +0.13R a trade after costs, ± 0.09–0.13, chance above 0 81–92%
+  before any correction for picking the best of 66.
+- Every cell at 0.35 and shallower is flat or negative in 2024–26.
+
+**Verdict: Reject — not proven.**
+
+## Run 62 — 2026-09-28: a breakout of the old extreme after the no-gap retrace — the closest yet
+
+**The question (Aaron):** of the setups that went back to the 0.0, how many made at least 1R from
+there?
+
+**The trade, pinned.** A stop order resting at the 0.0 from arrival, cancelled at the 1.0 touch. It
+fills on exactly Run 59's 93 — so, unlike Runs 59–61, the pool is NOT hindsight. Filled at exactly
+the 0.0 on the first M1 bar beyond it. Stops frozen at fill: (a) beyond the turn + 0.02 of the leg,
+(b) the 0.5, (c) the 1.0. Targets 1R / 2R / 3R, 5 business days from fill. Stop on the fill bar is a
+loss; no same-bar ties occurred. Costs as Run 61.
+
+| Stop / target | W / L / open | R per trade after costs | ± 1 s.e. | Chance above 0 | 2020–23 | 2024–26 | Long / short |
+|---|---|---|---|---|---|---|---|
+| (a) 1R | 51 / 39 / 3 | +0.12 | 0.10 | 88% | +0.13 | +0.10 | +0.24 / +0.01 |
+| **(a) 2R** | 34 / 51 / 8 | **+0.21** | 0.15 | 93% | +0.31 | +0.02 | +0.51 / −0.05 |
+| (a) 3R | 21 / 57 / 15 | +0.19 | 0.18 | 86% | +0.30 | −0.03 | +0.35 / +0.05 |
+| (b) 1R | 51 / 42 / 0 | +0.08 | 0.10 | 78% | +0.08 | +0.09 | +0.21 / −0.04 |
+| (b) 2R | 36 / 55 / 2 | +0.18 | 0.15 | 88% | +0.27 | +0.02 | +0.48 / −0.09 |
+| (c) 1R | 47 / 39 / 7 | +0.06 | 0.10 | 74% | +0.11 | −0.02 | +0.15 / −0.01 |
+
+- Median risk: (a) 0.67 of the leg ($13.13/oz), (b) 0.50, (c) 1.00. Costs take 0.01–0.02R a trade.
+- Median time from fill to 1R: (a) 8.6h, (b) 4.2h, (c) 23.5h.
+- Only the 1R targets hold in both halves. The 2R and 3R edge is 2020–23 and longs — possibly just
+  gold's trend.
+
+**Verdict: Reject — not proven**, but the only version in Runs 27–62 that fills without hindsight
+and stays positive in both halves. Next: the rule fixed at (a) 1R and checked on 2018–2019, which no
+run in this line has touched — see Run 63. If it ever passes, it belongs in the break-of-structure
+bot, not SOS Fade, so it does not queue in front of primaries in the one position slot.
+
+Scripts for Runs 59–62 ran from a session scratchpad and are not in the repo.
+
+## Run 63 — 2026-09-28: Run 62's breakout on 2018–2019 — fails the declared rule
+
+**The rule, fixed before the run:** Run 62 cell (a) 1R — stop order at the 0.0, stop beyond the turn
++ 0.02 of the leg, 1R target, 5 business days, PU Prime ECN costs. **Pass rule, declared before the
+run:** (1) 2018–19 net R per trade > 0 AND (2) pooled 2018–2026 chance above 0 ≥ 95%.
+
+**Basis:** one replay 2018-09-14 → 2026-09-29 on run 467118f513e9's settings. History real from
+2018-09-14 by bars per weekday (M15 median 92, M1 1,379). First setup counted 2018-11-01 (about 3,300
+M15 bars of warm-up). 2018-11 → 2019-12: 85 armed, 50 into the zone, 29 no-gap untraded, 18 filled.
+
+| Window | Trades | W / L / open | Net R per trade | ± 1 s.e. | Chance above 0 |
+|---|---|---|---|---|---|
+| 2018–19 | 18 | 10 / 7 / 1 | +0.13 | 0.23 | 73% |
+| 2020–26 (Run 62) | 93 | 51 / 39 / 3 | +0.12 | 0.10 | 88% |
+| **Pooled** | 111 | — | **+0.12** | 0.09 | **90.4%** |
+
+- (1) passes, (2) fails. **Verdict: Reject — not proven.**
+- The long/short split reversed: 2018–19 longs −0.16, shorts +0.37 — the opposite of 2020–26.
+- The 2R target (information only) turns negative out of sample: 2018–19 −0.18R a trade.
+- **Cold-start artefact:** with warm history the 2020+ pool is 185, not 186. One long (SOS
+  2020-01-02 09:30, a $2.92 leg) exists only when the engine starts cold on 2020-01-01 — as lab run
+  467118f513e9 does. It was a breakout winner; warm, Run 62's cell reads 50 / 39 / 3 (+0.11R).
+  Immaterial to that run, but it is in it.
+
+**This closes the no-gap line on XAUUSD 15m through Run 63.** The breakout at the 0.0 is a small
+positive (+0.12R ± 0.09) that does not reach the declared confidence.

@@ -113,6 +113,8 @@ def _no_bot_claims_between_tests(monkeypatch, tmp_path):
     from services import bot_ops
 
     monkeypatch.setenv("CC_PROMOTE_JOBS_DIR", str(tmp_path / "promote_jobs"))
+    # The Telegram send log (`services/notify.py::log_send`), per test — never the checkout's own.
+    monkeypatch.setenv("LWG_NOTIFY_DIR", str(tmp_path / "notify_log"))
     monkeypatch.setattr(bots, "_spawn", bots._run_promote_job)
     bot_ops._ops.clear()
     yield

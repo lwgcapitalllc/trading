@@ -16,11 +16,16 @@ sys.path.insert(0, str(_ROOT / "strategies" / "python"))
 sys.path.insert(0, str(_ROOT / "backtest" / "tests"))
 
 from _synth import synth_bars  # noqa: E402
-from sos_fade import SosFadeStrategy  # noqa: E402
+from sos_fade import SosFadeConfig, SosFadeStrategy  # noqa: E402
+
+
+# `run()` replays ONE frame. The default add ("1m break", 2026-09-26) reads the 1-minute fast
+# feed and refuses a one-frame replay, so this driver test pins the add that runs on one frame.
+_ONE_FRAME = SosFadeConfig(exec_scale_mode="Trail")
 
 
 def test_driver_runs_end_to_end():
-    strat = SosFadeStrategy().run(synth_bars(12), warmup=100)
+    strat = SosFadeStrategy(_ONE_FRAME).run(synth_bars(12), warmup=100)
     assert len(strat.decisions) == 12 * 96 - 100
     # equity is a finite number and every completed trade has a finite R
     assert isinstance(strat.execution.equity, float)
@@ -30,8 +35,8 @@ def test_driver_runs_end_to_end():
 
 
 def test_driver_is_deterministic():
-    a = SosFadeStrategy().run(synth_bars(8))
-    b = SosFadeStrategy().run(synth_bars(8))
+    a = SosFadeStrategy(_ONE_FRAME).run(synth_bars(8))
+    b = SosFadeStrategy(_ONE_FRAME).run(synth_bars(8))
     assert [d.long_armed for d in a.decisions] == [d.long_armed for d in b.decisions]
     assert len(a.execution.trades) == len(b.execution.trades)
 

@@ -1,0 +1,306 @@
+2026-09-28 00:00:01,379 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 00:05:01,430 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 00:10:01,374 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 00:15:01,280 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 00:20:01,533 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 00:25:01,130 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 00:30:01,285 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 00:35:01,567 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 00:40:01,275 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 00:45:01,497 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 00:50:01,198 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 00:55:01,937 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 01:00:01,549 [INFO] Priority 3 on this account: waiting 38s for the bots above
+2026-09-28 01:05:01,579 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 01:10:01,688 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 01:15:01,416 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 01:20:01,580 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 01:25:01,722 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 01:30:01,650 [INFO] Priority 3 on this account: waiting 38s for the bots above
+2026-09-28 01:35:01,696 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 01:40:01,484 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 01:45:01,443 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 01:50:01,452 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 01:55:01,556 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 02:00:01,586 [INFO] Priority 3 on this account: waiting 38s for the bots above
+2026-09-28 02:05:01,330 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 02:10:01,128 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 02:15:01,100 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 02:20:00,979 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 02:25:01,101 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 02:30:01,073 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 02:35:01,482 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 02:40:01,171 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 02:45:01,128 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 02:50:00,944 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 02:55:01,310 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 03:00:00,993 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 03:05:00,983 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 03:10:01,158 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 03:15:01,451 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 03:20:01,094 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 03:25:31,648 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-28 03:25:31,648 [INFO] Stop requested — shutting down.
+2026-09-28 03:25:31,648 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-28 03:25:31,648 [INFO] MT5 disconnected.
+2026-09-28 03:25:40,708 [INFO] Realign | RealignStrategy v345 | hash f3621aa82a7d | commit 985fe6a1 | frozen | LIVE
+2026-09-28 03:25:43,874 [INFO] Connected | #700152905 | $14,862.76 | PUPrime-Demo
+2026-09-28 03:25:43,874 [INFO] MT5 connection lock released
+2026-09-28 03:25:44,156 [INFO] Sizing against account balance $14,862.76
+2026-09-28 03:25:44,156 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 2.5% per trade).
+2026-09-28 03:25:44,171 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared signals channel
+2026-09-28 03:25:52,595 [INFO] Warmed 15000 bars (2026-07-13 15:55:00+00:00 → 2026-09-28 03:20:00+00:00) in 8.1s
+2026-09-28 03:25:53,174 [INFO] Equity re-anchored to the account after warm-up: 14,808.95 → 14,862.76
+2026-09-28 03:25:53,174 [INFO] Setup threads carried across the restart: 1 — 0 closed, 1 still open.
+2026-09-28 03:25:54,533 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
+2026-09-28 03:26:58,449 [ERROR] Config changed in ways that CANNOT be applied to a running bot: exec_be_buf_mode: 'Ticks' → 'Fraction of stop', exec_be_buf_r: 0.2 → 0.1. Still running the settings loaded at startup. Restart the bot to take them (the version pin and the engine warmup are re-checked on restart).
+2026-09-28 03:30:09,726 [INFO] Priority 3 on this account: waiting 30s for the bots above
+2026-09-28 03:35:01,348 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 03:40:00,978 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 03:45:03,905 [INFO] Priority 3 on this account: waiting 36s for the bots above
+2026-09-28 03:50:01,257 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 03:55:01,014 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 04:00:01,009 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 04:02:20,512 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-28 04:02:20,512 [INFO] Stop requested — shutting down.
+2026-09-28 04:02:20,512 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-28 04:02:20,549 [INFO] MT5 disconnected.
+2026-09-28 04:02:28,914 [INFO] Realign | RealignStrategy v345 | hash f3621aa82a7d | commit 985fe6a1 | frozen | LIVE
+2026-09-28 04:02:29,485 [INFO] Connected | #700152905 | $14,862.76 | PUPrime-Demo
+2026-09-28 04:02:29,485 [INFO] MT5 connection lock released
+2026-09-28 04:02:29,938 [INFO] Sizing against account balance $14,862.76
+2026-09-28 04:02:29,938 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 2.5% per trade).
+2026-09-28 04:02:29,953 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared signals channel
+2026-09-28 04:02:37,023 [INFO] Warmed 15000 bars (2026-07-13 16:30:00+00:00 → 2026-09-28 03:55:00+00:00) in 6.8s
+2026-09-28 04:02:37,023 [INFO] Equity re-anchored to the account after warm-up: 14,808.95 → 14,862.76
+2026-09-28 04:02:37,039 [INFO] Setup threads carried across the restart: 1 — 0 closed, 1 still open.
+2026-09-28 04:02:37,773 [INFO] Watching for closed M5 bars (poll 10s). Ctrl-C to stop.
+2026-09-28 04:05:08,187 [INFO] Priority 3 on this account: waiting 12s for the bots above
+2026-09-28 04:10:01,014 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 04:15:00,680 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 04:20:00,939 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 04:25:00,916 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 04:30:00,861 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 04:35:00,944 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 04:40:00,885 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 04:45:00,782 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 04:50:00,695 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 04:55:00,933 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 05:00:00,903 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 05:05:01,184 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 05:10:01,157 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 05:15:01,131 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 05:20:01,354 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 05:25:01,140 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 05:30:01,068 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 05:35:01,288 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 05:40:01,358 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 05:45:01,196 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 05:50:01,796 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 05:55:01,059 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 06:00:01,289 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 06:05:01,358 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 06:10:01,337 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 06:15:01,433 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 06:20:01,111 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 06:25:01,472 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 06:30:01,474 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 06:35:01,433 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 06:40:01,152 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 06:45:01,187 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 06:50:01,025 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 06:55:01,222 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 07:00:01,150 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 07:05:01,659 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 07:10:01,525 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 07:15:01,310 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 07:20:01,228 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 07:25:01,382 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 07:30:01,388 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 07:35:01,092 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 07:40:01,205 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 07:45:01,284 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 07:50:01,508 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 07:55:01,561 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 08:00:01,577 [INFO] Priority 3 on this account: waiting 38s for the bots above
+2026-09-28 08:05:01,792 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 08:10:01,516 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 08:15:01,383 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 08:20:01,115 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 08:25:01,546 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 08:30:01,415 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 08:35:01,173 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 08:40:01,512 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 08:45:01,270 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 08:50:01,532 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 08:55:01,253 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 09:00:01,384 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 09:05:01,413 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 09:10:01,448 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 09:15:01,327 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 09:20:01,473 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 09:25:01,185 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 09:30:01,430 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 09:35:01,263 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 09:40:01,214 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 09:45:01,066 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 09:50:01,171 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 09:55:01,094 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 10:00:01,181 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 10:05:01,319 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 10:10:01,166 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 10:15:01,263 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 10:20:00,846 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 10:25:01,189 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 10:30:01,091 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 10:35:00,945 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 10:40:00,989 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 10:45:00,904 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 10:50:00,856 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 10:55:01,207 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 11:00:01,044 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 11:05:01,192 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 11:10:01,060 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 11:15:00,864 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 11:20:01,348 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 11:25:01,126 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 11:30:01,136 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 11:35:00,787 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 11:40:01,036 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 11:45:00,998 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 11:50:00,828 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 11:55:00,967 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 12:00:01,248 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 12:05:01,232 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 12:10:01,704 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 12:15:01,359 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 12:20:01,325 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 12:25:01,269 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 12:30:01,257 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 12:35:01,723 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 12:40:01,393 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 12:45:01,295 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 12:50:01,394 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 12:55:01,450 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 13:00:01,475 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 13:05:01,544 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 13:10:01,384 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 13:15:01,508 [INFO] Priority 3 on this account: waiting 38s for the bots above
+2026-09-28 13:20:01,792 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 13:25:01,350 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 13:30:01,239 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 13:35:01,444 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 13:40:02,091 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 13:45:01,693 [INFO] Priority 3 on this account: waiting 38s for the bots above
+2026-09-28 13:50:01,969 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 13:55:02,072 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 14:00:01,933 [INFO] Priority 3 on this account: waiting 38s for the bots above
+2026-09-28 14:05:01,590 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 14:10:01,708 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 14:15:01,646 [INFO] Priority 3 on this account: waiting 38s for the bots above
+2026-09-28 14:20:01,570 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 14:25:02,654 [INFO] Priority 3 on this account: waiting 17s for the bots above
+2026-09-28 14:30:01,517 [INFO] Priority 3 on this account: waiting 38s for the bots above
+2026-09-28 14:35:01,829 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 14:40:01,700 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 14:45:01,436 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 14:50:01,726 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 14:55:02,037 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 15:00:01,567 [INFO] Priority 3 on this account: waiting 38s for the bots above
+2026-09-28 15:05:01,409 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 15:10:01,591 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 15:15:01,418 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 15:20:01,725 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 15:25:01,432 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 15:30:01,877 [INFO] Priority 3 on this account: waiting 38s for the bots above
+2026-09-28 15:35:01,872 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 15:40:01,467 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 15:45:01,293 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 15:50:01,625 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 15:55:01,498 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 16:00:01,304 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 16:05:01,372 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 16:10:01,425 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 16:15:01,528 [INFO] Priority 3 on this account: waiting 38s for the bots above
+2026-09-28 16:20:01,817 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 16:25:01,996 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 16:30:01,616 [INFO] Priority 3 on this account: waiting 38s for the bots above
+2026-09-28 16:35:02,085 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 16:40:01,957 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 16:45:01,451 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 16:50:01,494 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 16:55:01,445 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 17:00:01,259 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 17:05:01,539 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 17:10:01,123 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 17:15:02,008 [INFO] Priority 3 on this account: waiting 38s for the bots above
+2026-09-28 17:20:01,797 [INFO] Priority 3 on this account: waiting 18s for the bots above
+2026-09-28 17:25:01,427 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 17:30:01,331 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 17:35:01,435 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 17:40:01,179 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 17:45:01,430 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 17:50:01,116 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 17:55:01,221 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 18:00:01,081 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 18:05:01,348 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 18:10:01,028 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 18:15:01,031 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 18:20:00,961 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 18:25:01,007 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 18:30:01,346 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 18:35:01,281 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 18:40:01,024 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 18:45:01,264 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 18:50:01,376 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 18:55:01,255 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 19:00:01,302 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 19:05:00,988 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 19:10:01,129 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 19:15:00,838 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 19:20:01,053 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 19:25:00,931 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 19:30:01,167 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 19:35:01,381 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 19:40:01,217 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 19:45:00,987 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 19:50:00,968 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 19:55:01,367 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 20:00:01,065 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 20:05:00,849 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 20:10:00,730 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 20:15:00,715 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 20:20:00,879 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 20:25:00,725 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 20:30:00,921 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 20:35:00,637 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 20:40:00,603 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 20:45:00,716 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 20:50:00,833 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 20:55:00,601 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 22:05:01,839 [WARNING] 13 bars missed — re-warming the engines rather than resuming with a hole in the stream.
+2026-09-28 22:05:01,839 [INFO] Sizing against account balance $14,862.76
+2026-09-28 22:05:07,575 [INFO] Warmed 15000 bars (2026-07-14 10:35:00+00:00 → 2026-09-28 22:00:00+00:00) in 5.4s
+2026-09-28 22:05:07,575 [INFO] Equity re-anchored to the account after warm-up: 14,808.95 → 14,862.76
+2026-09-28 22:10:08,096 [INFO] Priority 3 on this account: waiting 12s for the bots above
+2026-09-28 22:15:00,525 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 22:20:00,542 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 22:25:00,519 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 22:30:00,603 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 22:35:00,668 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 22:40:00,516 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 22:45:00,491 [INFO] Priority 3 on this account: waiting 40s for the bots above
+2026-09-28 22:50:00,514 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 22:55:00,499 [INFO] Priority 3 on this account: waiting 20s for the bots above
+2026-09-28 23:00:00,499 [INFO] Priority 3 on this account: waiting 40s for the bots above
+2026-09-28 23:05:00,570 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 23:10:10,459 [INFO] Priority 3 on this account: waiting 10s for the bots above
+2026-09-28 23:15:00,459 [INFO] Priority 3 on this account: waiting 40s for the bots above
+2026-09-28 23:20:00,498 [INFO] Priority 3 on this account: waiting 20s for the bots above
+2026-09-28 23:25:00,530 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 23:30:00,505 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 23:35:00,476 [INFO] Priority 3 on this account: waiting 20s for the bots above
+2026-09-28 23:40:00,498 [INFO] Priority 3 on this account: waiting 20s for the bots above
+2026-09-28 23:45:00,639 [INFO] Priority 3 on this account: waiting 39s for the bots above
+2026-09-28 23:50:00,562 [INFO] Priority 3 on this account: waiting 19s for the bots above
+2026-09-28 23:55:00,533 [INFO] Priority 3 on this account: waiting 19s for the bots above

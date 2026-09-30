@@ -67,6 +67,10 @@ beBandR       = input.float(0.1, "   ↳ Breakeven band (R)", minval = 0.0, grou
 showBlocked   = input.bool(true,  "Tag refused setups", group = G8, tooltip = "Marks a realignment that fired and was REFUSED, with the reason. This is the only record of a trade the strategy chose not to take.")
 
 showDiag    = input.bool(true, "Diagnostics in the Data Window", group = G12, tooltip = "Running counts of every stage of the setup. Open the Data Window and hover a bar - the first counter reading 0 is where the chain breaks.")
+// Appended LAST of their types on purpose, for the same saved-values reason. Grouped under 6.
+beBufMode   = input.string("Fraction of stop", "Breakeven buffer mode", options = ["Ticks", "Fraction of stop"], group = G6, tooltip = "What the breakeven buffer is measured in. Ticks is one fixed distance on every trade. Fraction of stop is a share of what THIS trade risked, so it stays the same size relative to the stop as gold's price moves.")
+beBufR      = input.float(0.10, "   ↳ Breakeven buffer (fraction of stop)", minval = 0.0, group = G6, tooltip = "Read only in Fraction of stop mode. 0.10 = the stop moves to the entry plus a tenth of the trade's risk.")
+beCapPct    = input.float(75.0, "   ↳ Breakeven buffer cap (% of the way to TP1)", minval = 0.0, maxval = 100.0, group = G6, tooltip = "Read only in Fraction of stop mode. Keeps the breakeven stop short of the target that moved it, so it protects the trade instead of closing it.")
 
 float pbBuffer = 0.0
 
@@ -609,6 +613,7 @@ var int   posStage = 0
 var int   posMs    = 0
 var float posEntry = na
 var float posBest  = na   // best price since the fill, seeded AT the fill — the ratchet's basis
+var float posSl    = na   // the ENTRY stop, frozen at the fill — what the breakeven fraction is a fraction OF
 
 flat = strategy.position_size == 0
 
@@ -675,6 +680,7 @@ if flat and trigLong and tradeLongs
             // [doc 20] The stop goes in WITH the order, so the fill bar is protected  -> docs/realign_strategy.md
             strategy.exit("XR", "REALIGN L", stop = sl)
             posStop  := sl
+            posSl    := sl
             posTp2   := tgtLong
             posTp1   := t1
             posStage := 0
@@ -716,6 +722,7 @@ if flat and trigShort and tradeShorts
             strategy.entry("REALIGN S", strategy.short, qty = qty)
             strategy.exit("XR", "REALIGN S", stop = sl)   // [doc 20]
             posStop  := sl
+            posSl    := sl
             posTp2   := tgtShort
             posTp1   := t1
             posStage := 0
@@ -732,6 +739,7 @@ if not na(pendBar)
     if strategy.position_size != 0
         // Filled. Adopt the frozen levels as the open position's.
         posStop  := pendSl
+        posSl    := pendSl
         posTp1   := pendTp1
         posTp2   := pendTp2
         posStage := 0
@@ -755,7 +763,14 @@ inPos   = isLong or isShort
 
 if inPos
     int   dir   = isLong ? 1 : -1
+    // [doc 23] The breakeven buffer: fixed ticks, or a share of THIS trade's frozen risk capped short of the nearer rung  -> docs/realign_strategy.md
     float beBuf = beBufTk * syminfo.mintick
+    float beRisk = math.abs(posEntry - posSl)
+    if beBufMode == "Fraction of stop" and beRisk > 0
+        beBuf := beBufR * beRisk
+        float beSpan = math.min(math.abs(posTp1 - posEntry), math.abs(posTp2 - posEntry))
+        if beSpan > 0
+            beBuf := math.min(beBuf, beCapPct / 100.0 * beSpan)
     // ── stage advance ────────────────────────────────────────────────────────────
     posBest := isLong ? math.max(posBest, high) : math.min(posBest, low)
     if posStage == 0 and ((isLong and high >= posTp1) or (isShort and low <= posTp1))
@@ -1130,7 +1145,8 @@ plot((minStopMode == "Off" ? 0 : minStopMode == "% of price" ? 1 : 2)
    + 10000 * (entryMode == "Market" ? 0 : 1)
    + 100000 * (retestAt == "Level" ? 0 : 1)
    + 1000000 * (flatMode == "Off" ? 0 : flatMode == "Friday only" ? 1 : 2)
-   + 10000000 * (trailFrame == "External" ? 0 : 1), "cfg_enum1", _INV, editable = false)
+   + 10000000 * (trailFrame == "External" ? 0 : 1)
+   + 100000000 * (beBufMode == "Ticks" ? 0 : 1), "cfg_enum1", _INV, editable = false)
 
 plot(timeframe.in_seconds(htfTf) / 60, "cfg_htf_min",    _INV, editable = false)
 plot(majorLength,                      "cfg_major_len",  _INV, editable = false)
@@ -1149,3 +1165,5 @@ plot(retestBars,                       "cfg_retest_bars", _INV, editable = false
 plot(flatMin,                          "cfg_flat_min",   _INV, editable = false)
 plot(closeHrNy,                        "cfg_close_hr",   _INV, editable = false)
 plot(momDays,                          "cfg_mom_days",   _INV, editable = false)
+plot(beBufR,                           "cfg_be_buf_r",   _INV, editable = false)
+plot(beCapPct,                         "cfg_be_cap_pct", _INV, editable = false)

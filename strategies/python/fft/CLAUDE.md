@@ -11,6 +11,9 @@ Sends setup messages to the signals room since 2026-09-24 — `notes/setup_alert
   `frames.py`. `set_timeframe_minutes` refuses anything else — and since 2026-09-22 every lab path
   reaches it: `build_strategy(..., timeframe_minutes=frame_minutes(df))` (the single run, the sweep,
   the stack leg). Before that, a run on 5m or 15m bars finished green with zero trades.
+- **Money converts at its own moment, never off `point_value`** (2026-09-27). `size()` takes the
+  placement's `time_ms` and refuses without one when a rate is installed; P&L converts at the exit,
+  swap at each rollover. See `backtest/notes/broker-data.md` → *WIRED*.
 - **Every decision is made at a 1m close, for the next minute.** The order decided at 10:03's close
   is the one that meets 10:04's prices. Never decide and fill inside one minute.
 - **A 5m/15m candle is handed out the moment it is known closed** — on its last minute, or when a
@@ -101,3 +104,5 @@ The user cannot export 1-minute data from TradingView, so the Pine parity gate c
   Check its trade list against the account's history first — a fill the replay does not see is the
   one thing it cannot know. ⚠ It replays RAW bars (as the lab and live bot see them), so it can
   differ from the gate, which feeds both sides cleaned bars.
+
+⚠ **2026-09-26: the live contract gained `add_exit_price`** (where the scale-in lots bank). This bot never adds, so it answers None and nothing it trades moved. Detail: `algos/notes/account-anchor-scale-in-and-targets.md`.

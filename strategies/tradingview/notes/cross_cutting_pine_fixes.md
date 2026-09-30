@@ -105,3 +105,18 @@ export is the only way the gate can ever see this code.
 🔴 **NONE OF THE TEN IS COMPILE-VERIFIED OR PARITY-GATED FOR THIS CHANGE.** `mpc_jarvis.pine`
 was pasted into TradingView and confirmed by Aaron; these ten were not, and no `compare_*.py`
 has run on any of them. **Paste before trusting.**
+
+## A setup that FILLED loses its TRADE BLOCKED tags (2026-09-30)
+
+- Aaron, on a 2021-10-19 long tagged blocked at the price it filled at: *"the trade happened. It
+  was never blocked."* The veto or the final hour can refuse a setup on one bar and lift on the
+  next, and the same limit then fills — the refusal was a delay.
+- **Four files** draw the tag and all four changed: SOS Fade, BOS, B-LEG and recovery (twins
+  regenerated). Each tag is kept with its setup bar and side; the primary fill (`f_blkErase`)
+  deletes that setup's tags and forgets the side's older ones, which can no longer fill.
+- ⚠ **Drawing only.** No decision and no export column reads it — the gates read the per-bar
+  block codes, which still fire on the refused bar. Python does the same at its fill
+  (`strategies/python/sos_fade/notes/signals_naming_and_refusals.md`).
+- ⚠ **Kept small on purpose: SOS Fade and BOS have both hit the compiled-token cap (CE10117).**
+  Not compiled here — TradingView is the only compiler. If a file will not compile, this block is
+  the newest addition to it.

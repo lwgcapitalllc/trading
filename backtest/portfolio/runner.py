@@ -69,6 +69,9 @@ class LegSpec:
     # that starts later simply produces no re-entries over the part it does not reach — a
     # smaller book that reads exactly like a rule which found fewer setups.
     df_fast: Any = None
+    # The leg's quote-to-dollar conversion (`backtest.data.fx.rate_provider_for`). `None` for a
+    # dollar-quoted symbol; a leg on any other symbol refuses without one — see `build_strategy`.
+    rate_provider: Any = None
 
 
 @dataclass
@@ -160,6 +163,7 @@ def run_stack(
             initial_capital=balance,
             cost_profile=s.cost_profile,
             df_fast=s.df_fast,
+            rate_provider=s.rate_provider,
         )
         if s.source is not None:
             _wire_source(leg, built[s.source], s.df)
@@ -216,6 +220,7 @@ def run_stack(
                 initial_capital=balance,
                 cost_profile=spec.cost_profile,
                 df_fast=spec.df_fast,
+                rate_provider=spec.rate_provider,
             )
             # 🔴 A SOURCED LEG ALONE HAS NOTHING TO RECOVER, so its control needs a private copy
             # of its source running beside it — on its OWN account, so only the leg being measured
@@ -240,6 +245,7 @@ def run_stack(
                     ),
                     initial_capital=balance,
                     cost_profile=src_spec.cost_profile,
+                    rate_provider=src_spec.rate_provider,
                 )
                 _wire_source(leg, src_leg, spec.df)
                 company = [src_leg]

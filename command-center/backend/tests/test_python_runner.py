@@ -537,3 +537,60 @@ def test_a_one_minute_strategy_on_5m_bars_FAILS_instead_of_completing_on_zero_tr
     Watched red with `timeframe_minutes=` removed from this runner's `build_strategy` call."""
     with pytest.raises(ValueError, match="FFT runs on 1-minute bars"):
         _drive_fft_on(monkeypatch, 5)
+
+
+# ── one instrument's costs are never charged on another's run (2026-09-27) ──────
+# RED BY MUTATION (watched): with `_refuse_other_instrument` removed, the first test builds a
+# profile — gold's 0.12 spread and 100-unit lot on a GBPJPY run, which is what the lab's only
+# GBPJPY run was billed.
+
+
+def test_a_gold_profile_REFUSES_a_yen_run_and_names_the_one_that_fits():
+    from services.python_runner import _cost_profile
+
+    with pytest.raises(ValueError) as exc:
+        _cost_profile(
+            {"cost_layers": ["spread"], "broker_profile": "puprime_ecn", "instrument": "GBPJPY.p"}
+        )
+    assert "puprime_ecn_gbpjpy" in str(exc.value)
+
+
+def test_the_matching_profile_charges_its_own_measured_costs():
+    from services.python_runner import _cost_profile
+
+    p = _cost_profile(
+        {
+            "cost_layers": ["spread"],
+            "broker_profile": "puprime_ecn_gbpjpy",
+            "instrument": "GBPJPY.p",
+        }
+    )
+    assert p.contract_size == 100_000.0
+    assert p.spread == pytest.approx(0.015)
+
+
+def test_a_gold_run_on_a_gold_profile_is_untouched():
+    from services.python_runner import _cost_profile
+
+    assert (
+        _cost_profile(
+            {"cost_layers": ["spread"], "broker_profile": "vantage_demo", "instrument": "XAUUSD"}
+        ).spread
+        == 0.22
+    )
+    assert (
+        _cost_profile(
+            {"cost_layers": ["spread"], "broker_profile": "puprime_ecn", "instrument": "XAUUSD.p"}
+        ).contract_size
+        == 100.0
+    )
+
+
+def test_a_symbol_with_no_measured_profile_says_to_measure_it():
+    from services.python_runner import _cost_profile
+
+    with pytest.raises(ValueError) as exc:
+        _cost_profile(
+            {"cost_layers": ["spread"], "broker_profile": "puprime_ecn", "instrument": "EURJPY.p"}
+        )
+    assert "measure it" in str(exc.value)

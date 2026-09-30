@@ -183,6 +183,18 @@
       "desc": "On = only trade when there is a gap in the pullback zone. Off = trade the pullback on its own."
     },
     {
+      "name": "exec_shift_entry",
+      "group": "Entry zone",
+      "widget": "toggle",
+      "label": "Enter on a 1m SOS then BOS",
+      "short": "1m SOS→BOS entry",
+      "options": {
+        "off": "Off",
+        "on": "On"
+      },
+      "desc": "Replaces the resting limit. Once price tags the 0.5 the bot waits for a 1-minute SOS and then a BOS its way and enters at market on the next minute; stop at the 1.0, whole position off at the first target. Cancelled if price touches the 1.0 or the 0.0 first. Needs the re-entry fill clock at 1 minute. Python only — the TradingView strategy does not have it."
+    },
+    {
       "name": "exec_nogap_arm",
       "group": "Entry zone",
       "core": true,
@@ -631,14 +643,34 @@
       "group": "Exit ladder",
       "label": "Where it adds",
       "short": "Where it adds",
-      "choices": ["Trail", "BOS retest"],
+      "choices": ["Trail", "BOS retest", "1m break"],
       "show_if": {
         "exec_scale_in": true
       },
-      "desc": "Where it adds. Trail buys at market the moment the trailing stop moves up; BOS retest waits for the next break of structure and rests an order at the level that broke.",
+      "desc": "Where it adds. Trail buys at market the moment the trailing stop moves up; BOS retest waits for the next break of structure and rests an order at the level that broke. 1m break (the default since 2026-09-26) waits for a bounce against the trade, then adds on the second 1-minute break of structure back in the trade's direction, only once the 1-minute trend points the trade's way again, and only on a 15-minute candle closing the trade's way. It shares the trailing stop and is sized so a stop-out after costs ends at zero. MEASURED 2020 to 2026-09-24 against Trail: 8 trades made worse instead of 46, no winner turned into a scratch instead of 5, a smaller worst drawdown and a steadier curve, for about a third of the extra R. 1m break needs Secondary re-entries on with the Fill clock at 1 minute, and runs in Python only: the TradingView strategy cannot check it.",
       "guide": [
-        "Trail — the measured choice; adds most often and makes the money",
-        "BOS retest — waits for a pullback that often never comes; loses money outside 2020"
+        "Trail — adds most often and makes the most money",
+        "BOS retest — waits for a pullback that often never comes; loses money outside 2020",
+        "1m break — protects winners best; about a third of the extra R of Trail"
+      ]
+    },
+    {
+      "name": "exec_scale_brk_n",
+      "group": "Exit ladder",
+      "label": "1-minute breaks back before it adds",
+      "short": "Breaks back",
+      "min": 1,
+      "max": 5,
+      "step": 1,
+      "show_if": {
+        "exec_scale_in": true,
+        "exec_scale_mode": "1m break"
+      },
+      "desc": "For the 1m break add: how many 1-minute breaks of structure back in the trade's direction, after a bounce, before it adds. MEASURED 2020 to 2026-09-24 with adds banked at the H4 high/low: 1 made 58 adds and shrank 16 winners; 2 made 22 adds and shrank 4; 3 made only 7 adds. No setting turned a winner into a scratch or made a loser worse.",
+      "guide": [
+        "1 — adds sooner and more often; shrinks four times as many winners",
+        "2 — the default; the balance",
+        "3 — almost never adds"
       ]
     },
     {
@@ -699,11 +731,11 @@
       "show_if": {
         "exec_scale_in": true
       },
-      "desc": "Where the added lots bank. Ride leaves them on the trailing stop with the rest of the trade, which is how every run before 2026-08-19 behaved. The other three rest them at the nearest level of that kind price has not already taken, and only when it sits beyond the newest add, so every lot banks in profit. It moves the ADDS only — the base trade's stop and partials are untouched.",
+      "desc": "Where the added lots bank. Ride leaves them on the trailing stop with the rest of the trade. The other three rest them at the nearest level of that kind price has not already taken, beyond the newest add, so every lot banks in profit. It moves the ADDS only — the base trade's stop and partials are untouched. The default is H4 H/L since 2026-09-26, for the 1m break add: MEASURED 2020 to 2026-09-24, it is the only bank that cut the trades made worse (8 to 5) and put the worst drawdown back to the no-adds level. A bank does not stop the adds that hurt — those are stopped out before any target — it only caps the upside.",
       "guide": [
-        "Ride — the default, and measured best (194.15R); the adds earn on the few trades that run a long way",
-        "Prev week H/L — costs 25.64R (168.51R), OUTSIDE this strategy's own 15.06R noise",
-        "Prev day / H4 — worse again (157.57R / 146.09R), and worse the more often the level gets hit"
+        "Ride — the adds run with the trade; the most R, from a handful of big runners",
+        "H4 H/L — the default; the fewest trades made worse and no extra drawdown",
+        "Prev day / Prev week — bank further away; measured worse than H4 on the 1m break add"
       ]
     },
     {
@@ -758,7 +790,7 @@
       "label": "Reversal exit: what it does",
       "short": "Reversal exit",
       "desc": "Watches for a shift of structure against an open trade on the FASTER chart — the same 5-minute stream the re-entry fills on — and acts on it. Off changes nothing. This is a SIGNAL rather than a percentage: the give-back guard above fires off the trade's own profit curve, which says nothing about whether the market turned, while this fires off what the market actually did. It reads the faster chart because a 15-minute reversal is confirmed long after the turn, by which time the profit is already gone. It only ever touches the first trade of a setup, never a re-entry.",
-      "choices": ["Off", "Bank half", "Tighten to the trail", "Close"],
+      "choices": ["Off", "Bank half", "Tighten to the trail", "Close", "Give-back stop"],
       "guide": [
         "Off — the trailing stop is the only thing protecting an open profit",
         "On — a turn on the faster chart can bank or protect what the trade showed"
@@ -772,7 +804,7 @@
       "desc": "Read only when the reversal exit is on. How far in front the trade must have been, in R, before a turn against it can close anything. Without it this would be a second stop loss: a trade that has never been in profit already has a stop, and the stop is the faster of the two. The guard exists for the trade that showed real money and handed it back.",
       "step": 0.5,
       "show_if": {
-        "exec_rev_exit": ["Bank half", "Tighten to the trail", "Close"]
+        "exec_rev_exit": ["Bank half", "Tighten to the trail", "Close", "Give-back stop"]
       },
       "guide": [
         "Low — watches almost every trade, including ones only pausing",
@@ -787,7 +819,7 @@
       "desc": "Read only when the reversal exit is on. Structure shift: structure turns against the trade on the 5-minute chart (measured: lost on every setting). Level rejected: price reaches the same major level ahead of the trade — a weekly, daily or 4-hour high or low — and fails to close through it on separate visits. Support holding behind the trade never counts. Measured: this one lost on every setting too.",
       "choices": ["Structure shift", "Level rejected"],
       "show_if": {
-        "exec_rev_exit": ["Bank half", "Tighten to the trail", "Close"]
+        "exec_rev_exit": ["Bank half", "Tighten to the trail", "Close", "Give-back stop"]
       }
     },
     {
@@ -799,6 +831,38 @@
       "step": 1,
       "show_if": {
         "exec_rev_trigger": "Level rejected"
+      }
+    },
+    {
+      "name": "exec_rev_arm_at",
+      "group": "Exit ladder",
+      "label": "Arm on",
+      "short": "Reversal exit arms on",
+      "desc": "Read only when the reversal exit is on. R: the trade's best must have been worth the R figure above. Target 2 price: the trade's best must have reached its own second fib target, whatever that is worth in R.",
+      "choices": ["R", "Target 2 price"],
+      "show_if": {
+        "exec_rev_exit": ["Bank half", "Tighten to the trail", "Close", "Give-back stop"]
+      }
+    },
+    {
+      "name": "exec_rev_giveback_pct",
+      "group": "Exit ladder",
+      "label": "Give-back stop: share of the open profit handed back (%)",
+      "short": "Give-back stop share",
+      "desc": "Read only by the Give-back stop action. Once a turn against the trade fires it, a stop rests where this share of the open profit (entry to best price so far) is gone, and it moves with the best so it only ever tightens. It never loosens the trade's own stop. If price is already past it when the turn prints, the trade leaves at the next 5-minute bar's open.",
+      "step": 0.1,
+      "show_if": {
+        "exec_rev_exit": "Give-back stop"
+      }
+    },
+    {
+      "name": "exec_rev_need_bos",
+      "group": "Exit ladder",
+      "label": "Need a break our way before the shift",
+      "short": "Break first",
+      "desc": "Read only when the reversal exit is on. When ticked, a turn against the trade only counts if the 5-minute chart first broke structure in the trade's direction after the exit armed.",
+      "show_if": {
+        "exec_rev_exit": ["Bank half", "Tighten to the trail", "Close", "Give-back stop"]
       }
     },
     {
@@ -1014,7 +1078,7 @@
       "show_if": {
         "exec_secondary": true
       },
-      "desc": "Which bars the backtest fills the re-entry's resting order against. It changes how accurate the test is, not how the strategy trades — live, the broker fills at the price that trades. A coarser setting fills you worse than really happened, so the result reads worse than it is. Smaller is more faithful and much slower to load."
+      "desc": "Which bars the backtest fills the re-entry's resting order against. It changes how accurate the test is, not how the strategy trades — live, the broker fills at the price that trades. A coarser setting fills you worse than really happened, so the result reads worse than it is. Smaller is more faithful and much slower to load. The default is 1 minute since 2026-09-26, because the default add (1m break) reads 1-minute structure off this same feed; set 5 to reproduce figures measured before then."
     },
     {
       "name": "exec_rec_require",

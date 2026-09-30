@@ -96,6 +96,7 @@ def _init_worker(
     cost_profile=None,
     extract=None,
     fast_df=None,
+    rate_provider=None,
 ) -> None:
     """Runs once per worker process. Its args are plain values (str/float/DataFrame) on purpose:
     they are unpickled BEFORE this body runs, so they must not need `sys.path` to already be set.
@@ -113,6 +114,7 @@ def _init_worker(
         capital=capital,
         cost_profile=cost_profile,
         extract=extract,
+        rate_provider=rate_provider,
     )
 
 
@@ -125,6 +127,7 @@ def _run_in_worker(combo: Combo) -> dict:
         _W.get("cost_profile"),
         _W.get("extract"),
         _W.get("fast_df"),
+        _W.get("rate_provider"),
     )
 
 
@@ -172,6 +175,7 @@ def _replay_one(
     cost_profile=None,
     extract=None,
     fast_df=None,
+    rate_provider=None,
 ) -> dict:
     """Replay the whole frame under one config and return {params, kpis}.
 
@@ -197,6 +201,7 @@ def _replay_one(
         initial_capital=capital,
         cost_profile=cost_profile,
         timeframe_minutes=frame_minutes(df),
+        rate_provider=rate_provider,
     )
     # TWO-STREAM COMBO. When the config wants the re-entry layer and the caller supplied the
     # second frame, the strategy's OWN dual driver runs the combo — the merge rule lives in
@@ -263,6 +268,7 @@ def run_sweep(
     cost_profile=None,
     extract: Optional[Callable[[Any], Any]] = None,
     fast_df=None,
+    rate_provider=None,
 ) -> List[dict]:
     """Replay `df` once per combo and return [{params, kpis}] — one row per combo, in combo order.
 
@@ -317,6 +323,7 @@ def run_sweep(
             cost_profile,
             extract,
             fast_df,
+            rate_provider,
         )
 
     results: List[Optional[dict]] = [None] * total
@@ -324,7 +331,16 @@ def run_sweep(
     with ProcessPoolExecutor(
         max_workers=workers,
         initializer=_init_worker,
-        initargs=(root, module_path, df, initial_capital, cost_profile, extract, fast_df),
+        initargs=(
+            root,
+            module_path,
+            df,
+            initial_capital,
+            cost_profile,
+            extract,
+            fast_df,
+            rate_provider,
+        ),
     ) as pool:
         futures = {pool.submit(_run_in_worker, c): i for i, c in enumerate(combos)}
         pending = set(futures)
@@ -354,6 +370,7 @@ def _sweep_serial(
     cost_profile=None,
     extract=None,
     fast_df=None,
+    rate_provider=None,
 ) -> List[dict]:
     """The single-worker path — also what the tests drive, since it needs no pickling or spawn."""
     import importlib
@@ -367,7 +384,11 @@ def _sweep_serial(
     for i, combo in enumerate(combos, 1):
         if should_cancel is not None and should_cancel():
             break
-        out.append(_replay_one(strategy_cls, df, capital, combo, cost_profile, extract, fast_df))
+        out.append(
+            _replay_one(
+                strategy_cls, df, capital, combo, cost_profile, extract, fast_df, rate_provider
+            )
+        )
         if progress is not None:
             progress(i, len(combos))
     return out

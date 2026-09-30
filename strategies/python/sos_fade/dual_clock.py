@@ -22,8 +22,8 @@ runner receives them from two `BarFeed`s that poll independently, so it can hold
 a no-op for the lab. ⚠ **Neither driver may reorder bars itself**: push them in time order per
 frame and let `step_fast` decide.
 
-⚠ **THE SECOND FRAME IS NOT A MINUTE.** It is `exec_sec_fill_tf_min`, 5 minutes by default since
-2026-08-21 and the caller's choice. `run_dual`'s parameter is still named `df1m` because
+⚠ **THE SECOND FRAME IS NOT A MINUTE.** It is `exec_sec_fill_tf_min`, 1 minute by default since
+2026-09-26 (5 from 2026-08-21) and the caller's choice. `run_dual`'s parameter is still named `df1m` because
 renaming a public parameter moves every caller, and its own docstring says that name cannot be
 trusted. Nothing in this file assumes a minute, and nothing in it may start to — read
 `fast_tf_name` / `exec_sec_fill_tf_min`, never a hardcoded 60 seconds.
@@ -41,6 +41,20 @@ from .level_memory import SRC as LVL_SRC
 from .level_memory import LevelMemory
 from .entry_window import in_window as in_entry_window
 from .secondary import SecArm, SecondaryArm, Structure1m
+from .shift_entry import SRC as SHIFT_SRC
+from .shift_entry import ShiftEntry
+
+#: Every setting that TRADES on the fill clock. Whoever decides whether a run or a bot loads the
+#: second feed asks `uses_fast_clock`, never one flag — the re-entry was the only one once, and a
+#: trigger added beside it was silently dead in every runner that still asked about the re-entry.
+#: ⚠ `command-center/backend/services/run_feeds.py` keeps a COPY (it bounds a run's window before
+#: any strategy exists), pinned to this tuple by `command-center/backend/tests/test_run_feeds.py`.
+FAST_CLOCK_FLAGS = ("exec_secondary", "exec_lvl_memory", "exec_shift_entry")
+
+
+def uses_fast_clock(config) -> bool:
+    """Does anything this config switches on trade on the fill clock?"""
+    return any(bool(getattr(config, f, False)) for f in FAST_CLOCK_FLAGS)
 
 _NY = ZoneInfo("America/New_York")
 
@@ -148,6 +162,9 @@ class DualClock:
         # when a switch is on cannot be inspected, tested or switched on mid-run; it returns
         # an empty arm while the switch is off and costs one comparison a bar.
         self.lvl_mem = LevelMemory(strategy.config)
+        # The 1-minute SOS-then-BOS entry, built unconditionally for the same reason. It holds
+        # times and prices only, so like the level memory it survives `reset_fast`.
+        self.shift = ShiftEntry(strategy.config)
 
         # The last-CLOSED 15m context. `None` until the first 15m bar has been stepped, and the
         # secondary refuses to run until then — a fast bar with no 15m context behind it has
@@ -255,6 +272,10 @@ class DualClock:
         # machine, so skipping a bar because the secondary is switched off would leave it
         # computing over a history that never happened the moment it was switched on.
         m1 = self.struct_fast.update(bar.index, bar.open, bar.high, bar.low, bar.close)
+        # The "1m break" scale-in reads the fast feed's INTERNAL breaks. Handed over every bar,
+        # before any early return below, for the reason the reversal exit gives: it is not a
+        # re-entry feature and must not switch off with one. A no-op unless that mode is on.
+        self._st.execution.observe_fast_breaks(ts, m1.internal_breaks, m1.direction)
 
         # The REVERSAL EXIT runs here, BEFORE the re-entry's early return, and the order matters
         # twice over. It reads the fast structure feed rather than the arm state, so it must not
@@ -280,7 +301,10 @@ class DualClock:
         # pinned OFF. Hanging it off that switch would make the measured configuration
         # unreachable. Same reasoning as the reversal exit above it.
         lvl_on = bool(getattr(cfg, "exec_lvl_memory", False))
-        if (not sec_on and not lvl_on) or self.last_sig is None:
+        # The 1-minute SOS-then-BOS entry is a FIRST trade, not a re-entry, so it is not gated
+        # by `exec_secondary` either — the Generic bot runs it with the re-entry pinned off.
+        shift_on = bool(getattr(cfg, "exec_shift_entry", False))
+        if (not sec_on and not lvl_on and not shift_on) or self.last_sig is None:
             return out
 
         ex = self._st.execution
@@ -305,6 +329,14 @@ class DualClock:
                 primary_resting_s=ex.primary_resting_short,
                 sig=self.last_sig, m1=m1, close=bar.close,
             ))
+        if shift_on:
+            # Merged LAST: it is the candidate, and a candidate may not displace the shipped
+            # triggers' trades (see `_merge_arm`). It steps every bar, flat or not, because its
+            # window closes on price whether or not the slot is free.
+            arm = _merge_arm(arm, self.shift.update(
+                ex.shift_ctx, now_ms=ts, m1=m1, high=bar.high, low=bar.low, close=bar.close,
+                flat=ex.is_flat,
+            ))
         # The New York no-entry window, asked of the SAME module the first entry asks, at the
         # time an order decided now would be live (this fast bar's close). An empty arm is what
         # "nothing armed" already looks like, so the order path drops any resting order exactly
@@ -326,6 +358,8 @@ class DualClock:
             # on the order, so it is the one thing here that cannot be wrong.
             if ex.entry_src == LVL_SRC:
                 self.lvl_mem.mark_traded(filled)
+            elif ex.entry_src == SHIFT_SRC:
+                pass    # retired on the signal itself, taken or not — see `ShiftEntry`
             else:
                 self.arm_sm.mark_traded(filled)     # retire the just-filled leg
             out.filled_dir = filled

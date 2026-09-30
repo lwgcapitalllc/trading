@@ -1,4 +1,4 @@
-import type { BotDeployedVersion, BotVersionCompare } from '@/types'
+import type { BotCodeChange, BotDeployedVersion, BotVersionCompare } from '@/types'
 
 /**
  * Why a version READ failed, in the server's words — `null` when it did not fail.
@@ -149,4 +149,66 @@ export function restartReason(
     `${n === 1 ? 'it' : 'them'}. Re-deploy to pick ${n === 1 ? 'it' : 'them'} up: that fetches ` +
     'the code onto the box and restarts the bot.'
   )
+}
+
+/** One area of the code a deploy would ship, with the changes that landed in it. */
+export interface ChangeGroup {
+  label: string
+  changes: BotCodeChange[]
+}
+
+// Package folders whose name does not read as the strategy's own. The fallback title-cases it.
+const PACKAGE_NAMES: Record<string, string> = {
+  sos_fade: 'SOS Fade',
+  fft: 'FFT',
+  b_leg: 'B-Leg',
+  bos: 'BOS',
+}
+
+function packageName(pkg: string): string {
+  return (
+    PACKAGE_NAMES[pkg] ??
+    pkg
+      .split('_')
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ')
+  )
+}
+
+/**
+ * A bot's waiting changes grouped by the area of code they touched, busiest first (2026-09-26).
+ *
+ * Aaron asked why his SOS Fade work marked every other bot behind. The flat list of commit titles
+ * could answer that but did not: the bots borrow SOS Fade's trade-management code, and that only
+ * shows once the rows are grouped. A commit touching several areas goes under the MOST specific
+ * one: this bot's own strategy, then a strategy it borrows, then the engines, the backtest core,
+ * and last the live running code every bot shares.
+ *
+ * ⚠ **An area is WHERE a change landed, never whether it moves this bot's trades.** Borrowed code
+ * behind a setting this bot leaves off changes nothing, and nothing here can tell. The labels say
+ * where, and the reader judges.
+ */
+export function changeGroups(changes: BotCodeChange[], ownPackage: string): ChangeGroup[] {
+  const own = `strategies/python/${ownPackage}`
+  const rank = (area: string): [number, string] => {
+    if (ownPackage && area === own) return [0, "This bot's own strategy"]
+    const borrowed = /^strategies\/python\/([^/]+)$/.exec(area)
+    if (borrowed && !borrowed[1].endsWith('.py'))
+      return [1, `Borrowed from ${packageName(borrowed[1])}`]
+    if (area === 'engines') return [2, 'Market engines']
+    if (area === 'backtest') return [3, 'Backtest core (fills, sizing)']
+    return [4, 'Live running code (orders, Telegram)']
+  }
+  const groups = new Map<string, { order: number; changes: BotCodeChange[] }>()
+  for (const ch of changes) {
+    const [order, label] = ch.areas.length
+      ? ch.areas.map(rank).reduce((a, b) => (b[0] < a[0] ? b : a))
+      : [5, 'Merges']
+    const g = groups.get(label) ?? { order, changes: [] }
+    g.changes.push(ch)
+    groups.set(label, g)
+  }
+  return [...groups.entries()]
+    .sort((a, b) => b[1].changes.length - a[1].changes.length || a[1].order - b[1].order)
+    .map(([label, g]) => ({ label, changes: g.changes }))
 }

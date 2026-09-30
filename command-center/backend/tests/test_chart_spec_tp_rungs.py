@@ -148,3 +148,62 @@ def test_the_ladder_keeps_the_STRATEGYS_order_and_is_not_sorted_by_distance():
     prices = [r["price"] for r in _build_trades([point], _CANDLES)[0]["tpTargets"]]
     assert prices == [_RUNG_1, _RUNG_2]  # further one FIRST — the strategy's order
     assert prices != sorted(prices, reverse=True)  # …and not distance order for a short
+
+
+# ── a scale-in lot's own close is not the TRADE's exit ────────────────────────
+
+
+def _long_with_adds():
+    """The long of 2020-07-16 on run 12bd4b64ae2e, to the cent: three adds each banked on their
+    own target, then the base came off on the runner. The chart drew four `Exit` chips."""
+    lots = [(1810.93, 1812.37, 1_100), (1817.98, 1818.55, 1_200), (1840.76, 1843.09, 1_300)]
+    return {
+        "direction": "Long",
+        "entry_ms": 1_000,
+        "exit_ms": 2_000,
+        "entry_price": 1799.7663,
+        "exit_price": 1866.92,
+        "stop_price": 1793.0,
+        "profit": 1000.0,
+        "equity": 1000.0,
+        "legs": [{"reason": "L-ATP", "price": x, "ms": ms} for _, x, ms in lots]
+        + [{"reason": "L-RUN", "price": 1866.92, "ms": 2_000}],
+        "adds": [
+            {
+                "price": e,
+                "ms": ms - 50,
+                "qty": 1.0,
+                "exit_price": x,
+                "exit_ms": ms,
+                "exit_reason": "L-ATP",
+            }
+            for e, x, ms in lots
+        ],
+    }
+
+
+def _prices(point):
+    return [lg["price"] for lg in _build_trades([point], _CANDLES)[0]["profitLegs"]]
+
+
+def test_a_lot_banking_on_its_own_target_is_not_drawn_as_the_trades_exit():
+    assert _prices(_long_with_adds()) == [1866.92]
+
+
+def test_a_stop_that_takes_the_adds_WITH_the_base_is_still_the_trades_exit():
+    """A stop closes the base and every lot in ONE leg, so that leg matches each lot's recorded
+    close exactly. It is the trade's exit and must survive."""
+    point = _long_with_adds()
+    point["legs"] = [{"reason": "L-SL", "price": 1805.0, "ms": 2_000}]
+    point["exit_price"] = 1805.0
+    for a in point["adds"]:
+        a.update(exit_price=1805.0, exit_ms=2_000, exit_reason="L-SL")
+    assert _prices(point) == [1805.0]
+
+
+def test_a_run_stored_before_lots_recorded_their_close_draws_as_it_always_did():
+    point = _long_with_adds()
+    for a in point["adds"]:
+        for k in ("exit_price", "exit_ms", "exit_reason"):
+            a.pop(k)
+    assert _prices(point) == [1812.37, 1818.55, 1843.09, 1866.92]

@@ -21,7 +21,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Tuple, Optional
 
 # engines/ on path so `market_structure` imports by bare name (same shim as backtest/replay/stack.py).
 _ENGINES = Path(__file__).resolve().parents[3] / "engines"
@@ -56,6 +56,13 @@ class M1State:
     # None until the fill-clock engine has confirmed one, which refuses the arm rather than guessing.
     conf_high: Optional[float] = None
     conf_low: Optional[float] = None
+    # INTERNAL breaks that fired on THIS fast bar, in the engine's own order: (+1/-1, "sos"/"bos").
+    # Read only by the "1m break" scale-in. Additive — nothing that existed before reads it.
+    internal_breaks: Tuple[Tuple[int, str], ...] = ()
+    # An EXTERNAL break of structure (continuation or shift) fired on THIS fast bar, per side.
+    # Read only by the reversal exit's "need a break our way first" gate. Additive.
+    new_bull_bos: bool = False
+    new_bear_bos: bool = False
 
 
 class Structure1m:
@@ -101,13 +108,63 @@ class Structure1m:
             self.bear_leg_hi = ext.bear_bos_high
             self.bear_leg_lo = ext.bear_bos_low
 
+        it = st.internal
+        breaks = []
+        if it.bull_sos: breaks.append((1, "sos"))
+        if it.bull_bos: breaks.append((1, "bos"))
+        if it.bear_sos: breaks.append((-1, "sos"))
+        if it.bear_bos: breaks.append((-1, "bos"))
         return M1State(
             bull_sos_bar=self.bull_sos_bar, bear_sos_bar=self.bear_sos_bar,
             bull_leg_hi=self.bull_leg_hi, bull_leg_lo=self.bull_leg_lo,
             bear_leg_hi=self.bear_leg_hi, bear_leg_lo=self.bear_leg_lo,
             direction=self._engine.dir, new_bull_sos=new_bull, new_bear_sos=new_bear,
             conf_high=self.conf_high, conf_low=self.conf_low,
+            internal_breaks=tuple(breaks),
+            new_bull_bos=bool(ext.bull_bos), new_bear_bos=bool(ext.bear_bos),
         )
+
+
+class RecordingStructure1m(Structure1m):
+    """`Structure1m`, unchanged, keeping every `M1State` it returns so the lab can store the
+    stream (`backtest/replay/recorded.py`) and replay it next run instead of recomputing it."""
+
+    def __init__(self, major_length: int = 15) -> None:
+        super().__init__(major_length=major_length)
+        self.outputs: list = []
+
+    def update(self, index: int, o: float, h: float, l: float, c: float) -> M1State:
+        m = super().update(index, o, h, l, c)
+        self.outputs.append(m)
+        return m
+
+
+class PlayedStructure1m:
+    """`Structure1m`'s outputs replayed from a recording — the lab only, never the live bot.
+
+    Safe because an `M1State` is frozen plain values and never changes after its bar (checked
+    2026-09-27 on 87,985 bars), and because the dual clock reads nothing off the feed but the
+    returned state and `conf_high` / `conf_low`, which the state carries. The recording is keyed
+    on the exact bytes of the fast frame, so it is only ever handed the frame it was made from;
+    ⚠ it still REFUSES a bar out of sequence rather than serve a state recorded for another bar.
+    """
+
+    def __init__(self, outputs: list) -> None:
+        self._outputs = outputs
+        self._next = 0
+        self.conf_high: Optional[float] = None
+        self.conf_low: Optional[float] = None
+
+    def update(self, index: int, o: float, h: float, l: float, c: float) -> M1State:
+        if index != self._next or index >= len(self._outputs):
+            raise RuntimeError(
+                f"recorded 1m structure asked for bar {index}, expected {self._next} of "
+                f"{len(self._outputs)} - refusing to serve another bar's state"
+            )
+        m = self._outputs[index]
+        self._next += 1
+        self.conf_high, self.conf_low = m.conf_high, m.conf_low
+        return m
 
 
 

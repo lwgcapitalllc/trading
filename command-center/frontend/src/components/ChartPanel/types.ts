@@ -400,6 +400,10 @@ export interface ChartIndicator {
 
 export interface ChartSpec {
   instrument: string // e.g. "AUDJPY.s"
+  // One PIP in price units, stamped by the backend as the spec is served (`services/pip_size.py`).
+  // ⚠ `null`/absent = the instrument has NO settled pip convention (indices, silver, futures) —
+  // never zero, never a guess — and the chart then prints no pip readings at all.
+  pipSize?: number | null
   // The word THIS run's strategy calls its own setup, worn by its primary trades. Declared by the
   // strategy package, carried on the strategies table. ⚠ ABSENT is an answer — the package
   // declared none — and the chip then falls back to `PRIMARY_TAG`; it is never an empty string.

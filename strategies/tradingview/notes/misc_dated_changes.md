@@ -97,3 +97,18 @@ defaults". Parity green the same day on an export at these defaults (the fourth 
 ## SOS Fade: target levels and an R-priced first target (2026-09-20)
 
 `sos_fade_strategy.pine` and its export twin gain three exit-ladder inputs: "Target 1 level", "Target 2 level" and "First target, in R". All are off by default, so the chart is unchanged. They mirror `strategies/python/sos_fade`. ⚠ **They have not been through the parity gate.** It needs a fresh export with the inputs set.
+
+## `realign_strategy.pine` — "Breakeven buffer mode", default a tenth of the trade's risk (2026-09-27)
+
+Three inputs, section 6: **Breakeven buffer mode** ("Ticks" / "Fraction of stop", default
+Fraction), **Breakeven buffer (fraction of stop)** (0.10) and **Breakeven buffer cap** (75% of the
+way to the nearer target). In Fraction mode the stop moved at TP1 sits that share of the trade's
+risk — frozen at the fill in `posSl` — past the entry. Why and the sweep:
+`strategies/python/realign/realign_optimization.md` → Run 19; the Pine's own note is
+`docs/realign_strategy.md` [23].
+
+- ⚠ **Declared after EVERY other input**, not in section 6's block, so no saved chart value moves.
+  A chart already running this script picks up Fraction mode on reload — the old "Breakeven buffer
+  (ticks)" value is kept but only read in Ticks mode.
+- The export plots `cfg_be_buf_r`, `cfg_be_cap_pct` and a ninth `cfg_enum1` digit for the mode.
+- ⚠ **Ungated until an export is taken in Fraction mode** — all four goldens are Ticks.

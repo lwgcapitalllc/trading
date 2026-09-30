@@ -47,7 +47,9 @@ fills. So a room is a property of the ACCOUNT — `telegram_trade_chat`, `telegr
 `telegram_health_chat` on its row in `markets/fx/accounts.json` — and `notify.chat_for(kind,
 override, account)` routes by the account a message is ABOUT. 34957946 carries the two channels that
 were in the retired file; 35710389's owner entered its own trades and signals channels on
-2026-09-14, so no live account is waiting for its rooms now.
+2026-09-14, so no live account is waiting for its rooms now. **34957946 got its own HEALTH room on
+2026-09-26** (Aaron: the shared room was too noisy with live and demo mixed); a test message was
+delivered to it before it was wired. 35710389 still falls back to the shared room.
 
 - 🔴 **A LIVE account never borrows a room.** A trade or signal for a live account that names no
   room of its own is NOT SENT (empty chat id) and says so once per account and kind. Until
@@ -956,3 +958,241 @@ Still open: the scheduled task on the box (it runs on demand until then), the `e
 the pinned post explaining the add sizing.
 
 Tests: `algos/tests/test_rev_setup_feed.py` (18; five mutations watched RED, listed in its docstring).
+
+---
+
+## The health room's noise, and what may never go quiet (2026-09-26)
+
+**Why.** A hand count of the health room over 4–25 Sep 2026: about 800 messages, about 30 needing
+anybody to act. The biggest blocks: deploy and restart lifecycle ~520 (every promote was PROMOTED +
+STOPPED + ONLINE per bot, a Command Center stop said STOPPED twice, STARTING/RESTARTING was always
+followed by ONLINE); TRADING OFF / TRADING BACK ON ~94, sent per BOT for an account-level event that
+was usually over in 2–10 minutes; one missing file on 17 Sep produced 17 WILL NOT START + 5 OFFLINE
++ 3 RESTARTED in 7 minutes; the hourly review re-announcing every real-time HALTED as two more
+messages; the watchdog's quick OFFLINE/RESTARTED/BACK ONLINE ~38; the chat bot's nightly restart ~16.
+
+**The rule the whole design answers to (Aaron approved exactly this):** nothing important may become
+invisible. Every real problem reaches the user at least once, a LIVE one keeps reminding until it
+clears, and anything held back is COUNTED in a daily summary. Four stages, one commit each.
+
+### Stage 1 — the send log and the outbox (`shared/notify_log.py`)
+
+- ✅ **Every send outcome is one JSON line** in `algos/logs/notify/<UTC date>.jsonl` (never committed;
+  one folder per machine): time, kind, account, room, label and subject parsed off the house-shape
+  first line, bot key, and `outcome` = `sent` | `queued` | `held` | `dropped`, with Telegram's
+  message id when sent. TRADE, SIGNAL and HEALTH all log.
+- ✅ **A TRANSIENT failure is re-sent, not lost.** No answer at all (network error, timeout), HTTP 429
+  or any 5xx goes to `algos/logs/notify/outbox/` as one atomic JSON file. The every-minute monitor
+  (`notify.flush_outbox`, first thing each pass) re-sends it with a last line
+  `(delayed, first tried 3:04 PM CDT)`, and gives up after 24 hours — logged `dropped` with
+  `gave_up`, and counted by the daily summary. A PERMANENT 4xx (after the existing reply and
+  Markdown rescues) is logged `dropped` and never retried.
+- ⚠ **The outbox holds the NAME of the credential (`token_key`), never the token.** It is resolved
+  again at delivery.
+- ⚠ **A queued send still returns None to its caller** — it has not been delivered, and nothing may
+  thread a reply under a message that does not exist yet. The one caller that needs the difference
+  (the reviewer: a queued finding WILL arrive, so it must be remembered as said) reads
+  `notify.send_with_outcome`.
+- 🔴 **Three senders built their own Telegram request and are now routed through `notify`**: the
+  watchdog (`monitor.send_alert` — still with Markdown on, which the catalog said was gone), the
+  hourly reviewer (`log_review.send`) and the chat bot's startup ping. None of their messages reached
+  a log, none was retried, and the policy in stage 2 could not have seen the one sender that makes
+  OFFLINE, RESTARTED and STALLED. `test_notify_send_log.py` greps `algos/` for any other `sendMessage`
+  so a fourth cannot appear unseen. The chat bot's command REPLY path is the one exception — it
+  answers the chat a person typed in and is not a broadcast.
+- ⚠ **Never raises, never blocks for long.** One `write()` of one line per outcome, atomic
+  `os.replace` for outbox files, a broad `except` everywhere — the same contract `send_telegram_id`
+  always had. An unwritable log folder costs the log line, never the message (tested).
+- ⚠ **The Command Center writes the same line format** (`command-center/backend/services/notify.py
+  → log_send`) into the LAPTOP's `algos/logs/notify/`, so the box's daily summary never sees the
+  laptop's lines. No outbox there — a Command Center action has a person looking at the page.
+- ⚠ **Tests never write the checkout's log**: the root `conftest.py` and the backend's point
+  `LWG_NOTIFY_DIR` at a per-test folder.
+
+🔴 **Root cause of 19 Sep's "TRADING BACK ON with no OFF" (20 of them, zero OFF):** the ledger shows
+every `trading_disabled` paired with a `trading_restored` 30–60 s later — 4 episodes × 5 bots, on TWO
+accounts (34957946 and 700152905, two terminals) in the SAME second each time. So each OFF alert was
+attempted and did not arrive, and each BACK ON a minute later did. The code marked the OFF as "said"
+whether or not Telegram took it, and had no retry. Both halves are fixed: the send is now retried
+(this stage), and a BACK ON is sent only if its OFF was actually sent (stage 2). ⚠ **Why the OFF
+sends failed is INFERRED, not measured** — two accounts, two terminals, one box, ~40 s each, points at
+the box's own network dropping (the terminals losing the broker and Telegram unreachable at once).
+The bots' text logs on the box would show `notify: send failed` at 21:55 UTC and would settle it; they
+were not read here (no box access for this change).
+
+Tests: `algos/tests/test_notify_send_log.py` (16 — six mutations watched RED, listed in its
+docstring); the backend's `test_notification_routing.py` pins its log line to the algos format.
+
+### Stage 2 — the hold rules, in ONE policy (`shared/alert_policy.py`)
+
+**Generic at the seam**: a table keyed by the alert's LABEL, consulted inside
+`notify.send_with_outcome` for every HEALTH message (trades and setups are never held). No bot and
+no strategy is named in it, so a bot written next year inherits it by sending in the house shape.
+Its memory is `algos/logs/notify/policy_state.json`, read and written under a lock file because
+several bots, the watchdog and the reviewer each send from their own process. Every held message is
+logged `held` with its reason.
+
+| Rule | Labels | What happens |
+|---|---|---|
+| One alert per fault | any ⛔ / ⚠️ not listed below | same label + bot + body sent once; repeats held until the body changes, its recovery arrives, the bot STARTS (ONLINE / DEPLOYED), or 24 h pass |
+| Hold 5 min to see if it clears | OFFLINE, STALLED, NO MT5 LINK | deferred to the outbox; cancelled — and its recovery held too — if RESTARTED / BACK ONLINE / ONLINE, RECOVERED, RECONNECTED arrives first; else sent at 5 min with *Held 5 min … it has not* |
+| Hold 15 min, per ACCOUNT | TRADING OFF | one per account, not per bot; the other bots' OFFs are held; BACK ON inside 15 min holds both; sent at 15 min with *Account N: one message for every bot on it* |
+| Never a BACK ON without its OFF | TRADING BACK ON | sent only if that account's OFF was SENT, and only once |
+| Routine | RESTARTED and COMMANDS ONLINE about the *Telegram bot* | held |
+| Once per version | NO SETUP MESSAGES | the version is in the body; never cleared by a restart |
+| Part of a Command Center action | a bot's own STOPPED while an action record is live | held — the action's message says it |
+| **Never held** | HALTED and anything with HALT in it, FLEET HALT, ACCOUNT MISMATCH, CLOSE FAILED, SCALE-IN CLOSE FAILED, ORDER REFUSED, ORDER REJECTED, NOT BACK ONLINE, CANNOT SEE THE BOTS, every REMINDER | sent every time; a first WILL NOT START and an unrecovered OFFLINE / STALLED / NO MT5 LINK are sent by the rules above |
+
+- 🔴 **A hold that waits on a process which is not running is a DROP.** A fault is only deferred
+  while the flusher heartbeat (`algos/logs/notify/flusher.json`, stamped by every monitor pass) is
+  under five minutes old. With the monitor dead — or still on code that predates the outbox — the
+  fault is SENT at once, exactly as before this existed.
+- 🔴 **Every failure answers SEND**: a corrupt memory, a lock that cannot be had inside 2 s (a lock
+  older than 10 s is broken as a dead process's), an exception anywhere. A policy able to swallow
+  an alert is worse than the noise it removes. All three are tested.
+- ⚠ **A DROPPED message is never remembered**, so its repeat is not held as though it had been read.
+- ⚠ **An "already sent, never recovered" fault is only remembered for 24 h**: a bot restarted since
+  has forgotten it ever said TRADING OFF, so no BACK ON may ever come to close it.
+- ⚠ **The watchdog's quick recovery and the bot's own ONLINE are ONE event**: a recovery arriving
+  within 5 min of a held fault being cancelled is held too. A crash that the watchdog restarts is
+  therefore silent in the room — counted in the daily summary (stage 4), and a crash that REPEATS
+  is still caught by the hourly reviewer's *Restarted N times without a clean stop*, which has no
+  real-time twin and is always sent.
+
+**One message per Command Center action** (deploys, starts and restarts; ~520 of the ~800):
+
+- The Command Center sends its one message FIRST (PROMOTED / STARTING / RESTARTING — the start and
+  restart used to send theirs after the fact) and writes `alert_thread.json` with `action`, `chat`
+  (the room it went to), `from_version` and `sent_at` beside the id and expiry it always wrote.
+- The bot, once online, **edits that message in place** (`runner._finish_action`, Telegram
+  `editMessageText`) into `📦 DEPLOYED · SOS Fade · LIVE / v397 → v399, back online / <facts>`, or
+  `✅ ONLINE … Started from the command center.`, or `✅ RESTARTED …`. An edit makes no new
+  notification — the ask already did. ⚠ It edits with the DEFAULT token, because the Command Center
+  sent it and a Telegram bot can only edit its own messages. ⚠ **Anything short of a landed edit
+  sends ONLINE the old way** (an older Command Center's record has no action or room; a refused edit).
+- The bot's own STOPPED is held while the record is live (the policy's STOPPED row reads
+  `<instance>/alert_thread.json`; a record from an older Command Center counts as a restart).
+- A Command Center STOP is said once: the bot's own STOPPED when it shut down cleanly (the Command
+  Center's is then logged `held` in the laptop's log), the Command Center's when it had to terminate.
+- 🔴 **Removing the ONLINE removed what a reader waited for, so the silence after a failed restart
+  is now broken by the watchdog**: `monitor.check_action` sends `⛔ NOT BACK ONLINE` (never held,
+  once per action) when an action's record is still there three minutes after `sent_at` — the bot's
+  ONLINE is what deletes it. An older Command Center's record is timed off its 15-minute expiry.
+
+**Fixed at the source** (frozen bot code — a bot gets these at its next promote):
+
+- **TRADE SHRUNK at 100%** is no longer sent (`bridge._on_contention`): the account logs a shrink at
+  one part in a billion, so a 99.7% grant read "it took 100% of its intended size". The ledger row
+  stays; a real cut in the same episode still speaks.
+- **SETTINGS NOT APPLIED** says how many and names three: `25 settings need a restart: a, b, c and
+  22 more.` The full detail stays in the log and the ledger (`runner.refused_summary`).
+- **NO SETUP MESSAGES** is in the house shape with the strategy version in its body (it was a plain
+  line on every restart).
+- **TRADING OFF names a lost server**: a terminal reporting `connected = False` now reads *the
+  terminal has lost its connection to the broker's server*, not *the broker has switched trading
+  off*. Only an explicit False counts. ⚠ Whether that flag moved on 19 Sep was not recorded.
+
+⚠ **Rollout — which half changes when.** `shared/` and `live/` are frozen into each bot's snapshot,
+so the policy's effect on a BOT's own messages, the edit-in-place, the TRADE SHRUNK and SETTINGS
+fixes arrive at that bot's next PROMOTE. The watchdog, the reviewer and the chat bot run from the
+repo and change on a PULL. Every mixed state was checked by a test:
+
+- **new bot, old monitor** — no flusher heartbeat, so nothing is deferred and every fault is sent at
+  once (`test_with_NO_deliverer_running_nothing_is_deferred`). ⚠ A TRANSIENT failure is still queued
+  and nothing re-sends it until the monitor is updated — no worse than before, when it was dropped.
+- **old bot, new monitor** — the watchdog's own OFFLINE/RESTARTED are policed; the old bot's
+  messages bypass the policy and the log, as today. Its ONLINE still consumes the action record, so
+  NOT BACK ONLINE works for it (`test_an_OLDER_command_centers_record_is_timed_off_its_expiry`).
+- **new bot, old Command Center** — no `action`/`chat` in the record, so the bot replies ONLINE as
+  before (`test_anything_short_of_a_landed_edit_answers_False_so_ONLINE_is_sent`); its STOPPED is
+  still held under the PROMOTED root.
+- **old bot, new Command Center** — the old bot ignores the new fields and replies STOPPED and ONLINE
+  under the root, as today.
+
+Tests: `algos/tests/test_alert_policy.py` (38), `test_one_message_per_action.py` (13), one in
+`test_live_bridge.py`, and the backend's `tests/test_one_message_per_action.py` (6); 20 mutations
+watched RED, named in the docstrings.
+
+### Stage 3 — the reviewer stops repeating the room, and a LIVE problem keeps reminding
+
+- ✅ **One HALTED finding, not two.** A live halt was the bridge's own HALTED plus the reviewer's
+  *Bridge HALTED — placing nothing* and *Bridge is HALTED right now* an hour later. The latest halt
+  now gets ONE finding, *Bridge is HALTED right now — the bot is placing nothing*, under the halt's
+  own key `halted:<ts>` — unchanged, so a halt already announced is not announced again by the
+  merge. `halted_now:unknown` survives only for a halt whose event has left the window.
+- ✅ **A finding whose real-time alert is in the send log is not re-sent** (`log_review.
+  announced_in_real_time`, the `REALTIME_TWIN` table: halted→HALTED, startup_failed and
+  version_mismatch→WILL NOT START, mt5_outage→NO MT5 LINK, unclean→OFFLINE/RESTARTED,
+  config_refused→SETTINGS NOT APPLIED, bar_error→DROPPED A BAR). A line for that bot, that label,
+  from 10 min before to 30 min after the event, with outcome `sent`, `queued` or `held`, covers
+  it; it is remembered as said and still drawn on the Bots page chip.
+- 🔴 **`dropped`, no line at all, or an unreadable log covers NOTHING** — a lost real-time alert
+  is exactly what this reviewer is for, and a bot still on code older than the log writes no line,
+  so its findings are sent exactly as before. `--all` ignores the check.
+- ⚠ **`held` covers on purpose**: a quick-recovered OFFLINE the policy held would otherwise come
+  back an hour later as a REVIEW, undoing the hold. The daily summary is where it is counted.
+- ✅ **Hourly REMINDER for a LIVE bot that is halted or down** (`monitor.check_reminder`). Down means
+  the watchdog sees no process and nobody stopped it (`stop_suppressed`); halted is the bot's own
+  heartbeat saying `bridge_state: halted`. The first hour is the real-time alert's; then one
+  `⛔ REMINDER — HALTED` / `⛔ REMINDER — DOWN` an hour, saying for how long, until it clears. LIVE is
+  the account registry's `kind`; demo accounts get none. Never held.
+
+Tests: `algos/tests/test_review_and_reminders.py` (16) and three updated in `test_log_review.py`;
+5 mutations watched RED, named in the docstring.
+
+### Stage 4 — the daily summary (`notifications/daily_summary.py`)
+
+- ✅ **One message per health room per day**, on the first watchdog pass at or after **08:00
+  America/Chicago**, for the 24 hours to that 08:00. Built ONLY from the send log, so the summary
+  and the record cannot disagree. It names: what was HELD, by label and bot, biggest first; the
+  longest time an account could not trade (off the `duration_s` the policy logs when a TRADING OFF
+  ends); auto-restarts by bot (held or sent), the chat bot's own separately; how many messages
+  arrived LATE and how many the outbox GAVE UP on; and anything Telegram refused or had no room for.
+- 🔴 **Rule 1, three ways**: `Nothing held.` only off a log that was READ; *The send log could not
+  be read (…)* when it was not — never a zero; *There is no send log for this period* when no file
+  exists — which is "nothing was written", not "nothing happened".
+- ⚠ **Rooms**: the shared health room plus every account's own (Aaron's live account has had one
+  since 2026-09-26). A HEALTH line counts in the room it went to; a TRADE or SIGNAL that arrived
+  late or was given up counts in its ACCOUNT's health room as a NUMBER only, never its content.
+- ⚠ **No new scheduled task.** It rides `SYS_MONITOR` (the watchdog, every minute), which records the
+  day it sent in `monitor_state.json` → `daily_summary.sent_for`. A monitor that is down at 08:00
+  sends it on its first pass after — late, never twice. The Command Center's own held lines are on
+  the laptop and are not in it.
+- The summary is itself logged (label `DAILY SUMMARY`) and never counted by the next one.
+- ⚠ **"Auto-restarts" counts only the WATCHDOG's.** A restart somebody pressed in the Command Center
+  ends with the bot EDITING that action's message, logged with `edit_of`, and is excluded. The first
+  real summary (2026-09-27) counted Aaron's two deploys as auto-restarts, one per room.
+- 🔴 **Six copies reached the LIVE health room on its first evening (2026-09-27), and none came from
+  the box.** Two watchdog tests ran a full pass on a laptop that holds the real bot token; after
+  08:00 Chicago that pass sent a real summary on every suite run, each saying *there is no send
+  log* because the test's own log folder was empty. The box sent one per room. Fixed twice: both
+  tests stub the summary, and the suite-wide guard (`scripts/testing/vps_guard.py`) now refuses any
+  lookup of Telegram's API host in any test process, so the next leak fails its test instead of
+  posting.
+
+Tests: `algos/tests/test_daily_summary.py` (11; 4 mutations watched RED, named in its docstring).
+
+## The demo/LIVE tag only where a room mixes the two (2026-09-27)
+
+Aaron: *"I already know what they are by the channel they go to."* The fill, the exit and the
+setup messages now name the bot plainly (`SOS Fade`); health messages keep `SOS Fade · LIVE`.
+
+- 🔴 **Why the split, not a blanket removal:** a live account's trades and setups rooms are its own
+  and never borrowed (`notify.chat_for`), so those rooms hold one kind. The HEALTH room is not
+  required per account — 35710389 (live) names none and uses the shared one beside every demo bot —
+  and the chat bot's status list shows every bot at once. Two bots are both called "SOS Fade", so
+  there the tag is the only thing telling them apart.
+- The rule is one set in `shared/bot_state.py` (`labelled(..., room)`); the runner and the bridge
+  name the room they are writing to. Needs a promote to reach a running bot.
+
+## 🔴 A Stop pressed on a bot that is ALREADY down stands it down (2026-09-27)
+
+The watchdog read a stop's suppress key only at the running → down transition. A bot that crashed
+first — Richard's extreme leg, launched by a deploy into an unfunded live account and refusing on
+the $0 balance — had no process left to write a shutdown record and no transition left to read, so
+a Stop from the page or the trading-box tool was never seen and the live-bot REMINDER — DOWN went
+to the shared health room every hour. `check_bot` now also consumes the suppress key for a bot
+that is already down: it is marked stopped on purpose, no restart, no reminder.
+TESTED: `tests/test_watchdog.py::test_a_stop_pressed_on_a_bot_ALREADY_down_stands_it_down`, RED
+with the check removed. The deploy that launched it is fixed on the Command Center side — see
+`command-center/backend/notes/bots-deploys.md` → *A deploy never STARTS a bot that was not running*.

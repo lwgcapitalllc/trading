@@ -230,3 +230,30 @@ Treat every scale-in figure in Runs 19–22 as a pre-fix number.
   the lab does — sized at 4332.00 and filled at 4320.58, sized at 4310.83 and filled at 4300.90,
   inflating each add's true risk-to-stop by **44% and 22%** — and the ledger recorded
   **$439.60** of risk where the add actually took **$633.70** (rule 3). Neither is fixed.
+
+## The "1m break" scale-in — adds on a turn, not on the push (2026-09-25)
+
+Aaron's redesign after the sizing fix: *"I want our entries to not be on the push but as deep into
+the retracement as possible right after you have a confirmation that price has turned"*, every lot
+on the trade's trailing stop, judged on protecting winners rather than on R. Fifteen placements
+were measured; the table and the build's own replay are Run 46 in `sos_fade_optimization.md`.
+
+- **The rule:** from the second target, track the best price; a 1-minute internal break against
+  the trade is the bounce; the SECOND 1-minute internal break back adds at market (decided at the
+  15m close, filled at the next open). One add per push; a new best re-arms. Shared stop.
+- 🔴 **Fixed the same day: the 1-minute EXTERNAL trend must also point the trade's way.** 23 of
+  42 adds had fired inside a bounce that was still the bigger 1m move (Aaron: *"it should only add
+  if price is going in the direction of the trade"*). After: 8 trades made worse instead of 16,
+  23 adds, +18.3R — Run 46's addendum. The dual clock hands each break over with that direction.
+- **Sized net of costs** — the trade's costs so far, the exit side owed on every open lot and this
+  add's own round trip come out of the locked profit first, so a stop-out ends at zero AFTER costs.
+  Under the shipped rule 5 trades since 2020 closed just under zero on exactly their costs.
+- **Where the breaks come from:** the dual clock's fast structure engine (`Structure1m`) now
+  reports each bar's internal breaks; `DualClock.step_fast` hands them to
+  `Execution.observe_fast_breaks` every fast bar, before any early return.
+- ⚠ **Its leg state is carried in a position snapshot** (`_brk_*`). A record saved by an older
+  version lacks those fields and `restore_position` refuses it — migrate it at promote.
+- ⚠ **Four tests, each watched RED by mutation**: one break back is enough; no bounce needed; no
+  per-push latch; stale breaks read. The dual-clock hand-over has no unit test — the replay above
+  (45 adds) is its evidence.
+

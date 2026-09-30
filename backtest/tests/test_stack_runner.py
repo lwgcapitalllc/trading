@@ -284,7 +284,16 @@ def _stub_build_leg(monkeypatch, n_bars=4_000, built=None):
     from backtest.portfolio import runner as runner_mod
 
     def _fake(
-        name, strategy_cls, config, df, *, account, initial_capital, cost_profile=None, df_fast=None
+        name,
+        strategy_cls,
+        config,
+        df,
+        *,
+        account,
+        initial_capital,
+        cost_profile=None,
+        df_fast=None,
+        rate_provider=None,
     ):
         if built is not None:
             built.append(name)
@@ -415,7 +424,16 @@ def _sourced_stack(monkeypatch, n_bars=10):
     made: dict = {"dependents": [], "sources": []}
 
     def _fake(
-        name, strategy_cls, config, df, *, account, initial_capital, cost_profile=None, df_fast=None
+        name,
+        strategy_cls,
+        config,
+        df,
+        *,
+        account,
+        initial_capital,
+        cost_profile=None,
+        df_fast=None,
+        rate_provider=None,
     ):
         strategy = strategy_cls(config=config, account=account, leg=name)
         leg = StrategyLeg.__new__(StrategyLeg)

@@ -133,3 +133,79 @@ driving the real page: hover a bar mid-chart, scroll back, take the pointer off,
 numbers off the screenshot against the candles under them. **Re-do that by hand after touching
 either file** — a unit test here would be asserting on the resolver, which is not the half that
 broke.
+
+## 🔴 An add is drawn from the bar it was BOUGHT on, not from the entry (2026-09-24)
+
+Every `Add` used to put its dot on the trade's ENTRY column and its dotted line across the whole
+box, so an add bought hours into a trade looked as if it had been held from the open. On run
+e2295f909180, 2026-06-17 short, the first add filled at 4221.90 — a wick through TP2 at 4219.12
+closed back above it, and the market add bought the next open — and drawn from the entry it read
+as an add taken BEFORE the target that allowed it (Aaron, 2026-09-24).
+
+- **The add's time reaches the overlay as extra overlay POINTS** (points 3.., in `adds` order),
+  so the chart library converts each time to an x the same way it does the entry and exit. No
+  second time→pixel mapping.
+- **The dot and the line start at that x, and the `Add` chip sits at the line's RIGHT end** (just
+  past the box edge; just inside it when that would leave the pane). It sat in the left label
+  column until 2026-09-26, naming a line that never reached it — Aaron: *"why is the dash for the
+  add only from the right … move the add pill to the right."* Adds de-collide among themselves;
+  it carries its price like the other chips (`Add 4204.10`) and hides with them when labels are off.
+- ⚠ **An add the chart cannot place falls back to the entry column** rather than vanishing.
+- ⚠ **The `Scale-in detail` layer was already right** — each lot's own box runs from its own fill
+  time. Only the default drawing was wrong.
+- ⚠ **No automated check**, same as the rest of this canvas: checked by driving the real page to
+  that trade and reading the screenshot.
+
+---
+
+## Pips on `Best`, `DD` and the exit — behind a toggle (2026-09-26)
+
+Aaron's ask: *"I want to know how far in pips we were in draw down, best price made, how much we
+captured on the exit."* Chart settings → Trades → **Show pips on Best / DD / Exit**, default OFF.
+Each chip gains ` · +152.3p` — the distance from the entry, **signed so favourable is + on a long
+AND a short** (`Best` always +, `DD` always −, an exit whichever way it closed). Every FILL chip
+carries it (`TP1`, `Exit`, `SL / Exit`), because each is a place the trade came off; `SL` and an
+unhit rung do not. An add lot's chips are measured from the LOT's own fill, the same entry its own
+`Best` / `DD` read against.
+
+🔴 **The pip size comes from the BACKEND, never from the panel** (`backend/services/pip_size.py`),
+because the panel holds no instrument names. Gold = **0.10** (PU Prime's convention, the one
+`backtest/fills.py` reads its spread in — some venues call 0.01 a gold pip), FX = 0.0001, JPY-quoted
+= 0.01. **Anything else is `null` and prints no pip reading at all** — indices, silver, futures have
+no single convention, and a guessed size would be a confident wrong number on every chip.
+
+⚠ **It is stamped on the spec as it is SERVED, never into the cache** — a warm cache is streamed as
+raw bytes, so a build-time field would reach no run built before it. See the backend's
+`notes/chart.md`.
+
+Proof: `scripts/check_trade_geometry.mjs` (the pip cases, killed by three mutations) and
+`backend/tests/test_chart_spec_pip_size.py`. Driven on run `ab08dc6c90c7` (a short from 4369.93):
+`DD 4376.14 · −62.1p`, `Exit 4356.86 · +130.7p`, `Best 4291.69 · +782.4p`, each checked by hand.
+
+## 🔴 `TP1` / `TP2` are named by the order price REACHES them, not by ladder position (2026-09-27)
+
+Aaron, on the re-entry short of 2026-08-26 (run `7760823a639e`): *"how can TP2 / Exit be before
+TP1?"* A re-entry prices its first rung off RISK (1.25R, 4630.27) and its second off the 15m fib
+(4640.23), so the second sat NEARER the entry and the chart drew `TP2 / Exit` above `TP1`. His call:
+*"if TP2 is before TP1 then just flip flop the pills."*
+
+`tradeGeometry.ts::rungNames` names the nearest rung `TP1`, the next `TP2`. One name list feeds all
+three places a rung is printed — the faint unhit pill, the `TP2 / Exit` merge, and a fill's own
+`TPn` (which the backend numbers by ORDER id, i.e. ladder position, and is renamed through the same
+list). A bare-number leg from an older cached spec was numbered in exit order and is left alone.
+
+⚠ **DISPLAY ONLY.** The spec still carries rungs in the strategy's ladder order, and nothing about
+what the trade did changed. The STOP already stepped by distance before this
+(`strategies/python/sos_fade/execution.py` → `_stage_rungs`): breakeven at the nearer rung, and
+the floor at the nearer rung's price once the further one is reached — so the names now agree with
+the stop instead of contradicting it.
+
+Proof: `scripts/check_trade_geometry.mjs`, four `rungNames` cases on the real trade; the old
+ladder-position rule and a forgotten short-mirror each turn exactly two red.
+
+⚠ **Only when EVERY rung is on the profit side of the entry (fixed the same day).** A Realign trade
+in market mode can buy above a target the setup had already passed — long T115 on stack
+`st_6b6b71a5d5`, 2026-09-18: entry 4377.69, TP1 4372.605 (halfway), TP2 4367.52 (the old high).
+"Nearest first" measured those backwards and printed `TP1` at the old high and `TP2 / Exit` at the
+halfway rung. With any rung behind the entry, ladder order stands. Two more cases (the long and the
+2025-07-28 short mirror), red before the fix; 8 of the 115 Realign trades on that stack are this shape.

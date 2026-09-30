@@ -110,8 +110,8 @@ def test_a_setup_is_announced_only_while_momentum_would_let_it_trade(run):
             first[sn.key] = sn
     assert first
     for sn in first.values():
-        mom = next(c for c in sn.confluences if c.name.endswith("momentum"))
-        assert mom.met, f"{sn.key} announced with the momentum with the trade"
+        setup = next(c for c in sn.confluences if c.name == "15m false break")
+        assert setup.met and "momentum against" in setup.detail, f"{sn.key} announced with the momentum with the trade"
 
 
 def test_an_announced_setup_always_closes_its_thread_and_a_silent_one_stays_silent(run):

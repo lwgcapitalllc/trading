@@ -49,7 +49,7 @@ ALGOS_ROOT = Path("C:/trading/algos")
 sys.path.insert(0, str(ALGOS_ROOT / "shared"))
 from alert_format import OK, alert  # noqa: E402
 from credentials import telegram_credentials  # noqa: E402
-from notify import HEALTH, chat_for  # noqa: E402
+from notify import HEALTH, send_telegram_id  # noqa: E402
 
 TELEGRAM_TOKEN, GROUP_CHAT, ADMIN_CHAT = telegram_credentials()
 USERS_FILE = ALGOS_ROOT / "users.json"
@@ -97,19 +97,10 @@ def send(text: str):
     question was asked, and a `/balance` typed in the trades group would be baffling if the reply
     landed somewhere else.
     """
-    dest, _dedicated = chat_for(HEALTH)
-    if not TELEGRAM_TOKEN or not dest:
-        print(f"Send dropped (Telegram not configured): {text[:80]}")
-        return
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    # Plain text always — see `shared/alert_format.py`'s docstring. Every message this sends is
-    # built by `alert()`, and asking Telegram to parse it as Markdown is the one thing that can
-    # silently corrupt a bot label carrying an underscore.
-    data = {"chat_id": dest, "text": text}
-    try:
-        requests.post(url, json=data, timeout=10)
-    except Exception as e:
-        print(f"Send error: {e}")
+    # Through `notify` since 2026-09-26, so the ping reaches the send log and is re-sent after a
+    # network blip rather than lost. Plain text always: every message this sends is built by `alert()`, and asking Telegram to parse it as
+    # Markdown is the one thing that can silently corrupt a bot label carrying an underscore.
+    send_telegram_id(text, HEALTH, markdown=False, bot="telegram_bot")
 
 
 def send_to(chat_id: str, text: str):

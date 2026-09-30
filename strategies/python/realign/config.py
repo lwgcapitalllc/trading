@@ -308,6 +308,10 @@ class RealignConfig(SosFadeConfig):
     refused setup FREES the slot and a different setup takes it, which is how the
     minimum-stop guard's cheap estimate got its SIGN wrong (+1.84R estimated, -1.84R
     replayed).
+
+    MEASURED 2026-09-27 (`realign_optimization.md` → Run 15, full replay 2020-2026 charged): 0.0
+    removes exactly the 8 target-behind trades and costs 2.96R (+88.53R → +85.57R), worse in both
+    halves and without the best trade, drawdown unchanged — so the default stays `None`.
     """
 
     realign_trend_minutes: Optional[int] = None
@@ -387,6 +391,23 @@ class RealignConfig(SosFadeConfig):
 
     ⚠ `realign_strategy.pine` ships 1.0 ("R is scale-free"), so the two sides already differ
     here. That is for this bot's parity gate to settle, not for a parent's default to move.
+    """
+
+    exec_be_buf_tk: float = 30.0  # "Breakeven buffer (ticks)" — pinned, NOT inherited
+    #   The parent moved 30 → 60 on 2026-09-28 (SOS Fade Run 58, measured on SOS Fade only). Read
+    #   only in Ticks mode here; pinned so switching to Ticks still means what Run 19 measured.
+    exec_be_buf_mode: str = "Fraction of stop"
+    exec_be_buf_r: float = 0.10
+    """PINNED here: the breakeven stop sits 10% of the trade's OWN entry risk past the entry,
+    replacing the parent's fixed 30 ticks (Aaron's call, 2026-09-27; `realign_optimization.md`
+    → Run 19). Capped by the parent's `exec_be_cap_pct` (75% of the way to the first rung).
+
+    MEASURED 2018-09-14 → 2025-08-05: +1.15R ± 0.62 over 30 ticks, P(better) 0.95, max DD
+    5.77R → 5.70R; held back 2025-08-06 → 2026-09-25 +0.28R, no scratch lost. 12.5-15% was
+    noise, and 17.5%+ turned scratches into small wins but stopped runners (DD → 6.7R).
+    ⚠ A fixed tick buffer is the wrong shape for gold: $0.30 against a $9 stop in 2019 and a
+    $32 stop in 2026. Only "Ticks" and "Fraction of stop" exist in the Pine, so the "+ cost"
+    mode has no Pine twin and no parity gate here.
     """
 
     def __post_init__(self) -> None:  # type: ignore[override]

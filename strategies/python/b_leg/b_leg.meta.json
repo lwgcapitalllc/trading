@@ -262,6 +262,19 @@
       ]
     },
     {
+      "name": "exec_scale_brk_n",
+      "group": "Exit ladder",
+      "label": "1-minute breaks back before it adds",
+      "short": "Breaks back",
+      "min": 1,
+      "max": 5,
+      "step": 1,
+      "show_if": {
+        "exec_scale_in": true
+      },
+      "desc": "Inherited from SOS Fade and does nothing on this bot: it never adds to a winner. Leave it at 2."
+    },
+    {
       "name": "exec_giveback_arm_r",
       "group": "Exit ladder",
       "label": "Give-back guard: arm at (R)",
@@ -313,7 +326,7 @@
       "label": "Reversal exit: what it does",
       "short": "Reversal exit",
       "desc": "Watches for a shift of structure against an open trade on the FASTER chart — the same 5-minute stream the re-entry fills on — and acts on it. Off changes nothing. This is a SIGNAL rather than a percentage: the give-back guard above fires off the trade's own profit curve, which says nothing about whether the market turned, while this fires off what the market actually did. It reads the faster chart because a 15-minute reversal is confirmed long after the turn, by which time the profit is already gone. It only ever touches the first trade of a setup, never a re-entry.",
-      "choices": ["Off", "Bank half", "Tighten to the trail", "Close"],
+      "choices": ["Off", "Bank half", "Tighten to the trail", "Close", "Give-back stop"],
       "guide": [
         "Off — the trailing stop is the only thing protecting an open profit",
         "On — a turn on the faster chart can bank or protect what the trade showed"
@@ -327,7 +340,7 @@
       "desc": "Read only when the reversal exit is on. How far in front the trade must have been, in R, before a turn against it can close anything. Without it this would be a second stop loss: a trade that has never been in profit already has a stop, and the stop is the faster of the two. The guard exists for the trade that showed real money and handed it back.",
       "step": 0.5,
       "show_if": {
-        "exec_rev_exit": ["Bank half", "Tighten to the trail", "Close"]
+        "exec_rev_exit": ["Bank half", "Tighten to the trail", "Close", "Give-back stop"]
       },
       "guide": [
         "Low — watches almost every trade, including ones only pausing",
@@ -342,7 +355,7 @@
       "desc": "Read only when the reversal exit is on. Structure shift: structure turns against the trade on the 5-minute chart (measured: lost on every setting). Level rejected: price reaches the same major level ahead of the trade — a weekly, daily or 4-hour high or low — and fails to close through it on separate visits. Support holding behind the trade never counts. Measured: this one lost on every setting too.",
       "choices": ["Structure shift", "Level rejected"],
       "show_if": {
-        "exec_rev_exit": ["Bank half", "Tighten to the trail", "Close"]
+        "exec_rev_exit": ["Bank half", "Tighten to the trail", "Close", "Give-back stop"]
       }
     },
     {
@@ -354,6 +367,38 @@
       "step": 1,
       "show_if": {
         "exec_rev_trigger": "Level rejected"
+      }
+    },
+    {
+      "name": "exec_rev_arm_at",
+      "group": "Exit ladder",
+      "label": "Arm on",
+      "short": "Reversal exit arms on",
+      "desc": "Read only when the reversal exit is on. R: the trade's best must have been worth the R figure above. Target 2 price: the trade's best must have reached its own second fib target, whatever that is worth in R.",
+      "choices": ["R", "Target 2 price"],
+      "show_if": {
+        "exec_rev_exit": ["Bank half", "Tighten to the trail", "Close", "Give-back stop"]
+      }
+    },
+    {
+      "name": "exec_rev_giveback_pct",
+      "group": "Exit ladder",
+      "label": "Give-back stop: share of the open profit handed back (%)",
+      "short": "Give-back stop share",
+      "desc": "Read only by the Give-back stop action. Once a turn against the trade fires it, a stop rests where this share of the open profit (entry to best price so far) is gone, and it moves with the best so it only ever tightens. It never loosens the trade's own stop. If price is already past it when the turn prints, the trade leaves at the next 5-minute bar's open.",
+      "step": 0.1,
+      "show_if": {
+        "exec_rev_exit": "Give-back stop"
+      }
+    },
+    {
+      "name": "exec_rev_need_bos",
+      "group": "Exit ladder",
+      "label": "Need a break our way before the shift",
+      "short": "Break first",
+      "desc": "Read only when the reversal exit is on. When ticked, a turn against the trade only counts if the 5-minute chart first broke structure in the trade's direction after the exit armed.",
+      "show_if": {
+        "exec_rev_exit": ["Bank half", "Tighten to the trail", "Close", "Give-back stop"]
       }
     },
     {
@@ -404,6 +449,18 @@
         "on": "Yes"
       },
       "desc": "Covers the early closes and market holidays too — Christmas Eve, New Year's Eve, the Thursday before Good Friday and Thanksgiving. Read only when Flat before the close is on."
+    },
+    {
+      "name": "exec_shift_entry",
+      "group": "Entry zone",
+      "label": "Enter on a 1m SOS then BOS",
+      "short": "1m SOS→BOS entry",
+      "options": {
+        "off": "Off",
+        "on": "On"
+      },
+      "desc": "Inherited from SOS Fade and never built or measured for this bot. Leave it Off here.",
+      "hidden": true
     },
     {
       "name": "exec_lvl_memory",

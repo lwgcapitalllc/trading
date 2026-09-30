@@ -19,8 +19,10 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -102,7 +104,7 @@ def telegram_configured() -> bool:
     )
 
 
-def send_telegram(text: str, kind: str, chat_id: str = "") -> bool:
+def send_telegram(text: str, kind: str, chat_id: str = "", *, bot=None, account=None) -> bool:
     """Best-effort send. Returns True on success, and NEVER raises — a notification failure
     must not turn a working endpoint into a 500.
 
@@ -115,10 +117,12 @@ def send_telegram(text: str, kind: str, chat_id: str = "") -> bool:
     refuses the whole message — so the alert most likely to be lost is the one carrying an error,
     because error text is full of paths. Measured on the VPS side's first real send, 2026-07-31.
     """
-    return send_telegram_id(text, kind, chat_id) is not None
+    return send_telegram_id(text, kind, chat_id, bot=bot, account=account) is not None
 
 
-def send_telegram_id(text: str, kind: str, chat_id: str = "", reply_to=None):
+def send_telegram_id(
+    text: str, kind: str, chat_id: str = "", reply_to=None, *, bot=None, account=None
+):
     """The same send, returning Telegram's `message_id` (or None on failure).
 
     The id is what lets a LATER message reply to this one, which is how a deploy's STOPPED and
@@ -137,6 +141,7 @@ def send_telegram_id(text: str, kind: str, chat_id: str = "", reply_to=None):
     token = _cred("telegram_token", "LWG_TELEGRAM_TOKEN")
     dest = chat_id or chat_for(kind)
     if not token or not dest:
+        log_send(kind, "dropped", text, dest, bot=bot, account=account, reason="not configured")
         return None
 
     def _post(parse_mode):
@@ -156,21 +161,87 @@ def send_telegram_id(text: str, kind: str, chat_id: str = "", reply_to=None):
             except Exception:
                 return 0
 
+    def _sent(mid):
+        log_send(kind, "sent", text, dest, bot=bot, account=account, message_id=mid)
+        return mid
+
+    def _dropped(why):
+        log_send(kind, "dropped", text, dest, bot=bot, account=account, reason=why)
+        return None
+
     try:
-        return _post("Markdown")
+        return _sent(_post("Markdown"))
     except urllib.error.HTTPError as e:
         if e.code != 400:
-            return None
+            return _dropped(f"HTTP {e.code}")
         try:
             detail = e.read().decode("utf-8", "replace")
         except Exception:
             detail = ""
         if "parse entities" not in detail:
-            return None
-    except Exception:
-        return None
+            return _dropped("HTTP 400")
+    except Exception as e:
+        return _dropped(f"send failed: {e}")
 
     try:
-        return _post(None)
-    except Exception:
-        return None
+        return _sent(_post(None))
+    except Exception as e:
+        return _dropped(f"send failed: {e}")
+
+
+# ── the send log, mirroring algos/shared/notify_log.py (2026-09-26) ─────────────────────────
+#
+# Every send this app makes is written as one JSON line in the SAME folder format the VPS side
+# uses (`algos/logs/notify/<UTC date>.jsonl`, never committed), so one reader reads either
+# machine's. ⚠ It is the LAPTOP's copy: this app runs there, so its lines land in the laptop's
+# folder and the box's daily summary never sees them. Deliberately no outbox here — a Command
+# Center action is a person at a screen, who sees the result on the page.
+#
+# ⚠ A copy, not an import, for the boundary reason in the module docstring. The line format is
+# pinned to the algos side by `tests/test_notification_routing.py`, which reads that file.
+
+
+def notify_dir() -> Path:
+    override = os.environ.get("LWG_NOTIFY_DIR", "").strip()
+    return Path(override) if override else cfg.MONOREPO_ROOT / "algos" / "logs" / "notify"
+
+
+def parse_header(text: str) -> tuple:
+    """`(LABEL, subject)` off `<icon> <LABEL> · <subject>` — the same split the algos side makes."""
+    try:
+        first = str(text or "").strip().splitlines()[0].strip()
+    except IndexError:
+        return "", ""
+    parts = first.split(" ", 1)
+    if len(parts) == 2 and not any(ch.isascii() and ch.isalnum() for ch in parts[0]):
+        first = parts[1].strip()
+    label, _, subject = first.partition(" · ")
+    return label.strip(), subject.strip()
+
+
+def log_send(kind, outcome, text, room, *, bot=None, account=None, message_id=None, reason=None):
+    """Append one send-log line. NEVER raises — a log line may never cost the message."""
+    try:
+        now = datetime.fromtimestamp(time.time(), tz=timezone.utc)
+        label, subject = parse_header(text)
+        row = {
+            "ts": now.isoformat(timespec="seconds"),
+            "kind": kind,
+            "outcome": outcome,
+            "label": label,
+            "subject": subject,
+            "bot": bot,
+            "account": account,
+            "room": str(room or ""),
+            "source": "command-center",
+        }
+        if message_id is not None:
+            row["message_id"] = message_id
+        if reason:
+            row["reason"] = reason
+        folder = notify_dir()
+        folder.mkdir(parents=True, exist_ok=True)
+        with open(folder / f"{now:%Y-%m-%d}.jsonl", "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
+    except Exception as e:  # noqa: BLE001
+        print(f"notify: could not write the send log ({e})")

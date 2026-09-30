@@ -423,7 +423,12 @@ _TOOLS = [
             "broker_profile": {"type": "string"},
             "sizing_mode": {"type": "string"},
             "manual_risk_pct": {"type": "number"},
-            "source_run_id": {"type": "string"},
+            "source_run_id": {
+                "type": "string",
+                "description": "Provenance label ONLY - copies nothing from that run. Every "
+                "field left out takes the lab's default (params, broker, costs). To rerun a "
+                "run's basis, call copy_run_basis first and pass what it returns.",
+            },
         },
         ["strategy_id", "instrument", "start_date", "end_date"],
     ),

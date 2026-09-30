@@ -568,7 +568,9 @@ def test_the_still_halted_finding_keys_on_the_HALT_not_on_the_heartbeat(tmp_path
         )
         _write(tmp_path, rows)
         found = lr.review_bot("b", tmp_path, RUNNING, now=at)
-        return next(f.key for f in found if f.key.startswith("halted_now:"))
+        # ONE finding says "right now" since 2026-09-26 — the merged one, under the halt's key.
+        (now_key,) = [f.key for f in found if "right now" in f.title]
+        return now_key
 
     # Two runs an hour apart, reading the same file. Same incident, so: the same key.
     assert _now_key(NOW) == _now_key(NOW + timedelta(hours=1))
@@ -824,9 +826,10 @@ def test_a_FRESH_halted_heartbeat_on_a_running_bot_is_still_urgent(tmp_path):
     """
     halted, keys = _halt_finding(tmp_path, _halted_last(), RUNNING)
 
-    assert "halted_now" in keys
+    # ONE finding for the live halt since 2026-09-26 — `halted_now` beside it was the second.
+    assert "halted_now" not in keys and len(halted) == 1
     assert halted[0].level == lr.ALERT
-    assert "is placing nothing" in halted[0].title
+    assert "right now" in halted[0].title and "is placing nothing" in halted[0].title
 
 
 def test_a_heartbeat_with_an_unreadable_TIME_keeps_the_present_tense(tmp_path):
@@ -840,7 +843,7 @@ def test_a_heartbeat_with_an_unreadable_TIME_keeps_the_present_tense(tmp_path):
     rows[-2] = {"ts": "?", "bot": "b", "kind": "pulse", "link": True, "bridge_state": "halted"}
     halted, keys = _halt_finding(tmp_path, rows, RUNNING)
 
-    assert "halted_now" in keys
+    assert "right now" in halted[0].title
     assert halted[0].level == lr.ALERT
 
 
@@ -1283,7 +1286,9 @@ def test_a_finding_carries_the_ACCOUNT_so_it_can_reach_that_accounts_channel(tmp
     MUTATION: drop the account from the `send(...)` call in `main` -> red.
     """
     seen = []
-    monkeypatch.setattr(lr, "send", lambda text, dry_run=False, account=None: seen.append(account))
+    monkeypatch.setattr(
+        lr, "send", lambda text, dry_run=False, account=None, bot=None: seen.append(account)
+    )
     monkeypatch.setattr(lr._bot_state, "read_account", lambda k: 34957946)
     _run_main(tmp_path, monkeypatch, _halted_last())
     assert seen and set(seen) == {34957946}

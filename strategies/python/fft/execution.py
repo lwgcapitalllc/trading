@@ -38,6 +38,7 @@ if str(_ROOT) not in sys.path:
 from live_contract import LiveDecision, LivePositionMixin  # noqa: E402
 from sos_fade.execution import Trade, TradeFib, _Pending  # noqa: E402
 
+from backtest.data.fx import QuoteConversion  # noqa: E402
 from backtest.portfolio.account import SoloAccount  # noqa: E402
 
 # The rollover is the broker's day boundary, 17:00 New York, DST-aware — the same instant the
@@ -160,6 +161,9 @@ class FftExecution(LivePositionMixin):
         self._account = account if account is not None else SoloAccount(balance=initial_capital)
         self._leg = leg
         self._profile = profile
+        # Quote-to-account conversion: the configured constant until a run installs a rate. Every
+        # money figure reads it AT ITS OWN MOMENT — see `backtest.data.fx.QuoteConversion`.
+        self._fx = QuoteConversion(config.point_value)
         self.trades: List[Trade] = []
         self.blocks: List = []
         self.misses: List[Miss] = []
@@ -219,6 +223,10 @@ class FftExecution(LivePositionMixin):
         tp = float(self.pos.take_profit)
         return tp if math.isfinite(tp) and tp > 0 else None
 
+    def add_exit_price(self) -> Optional[float]:
+        """Where the scale-in lots bank (live contract). FFT never scales in, so there is no add lot to bank."""
+        return None
+
     def planned_full_exit_price(self, pend) -> Optional[float]:
         """The target the resting order would carry if it filled — sent WITH the order, so no
         trade is ever open at the broker without it."""
@@ -252,15 +260,21 @@ class FftExecution(LivePositionMixin):
         return self._spread() if (direction > 0 if entry else direction < 0) else 0.0
 
     # ── the order ────────────────────────────────────────────────────────────
-    def _qty(self, risk: float) -> float:
+    def set_rate_provider(self, fn) -> None:
+        """Install a `time_ms -> rate` conversion for this run, or None for the constant."""
+        self._fx.install(fn)
+
+    def _qty(self, risk: float, pv: float) -> float:
         cfg = self._cfg
         if cfg.size_mode == "Fixed contracts":
             return cfg.fixed_qty
         if risk <= 0:
             return float("nan")
-        return (self.equity * cfg.exec_risk_pct / 100.0) / (risk * cfg.point_value)
+        return (self.equity * cfg.exec_risk_pct / 100.0) / (risk * pv)
 
-    def size(self, entry: float, stop: float, mult: float = 1.0) -> Optional[float]:
+    def size(
+        self, entry: float, stop: float, mult: float = 1.0, time_ms: Optional[int] = None
+    ) -> Optional[float]:
         """The order's size. `None` = no size (a zero stop distance); `0.0` = the account's risk
         budget has no room for it right now. `mult` scales the risk-sized quantity BEFORE the
         budget sees it (a sweep setup's 1.5x), so the account judges the size actually wanted.
@@ -272,10 +286,13 @@ class FftExecution(LivePositionMixin):
         size follows the room minute by minute. Inert with no budget stated — every backtest and
         the study gate — so it returns the risk-sized quantity untouched.
         """
-        qty = self._qty(abs(entry - stop)) * mult
+        # `time_ms` is the placement's moment, for the conversion. Only an installed rate needs it,
+        # and one without it refuses inside `QuoteConversion` rather than pricing at a guessed time.
+        pv = self._fx.at(time_ms)
+        qty = self._qty(abs(entry - stop), pv) * mult
         if not math.isfinite(qty) or qty <= 0:
             return None
-        return self._account.affordable_qty(self._leg, entry, stop, self._cfg.point_value, qty)
+        return self._account.affordable_qty(self._leg, entry, stop, pv, qty)
 
     def build_order(
         self,
@@ -347,7 +364,7 @@ class FftExecution(LivePositionMixin):
             self.misses.append(Miss(ts_ms, d, "opened through the stop", price))
             return None
         granted = self._account.request_fill(
-            self._leg, d, price, pend.sl, pend.qty, self._cfg.point_value
+            self._leg, d, price, pend.sl, pend.qty, self._fx.at(ts_ms)
         )
         if granted <= 0.0:
             self.misses.append(Miss(ts_ms, d, "no room under the account's risk cap", price))
@@ -420,26 +437,29 @@ class FftExecution(LivePositionMixin):
         p = self._profile
         if p is None:
             return 0.0
-        pv = self._cfg.point_value
-        cost = p.commission(pos.qty) * 2.0
+        pv = self._fx.at(exit_ms)
+        cost = p.commission(pos.qty) * 2.0     # already in dollars — never converted
         s = self._spread()
         if s > 0 and not self._bid_ask():
             cost += s * pos.qty * pv
         if market_exit and getattr(p, "slippage_ticks", 0):
             cost += p.slippage_ticks * p.mintick * pos.qty * pv
-        from backtest.reprice import rollovers_between
+        from backtest.reprice import rollover_ms, rollovers_between
 
         for day in rollovers_between(pos.entry_ms, exit_ms, ROLLOVER_HOUR_NY):
-            cost -= p.swap_charge(pos.dir, pos.qty, day)
+            # Swap is charged in the quote currency and converted at the rollover it is for.
+            roll_ms = rollover_ms(day, ROLLOVER_HOUR_NY)
+            cost -= p.swap_charge(pos.dir, pos.qty, day, self._fx.at(roll_ms))
         return cost
 
     def _close(
         self, pos: _Open, index: int, ts_ms: int, price: float, reason: str, *, market_exit: bool
     ) -> None:
-        pv = self._cfg.point_value
+        # P&L converts at the EXIT, when the broker books it; risk at the ENTRY, where it was sized.
+        pv = self._fx.at(ts_ms)
         costs = self._charge(pos, ts_ms, market_exit)
         pnl = (price - pos.entry_price) * pos.dir * pos.qty * pv - costs
-        risk_usd = abs(pos.entry_price - pos.open_stop) * pos.qty * pv
+        risk_usd = abs(pos.entry_price - pos.open_stop) * pos.qty * self._fx.at(pos.entry_ms)
         self._account.book_pnl(self._leg, pnl)
         mfe = pos.ext_high if pos.dir > 0 else pos.ext_low
         mae = pos.ext_low if pos.dir > 0 else pos.ext_high

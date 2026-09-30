@@ -45,7 +45,7 @@
     "exec_min_stop_val": 0.08,
     "exec_tp1_pct": 0.0,
     "exec_tp2_pct": 0.0,
-    "exec_be_buf_tk": 30.0,
+    "exec_be_buf_tk": 35.0,
     "exec_trail_step": 5.0,
     "exec_runner_trail": "Structure + % ratchet",
     "exec_struct_trail_buf_tk": 20.0,
@@ -97,7 +97,7 @@
     "exec_recovery_risk_frac": 0.25,
     "exec_recovery_soft_stop_r": 0.0,
     "exec_scale_cap_x": 0.5,
-    "exec_scale_in": true,
+    "exec_scale_in": false,
     "exec_scale_max_adds": 3,
     "exec_scale_mode": "Trail",
     "exec_scale_tp_mode": "Ride",
@@ -160,7 +160,11 @@
     "exec_lvl_be_keep_r": 0.0,
     "exec_lvl_confluence": "None",
     "exec_lvl_gap_tol_r": 0.1,
-    "exec_lvl_shift_bars": 24
+    "exec_lvl_shift_bars": 24,
+    "exec_rev_arm_at": "R",
+    "exec_rev_giveback_pct": 50.0,
+    "exec_rev_need_bos": false,
+    "exec_scale_brk_n": 2
   },
   "strategy_source_hash": "",
   "promoted_commit": "",
@@ -174,5 +178,6 @@
   "account_risk_cap_pct": 10.0,
   "broker_tz_offsets": "2,3",
   "sizing_basis_adjustment": 0.0,
-  "_sizing_basis_adjustment": "0: this bot sizes off the balance it finds. The -4518.23 once held by sos_fade_demo was measured on this demo account and described THAT bot's own equity path (the 2026-08-25 duplicate fills and the 2026-08-26 oversized short); a fresh bot inherits none of it. Compare this copy with the live one in R, never in dollars - the two accounts' balances are nothing alike."
+  "_sizing_basis_adjustment": "0: this bot sizes off the balance it finds. The -4518.23 once held by sos_fade_demo was measured on this demo account and described THAT bot's own equity path (the 2026-08-25 duplicate fills and the 2026-08-26 oversized short); a fresh bot inherits none of it. Compare this copy with the live one in R, never in dollars - the two accounts' balances are nothing alike.",
+  "_scale_in_off_2026_09_26": "TURNED OFF, Aaron's call 2026-09-26, matching the live bot sos_fade_demo (see its _scale_in_off_2026_09_26 for the measurement). The 'Trail' add bought at market whenever the trail moved and turned winners into scratches; the safe '1m break' add replaces it once the 1-minute feed ships. Record: strategies/python/sos_fade/sos_fade_optimization.md, Run 50. Not runtime-reloadable: takes effect on restart; no promote needed."
 }

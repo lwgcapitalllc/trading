@@ -1,0 +1,42 @@
+2026-09-27 03:25:01,149 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-27 03:25:01,149 [INFO] Stop requested — shutting down.
+2026-09-27 03:25:01,149 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-27 03:25:01,596 [INFO] MT5 disconnected.
+2026-09-27 03:25:08,957 [INFO] SOS Fade | SosFadeStrategy v407 | hash acc13e66354b | commit 1437a91c | frozen | LIVE
+2026-09-27 03:25:09,491 [INFO] Connected | #34957946 | $10,287.06 | PUPrime-Live
+2026-09-27 03:25:09,491 [INFO] MT5 connection lock released
+2026-09-27 03:25:09,613 [INFO] Sizing against account balance $10,287.06
+2026-09-27 03:25:09,629 [INFO] Re-entry fill clock: M1 — a second bar stream beside M15.
+2026-09-27 03:25:09,629 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-27 03:25:09,629 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → account 34957946's own signals channel -1003332727688
+2026-09-27 03:25:10,973 [INFO] Warmed 5000 bars (2026-07-13 10:15:00+00:00 → 2026-09-25 20:30:00+00:00) in 1.3s
+2026-09-27 03:25:18,787 [INFO] Warmed the fast feed on 75000 M1 bars (2026-07-13 08:30:00+00:00 → 2026-09-25 20:55:00+00:00).
+2026-09-27 03:25:18,787 [INFO] Equity re-anchored to the account after warm-up: 12,102.68 → 10,287.06
+2026-09-27 03:25:18,787 [INFO] Setup threads carried across the restart: 1 — 0 closed, 1 still open.
+2026-09-27 03:25:19,209 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-27 16:52:39,309 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-27 16:52:39,309 [INFO] Stop requested — shutting down.
+2026-09-27 16:52:39,309 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-27 16:52:39,309 [INFO] MT5 disconnected.
+2026-09-27 16:52:46,082 [INFO] SOS Fade | SosFadeStrategy v319 | hash f637740fe800 | commit b12025a3 | frozen | LIVE
+2026-09-27 16:52:46,607 [INFO] Connected | #34957946 | $10,287.06 | PUPrime-Live
+2026-09-27 16:52:46,607 [INFO] MT5 connection lock released
+2026-09-27 16:52:46,739 [INFO] Sizing against account balance $10,287.06
+2026-09-27 16:52:46,739 [INFO] Re-entry fill clock: M1 — a second bar stream beside M15.
+2026-09-27 16:52:46,739 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-27 16:52:46,755 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → account 34957946's own signals channel -1003332727688
+2026-09-27 16:52:48,256 [INFO] Warmed 5000 bars (2026-07-13 10:15:00+00:00 → 2026-09-25 20:30:00+00:00) in 1.4s
+2026-09-27 16:52:56,445 [INFO] Warmed the fast feed on 75000 M1 bars (2026-07-13 08:30:00+00:00 → 2026-09-25 20:55:00+00:00).
+2026-09-27 16:52:56,445 [INFO] Equity re-anchored to the account after warm-up: 12,102.68 → 10,287.06
+2026-09-27 16:52:56,460 [INFO] Setup threads carried across the restart: 1 — 0 closed, 1 still open.
+2026-09-27 16:52:56,898 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-27 22:01:06,476 [WARNING] 2944 M1 bars missed on the re-entry's feed — re-warming the fast side. The primary is untouched.
+2026-09-27 22:01:30,449 [INFO] Warmed the fast feed on 75000 M1 bars (2026-07-13 08:32:00+00:00 → 2026-09-27 22:00:00+00:00).
+2026-09-27 22:01:30,449 [INFO] The 2944 M1 intervals were a market break, not lost bars — no alert.
+2026-09-27 22:15:04,181 [WARNING] 197 bars missed — re-warming the engines rather than resuming with a hole in the stream.
+2026-09-27 22:15:04,181 [INFO] Sizing against account balance $10,287.06
+2026-09-27 22:15:06,509 [INFO] Warmed 5000 bars (2026-07-13 10:45:00+00:00 → 2026-09-27 22:00:00+00:00) in 2.2s
+2026-09-27 22:15:20,370 [INFO] Fast feed bookmarked at 2026-09-27 22:14:59.999000+00:00 — the 15m context is already past it.
+2026-09-27 22:15:20,370 [INFO] Warmed the fast feed on 75000 M1 bars (2026-07-13 08:46:00+00:00 → 2026-09-27 22:14:00+00:00).
+2026-09-27 22:15:20,370 [INFO] Equity re-anchored to the account after warm-up: 12,102.68 → 10,287.06
+2026-09-27 22:15:20,385 [INFO] Setup threads carried across the restart: 1 — 0 closed, 1 still open.

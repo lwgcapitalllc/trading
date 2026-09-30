@@ -159,7 +159,11 @@
     "exec_lvl_be_keep_r": 0.0,
     "exec_lvl_confluence": "None",
     "exec_lvl_gap_tol_r": 0.1,
-    "exec_lvl_shift_bars": 24
+    "exec_lvl_shift_bars": 24,
+    "exec_rev_arm_at": "R",
+    "exec_rev_giveback_pct": 50.0,
+    "exec_rev_need_bos": false,
+    "exec_scale_brk_n": 2
   },
   "strategy_source_hash": "",
   "promoted_commit": "",

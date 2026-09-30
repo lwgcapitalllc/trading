@@ -85,7 +85,7 @@ def test_an_unknown_risk_is_omitted_rather_than_printed_as_zero():
     )
     assert "Risking" not in msg
     assert "$0.00" not in msg
-    assert "Size 1 lots" in msg
+    assert "Size 1.00 lots" in msg
 
 
 def test_prices_are_grouped_together_and_size_is_on_its_own_line():
@@ -119,11 +119,13 @@ def test_direction_is_visible_without_opening_the_message():
     assert "SHORT" in first("SHORT") and "📉" in first("SHORT")
 
 
-def test_lot_size_does_not_print_trailing_zeros():
+def test_lot_size_prints_two_places_like_every_other_message():
+    """2026-09-27: the entry printed "0.5 lots" while every later message in the same thread
+    printed "0.50 lots". One format, so a reader never compares two spellings of one size."""
     msg = alerts.format_entry(
         strategy="S", symbol="X", direction="LONG", entry=1.0, stop=0.9, lots=0.5, when=_WHEN
     )
-    assert "Size 0.5 lots" in msg
+    assert "Size 0.50 lots" in msg
 
 
 def test_a_zero_width_stop_does_not_crash_the_alert():

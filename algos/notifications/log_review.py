@@ -101,8 +101,8 @@ sys.path.insert(0, str(ALGOS_ROOT / "notifications"))
 import bot_state as _bot_state  # noqa: E402
 from alert_format import CRITICAL, WARNING, alert, when  # noqa: E402
 from alert_format import OK as OK_ICON  # noqa: E402 — this file's own OK is a finding verdict
-from credentials import telegram_credentials  # noqa: E402
-from notify import HEALTH, chat_for  # noqa: E402
+from notify import HEALTH, chat_for, send_with_outcome  # noqa: E402
+from notify_log import QUEUED, SENT, read_window  # noqa: E402
 
 # How far back a run looks. Two days so a problem late yesterday is still reported this morning,
 # and so a run that crosses midnight sees the record either side of the roll.
@@ -504,8 +504,26 @@ def review_bot(
     # updates the chip WITHOUT re-announcing it. This is the split `_ts` (the key) and `_at` (the
     # display) exist for — improving wording must never wake the channel up.
     tense = _halt_tense(pulses, supposed_to_run, now)
-    for row in _of("halted"):
-        if tense == HALT_NOW:
+    halt_rows = _of("halted")
+    for row in halt_rows:
+        if tense == HALT_NOW and row is halt_rows[-1]:
+            # 🔴 ONE finding for the halt that is live (2026-09-26). It was two — this one and
+            # `halted_now` below — and each hourly run announced both beside the bridge's own
+            # real-time HALTED: three messages for one halt. The key is the halt's own, unchanged,
+            # so an outstanding halt already announced is not announced again by the merge.
+            findings.append(
+                Finding(
+                    f"halted:{_ts(row)}",
+                    ALERT,
+                    "Bridge is HALTED right now — the bot is placing nothing",
+                    f"It stopped placing orders at {_at(row)}: "
+                    f"{row.get('reason', 'no reason recorded')}.\n"
+                    f"Its latest heartbeat, at {_at(pulses[-1])}, still says halted, while the "
+                    f"watchdog and the Bots page both read RUNNING. It will not resume until it is "
+                    f"restarted and agrees with the broker again — check the account.",
+                )
+            )
+        elif tense == HALT_NOW:
             findings.append(
                 Finding(
                     f"halted:{_ts(row)}",
@@ -553,7 +571,10 @@ def review_bot(
                 )
             )
 
-    if tense == HALT_NOW:
+    if tense == HALT_NOW and not halt_rows:
+        # ⚠ Only when no halt EVENT is in the window since 2026-09-26 — with one, the finding above
+        # already says it in the present tense, under the halt's own key.
+        #
         # 🔴 The key is the timestamp of the HALT, never of the pulse that reports it.
         #
         # It was `_ts(pulses[-1])` until 2026-08-07, and a pulse is written every 15 minutes —
@@ -930,8 +951,8 @@ def write_flag(instance_dir: Path, bot_key: str, findings: List[Finding]) -> Non
         print(f"  ! could not write the review flag for {bot_key} ({e})")
 
 
-def health_chat(account=None) -> tuple[str, str, bool]:
-    """(token, chat_id, is_dedicated). Falls back to the main group and says which it used.
+def health_chat(account=None) -> tuple[str, bool]:
+    """(chat_id, is_dedicated) — where a finding about this account would go. For the dry run.
 
     ⚠ The lookup goes through `notify.chat_for`, NOT a direct read of `credentials.json`. It read
     the file itself until 2026-08-05, which silently ignored the environment override — one this
@@ -942,35 +963,94 @@ def health_chat(account=None) -> tuple[str, str, bool]:
     channel gets its bots' findings there (2026-09-13). An account that names none keeps the
     shared room, live accounts included.
     """
-    token, _group, _admin = telegram_credentials()
-    chat, dedicated = chat_for(HEALTH, account=account)
-    return token, chat, dedicated
+    return chat_for(HEALTH, account=account)
 
 
-def send(text: str, dry_run: bool = False, account=None) -> bool:
-    token, chat, dedicated = health_chat(account)
-    where = "health chat" if dedicated else "main group (set a health channel to split)"
+def send(text: str, dry_run: bool = False, account=None, bot=None) -> bool:
+    """Send one finding. True when it was delivered OR queued for re-delivery — either way it
+    WILL be read, so it must be remembered as said.
+
+    🔴 **Through `notify.send_with_outcome` since 2026-09-26**, never its own request: the old
+    body posted straight to Telegram, so no finding reached the send log, none was retried after a
+    network blip, and a finding lost in a blip was simply re-sent next hour — the one sender
+    whose whole job is catching what the others missed was itself uncounted.
+    """
     if dry_run:
+        chat, dedicated = health_chat(account)
+        where = "health chat" if dedicated else "main group (set a health channel to split)"
         print(f"  [dry run] would send to the {where}:\n{text}\n")
         return True
-    if not token or not chat:
-        print("  ! no Telegram credentials — finding not sent")
+    _mid, outcome = send_with_outcome(text, HEALTH, account=account, bot=bot, markdown=False)
+    if outcome not in (SENT, QUEUED):
+        print(f"  ! finding not sent ({outcome})")
+        return False
+    return True
+
+
+# ── a finding the room has already had in real time ──────────────────────────────────────────
+#
+# 🔴 **Since 2026-09-26 a finding is NOT re-announced when its real-time alert is in the send log**
+# (`shared/notify_log.py`). Every HALTED used to arrive three times — the bridge's own, then this
+# reviewer's two findings an hour later — and every WILL NOT START twice. The finding still lands in
+# `review.json` (the Bots page chip); only the Telegram repeat is dropped.
+#
+# ⚠ **A real-time alert that is NOT in the log is exactly what this reviewer exists to catch**, so
+# only `sent`, `queued` (it will be delivered) and `held` (the policy decided, and the daily summary
+# counts it) cover a finding. `dropped`, or no line at all — lost, never sent, or a bot on code that
+# predates the log — and the finding is sent as it always was.
+#
+# ⚠ Keyed on the finding's KIND (the part of its key before the colon); a kind not listed here has
+# no real-time twin and is always sent — the restart loop, the link storm, the pulse gaps.
+REALTIME_TWIN = {
+    "halted": ("HALTED",),
+    "startup_failed": ("WILL NOT START",),
+    "version_mismatch": ("WILL NOT START",),
+    "mt5_outage": ("NO MT5 LINK",),
+    "unclean": ("OFFLINE", "RESTARTED"),
+    "config_refused": ("SETTINGS NOT APPLIED",),
+    "bar_error": ("DROPPED A BAR",),
+}
+#: How far either side of the event a real-time alert may be logged and still be ITS alert. After:
+#: a deferred fault is logged when it is decided and again when it goes out, up to 15 minutes on.
+_TWIN_BEFORE = timedelta(minutes=10)
+_TWIN_AFTER = timedelta(minutes=30)
+_COVERING = ("sent", "queued", "held")
+
+
+def announced_in_real_time(bot_key: str, finding: Finding, rows) -> bool:
+    """Whether this finding's real-time alert is in the send log `rows`, about this bot, near the
+    event. `rows=None` means the log could not be read — then nothing is covered (rule 1)."""
+    if rows is None:
+        return False
+    kind, _, ts = finding.key.partition(":")
+    labels = REALTIME_TWIN.get(kind)
+    if not labels:
         return False
     try:
-        import requests
-
-        r = requests.post(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            data={"chat_id": chat, "text": text, "parse_mode": "Markdown"},
-            timeout=10,
-        )
-        if r.status_code != 200:
-            print(f"  ! Telegram refused ({r.status_code}): {r.text[:200]}")
-            return False
-        return True
-    except Exception as e:
-        print(f"  ! Telegram send failed ({e})")
+        at = datetime.fromisoformat(ts)
+    except ValueError:
         return False
+    for r in rows:
+        if r.get("bot") != bot_key or r.get("label") not in labels:
+            continue
+        if r.get("outcome") not in _COVERING:
+            continue
+        try:
+            logged = datetime.fromisoformat(str(r.get("ts")))
+        except ValueError:
+            continue
+        if at - _TWIN_BEFORE <= logged <= at + _TWIN_AFTER:
+            return True
+    return False
+
+
+def _send_log(now: datetime):
+    """The box's send log over the review window, or None when it could not be read."""
+    rows, problem, _found = read_window(now - timedelta(days=WINDOW_DAYS + 1), now + _TWIN_AFTER)
+    if problem:
+        print(f"  ! the send log could not be read ({problem}) — every finding will be sent")
+        return None
+    return rows
 
 
 def main(argv=None) -> int:
@@ -999,6 +1079,7 @@ def main(argv=None) -> int:
     total_new = 0
 
     running = running_keys(list(_bot_state.BOT_INSTANCES))
+    send_log = _send_log(now)
     for bot_key, instance_dir in _bot_state.BOT_INSTANCES.items():
         # Its name plus LIVE or demo (`bot_state.bot_label`): two copies of one strategy share a
         # name since 2026-09-11, and a REVIEW finding in the shared health room must say which.
@@ -1026,6 +1107,11 @@ def main(argv=None) -> int:
         print(f"{bot_key}: {len(findings)} finding(s), {len(fresh)} new")
 
         for f in fresh:
+            if not args.all and announced_in_real_time(bot_key, f, send_log):
+                # Already in the room from the thing that happened; the chip still shows it.
+                print(f"  {f.key}: its real-time alert is in the send log — not re-announced")
+                seen.append(f.key)
+                continue
             # The house shape (`shared/alert_format.py`): icon, LABEL, subject, then the facts,
             # then what to do. The old form put "needs review" on the header and the actual
             # finding on line two, so every message opened with the same four words and the
@@ -1040,7 +1126,7 @@ def main(argv=None) -> int:
                 text = alert(
                     OK_ICON, "REVIEW", name, f.title, f.detail, f"Nothing to do: {f.resolved}"
                 )
-            if send(text, args.dry_run, account):
+            if send(text, args.dry_run, account, bot_key):
                 total_new += 1
                 if not args.dry_run:
                     seen.append(f.key)

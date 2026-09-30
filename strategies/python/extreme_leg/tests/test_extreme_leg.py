@@ -880,3 +880,97 @@ def test_the_strategy_passes_the_account_and_leg_key_through():
     strat = ExtremeLegStrategy(ExtremeLegConfig(), account=acct, leg="xl")
     assert strat.execution._account is acct
     assert strat.execution._leg == "xl"
+
+
+# ── the quote-to-dollar conversion (a yen-quoted symbol) ─────────────────────
+# RED BY MUTATION (watched, 2026-09-27): against the execution layer as it was before the
+# conversion, all three fail — the size is 1/pv too small, the P&L and risk are in yen, and the
+# swap reaches the profile with no conversion at all.
+
+
+class _SwapProfile:
+    """Only what `_charge` reads. Records the conversion each night's swap was handed."""
+
+    name = "fake"
+    bid_ask_fills = False
+    spread_measured = False
+    spread = 0.0
+    slippage_ticks = 0
+    mintick = 0.001
+
+    def __init__(self):
+        self.seen = []
+
+    def commission(self, qty):
+        return 0.0
+
+    def swap_charge(self, direction, qty, roll_date, quote_to_account=1.0):
+        self.seen.append(quote_to_account)
+        return -1.0 * quote_to_account      # one unit of QUOTE currency a night, converted
+
+
+def _yen_exec(rate, profile=None):
+    # No lot ceiling: this pins the CONVERSION, and the ceiling is a separate rule.
+    from backtest.portfolio.account import SoloAccount
+
+    ex = ExtremeLegExecution(ExtremeLegConfig(point_value=0.0064), initial_capital=10_000.0,
+                             profile=profile, account=SoloAccount(balance=10_000.0, max_lots=None))
+    ex.set_rate_provider(rate)
+    return ex
+
+
+def test_the_size_is_divided_by_the_conversion_so_the_DOLLAR_risk_is_the_stated_risk():
+    ex = _yen_exec(lambda t: 0.01)
+    ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0))
+    assert ex.pos.qty == pytest.approx(_wanted_qty(10_000.0, 2.00) / 0.01)
+
+
+def test_pnl_converts_at_the_EXIT_and_risk_at_the_ENTRY():
+    exit_ts = _ts(11)
+    ex = _yen_exec(lambda t: 0.02 if t >= exit_ts else 0.01)
+    ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0))
+    qty = ex.pos.qty
+    ex.resolve(11, exit_ts, high=105.0, low=99.0, open_=100.0)
+    t = ex.trades[-1]
+    assert t.pnl_usd == pytest.approx(4.0 * qty * 0.02)
+    assert t.risk_usd == pytest.approx(2.0 * qty * 0.01)
+
+
+def test_each_nights_swap_is_converted_at_that_rollover():
+    prof = _SwapProfile()
+    ex = _yen_exec(lambda t: 0.01, profile=prof)
+    ex.enter(_state(index=10, go_long=True, stop_long=98.0, tp_long=104.0))
+    # two days later: two rollovers held through
+    exit_ts = _ts(10) + 2 * 86_400_000
+    ex.resolve(11, exit_ts, high=105.0, low=99.0, open_=100.0)
+    assert prof.seen == [0.01, 0.01]
+    assert ex.trades[-1].costs_usd == pytest.approx(-0.02)
+
+
+# ── the lab's chart reads a refusal by the shared names (2026-09-30) ─────────
+
+
+def test_a_refusal_reaches_the_lab_chart_at_its_real_time_price_and_reason():
+    """Until 2026-09-30 every extreme-leg refusal reached the lab's chart at time 0, price 0 and
+    with no reason: the chart reads SOS Fade's field names and this class had none of them.
+    Watched RED against the class before the shared-name properties were added."""
+    from backtest.output import build_blocked_setups
+    from extreme_leg.execution import BLOCK_TEXT, Blocked
+
+    b = Blocked(5, 1790729700000, -1, BLOCK_TEXT[8], 8, 4176.69, 4190.0, 4150.0)
+    (row,) = build_blocked_setups([b])
+    assert row["time_ms"] == 1790729700000
+    assert row["edge"] == 4176.69
+    assert row["direction"] == "Short"
+    assert row["codes"] == [8]
+    assert row["reasons"] == [{"label": BLOCK_TEXT[8], "reason": BLOCK_TEXT[8]}]
+    assert (row["stop"], row["tp1"], row["tp2"]) == (4190.0, 4150.0, None)
+
+
+def test_an_unpriced_stop_reaches_the_chart_as_None_never_NaN():
+    from backtest.output import build_blocked_setups
+    from extreme_leg.execution import BLOCK_TEXT, Blocked
+
+    nan = float("nan")
+    (row,) = build_blocked_setups([Blocked(5, 1, 1, BLOCK_TEXT[2], 2, 4000.0, nan, nan)])
+    assert row["stop"] is None and row["tp1"] is None

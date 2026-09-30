@@ -22,6 +22,8 @@ strategies/
 │   │                      only — reuse it, never copy it; realign's filter reads it; the
 │   │                      technique and how to test it: docs/MOMENTUM_FILTER.md)
 │   ├── sos_fade/        (SOS Fade bot; own CLAUDE.md inside)
+│   ├── sos_fade_generic/ (SOS Fade with every extra switched off, for other instruments — a
+│   │                      settings panel over sos_fade, NO logic of its own; own CLAUDE.md)
 │   ├── b_leg/            (B-LEG bot — the late-retrace setup, split out to run parallel to SOS Fade; own CLAUDE.md)
 │   ├── fft/              (FFT first fib touch, 1-minute bars; NO Pine twin by decision — proven against its
 │   │                      study instead; own CLAUDE.md)

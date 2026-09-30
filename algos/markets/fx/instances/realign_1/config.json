@@ -45,8 +45,8 @@
     "exec_be_buf_tk": 30.0,
     "exec_be_arm_r": -1.0,
     "exec_be_keep_r": 0.0,
-    "exec_be_buf_mode": "Ticks",
-    "exec_be_buf_r": 0.2,
+    "exec_be_buf_mode": "Fraction of stop",
+    "exec_be_buf_r": 0.1,
     "exec_be_cost_margin_r": 0.05,
     "exec_be_cap_pct": 75.0,
     "exec_be_cost_conflict": "Hold stop",
@@ -172,7 +172,11 @@
     "exec_lvl_be_keep_r": 0.0,
     "exec_lvl_confluence": "None",
     "exec_lvl_gap_tol_r": 0.1,
-    "exec_lvl_shift_bars": 24
+    "exec_lvl_shift_bars": 24,
+    "exec_rev_arm_at": "R",
+    "exec_rev_giveback_pct": 50.0,
+    "exec_rev_need_bos": false,
+    "exec_scale_brk_n": 2
   },
   "strategy_source_hash": "",
   "promoted_commit": "",

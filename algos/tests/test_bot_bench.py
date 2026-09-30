@@ -118,6 +118,9 @@ def test_the_process_watchdog_skips_a_benched_bot(monkeypatch):
     monkeypatch.setattr(monitor, "save_state", lambda s: None)
     monkeypatch.setattr(monitor._bot_state, "is_assigned", lambda k: k == "assigned")
 
+    # A full pass sends the real DAILY SUMMARY after 08:00 Chicago; it posted to the LIVE room on
+    # every suite run until 2026-09-27. The suite-wide Telegram guard now fails it loudly.
+    monkeypatch.setattr(monitor, "maybe_send_daily_summary", lambda state: state)
     monitor.main()
     assert checked == ["assigned"]
 

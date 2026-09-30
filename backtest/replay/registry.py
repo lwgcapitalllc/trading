@@ -24,6 +24,7 @@ STRATEGIES: dict[str, str] = {
     "realign": "strategies.python.realign",
     "extreme_leg": "strategies.python.extreme_leg",
     "fft": "strategies.python.fft",
+    "sos_fade_generic": "strategies.python.sos_fade_generic",
 }
 
 

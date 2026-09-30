@@ -103,6 +103,51 @@ candidate does, the answer is no.
 charges allocation pressure to whoever is running — the pivot fix returned four times its own
 profile share for exactly that reason, so a small entry here is not proof a change would be small.
 
+### The 1-minute feed changed the picture, and the bar loop boxes in one pass (2026-09-27)
+
+The table above is a 15-minute profile. **On the 1-minute re-entry feed the bar loop is walked
+2,385,484 times over 2020-01-01..2026-09-26 (against 159,286 fifteen-minute bars), and the profile
+is NOT flat.** MEASURED on 2025-01-01..2025-04-01 with run 7760823a639e's settings — 17.4s with the
+1-minute feed, 2.8s without: SOS Fade's own per-1-minute-bar bookkeeping (`dual_clock.py` +
+`secondary.py`) 35%, the canonical engines 25% (almost all of it the structure engine on the
+1-minute bars), the rest of the strategy 14%, pandas Timestamp boxing plus builtins ~20%,
+framework 5%. The full run took 976s.
+
+**Taken:** `iter_bars` now boxes the whole index with `list(df.index)` and reads the price columns
+with `.tolist()` instead of indexing one element at a time. Same Timestamps (value, tz and unit
+checked element by element) and the same `float(...)` on the same stored values. MEASURED: walking
+all 2,385,484 one-minute bars 27.9s → 13.3s. `replay_fingerprint.py compare` on
+2024-01-01..2026-09-26 with `--secondary`: bars 64,750 and trades 110, both IDENTICAL.
+
+**The larger lever is not here.** Identical reruns are served from the lab's result cache
+(`command-center/backend/services/run_result_cache.py`). Skipping the 1-minute bookkeeping while
+nothing is armed is a strategy change and is parked until Aaron decides on it.
+
+### `replay/recorded.py` — a per-bar stream computed once and replayed (2026-09-27)
+
+A reusable store for any per-bar output that depends only on the bars and a few settings. Keyed
+on the frame's bytes, the settings, and the source of every file that can change the output;
+fails open; on disk under `backtest/cache/streams/` (5 GB cap, least recently used out first).
+First user: SOS Fade's fast structure stream (`strategies/python/sos_fade/notes/secondary_reentry.md`).
+
+🔴 **A producer may be recorded only if its output is FROZEN at the bar it was emitted.** The
+liquidity engine hands out a level object and marks it swept bars later, so a stored copy is
+either stale (frozen at emission) or the future (taken at the end), and neither shows in a result.
+That is why the 15-minute engine stack is NOT recorded — and on a 15-minute run it is a few
+percent of the time anyway (the 2026-08-27 table above).
+
+### Skipping SOS Fade's 1-minute re-entry arming while no setup is live — MEASURED, NOT BUILT (2026-09-27)
+
+⚠ **Do not re-propose this without a new measurement.** Jan–Mar 2025, 87,970 one-minute bars, the
+fast structure replayed: the run is 12.6s against 4.9s with no 1-minute feed. The re-entry's arm
+state machine costs 2.5s on the 58,964 bars where neither side has a live 15m setup and 1.2s on
+the 29,006 where one does. Skipping the idle bars saves ~18% of a first run (~35-40s on the full
+2020-2026 window, 189s), and nothing on a rerun, which the rerun cache already serves in ~10s.
+Rejected: that state machine's own notes record two "tidy" gatings that each moved re-entries and
+were caught only by a control replay. The rest of the 1-minute cost (bar iteration, the scale-in
+break feed, the reversal exit) needs every bar by design. If a first run is still too slow, the
+lever that scales is running optimizer combos in parallel, not trimming strategy logic.
+
 ## 🔴 The Costs pill UNDER-CHARGED every trade that scaled in (2026-09-07)
 
 `reprice.py` rebuilds a finished run's book at a different cost profile, and it rests on one
@@ -171,3 +216,23 @@ rounds lots, so summing first and charging once rounds a different number.
 ⚠ Both halves proven by MUTATION: dropping the adds from the spread charge reddens the spread
 case, dropping them from the commission charge reddens the commission case, and neither touches
 the other.
+
+## 🔴 An add that banks at its own level was charged as a BASE exit too (2026-09-27)
+
+Since the add target defaulted to "H4 H/L" (2026-09-26), `sos_fade.execution._bank_adds` writes
+the bank into `legs` as a rung of its own — the chart draws it — so `legs` summed to `size` PLUS
+the banked adds. `reprice.py` read every rung as the base position's, which charged that exit's
+commission twice and subtracted the adds from the swap-bearing size twice. It went unseen because
+`test_reprice.py` had been failing on a different error since the same default change (its 15m-only
+replay could not run the "1m break" add), so the check that would have caught it never ran.
+
+MEASURED on the two-year reference window, add target at its default: commission 0.031R over,
+swap 0.207R under the real charged replay. On stored run `7760823a639e` (246 trades, 11 with an
+add bank): the page's re-priced swap was **7.06R, now 7.60R**, and commission 0.84R, now 0.83R.
+
+✅ `reprice._base_legs` drops a rung whose time, reason and quantity match the adds that exited
+there, and REFUSES a trade whose remaining rungs still do not sum to `size`. ⚠ **No stored run
+moves** — every KPI came from a real charged replay; only the page's cost toggle re-prices.
+⚠ `test_reprice.py` now pins the add to "Trail" (15m) and leaves the add target at "H4 H/L" on
+purpose; pinning the target to "Ride" makes the case green without testing it. Proven by mutation:
+returning `legs` unfiltered reddens the commission and swap cases and nothing else.

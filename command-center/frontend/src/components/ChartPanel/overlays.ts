@@ -8,7 +8,16 @@ import {
   type OverlayCreateFiguresCallbackParams,
   type OverlayFigure,
 } from 'klinecharts'
-import { adverseFloor, exitMarker, exitSide, stoppedOut, type Sign } from './tradeGeometry'
+import {
+  adverseFloor,
+  exitMarker,
+  exitSide,
+  fmtPips,
+  pipsFrom,
+  rungNames,
+  stoppedOut,
+  type Sign,
+} from './tradeGeometry'
 
 /** What `registerOverlay` accepts. Named because the trade template is held in a CONST before it
  *  is registered (twice, under two names) — and a template written inline is contextually typed
@@ -267,6 +276,10 @@ interface TradeExtend {
   // figures the labels sat beside are drawn identically either way, so nothing here changes what
   // the chart is saying about the trade, only how much of it is spelled out.
   showLabels?: boolean
+  // One pip in price units, passed ONLY while the reader has pips switched on (Chart settings →
+  // Trades). Absent/null = off, or an instrument with no pip convention: either way the `Best`,
+  // `DD` and exit chips print no pip reading. Display only — no level moves.
+  pipSize?: number | null
   /** The candlestick reversal at this trade's turn, BY NAME (`Hammer`), or `no candle`. `undefined`
    *  = the layer is off, i.e. NOT ASKED — and it must not render as "no candle". Same rule as
    *  `mt5_link` everywhere else here: never let "no" and "cannot ask" be the same value.
@@ -551,14 +564,15 @@ export function registerChartOverlays(): void {
       // profitable rungs, so defaulting to false would repaint every historical profit-take as a
       // plain exit — a claim about size that nobody measured.
       const legs = (d.profitLegs ?? [])
-        .map((l, i, a): { price: number; label: string; banked: boolean } =>
+        .map((l, i, a): { price: number; label: string; banked: boolean; bare: boolean } =>
           typeof l === 'number'
             ? {
                 price: l,
                 label: i === a.length - 1 && a.length > 1 ? 'Exit' : `TP${i + 1}`,
                 banked: true,
+                bare: true,
               }
-            : { ...l, banked: l?.banked !== false }
+            : { ...l, banked: l?.banked !== false, bare: false }
         )
         .filter((l) => l && typeof l.price === 'number')
       const legPrices = legs.map((l) => l.price)
@@ -685,11 +699,18 @@ export function registerChartOverlays(): void {
       // left off — silently, because nothing fails when a label keeps drawing.
       const withLabels = d.showLabels !== false
       const labels: { y: number; text: string; color: string }[] = []
-      const addLabel = (p: number | undefined, text: string, color: string) => {
+      // `pips` = also state the distance from the entry in pips (`Best 2650.30 · +152.3p`). Only the
+      // three chips Aaron asked for carry it — `Best`, `DD` and wherever the trade came off
+      // (2026-09-26) — because a pip count on `SL` or an unhit rung answers a question nobody asked
+      // and widens chips the de-collider is already fighting.
+      const addLabel = (p: number | undefined, text: string, color: string, pips = false) => {
         if (!withLabels) return
         const y = yOf(p)
         if (y == null) return
-        labels.push({ y, text: withPrice ? `${text} ${px(p as number)}` : text, color })
+        let out = withPrice ? `${text} ${px(p as number)}` : text
+        const n = pips ? pipsFrom(d.entryPrice as number, p as number, sign, d.pipSize) : null
+        if (n != null && typeof d.entryPrice === 'number') out += ` · ${fmtPips(n)}`
+        labels.push({ y, text: out, color })
       }
 
       const entryY = entry.y
@@ -754,7 +775,7 @@ export function registerChartOverlays(): void {
       if (typeof d.mfePrice === 'number' && (d.mfePrice - (bankedPrice ?? entryP!)) * sign > 1e-9) {
         crossLine(d.mfePrice, withAlpha(profitColor, 0.4))
         dot(d.mfePrice, runColor)
-        addLabel(d.mfePrice, 'Best', runColor)
+        addLabel(d.mfePrice, 'Best', runColor, true)
       } else {
         crossLine(mfePrice, withAlpha(profitColor, 0.4)) // guide only — Exit already names it
       }
@@ -767,12 +788,12 @@ export function registerChartOverlays(): void {
         const deepColor = withAlpha(stopColor, 0.75)
         crossLine(d.maePrice, withAlpha(stopColor, 0.4))
         dot(d.maePrice, deepColor)
-        addLabel(d.maePrice, 'DD', deepColor)
+        addLabel(d.maePrice, 'DD', deepColor, true)
       }
       // Stop: dotted line across + dot + "SL".
       crossLine(d.stopPrice, withAlpha(stopColor, 0.85))
       dot(d.stopPrice, stopColor)
-      addLabel(d.stopPrice, exitAt === 'stop' ? 'SL / Exit' : 'SL', stopColor)
+      addLabel(d.stopPrice, exitAt === 'stop' ? 'SL / Exit' : 'SL', stopColor, exitAt === 'stop')
       // The trade's own exit LADDER — every rung it aimed at, drawn faint whether or not price
       // reached it. Read the block below the legs for why it is never gated.
       const targets = (d.tpTargets ?? [])
@@ -784,9 +805,25 @@ export function registerChartOverlays(): void {
       // line, just update the label to say TP2 / Exit, so I could know."* Without it the reader
       // cannot tell "it exited AT its target" from "it exited somewhere the ladder never named",
       // which is the question the whole layer exists to answer.
+      // Every rung is NAMED by the order price reaches it, not by its ladder position — see
+      // `tradeGeometry.ts::rungNames`. One name list, read by all three places below that print a
+      // rung, so a chip and the fill it stands beside can never disagree.
+      const names = rungNames(
+        targets.map((t) => t.price),
+        typeof entryP === 'number' ? entryP : undefined,
+        sign
+      )
       const rungAt = (price: number): string | null => {
         const i = targets.findIndex((t) => Math.abs(t.price - price) < 1e-9)
-        return i < 0 ? null : `TP${i + 1}`
+        return i < 0 ? null : names[i]
+      }
+      // A fill's `TPn` comes from its ORDER id, which counts in ladder position; rename it through
+      // the same list. A bare-number leg (older cached spec) was numbered in exit order, not
+      // ladder order, so it is left as it came.
+      const legName = (label: string, bare: boolean): string => {
+        const m = /^TP(\d)$/.exec(label)
+        if (!m || bare) return label
+        return names[Number(m[1]) - 1] ?? label
       }
       // Each real profit-take: a thin dotted mint line + a dot + its label (TP1/TP2/TP3/Exit). A
       // plain win with no per-rung detail draws one "Exit" at the banked price.
@@ -806,7 +843,7 @@ export function registerChartOverlays(): void {
       }
       const drawnLegs: { price: number; label: string; color: string }[] = legs.map((l) => ({
         price: l.price,
-        label: l.label,
+        label: legName(l.label, l.bare),
         // A fill that BANKED is mint whichever way it sits; one that banked nothing is coloured by
         // where it landed against the entry, because that is the only thing it says.
         color: l.banked ? profitColor : sideColor(l.price),
@@ -825,7 +862,13 @@ export function registerChartOverlays(): void {
         crossLine(lg.price, lg.color)
         dot(lg.price, lg.color)
         const rung = rungAt(lg.price)
-        addLabel(lg.price, rung && rung !== lg.label ? `${rung} / ${lg.label}` : lg.label, lg.color)
+        // Every fill is a place the trade came off, so each states what it captured.
+        addLabel(
+          lg.price,
+          rung && rung !== lg.label ? `${rung} / ${lg.label}` : lg.label,
+          lg.color,
+          true
+        )
       }
       // SCALE-IN adds: one dotted line + dot + `Add` per lot, in the ENTRY colour, because that is
       // what they are — further entries, at a later price. Drawn whenever the trade carries them,
@@ -835,16 +878,59 @@ export function registerChartOverlays(): void {
       // chips on the same pixel row.
       // …unless the `Scale-in detail` layer is on, in which case every lot is already drawn as a
       // full box with its own `Entry` label at exactly this price, and these would double it.
-      const addRows = new Map<number, number>()
-      for (const a of d.addsDetailed ? [] : (d.adds ?? [])) {
-        if (typeof a?.price !== 'number') continue
-        addRows.set(a.price, (addRows.get(a.price) ?? 0) + 1)
-      }
+      //
+      // 🔴 EACH ADD IS DRAWN FROM THE BAR IT WAS BOUGHT ON (2026-09-24). Every add used to put its
+      // dot at the trade's ENTRY column with its line across the whole box, so an add bought hours
+      // in looked as if it had been there from the open — and on a short whose first add filled
+      // just above the second target, it read as an add taken before the target that allowed it
+      // (Aaron, run e2295f909180, 2026-06-17). The x comes from the overlay's own points 3..,
+      // which the panel passes in `adds` order; an add whose time the chart cannot place falls
+      // back to the old entry-column drawing rather than vanishing.
+      //
+      // 🔴 ITS LABEL SITS AT THE RIGHT END OF ITS OWN LINE (2026-09-26). It used to stay in the
+      // left column with the other chips, so it named a line that did not reach it — the dash
+      // starts at the add's bar, far to the right of the column. Aaron: *"why is the dash for the
+      // add only from the right … move the add pill to the right of the chart."* The adds are
+      // de-collided among themselves, since nothing else parks on that side of the box.
       const addColor = d.addColor ?? entryColor
-      for (const [price, count] of addRows) {
-        crossLine(price, withAlpha(addColor, 0.55))
-        dot(price, addColor)
-        addLabel(price, count > 1 ? `Add ×${count}` : 'Add', addColor)
+      const addXs = coordinates.slice(2)
+      const addRows = new Map<number, { count: number; x: number }>()
+      const addChips: { y: number; text: string }[] = []
+      ;(d.addsDetailed ? [] : (d.adds ?? [])).forEach((a, i) => {
+        if (typeof a?.price !== 'number') return
+        const ax = addXs[i]?.x
+        const x =
+          typeof ax === 'number' && Number.isFinite(ax) ? Math.min(Math.max(ax, x0), x1) : x0
+        const row = addRows.get(a.price)
+        addRows.set(a.price, { count: (row?.count ?? 0) + 1, x: Math.min(row?.x ?? x, x) })
+      })
+      for (const [price, { count, x }] of addRows) {
+        const y = yOf(price)
+        if (y == null) continue
+        figures.push({
+          type: 'line',
+          attrs: {
+            coordinates: [
+              { x, y },
+              { x: x1, y },
+            ],
+          },
+          styles: {
+            color: withAlpha(addColor, 0.55),
+            size: 1,
+            style: 'dashed',
+            dashedValue: [2, 3],
+          },
+          ignoreEvent: true,
+        })
+        figures.push({
+          type: 'circle',
+          attrs: { x, y, r: 3.5 },
+          styles: { style: 'fill', color: addColor },
+          ignoreEvent: true,
+        })
+        const text = count > 1 ? `Add ×${count}` : 'Add'
+        if (withLabels) addChips.push({ y, text: withPrice ? `${text} ${px(price)}` : text })
       }
 
       // Entry: NO line across — just a short tick where the green begins, a dot, and the label.
@@ -894,16 +980,17 @@ export function registerChartOverlays(): void {
       // is slightly incomplete** — the earlier reasoning optimised for a claim nobody was making.
       // ⚠ `banks` is still carried on the data and is still never defaulted (see `types.ts`); this
       // layer simply does not spend a chip on it.
-      // ⚠ Numbering is by LADDER POSITION, which is the strategy's order and not nearest-first: a
-      // re-entry prices its first rung off risk and its second off a fib, so `TP2` can legitimately
-      // sit nearer the entry than `TP1` (23 of the 45 re-entries on run 687c8df2a523; every main
-      // entry is correctly ordered). Sorting them here would renumber the strategy's own rungs.
+      // 🔴 Numbering is by the order price REACHES the rungs, nearest first, since 2026-09-27 —
+      // `names` above. It was ladder position until then, and a re-entry (first rung priced off
+      // risk, second off a fib) drew `TP2` nearer the entry than `TP1` on 23 of 45 re-entries of
+      // run 687c8df2a523. The stop steps by distance, so the old names contradicted it. Aaron:
+      // *"if TP2 is before TP1 then just flip flop the pills."*
       for (let i = 0; i < targets.length; i++) {
         const { price } = targets[i]
         if (drawnPrices.some((p) => Math.abs(p - price) < 1e-9)) continue
         crossLine(price, withAlpha(profitColor, 0.5))
         dot(price, withAlpha(profitColor, 0.5))
-        addLabel(price, `TP${i + 1}`, withAlpha(profitColor, 0.7))
+        addLabel(price, names[i], withAlpha(profitColor, 0.7))
       }
 
       // De-collide the labels top→down (min 15px apart), then draw each as a compact rounded chip
@@ -984,6 +1071,17 @@ export function registerChartOverlays(): void {
           : roomLeft < need && roomRight > roomLeft
       for (const { y, text, color } of labels) {
         chip(onRight ? x0 + LBL_GAP : x0 - LBL_GAP, y, text, color, onRight ? 'left' : 'right')
+      }
+      // The add chips, at the right end of their lines — see the scale-in block above. Just past the
+      // box edge, or just inside it when that would run off the pane.
+      addChips.sort((a, b) => a.y - b.y)
+      for (let i = 1; i < addChips.length; i++) {
+        if (addChips[i].y - addChips[i - 1].y < MIN_GAP) addChips[i].y = addChips[i - 1].y + MIN_GAP
+      }
+      for (const { y, text } of addChips) {
+        const w = text.length * 6.3 + 12 + LBL_GAP
+        const inside = paneW > 0 && x1 + w > paneW - 2
+        chip(inside ? x1 - LBL_GAP : x1 + LBL_GAP, y, text, addColor, inside ? 'right' : 'left')
       }
 
       // Outcome chip — a small "Won"/"Lost" tag, same subtle style as the level labels. Now that a

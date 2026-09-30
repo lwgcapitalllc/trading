@@ -28,14 +28,16 @@ out. They are there so the eye can find a message in a scroll, not for decoratio
 
 from __future__ import annotations
 
-# 🔴 **FOLLOWER MODE — the trades room is READ BY PEOPLE FOLLOWING THE BOT** (Kelly, 2026-09-24).
-# It states prices, stop moves and R, and NEVER the account's lot sizes or dollar amounts. One
-# switch so the policy lives beside the wording it governs; the formatters still take `show_size`
-# explicitly, so the tests keep covering BOTH renderings rather than only whichever is current.
-# ⚠ **An add to a position posts NOTHING while this is False.** The scale-in message exists to keep
-# a stated size current, and with no size stated there is nothing for it to correct — so the
-# bridge skips it rather than sending a message with its only content removed.
-SHOW_SIZE = False
+# 🔴 **ONE SWITCH FOR SIZE, AND IT GOVERNS BOTH ROOMS EQUALLY** (Aaron, 2026-09-27: *"make lot
+# sizes show equally ... show when we scale in ... make sure all messages are as equal as
+# possible"*). True: every trade AND setup message states its lots, and the trade messages their
+# dollars. It was False from 2026-09-24 (Kelly: no sizes in the rooms people follow) while the
+# signals room kept printing lots, so the two rooms disagreed about the same order. False now
+# hides size in BOTH rooms at once — the setup thread passes this too.
+# ⚠ **An add to a position is announced either way**; False drops only its lot counts. A follower
+# who is not told the bot added has a thread that no longer describes the trade.
+# The formatters still take `show_size` explicitly, so the tests cover BOTH renderings.
+SHOW_SIZE = True
 
 import sys
 from datetime import datetime
@@ -182,6 +184,12 @@ def format_watching(snap, digits: int = 2, display: str = "") -> str:
         if snap.stop is not None:
             zone = f"{zone} · stop {_price(snap.stop, digits)}"
         lines.append(zone)
+    else:
+        # A MARKET-entry setup (Realign) has no zone, so its price line is the projected stop and
+        # the target — without this it printed no prices at all (2026-09-27).
+        prices = [f"Stop {_price(snap.stop, digits)}"] if snap.stop is not None else []
+        prices += [f"TP{i} {_price(t, digits)}" for i, t in enumerate(snap.targets, 1) if t]
+        lines.append(" · ".join(prices))
     return alert("👀", "SETUP FORMING", snap.direction, *lines)
 
 
@@ -241,12 +249,8 @@ def format_entry_zone(
     # thing in three lines and buried it among two that were fine.
     lines.append(_outstanding(snap))
     side = "BUY" if snap.side > 0 else "SELL"
-    # ⚠ **`show_size=False` is available but NOT wired on, and that is deliberate.** The lots in
-    # this header exist because AARON ASKED FOR THEM (see the `lots` note above: *"how many lots
-    # are going to be traded"*), and `test_setup_alert_size.py` asserts them. Kelly asked on
-    # 2026-09-24 for no sizes in the rooms people follow. Those are two owners wanting opposite
-    # things about the SAME message, so the parameter is here and the caller still passes nothing
-    # until they settle it. The trades room is already size-free — see `SHOW_SIZE`.
+    # The setup thread passes `SHOW_SIZE`, the same switch as the trades room (2026-09-27), so the
+    # two rooms can never again disagree about whether an order's size is stated.
     size = f"{lots:.2f} lots · " if (lots is not None and show_size) else ""
     return alert("🎯", f"{size}{side} LIMIT RESTING", "", *lines)
 
@@ -417,7 +421,7 @@ def format_entry(
 
     size = ""
     if show_size:
-        size = f"Size {lots:g} lots"
+        size = f"Size {lots:.2f} lots"  # two places, as every other message states lots
         if risk_usd is not None:
             pct = f" ({risk_pct:g}%)" if risk_pct is not None else ""
             size += f" · Risking ${risk_usd:,.2f}{pct}"
@@ -596,8 +600,13 @@ def format_scaled_in(
     symbol: str = "",
     digits: int = 2,
     threaded: bool = True,
+    show_size: bool = True,
 ) -> str:
     """The strategy ADDED to a winner. Replies to the entry.
+
+    `show_size=False` says THAT the bot added, where and on what stop, without the lot counts —
+    sent either way (2026-09-27), because a thread that never says the bot added no longer
+    describes the trade a follower is copying.
 
     🔴 **This one is not a nicety.** A scale-in changes what the trade can make and lose after the
     entry message has already stated its size and its risk, so without this the thread's only
@@ -614,12 +623,14 @@ def format_scaled_in(
     other side: an add can be refused for size or rejected outright, and a message counting the
     request would report size the account does not hold.
     """
-    added = f"Added {lots_added:.2f} lots"
+    added = f"Added {lots_added:.2f} lots" if show_size else "Added to the position"
     if price is not None:
         added += f" at about {_price(price, digits)}"
-    lines = [added, f"{lots_now:.2f} lots now open"]
+    held = f"{lots_now:.2f} lots now open" if show_size else ""
     if stop is not None:
-        lines[1] += f" · every lot on the same stop {_price(stop, digits)}"
+        on_stop = f"every lot on the same stop {_price(stop, digits)}"
+        held = f"{held} · {on_stop}" if held else on_stop[0].upper() + on_stop[1:]
+    lines = [added, held]
     return alert("➕", "ADDED TO POSITION", symbol if not threaded else "", *lines)
 
 
@@ -690,7 +701,7 @@ def format_manual_close(
     the same line the ledger draws with its `closed_by_you` reason. The R leads because it is
     the header a lock screen shows; `None` (risk unknown) prints no R rather than a zero.
     """
-    head = f"{r_multiple:+.1f}R" if r_multiple is not None else ""
+    head = f"{r_multiple:+.2f}R" if r_multiple is not None else ""  # as the WIN/LOSS states it
     if not threaded:
         head = f"{head} · {symbol}" if head else symbol
     verb = "Made" if pnl_usd >= 0 else "Lost"

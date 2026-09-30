@@ -12,11 +12,14 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 _ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(_ROOT / "strategies" / "python"))
 
 from sos_fade import SosFadeConfig, Execution, SeqState  # noqa: E402
 from sos_fade.signals import Signals  # noqa: E402
+from sos_fade.execution import BlockedSetup  # noqa: E402
 
 
 def _cfg(**kw):
@@ -379,6 +382,37 @@ def test_a_refused_setup_is_recorded_with_the_reason_and_the_would_be_entry():
     assert abs(b.edge - 103.82) < 1e-9           # where the limit would have rested
 
 
+@pytest.mark.parametrize("tp1_r", [-1.0, 2.0])
+def test_a_refusal_carries_the_bracket_the_order_would_have_rested_with(tp1_r):
+    """Added 2026-09-30 so a refusal can be graded in R afterwards. The same setup is stepped
+    twice — once refused (final hour), once armed — and the refusal's stop and second rung must
+    be the resting order's, and its first rung the one the FILL would set (`_first_rung`), which
+    is the fib rung by default and moves under a first target set in R.
+
+    Watched RED 2026-09-30: recording the fib `tp1` instead of `_first_rung`'s fails the
+    `tp1_r=2.0` case."""
+    refused = Execution(_cfg(exec_tp1_r=tp1_r))
+    refused.step(_sig(0, 104.0, 104.5, 103.9, 104.2, ny_hour=16), _seq_long_ready())
+    armed = Execution(_cfg(exec_tp1_r=tp1_r))
+    armed.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    (b,), p = refused.blocks, armed._pend_long
+    assert p is not None
+    assert b.stop == p.sl and b.tp2 == p.tp2
+    want_tp1 = p.tp1 if tp1_r < 0 else p.edge + tp1_r * (p.edge - p.sl)
+    assert abs(b.tp1 - want_tp1) < 1e-9
+    assert b.stop < b.edge < b.tp1
+
+
+def test_recording_a_refusal_does_not_count_a_target_fallback():
+    """`tp_level_fallbacks` is a reported statistic about ORDERS; a refusal pricing its bracket
+    must not inflate it. A named first rung sitting behind a long entry forces the fallback
+    (the same bar ARMED counts 1). Watched RED 2026-09-30 with `count=` dropped from `_bracket`."""
+    ex = Execution(_cfg(exec_tp1_level="0.886"))
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2, ny_hour=16), _seq_long_ready())
+    assert len(ex.blocks) == 1
+    assert ex.tp_level_fallbacks == 0
+
+
 def test_an_armed_setup_records_no_block():
     """The marker is for setups that were REFUSED — one that actually arms must be silent,
     or the count stops meaning anything."""
@@ -417,6 +451,33 @@ def test_one_record_per_setup_per_reason_set_not_per_bar():
     ex.step(_sig(5, 104.0, 104.5, 103.9, 104.2, ny_hour=16, veto_on=True, veto_rsi_ob=True),
             _seq_long_ready())
     assert [b.codes for b in ex.blocks] == [[3], [4], [3, 4]]
+
+
+def test_a_refused_setup_that_later_fills_is_not_a_block():
+    """A refusal that lifts is a DELAY: the same setup rests and fills, so it was never blocked
+    (Aaron, 2026-09-30 — the 2021-10-19 long was tagged Blocked at the price it filled at).
+    The final hour refuses bar 0, lifts on bar 1, and bar 2 fills; the record must go.
+    Watched RED 2026-09-30 with the purge at the primary fill removed."""
+    ex = Execution(_cfg())
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2, ny_hour=16), _seq_long_ready())
+    assert len(ex.blocks) == 1
+    ex.step(_sig(1, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())          # arms
+    ex.step(_sig(2, 105.40, 105.50, 103.50, 104.00), _seq_long_ready())      # fills @103.82
+    assert ex._pos_dir == 1
+    assert ex.blocks == []
+
+
+def test_a_refusal_of_the_other_side_survives_a_fill():
+    """Only the leg that filled loses its refusals — a short refused on the same bars was
+    still never traded."""
+    ex = Execution(_cfg())
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2, ny_hour=16), _seq_long_ready())
+    kept = BlockedSetup(dir=-1, index=0, time_ms=0, codes=[3], edge=110.0, sos_bar=1)
+    ex.blocks.append(kept)
+    ex.step(_sig(1, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    ex.step(_sig(2, 105.40, 105.50, 103.50, 104.00), _seq_long_ready())
+    assert ex._pos_dir == 1
+    assert ex.blocks == [kept]
 
 
 def test_a_setup_price_never_made_ready_is_not_a_block():
@@ -1265,6 +1326,175 @@ def test_a_trade_that_never_added_carries_an_empty_add_ledger():
     ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())
     ex.step(_sig(2, 100.5, 101.0, 99.5, 99.8), _seq_flat())
     assert ex.trades[0].adds == []
+
+
+# ── "1m break" scale-in (2026-09-25) ─────────────────────────────────────────────────────
+# Same trade as the fixtures below: bar 1 fills the long @103.82, bar 2 clears TP2 (stage 2,
+# floor 105) and SEEDS the best price at its high of 107. Bar 3 makes no new high, so the fast
+# breaks delivered inside bar 3's time are the ones that bar reads. Bar 3 CLOSES UP (the long's
+# way), because since 2026-09-26 an add is only decided on a 15m candle moving the trade's way. The dual clock is not
+# built here — the breaks are handed over exactly as it would hand them.
+_Q = 900_000
+
+
+def _brk_cfg(**kw):
+    return _cfg(exec_scale_in=True, exec_scale_mode="1m break", exec_scale_max_adds=3,
+                exec_secondary=True, exec_sec_fill_tf_min=1, **kw)
+
+
+def _brk_to_bar2(**kw):
+    ex = Execution(_brk_cfg(**kw))
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())
+    ex.step(_sig(2, 104.0, 107.0, 103.9, 106.5), _seq_flat())
+    assert ex._stage == 2 and ex._add_pending is None, "fixture did not reach the trail"
+    return ex
+
+
+def _breaks(ex, bar, *events, trend=1):
+    """Deliver fast breaks one minute apart, all inside 15m bar `bar`. `trend` is the fast
+    feed's external direction on those bars — the long fixture's own way unless a test says so."""
+    for i, (d, kind) in enumerate(events):
+        ex.observe_fast_breaks(bar * _Q + (i + 1) * 60_000, ((d, kind),), trend)
+
+
+def test_a_1m_break_add_needs_a_bounce_and_then_the_SECOND_break_back():
+    """The rule as measured: a break AGAINST the trade is the bounce, and only the second break
+    back in the trade's direction adds. One break back is not enough — watched RED with the
+    count lowered to one, which is the mutation that turns this into an add on every wiggle."""
+    ex = _brk_to_bar2()
+    _breaks(ex, 3, (-1, "bos"), (1, "sos"))
+    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.6), _seq_flat())
+    assert ex._add_pending is None, "one break back after a bounce must not add"
+
+    ex = _brk_to_bar2()
+    _breaks(ex, 3, (-1, "bos"), (1, "sos"), (1, "bos"))
+    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.6), _seq_flat())
+    assert ex._add_pending is not None and ex._add_pend_stop == ex._current_stop()
+    ex.step(_sig(4, 106.5, 106.9, 106.2, 106.6), _seq_flat())
+    assert len(ex._adds) == 1 and abs(ex._adds[0][0] - 106.5) < 1e-9, "fills at the next open"
+
+
+def test_a_1m_break_add_waits_for_the_1m_trend_to_point_the_trades_way():
+    """The bug Aaron saw on the chart: two small breaks back can print while the BOUNCE is still
+    the bigger 1-minute move, and adding there is adding into a reversal. Refused until the
+    fast trend agrees; a later break back with the trend agreeing adds. Watched RED with the
+    trend check removed."""
+    ex = _brk_to_bar2()
+    _breaks(ex, 3, (-1, "bos"), (1, "sos"), (1, "bos"), trend=-1)
+    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.6), _seq_flat())
+    assert ex._add_pending is None, "added while the 1m trend still pointed against the trade"
+
+    ex = _brk_to_bar2()
+    _breaks(ex, 3, (-1, "bos"), (1, "sos"), (1, "bos"), trend=-1)
+    _breaks(ex, 3, (1, "bos"), trend=1)          # same bar, a later minute: the trend has turned
+    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.6), _seq_flat())
+    assert ex._add_pending is not None
+
+
+def test_a_1m_break_add_without_a_bounce_does_not_fire():
+    """Breaks in the trade's direction with no bounce before them are the push itself, not the
+    end of a retracement — adding there is the shipped rule this mode replaces."""
+    ex = _brk_to_bar2()
+    _breaks(ex, 3, (1, "sos"), (1, "bos"), (1, "bos"))
+    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.6), _seq_flat())
+    assert ex._add_pending is None
+
+
+def test_a_1m_break_add_is_once_per_push_and_a_new_high_rearms_it():
+    """One add per push. A second bounce-and-break on the SAME push is refused; a new best price
+    starts a new push and the next one adds. Watched RED with the per-push latch removed."""
+    ex = _brk_to_bar2()
+    _breaks(ex, 3, (-1, "bos"), (1, "sos"), (1, "bos"))
+    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.6), _seq_flat())
+    ex.step(_sig(4, 106.5, 106.9, 106.2, 106.6), _seq_flat())      # fills; no new high (107)
+    assert len(ex._adds) == 1
+    _breaks(ex, 5, (-1, "bos"), (1, "sos"), (1, "bos"))
+    ex.step(_sig(5, 106.6, 106.9, 106.3, 106.7), _seq_flat())
+    assert ex._add_pending is None, "a second add on the same push"
+
+    _breaks(ex, 6, (-1, "bos"), (1, "sos"), (1, "bos"))
+    ex.step(_sig(6, 106.7, 107.5, 106.5, 107.2), _seq_flat())      # new high re-arms
+    assert ex._add_pending is not None
+
+
+def test_a_1m_break_from_an_earlier_bar_is_not_read_by_a_later_one():
+    """Breaks buffered inside a bar this rule never read are DROPPED, never carried into the
+    next — otherwise a bounce seen before the trail existed would arm an add after it."""
+    ex = _brk_to_bar2()
+    _breaks(ex, 1, (-1, "bos"), (1, "sos"), (1, "bos"))            # inside bar 1, stale by bar 3
+    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.6), _seq_flat())
+    assert ex._add_pending is None
+
+
+def test_a_1m_break_add_is_refused_on_a_15m_candle_not_closing_the_trades_way():
+    """Aaron, 2026-09-26: "you cannot scale in a candle that is not moving in the direction of
+    the trade." The same breaks that add on an up-closing bar are refused on a down-closing one
+    and on a doji. Watched RED with the candle check removed (both refusals then add)."""
+    for close in (106.4, 106.5):                                   # down candle, then a doji
+        ex = _brk_to_bar2()
+        _breaks(ex, 3, (-1, "bos"), (1, "sos"), (1, "bos"))
+        ex.step(_sig(3, 106.5, 106.8, 106.0, close), _seq_flat())
+        assert ex._add_pending is None, f"added on a 15m candle closing at {close} from 106.5"
+
+
+def test_a_candle_refusal_keeps_the_push_so_the_next_break_back_adds():
+    """A refused candle must NOT spend the push — the add keeps waiting and the next break back
+    on a candle closing the trade's way takes it. Watched RED with the check moved below the
+    push latch, which turns one bad candle into a lost add for the whole push."""
+    ex = _brk_to_bar2()
+    _breaks(ex, 3, (-1, "bos"), (1, "sos"), (1, "bos"))
+    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.4), _seq_flat())      # closes down: refused
+    assert ex._add_pending is None
+    _breaks(ex, 4, (1, "bos"))
+    ex.step(_sig(4, 106.4, 106.9, 106.3, 106.8), _seq_flat())      # closes up: adds
+    assert ex._add_pending is not None
+
+
+def test_the_number_of_1m_breaks_back_is_the_setting():
+    """`exec_scale_brk_n` decides how many breaks back fire the add: 3 refuses what 2 takes, and
+    1 takes what 2 refuses. Watched RED with the count hardcoded back to 2."""
+    ex = _brk_to_bar2(exec_scale_brk_n=3)
+    _breaks(ex, 3, (-1, "bos"), (1, "sos"), (1, "bos"))
+    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.6), _seq_flat())
+    assert ex._add_pending is None, "3 breaks asked for, 2 given"
+
+    ex = _brk_to_bar2(exec_scale_brk_n=1)
+    _breaks(ex, 3, (-1, "bos"), (1, "sos"))
+    ex.step(_sig(3, 106.5, 106.8, 106.0, 106.6), _seq_flat())
+    assert ex._add_pending is not None, "1 break asked for, 1 given"
+
+    import pytest
+    with pytest.raises(ValueError, match="exec_scale_brk_n"):
+        _brk_cfg(exec_scale_brk_n=0)
+
+
+def test_the_shipped_add_is_the_1m_break_banked_at_h4_after_two_breaks():
+    """Run 50 (Aaron, 2026-09-26): the default add is the one measured to protect winners. A
+    default that drifts silently changes every default run in the lab, so it is pinned here."""
+    from sos_fade.config import SosFadeConfig
+    c = SosFadeConfig()
+    assert (c.exec_scale_mode, c.exec_scale_brk_n, c.exec_scale_tp_mode, c.exec_sec_fill_tf_min) \
+        == ("1m break", 2, "H4 H/L", 1)
+
+
+def test_the_1m_break_mode_refuses_a_run_that_cannot_see_1_minute_bars():
+    """Without the 1-minute fast feed no break ever arrives, and the run would read as "this
+    mode never adds". Refused at the config and at a one-frame replay, never degraded."""
+    import pytest
+    with pytest.raises(ValueError, match="1m break"):
+        _cfg(exec_scale_in=True, exec_scale_mode="1m break", exec_secondary=True,
+             exec_sec_fill_tf_min=5)
+    with pytest.raises(ValueError, match="1m break"):
+        _cfg(exec_scale_in=True, exec_scale_mode="1m break", exec_secondary=False,
+             exec_sec_fill_tf_min=1)
+    from sos_fade import SosFadeStrategy
+    import pandas as pd
+    st = SosFadeStrategy(_brk_cfg())
+    df = pd.DataFrame({"open": [1.0], "high": [1.0], "low": [1.0], "close": [1.0]},
+                      index=pd.DatetimeIndex(["2026-01-01"]))
+    with pytest.raises(ValueError, match="run_dual"):
+        st.run(df)
 
 
 # ── scale-in TAKE PROFIT (`exec_scale_tp_mode`, 2026-08-19) ──────────────────────────────

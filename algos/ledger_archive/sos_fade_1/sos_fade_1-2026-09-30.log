@@ -1,0 +1,33 @@
+2026-09-30 01:26:30,135 [ERROR] Config changed in ways that CANNOT be applied to a running bot: exec_be_buf_tk: 60.0 → 35.0. Still running the settings loaded at startup. Restart the bot to take them (the version pin and the engine warmup are re-checked on restart).
+2026-09-30 01:38:15,672 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-30 01:38:15,672 [INFO] Stop requested — shutting down.
+2026-09-30 01:38:15,672 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-30 01:38:15,672 [INFO] MT5 disconnected.
+2026-09-30 01:38:41,961 [INFO] SOS Fade | SosFadeStrategy v333 | hash c075a5f52d94 | commit 54ea4c6b | frozen | LIVE
+2026-09-30 01:38:47,894 [INFO] Connected | #700152905 | $14,862.76 | PUPrime-Demo
+2026-09-30 01:38:47,894 [INFO] MT5 connection lock released
+2026-09-30 01:38:48,768 [INFO] Sizing against account balance $14,862.76
+2026-09-30 01:38:48,784 [INFO] Re-entry fill clock: M1 — a second bar stream beside M15.
+2026-09-30 01:38:48,784 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-30 01:38:48,784 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared signals channel
+2026-09-30 01:38:54,066 [INFO] Warmed 5000 bars (2026-07-15 14:00:00+00:00 → 2026-09-30 01:15:00+00:00) in 5.1s
+2026-09-30 01:39:26,523 [INFO] Warmed the fast feed on 75000 M1 bars (2026-07-15 12:09:00+00:00 → 2026-09-30 01:37:00+00:00).
+2026-09-30 01:39:26,523 [INFO] Equity re-anchored to the account after warm-up: 17,487.73 → 14,862.76
+2026-09-30 01:39:27,633 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-30 03:11:46,687 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-30 03:11:46,687 [INFO] Stop requested — shutting down.
+2026-09-30 03:11:46,688 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-30 03:11:46,688 [INFO] MT5 disconnected.
+2026-09-30 03:11:56,049 [INFO] SOS Fade | SosFadeStrategy v335 | hash 3660ac0c3430 | commit 5d2b07cf | frozen | LIVE
+2026-09-30 03:11:58,570 [INFO] Connected | #700152905 | $14,862.76 | PUPrime-Demo
+2026-09-30 03:11:58,570 [INFO] MT5 connection lock released
+2026-09-30 03:11:58,945 [INFO] Sizing against account balance $14,862.76
+2026-09-30 03:11:58,960 [INFO] Re-entry fill clock: M1 — a second bar stream beside M15.
+2026-09-30 03:11:58,960 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-30 03:11:58,960 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared signals channel
+2026-09-30 03:12:03,867 [INFO] Warmed 5000 bars (2026-07-15 15:30:00+00:00 → 2026-09-30 02:45:00+00:00) in 4.8s
+2026-09-30 03:12:26,540 [INFO] Warmed the fast feed on 75000 M1 bars (2026-07-15 13:43:00+00:00 → 2026-09-30 03:11:00+00:00).
+2026-09-30 03:12:26,540 [INFO] Equity re-anchored to the account after warm-up: 17,487.73 → 14,862.76
+2026-09-30 03:12:27,446 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-09-30 11:10:12,028 [INFO] Equity re-anchored to the account flat between trades: 14,862.76 → 14,862.23
+2026-09-30 11:36:59,252 [INFO] Equity re-anchored to the account flat between trades: 14,862.23 → 15,319.09

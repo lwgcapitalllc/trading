@@ -78,6 +78,9 @@ The deploy story, the pin gap it exposes, and what it does to a bot's version nu
   when it changes a file `snapshot_sources` ships.** Counting every commit touching the trees made
   a notes edit a new version for every bot. The deploy tool and the Command Center both call it,
   so an edit to a CLAUDE.md, a test, a meta file or a golden export here is never a version.
+- **`SKIP_TREES` (2026-09-26) drops `backtest/tools/` from the copy and the count together.** It
+  is matched by repo PATH, never by folder name: a strategy's own `tools/` is its parity harness
+  and ships. Before this, every research-script edit marked every bot behind.
 
 ### Every order layer DECLARES how it opens a position (`entry_style`, 2026-09-03)
 

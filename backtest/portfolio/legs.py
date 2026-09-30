@@ -174,6 +174,7 @@ def build_leg(
     initial_capital: float,
     cost_profile=None,
     df_fast=None,
+    rate_provider=None,
 ):
     """Construct one leg bound to `account`.
 
@@ -193,6 +194,7 @@ def build_leg(
         account=account,
         leg=name,
         timeframe_minutes=frame_minutes(df),
+        rate_provider=rate_provider,
     )
     if df_fast is not None and getattr(strategy, "make_dual_clock", None) is not None:
         return DualFeedLeg(name, strategy, df, df_fast)

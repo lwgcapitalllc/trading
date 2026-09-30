@@ -1,0 +1,262 @@
+2026-09-30 00:00:00,809 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 00:05:01,280 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 00:10:01,232 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 00:15:01,208 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 00:20:01,068 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 00:25:01,261 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 00:30:01,010 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 00:35:01,236 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 00:40:00,924 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 00:45:00,957 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 00:50:01,234 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 00:55:00,893 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 01:00:01,236 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 01:05:01,209 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 01:10:01,077 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 01:15:01,142 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 01:20:01,405 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 01:25:01,568 [INFO] Priority 4 on this account: waiting 38s for the bots above
+2026-09-30 01:30:01,208 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 01:35:02,075 [INFO] Priority 4 on this account: waiting 38s for the bots above
+2026-09-30 01:39:01,358 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-30 01:39:01,358 [INFO] Stop requested — shutting down.
+2026-09-30 01:39:01,358 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-30 01:39:01,364 [INFO] MT5 disconnected.
+2026-09-30 01:39:16,365 [INFO] FFT | FftStrategy v339 | hash 4d0baa309338 | commit 54ea4c6b | frozen | LIVE
+2026-09-30 01:39:16,898 [INFO] Connected | #700152905 | $14,862.76 | PUPrime-Demo
+2026-09-30 01:39:16,898 [INFO] MT5 connection lock released
+2026-09-30 01:39:17,319 [INFO] Sizing against account balance $14,862.76
+2026-09-30 01:39:17,350 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-30 01:39:17,381 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared signals channel
+2026-09-30 01:39:31,758 [INFO] Warmed 45000 bars (2026-08-14 06:58:00+00:00 → 2026-09-30 01:38:00+00:00) in 13.3s
+2026-09-30 01:39:34,867 [INFO] Equity re-anchored to the account after warm-up: 16,942.95 → 14,862.76
+2026-09-30 01:39:35,680 [INFO] Watching for closed M1 bars (poll 10s). Ctrl-C to stop.
+2026-09-30 01:40:05,844 [INFO] Priority 4 on this account: waiting 34s for the bots above
+2026-09-30 01:45:01,409 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 01:50:01,033 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 01:55:01,338 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 02:00:01,152 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 02:05:01,784 [INFO] Priority 4 on this account: waiting 38s for the bots above
+2026-09-30 02:10:01,021 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 02:15:01,319 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 02:20:01,173 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 02:25:01,293 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 02:30:01,302 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 02:35:01,034 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 02:35:50,032 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-30 02:35:50,032 [INFO] Stop requested — shutting down.
+2026-09-30 02:35:50,032 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-30 02:35:50,036 [INFO] MT5 disconnected.
+2026-09-30 02:35:58,055 [INFO] FFT | FftStrategy v340 | hash 362cde86b6fb | commit 0d21e2fa | frozen | LIVE
+2026-09-30 02:35:58,681 [INFO] Connected | #700152905 | $14,862.76 | PUPrime-Demo
+2026-09-30 02:35:58,681 [INFO] MT5 connection lock released
+2026-09-30 02:35:59,025 [INFO] Sizing against account balance $14,862.76
+2026-09-30 02:35:59,025 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-30 02:35:59,040 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared signals channel
+2026-09-30 02:36:11,308 [INFO] Warmed 45000 bars (2026-08-14 07:54:00+00:00 → 2026-09-30 02:34:00+00:00) in 11.4s
+2026-09-30 02:36:11,308 [INFO] Equity re-anchored to the account after warm-up: 16,942.95 → 14,862.76
+2026-09-30 02:36:12,234 [INFO] Watching for closed M1 bars (poll 10s). Ctrl-C to stop.
+2026-09-30 02:40:03,173 [INFO] Priority 4 on this account: waiting 37s for the bots above
+2026-09-30 02:45:01,111 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 02:50:01,206 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 02:55:00,866 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 03:00:01,064 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 03:05:01,209 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 03:10:00,831 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 03:11:40,359 [INFO] Stop requested by file — shutting down cleanly.
+2026-09-30 03:11:40,359 [INFO] Stop requested — shutting down.
+2026-09-30 03:11:40,359 [INFO] Cleared a stale stop.request from a previous run.
+2026-09-30 03:11:40,375 [INFO] MT5 disconnected.
+2026-09-30 03:11:48,923 [INFO] FFT | FftStrategy v341 | hash 356e00fd3f91 | commit 5d2b07cf | frozen | LIVE
+2026-09-30 03:11:49,517 [INFO] Connected | #700152905 | $14,862.76 | PUPrime-Demo
+2026-09-30 03:11:49,517 [INFO] MT5 connection lock released
+2026-09-30 03:11:49,799 [INFO] Sizing against account balance $14,862.76
+2026-09-30 03:11:49,814 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 5.0% per trade).
+2026-09-30 03:11:49,814 [INFO] Setup alerts: ON — watching, entry_zone, blocked, resolved → the shared signals channel
+2026-09-30 03:12:06,429 [INFO] Warmed 45000 bars (2026-08-14 08:30:00+00:00 → 2026-09-30 03:10:00+00:00) in 15.7s
+2026-09-30 03:12:06,429 [INFO] Equity re-anchored to the account after warm-up: 16,942.95 → 14,862.76
+2026-09-30 03:12:07,648 [INFO] Watching for closed M1 bars (poll 10s). Ctrl-C to stop.
+2026-09-30 03:15:08,227 [INFO] Priority 4 on this account: waiting 52s for the bots above
+2026-09-30 03:20:00,783 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 03:25:00,854 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 03:30:01,220 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 03:35:01,085 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 03:40:00,903 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 03:45:00,753 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 03:50:00,756 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 03:55:00,945 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 04:00:00,895 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 04:05:00,851 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 04:10:00,690 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 04:15:00,942 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 04:20:00,868 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 04:25:00,727 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 04:30:00,829 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 04:35:01,039 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 04:40:00,759 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 04:45:00,986 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 04:50:00,729 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 04:55:00,714 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 05:00:00,720 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 05:05:00,751 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 05:10:00,982 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 05:15:00,992 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 05:20:00,999 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 05:25:00,868 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 05:30:00,998 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 05:35:01,112 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 05:40:00,974 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 05:45:01,173 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 05:50:00,962 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 05:55:00,999 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 06:00:01,346 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 06:05:01,326 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 06:10:01,272 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 06:15:01,247 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 06:20:01,117 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 06:25:00,967 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 06:30:01,537 [INFO] Priority 4 on this account: waiting 58s for the bots above
+2026-09-30 06:35:00,942 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 06:40:01,178 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 06:45:01,044 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 06:50:01,186 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 06:55:01,148 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 07:00:01,110 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 07:05:01,249 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 07:10:01,796 [INFO] Priority 4 on this account: waiting 38s for the bots above
+2026-09-30 07:15:01,373 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 07:20:01,222 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 07:25:01,172 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 07:30:01,358 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 07:35:01,189 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 07:40:01,353 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 07:45:01,131 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 07:50:01,363 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 07:55:00,742 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 08:00:00,982 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 08:05:01,227 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 08:10:00,980 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 08:15:00,918 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 08:20:01,222 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 08:25:01,202 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 08:30:01,118 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 08:35:01,171 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 08:40:00,991 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 08:45:00,910 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 08:50:00,786 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 08:55:01,224 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 09:00:01,375 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 09:05:01,266 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 09:10:00,946 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 09:10:40,008 [INFO] place bullish primary limit 0.53L @ 4179.66446 SL 4165.71 TP 4188.28554
+2026-09-30 09:10:40,123 [INFO] PENDING PLACED | ticket=395958618 | bullish 0.53L @ 4179.66 | SL=4165.71 TP=4188.29
+2026-09-30 09:15:03,001 [INFO] Priority 4 on this account: waiting 57s for the bots above
+2026-09-30 09:20:01,114 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 09:25:01,062 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 09:30:01,086 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 09:35:01,228 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 09:40:00,949 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 09:45:00,967 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 09:50:00,844 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 09:55:00,972 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 10:00:00,952 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 10:05:00,896 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 10:10:01,008 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 10:15:00,935 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 10:20:01,221 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 10:25:01,226 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 10:30:01,003 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 10:35:00,969 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 10:40:01,194 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 10:45:01,020 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 10:50:00,924 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 10:55:01,029 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 11:00:01,129 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 11:05:01,078 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 11:10:01,183 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 11:10:40,000 [INFO] POSITION OPENED | T395958618 LONG 0.53L @ 4179.66 | SL=4165.71
+2026-09-30 11:10:41,029 [ERROR] HALTED: MT5 holds a position the strategy does not know about. It will keep its broker-side stop, but the bot will not manage it.
+2026-09-30 11:10:42,029 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:11:03,038 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:12:03,374 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:13:03,535 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:14:03,744 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:15:04,042 [INFO] Priority 4 on this account: waiting 56s for the bots above
+2026-09-30 11:16:00,003 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:16:10,057 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:17:00,228 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:18:00,496 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:19:00,652 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:20:00,822 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 11:20:40,015 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:21:10,189 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:22:00,515 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:23:00,717 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:24:00,956 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:25:01,164 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 11:25:40,008 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:26:10,196 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:27:00,419 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:28:00,609 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:29:00,855 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:30:01,040 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 11:31:00,227 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:31:10,291 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:32:00,669 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:33:00,854 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:34:01,076 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:35:01,270 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 11:35:40,006 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:36:10,152 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:37:00,378 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:38:00,615 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:39:00,781 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:40:00,959 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 11:40:40,011 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:41:10,177 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:42:00,395 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:43:00,618 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:44:00,798 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:45:00,974 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 11:46:00,020 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:46:10,111 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:47:00,346 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:48:00,672 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:49:00,885 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:50:01,033 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 11:50:40,001 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:51:10,263 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:52:00,500 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:53:00,764 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:54:01,054 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:55:01,279 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 11:55:40,007 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:56:10,152 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:57:00,411 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:58:00,634 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 11:59:00,826 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 12:00:01,016 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 12:01:00,083 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 12:01:10,147 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 12:02:00,341 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 12:03:00,638 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 12:04:00,805 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 12:05:01,071 [INFO] Priority 4 on this account: waiting 39s for the bots above
+2026-09-30 12:05:40,007 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 12:06:10,116 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 12:07:00,373 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 12:08:00,896 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 12:09:01,139 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 12:10:01,609 [INFO] Priority 4 on this account: waiting 38s for the bots above
+2026-09-30 12:10:40,003 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 12:11:10,220 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 12:12:00,582 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 12:13:00,777 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 12:14:00,920 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 12:15:01,226 [INFO] Priority 4 on this account: waiting 59s for the bots above
+2026-09-30 12:16:00,041 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 12:16:10,092 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 12:17:00,308 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 12:18:00,539 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 12:19:00,781 [ERROR] Bridge halted — the loop will keep observing but place nothing.
+2026-09-30 12:20:01,134 [INFO] Priority 4 on this account: waiting 39s for the bots above

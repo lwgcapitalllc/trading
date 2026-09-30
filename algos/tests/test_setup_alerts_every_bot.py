@@ -59,6 +59,7 @@ class _Bridge:
 class _Cfg:
     setup_alert_categories = None  # ABSENT in the bot's config — the default
     digits = 2
+    version_label = "v12"  # `LiveConfig.version_label` — the policy keys the notice on it
 
     def __init__(self, cls_name, tmp):
         self.strategy_class = cls_name
@@ -96,7 +97,10 @@ def test_a_bot_whose_strategy_cannot_report_setups_SAYS_SO_in_the_health_room(tm
     r._start_setup_alerts()
     assert r.setup_alerts is None
     assert len(r.health) == 1
-    assert "no setup messages" in r.health[0] and "Test Bot" in r.health[0]
+    assert "NO SETUP MESSAGES" in r.health[0] and "Test Bot" in r.health[0]
+    # The version rides in the body, because the health policy sends it once per bot per VERSION
+    # (`alert_policy`, 2026-09-26) — a restart on the same code says nothing new.
+    assert r.cfg.version_label in r.health[0]
 
 
 def test_the_extreme_leg_bot_gets_setup_messages_ON_by_default(tmp_path):

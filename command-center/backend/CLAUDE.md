@@ -275,9 +275,11 @@ Most-cited code: `routers/bots.py`, `services/bot_versions.py`.
 - The snapshot says whether a bot's account may TRADE (2026-09-12)
 - The snapshot carries the bot's open trade and its halt (2026-09-12)
 - The status read runs its two calls side by side, and version reads are capped at three (2026-09-24)
+- `GET /bots/versions` — every bot's version in two SSH calls, built by the same function as the one-bot read; its git answers are kept while the repo is unchanged (2026-09-24)
 - The files (tamper) check is its own read, asked only by the bot panel; an unanswered check is unknown, never a pass (2026-09-24)
 - 🔴 One action at a time per bot, and an account holds still while one of its bots is mid-action — every route that changes a bot or an account goes through `services/bot_ops.py`; deploy jobs are saved to disk (2026-09-24)
 - 🔴 A deploy runs in its OWN process (`services/promote_worker.py`) and outlives a backend restart; its job file is its claim on the bot. No test may start a real one (2026-09-24)
+- 🔴 A deploy never STARTS a bot that was not running — it restarts only a bot the process list says is running; stopped or unreadable leaves it stopped (2026-09-27)
 
 ### `notes/optimizer.md` — Optimizer and worthiness
 
@@ -325,6 +327,7 @@ Most-cited code: `routers/_costs.py`, `routers/stacks.py`, `services/chart_spec.
 - 🔴 A rule that NEEDS A PARENT is refused at every endpoint that starts a job (2026-08-21)
 - 🔴 A stack's minimum is two LEGS, not two strategies (2026-08-21)
 - A stack leg runs on ITS OWN frame, and the stack asks the broker for the symbol it quotes (2026-09-03)
+- Any mix of a shared stack's legs — replayed, never sliced (2026-09-27)
 
 ### `notes/stack-grading.md` — Grading and stress-testing stacks, and promoting their settings
 

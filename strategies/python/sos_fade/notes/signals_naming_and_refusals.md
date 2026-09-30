@@ -293,3 +293,39 @@ Full record: `algos/notes/telegram-and-notifications.md` → *A SETUP THREAD DID
   forks that replace `_place_entries` name nothing.
 - Reporting only: `replay_fingerprint.py` 2024-01 → 2026-08 — bars and 66 trades IDENTICAL.
   Detail: `algos/notes/telegram-and-notifications.md`.
+
+## A refusal carries the bracket it would have traded (2026-09-30)
+
+- `BlockedSetup` gained `stop`, `tp1`, `tp2` so a blocked setup can be graded in R afterwards —
+  Aaron's regression audit of the filters. **Reporting only: nothing reads them back.**
+- 🔴 **One pricing, two readers.** `_bracket()` is what `_place_entries` now prices a real order
+  with, and `_record_blocks` asks the same function — a second copy is how a refusal ends up
+  graded on a stop its order would never have had. `tp1` then goes through `_first_rung` as a
+  PRIMARY, because that is where the FILL would have put it (it moves under a first target in R).
+- ⚠ **`_ladder_levels(count=False)` on the record path**, or every refusal would inflate
+  `tp_level_fallbacks`, a statistic about ORDERS.
+- ⚠ All three are None when the fib is not live — never 0.
+- `bos` fills them from its own `_bos_stop` / `_targets`; `b_leg` inherits SOS Fade's.
+- Tests in `tests/test_execution.py`: the refused and the armed copy of one setup must carry the
+  same bracket (watched RED recording the fib `tp1` instead of the first rung), and a refusal must
+  not count a fallback (watched RED without `count=False`).
+
+## 🔴 A setup that FILLED was never blocked — its refusals are dropped at the fill (2026-09-30)
+
+- Aaron, on the 2021-10-19 long tagged Blocked at 1771.54 and filled at 1771.54: *"the trade
+  happened. It was never blocked."* A refusal is booked on the bar it happens, and the veto, the
+  final hour and the quiet-market gate can all LIFT while the setup lives — the same order then
+  rests and fills. The refusal was a delay.
+- **Measured before the fix** (run 467118f513e9): 71 of 294 blocked setups were later traded —
+  108 of 488 records; final hour 61/249, quiet market 30/117, veto 17/118, tight stop 0/4. Every
+  one matched its fill's entry price to the cent. Any audit of a rule off those records counted
+  trades it did not stop.
+- **The rule:** a PRIMARY fill drops every record of the same side and the same leg (`_same_leg`,
+  the latch's own reader). A secondary fill drops nothing — a refusal is always a primary.
+- ⚠ **Live is unaffected**: the runner drains `blocks` every bar, before any later fill. The live
+  ledger's refusal rows are therefore still per-bar, and a ledger audit must join them to fills
+  by setup before grading a rule.
+- ⚠ **Runs saved before this keep their stale tags** — `blocked_setups.json` is written once at run
+  completion. Re-run to refresh.
+- `bos` and `b_leg` get it through the shared fill. Tests: `test_a_refused_setup_that_later_fills_is_not_a_block`
+  and `test_a_refusal_of_the_other_side_survives_a_fill`, each watched RED by mutation.

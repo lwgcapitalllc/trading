@@ -24,6 +24,18 @@ bug root `CLAUDE.md` rule 17 was written about.
 bars ran "complete" with 0 trades, because its 1m-against-5m rule compares one series with
 itself and can never pass. Pass the spacing of the frame actually LOADED (`frame_minutes`), not
 the one requested — rule 3. Leaving it out constructs the strategy exactly as before.
+
+`rate_provider` is the run's QUOTE-TO-ACCOUNT conversion, a `time_ms -> rate` callable from
+`backtest.data.fx.rate_provider_for`. It is installed through the strategy's execution layer
+(`execution.set_rate_provider`), and it follows the cost-profile rule above: a strategy that cannot
+take one while the run needs one **raises**. Running it anyway would price a yen trade as though it
+were dollars — the swap about 156x too large, and every trade sized by the wrong factor. `None`
+(every dollar-quoted run) installs nothing and constructs the strategy exactly as before.
+
+🔴 **Leaving it out on a symbol that needs one ALSO raises**, whichever path built the run. The
+config names its symbol, so this is checkable here, and a caller that forgot is exactly the caller
+that would otherwise run silently wrong. A caller that really wants the configured snapshot says so
+with `backtest.data.fx.constant_rate(config.point_value)` — stated, never omitted.
 """
 
 from __future__ import annotations
@@ -66,6 +78,7 @@ def build_strategy(
     leg: str | None = None,
     max_lots: Any = UNSTATED,
     timeframe_minutes: int | None = None,
+    rate_provider=None,
 ) -> Any:
     strategy = _construct(
         strategy_cls,
@@ -80,12 +93,81 @@ def build_strategy(
         # Raises for a frame the strategy cannot read — and a refusal is the point: the run
         # fails with the strategy's own reason instead of completing on 0 trades.
         strategy.set_timeframe_minutes(int(timeframe_minutes))
+    if rate_provider is not None:
+        _install_rate(strategy, rate_provider)
+    else:
+        _refuse_unconverted(config)
     return strategy
 
 
+def _refuse_unconverted(config) -> None:
+    from backtest.data.fx import UnknownQuoteCurrency, conversion_symbol
+
+    symbol = getattr(config, "symbol", None)
+    if not symbol:
+        return
+    try:
+        pair = conversion_symbol(str(symbol))
+    except UnknownQuoteCurrency:
+        # A name that is not a currency pair (an index, a future) predates this rule and keeps
+        # its configured constant. The lab path refuses those in `rate_provider_for` instead.
+        return
+    if pair is not None:
+        raise ValueError(
+            f"{symbol} is not quoted in dollars and this run was given no conversion. Pass "
+            f"rate_provider=backtest.data.fx.rate_provider_for(source, {symbol!r}, start, end) — "
+            f"per-bar {pair[0]} — or, to use the configured snapshot knowingly, "
+            f"rate_provider=constant_rate(config.point_value)."
+        )
+
+
+def _install_rate(strategy, rate_provider) -> None:
+    execution = getattr(strategy, "execution", None)
+    install = getattr(execution, "set_rate_provider", None)
+    if install is None:
+        raise TypeError(
+            f"{type(strategy).__name__} cannot convert its P&L out of this symbol's quote "
+            f"currency (its execution layer has no set_rate_provider), and this run is on a "
+            f"symbol that is not quoted in dollars. Running it would price every trade as though "
+            f"it were — give its execution a backtest.data.fx.QuoteConversion (see "
+            f"strategies/python/extreme_leg/execution.py), or run it on a dollar-quoted symbol."
+        )
+    install(rate_provider)
+
+
+def _contract_size(config, cost_profile) -> float:
+    """Units in one lot of the run's instrument — what the venue lot ceiling counts in.
+
+    The run's cost profile when it has one (measured off the broker's Specification), else the
+    currency-pair standard when the config names a pair, else the account's default (gold's 100).
+    """
+    from backtest.data.fx import fx_contract_size
+    from backtest.portfolio.account import DEFAULT_CONTRACT_SIZE
+
+    size = getattr(cost_profile, "contract_size", None) if cost_profile is not None else None
+    if size:
+        return float(size)
+    return fx_contract_size(str(getattr(config, "symbol", "") or "")) or DEFAULT_CONTRACT_SIZE
+
+
 def _construct(strategy_cls, config, *, initial_capital, cost_profile, account, leg, max_lots):
+    from backtest.portfolio.account import DEFAULT_CONTRACT_SIZE, DEFAULT_MAX_LOTS
+
     own_account = False
-    if max_lots is not UNSTATED:
+    # 🔴 THE CEILING COUNTS LOTS, AND A LOT IS NOT THE SAME SIZE ON EVERY INSTRUMENT. Every
+    # account here defaulted to gold's 100 units, so a GBPJPY run's "100 lots" was 10,000 units —
+    # 0.1 of a real lot — and every trade above that was silently resized (2026-09-27).
+    contract = _contract_size(config, cost_profile)
+    if max_lots is UNSTATED and account is None and contract != DEFAULT_CONTRACT_SIZE:
+        # No ceiling stated, so the strategy would build its own account with gold's lot size.
+        # Build it here instead, with the default ceiling counted in THIS instrument's lots.
+        from backtest.portfolio.account import SoloAccount
+
+        account = SoloAccount(
+            balance=initial_capital, max_lots=DEFAULT_MAX_LOTS, contract_size=contract
+        )
+        own_account = True
+    elif max_lots is not UNSTATED:
         # A stated venue lot ceiling. It lives on the ACCOUNT, which is the one seam every
         # strategy's sizing already passes through, so honouring it here costs no per-strategy
         # wiring and cannot drift between them. See `backtest/portfolio/account.py`.
@@ -97,7 +179,7 @@ def _construct(strategy_cls, config, *, initial_capital, cost_profile, account, 
             )
         from backtest.portfolio.account import SoloAccount
 
-        account = SoloAccount(balance=initial_capital, max_lots=max_lots)
+        account = SoloAccount(balance=initial_capital, max_lots=max_lots, contract_size=contract)
         own_account = True
 
     if cost_profile is None and account is None:

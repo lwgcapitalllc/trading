@@ -805,6 +805,18 @@ adds would not make it model them, it would make it double-count the base. A sca
 therefore not something the sizing engine can currently re-size, and that is a known gap rather
 than a solved problem.
 
+### A lot banking on its own is not the trade's EXIT (2026-09-28)
+
+The strategy records a lot banking on its own target as a leg of the trade, so the long of
+2020-07-16 on run 12bd4b64ae2e (three adds) drew **four** `Exit` chips across its box and read as
+exiting four times. `_build_trades` now leaves out of `profitLegs` any leg matching a lot's
+recorded close on bar, price and reason; the `Scale-in detail` layer already draws each lot's close
+in its own box. ⚠ **The last leg is never dropped** — a stop or force-close takes the lots WITH the
+base in one leg that matches every lot exactly, and that leg is the trade's exit. A run whose lots
+never recorded their close matches nothing and draws as before. ⚠ **A cached `chart_spec.json` is
+not rebuilt on its own** — an older run shows the old chips until its chart is fetched with
+`?refresh=true`. Tests: `tests/test_chart_spec_tp_rungs.py`, both guards proven red by mutation.
+
 ## Trade fibs — the leg each trade was actually priced off
 
 `chart_spec._trade_fib`. Aaron's brother asked to see, on every trade the chart plots, the fib run
@@ -1043,3 +1055,19 @@ order blocks 17 s, structure 14 s, VWAP 4 s. Candle loading was 8 s.
 - ⚠ The remaining cost sits inside the canonical engines (the candlestick engine's per-bar
   lookups, the gap engine's exemption scan). Speeding those up is an engine change and needs its
   parity gate re-run on a real export — not done here.
+
+🔴 **2026-09-26: the copied fill-clock default is now 1, matching the strategy** (it moved 5 → 1 when SOS Fade's default add became "1m break"). The two must still move together.
+
+---
+
+## The spec carries the instrument's PIP, stamped as it is served (2026-09-26)
+
+`pipSize` on every served ChartSpec, from `services/pip_size.py`: gold 0.10 (PU Prime's
+convention), FX 0.0001, JPY-quoted 0.01, **`null` for everything else** — no settled convention
+means no number, never a guess. It feeds the chart's optional pip readings on `Best` / `DD` / exit.
+
+🔴 **Stamped at SERVE time, never written into `chart_spec.json`.** The warm-cache route streams the
+file as bytes without parsing it (`cached_chart_spec_bytes`), so a field added at build time would
+reach no run built before it. `served_chart_spec_bytes` appends the key onto the bytes instead —
+still no parse — and `build_chart_spec` stamps the dict on its own paths. Tests:
+`tests/test_chart_spec_pip_size.py`, proven by mutation.

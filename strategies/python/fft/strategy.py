@@ -611,7 +611,9 @@ class FftStrategy:
         target = lv[LEVEL_KEY[cfg.target]]
         if (entry - stop) * d <= 0 or (target - entry) * d <= 0:
             return no("unsized")
-        qty = self.execution.size(entry, stop, mult=cfg.sweep_risk_x if swept else 1.0)
+        qty = self.execution.size(
+            entry, stop, mult=cfg.sweep_risk_x if swept else 1.0, time_ms=ts
+        )
         if qty is None:
             return no("unsized")
         if qty <= 0:

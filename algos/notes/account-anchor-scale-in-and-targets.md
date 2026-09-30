@@ -789,6 +789,22 @@ gap is however long it takes for the next deploy.
 ⚠ **RULE 9 IS NOT CLOSED BY SWITCHING IT ON.** No add has ever reached a broker and no parity gate
 covers the path. **Watch the first one.**
 
+### Scale-in is OFF again for `sos_fade_demo` (2026-09-26) — restart only, no promote
+
+Aaron's call, on a measurement: the "Trail" add bought at market whenever the trail moved, so on
+2026-09-11 it added three times near the top and a +1.29R winner closed as a scratch. **The
+numbers are in that bot's `config.json` (`_scale_in_off_2026_09_26`) and in
+`strategies/python/sos_fade/sos_fade_optimization.md` → Run 50, not restated here.**
+
+⚠ **No promote is needed** — switching an existing setting off asks nothing of the frozen code. It
+is not runtime-reloadable, so it takes effect on the restart. ⚠ **The demo copies (`sos_fade_1`,
+`sos_fade_2`) were left with adds ON** — only the live bot was asked for. ⚠ **The replacement ("1m
+break" + the 15m candle rule + banking at the H4 high/low) cannot go live as the bot stands**: it
+needs a 1-minute fast feed, and this bot runs its fast clock at M5.
+
+✅ **Same day, Aaron's call: the demo copies `sos_fade_1` and `sos_fade_2` are OFF too**, so no
+SOS Fade bot adds the old way. Restart only, no promote.
+
 ### The whole-position target goes to the BROKER, so it fills at the target (2026-09-08)
 
 **`_sync_take_profit` puts the price on the position.** A rung that takes the whole position off
@@ -1078,3 +1094,39 @@ the thing that should invoke it proves the guard works and nothing about whether
 7, reproduced inside the change written to fix rule 7. Two tests now drive `_build_strategy` itself,
 one for the refusal and one for the pass, because a wiring test that only ever asserts a refusal
 passes against a build path that refuses everything.
+
+### The "1m break" add can run live — the bridge now banks adds AT their level (2026-09-26)
+
+Aaron's call: build what the safe add needs to go live. Two gaps were closed, and the 1-minute
+feed itself needed no code — the runner already builds the fast feed at whatever the strategy asks
+for, and M1 is a legal fill clock.
+
+- **The bridge accepts "1m break"** (`_MARKET_ADD_MODES` in `algos/live/bridge.py`). It buys AT
+  MARKET on the 15m close it decides on — the same placement "Trail" uses. Every resting mode is
+  still refused by name.
+- 🔴 **Each add ticket now carries the add's own bank level as its broker take-profit.** Before
+  this, the only way an add banked live was `_sync_add_size` closing it at market on the next 15m
+  close — up to a whole bar from the H4 high/low the backtest books. The strategy answers
+  `add_exit_price()` (new in `strategies/python/live_contract.py`); an add ticket takes whichever
+  of that and the whole-position target price reaches FIRST, and the base ticket keeps only the
+  whole-position target. The market close stays as the safety net.
+- ⚠ **It is asked only when an add ticket is open**, so a bot that never adds cannot be halted by
+  it. A strategy holding adds that cannot answer HALTS (rule 1).
+- ⚠ **Live, the 1-minute feed exists only while the re-entry is on** (`fast_feed_minutes` answers
+  None with it off) — so a bot running this add needs the re-entry on and its fill clock at 1.
+  The config refuses otherwise.
+- ⚠ **The fast feed warms on 15,000 bars — about ten days at M1.** The add reads local 1-minute
+  breaks after a bounce, which that covers; it is not the full-history state the backtest has.
+- 🔴 **RULE 9: no "1m break" add and no add take-profit has reached a broker yet.** Watch the first.
+- ⚠ **Moving a bot's fill clock 5 → 1 also moves its re-entries** onto 1-minute fills (Run 50:
+  −5.3R over 6.7 years with adds off, all re-entries filling minutes apart). Any setting counted
+  in fill-clock bars shrinks five-fold — check `exec_sec_max_wait_bars` is 0 first.
+
+✅ **`sos_fade_1` (demo 700152905) runs it first, from 2026-09-26** — "1m break", 2 breaks, banked
+at the H4 high/low, fill clock 1. The live bot stays OFF until the demo has shown the first adds
+reach the broker and bank at their level. Values and measurement: its `_safe_add_on_2026_09_26`.
+
+🔴 **Same evening, Aaron's call: the LIVE bot `sos_fade_demo` (34957946) runs it too**, without
+waiting for the demo to show a broker add first — he heard that recommendation and chose not to
+wait. So the first "1m break" add on either account is the first anywhere. **Watch it.** Values:
+its `_safe_add_on_2026_09_26`.

@@ -89,3 +89,39 @@ identical. Detail: `algos/notes/telegram-and-notifications.md`.
 - `--server PUPrime-Demo` reads that broker's cached bars without the agent.
 - The extreme-leg figures and why its root waits for the shift:
   `strategies/python/extreme_leg/notes/setup_alerts.md`.
+
+## `touched` and `leg` — what a research study needs to see a setup at the right bar (2026-09-28)
+
+Two optional fields, both **reporting only**, added so `backtest/setup_feed.py` can hand a study
+each setup at the bar the strategy learns of it.
+
+- **`touched`** — price has reached the setup's entry zone at least once (a latch). **`None` means
+  the strategy does not say, never "no".** ⚠ **It is not the zone confluence**: SOS Fade's zone
+  confluence also wants a gap in the zone, and its 1-minute SOS-then-BOS entry starts watching at
+  the touch alone. SOS Fade fills it from the same latch that entry reads (0.5 or 0.618 tagged).
+- **`leg`** — `(extreme, origin)`, fib 0.0 and 1.0, copied from the strategy on this bar. `None`
+  while no fib is live, the same rule `zone` follows. The extreme extends while a setup lives, so a
+  study freezes it at the bar it chose.
+- 🔴 **Why: the Generic FX studies anchored each setup on its MISS record**, whose zone time
+  brackets the deepest visit to the zone and is known only once the setup is over. A study said
+  +0.26R a trade and the lab made -0.06R. Detail: `backtest/notes/study-reconciliation.md`.
+- **No stored run moves — proven by replay, not argued.** SOS Fade Generic GBPJPY with lab run
+  `8bcf06ffa418`'s settings, 15m + 1m, 2020-01-01 → 2026-09-26: 213 trades, SHA-1
+  `ca7dd57e…` before and after, the same count as the lab run. SOS Fade (defaults, XAUUSD.p, 15m
+  + 1m, same window): 252 trades, SHA-1 `4a4485d2…` before and after.
+
+## `setup_feed.py` — the point-in-time setup feed a study reads (2026-09-28)
+
+`replay_setups(strategy, df, warmup)` runs the strategy through its OWN `run()`, drains its setup
+snapshots after every bar, and returns each one stamped with the bar that reported it (`bar_ms`,
+the open) and when the strategy knew it (`known_ms`, the close). `episodes(rows, condition)` groups
+them into unbroken runs of bars per setup — a setup that stops qualifying and comes back is a NEW
+episode, which is how the 1-minute entry treats it too.
+
+- **It builds nothing new about a setup.** Every row is the snapshot the live alert channel reads.
+- **It REFUSES a strategy that cannot answer**, and a `run()` that does not step once per bar —
+  the bar stamp comes from counting steps, so a strategy that steps any other way would be
+  stamped wrong rather than fail.
+- **A study must not act on a row before `known_ms`.**
+- Tests: `tests/test_setup_feed.py` (7; 4 watched RED by mutation — grouping, restoring the
+  execution, the close stamp, and the refusals).

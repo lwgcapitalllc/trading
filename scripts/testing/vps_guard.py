@@ -15,6 +15,13 @@ Two doors, the same two the fixture guards:
 - **a process start naming an ssh client, or the box's ssh alias anywhere in its argv** - which is
   also what catches `pkill -f "ssh -N.*forexvps"` killing the developer's own tunnel.
 
+🔴 **And a third door, added 2026-09-27: a name lookup of Telegram's API host.** A laptop holds the
+real bot token (the Command Center sends from it), so a test that reaches the real notifier posts
+to the real rooms. Two watchdog tests ran a whole pass, and after 08:00 Chicago that pass sent a
+real DAILY SUMMARY to the LIVE health room on every suite run - six in one evening, each saying
+"there is no send log", because the test's private log dir was empty. Refused at the lookup, so
+every sender is caught whatever library it uses.
+
 ⚠ **It raises a `BaseException`**, like the fixture, because every probe on this path catches
 `Exception` and reports "the box is down" - a catchable guard is swallowed by the code it polices.
 
@@ -43,6 +50,19 @@ _SSH_PROGRAMS = {"ssh", "scp", "sftp"}
 
 class LiveVpsCall(BaseException):
     """A test (or a process a test started) tried to reach the live trading box."""
+
+
+class LiveTelegramCall(BaseException):
+    """A test (or a process a test started) tried to post to the real Telegram rooms."""
+
+
+TELEGRAM_HOSTS = {"api.telegram.org"}
+
+
+def refuses_host(host) -> bool:
+    if isinstance(host, bytes):
+        host = host.decode(errors="ignore")
+    return str(host or "").lower().rstrip(".") in TELEGRAM_HOSTS
 
 
 def targets(config_path=None):
@@ -96,6 +116,7 @@ def install() -> None:
     alias, ports = targets()
     real_connect, real_connect_ex = socket.socket.connect, socket.socket.connect_ex
     real_init = subprocess.Popen.__init__
+    real_getaddrinfo = socket.getaddrinfo
 
     def connect(self, address):
         if refuses_address(address, ports):
@@ -120,8 +141,17 @@ def install() -> None:
             )
         return real_init(self, args, *a, **kw)
 
-    for fn in (connect, connect_ex, popen_init):
+    def getaddrinfo(host, *a, **kw):
+        if refuses_host(host):
+            raise LiveTelegramCall(
+                f"A test process tried to look up {host} - the real Telegram API, which posts to "
+                "the real rooms with the laptop's real token. Stub the send."
+            )
+        return real_getaddrinfo(host, *a, **kw)
+
+    for fn in (connect, connect_ex, popen_init, getaddrinfo):
         fn._lwg_guard = True
+    socket.getaddrinfo = getaddrinfo
     socket.socket.connect = connect
     socket.socket.connect_ex = connect_ex
     subprocess.Popen.__init__ = popen_init

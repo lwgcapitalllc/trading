@@ -52,7 +52,14 @@ from engines.fibonacci.geometry import fib_level
 from .config import _TP_LEVELS
 from .entry_window import in_window as in_entry_window
 from .level_memory import SRC as LVL_SRC
+from .shift_entry import SRC as SHIFT_SRC
+from .shift_entry import ShiftCtx
 from .signals import POI_SOURCE_OB_NO_FVG, poi_rank_is_fvg, pois_for, sos_aware_veto
+
+#: Triggers that BORROW the re-entry's order path and are not re-entries. None of the
+#: re-entry's own overrides (`exec_sec_*`) may reach them, and their stop-out never kills a
+#: re-entry leg: they describe a different trade.
+_OWN_TRADE_SRCS = (LVL_SRC, SHIFT_SRC)
 
 
 def _first(pred, values):
@@ -351,6 +358,12 @@ class BlockedSetup:
     codes: List[int]      # 1-7, the Pine reason codes, precedence-ordered
     edge: float
     sos_bar: int
+    # The bracket the order WOULD have carried, priced by the same helpers as a real order, so a
+    # refusal can be graded in R after the fact. None = could not be priced (no live fib), never 0.
+    # `tp1` is the first rung as the fill would have set it; `tp2` is the fib rung behind it.
+    stop: Optional[float] = None
+    tp1: Optional[float] = None
+    tp2: Optional[float] = None
 
     @property
     def code(self) -> int:
@@ -756,6 +769,9 @@ class Execution:
         # and while flat.
         self._entry_src: Optional[str] = None
         self._entry_after: Optional[str] = None
+        # The 1-minute SOS-then-BOS entry (`exec_shift_entry`): the live setup per side as of
+        # the last 15m close, (long, short). Read by the fill clock only.
+        self.shift_ctx: Tuple[Optional[ShiftCtx], Optional[ShiftCtx]] = (None, None)
         # A force-close DECIDED at this bar's close and FILLED at the next bar's open, held as
         # (reason, leg tag) or None. Pine's `strategy.close()` is a MARKET order, and a market
         # order in this fill model is subject to the same one-bar delay every other order is —
@@ -792,6 +808,17 @@ class Execution:
         # reader. The give-back guard above CAN read them because it runs on the 15m path, where
         # `_manage_open` has just widened them on this same bar.
         self._rev_best: Optional[float] = None
+        # The "Give-back stop" action's state for THIS trade. `_rev_lock` is True once a shift
+        # against the trade has fired it: from then on a stop rests at the price that hands back
+        # `exec_rev_giveback_pct` of the open profit (entry -> `_rev_best`), re-priced off the
+        # best on every fast bar, so it only ever tightens. `_rev_bos_seen` is the optional
+        # "a break our way came first" gate: a fast-frame break of structure in the trade's
+        # direction printed AFTER the rule armed.
+        self._rev_lock: bool = False
+        self._rev_bos_seen: bool = False
+        # True once a fast bar has traded through the ladder's own stop: the 15m step owns the
+        # close from there, and the reversal exit stands down (see `step_reversal`, Phase 0).
+        self._rev_yield: bool = False
         # The level trigger's memory for THIS trade: one [price, visits, touched_last_bar] row per
         # major level seen AHEAD of price while it was open. A LIST of lists, not a dict keyed by
         # price, because it goes through the JSON position record and a float key comes back a
@@ -881,6 +908,19 @@ class Execution:
         # confidently and does nothing. Weekly hid it: that one needs a CLOSE through, so a
         # bar can spike past it and leave it standing.
         self._add_tp_level = None
+        # "1m break" scale-in. `_fast_breaks` is a BUFFER, not position state: each fast bar's
+        # internal breaks as (fast bar open ms, +1/-1, "sos"/"bos"), consumed by the 15m bar they
+        # fell inside. The `_brk_*` fields are the trade's own leg bookkeeping, in the DIRECTION
+        # frame: the best price since the second target, whether a bounce against the trade has
+        # been seen, how many breaks back since, whether this push has already added, and how
+        # many adds had filled when last looked. Each buffered break also carries the fast
+        # feed's EXTERNAL trend as of that bar (+1/-1/0). See `_place_break_add`.
+        self._fast_breaks: List[Tuple[int, int, str, int]] = []
+        self._brk_ext: Optional[float] = None
+        self._brk_bounce = False
+        self._brk_count = 0
+        self._brk_used = False
+        self._brk_nadds = 0
         self._sos_bar_open: Optional[int] = None
         self._entry_equity: Optional[float] = None   # equity snapshot at open, for R
 
@@ -1078,7 +1118,7 @@ class Execution:
         "_rec_be_armed", "_exc_be_armed",
         "_trail_swing_hi", "_trail_swing_lo", "_ext_high", "_ext_low", "_legs",
         "_pending_close", "_pending_bank", "_gave_back",
-        "_pending_rev", "_rev_done", "_rev_best", "_rev_levels",
+        "_pending_rev", "_rev_done", "_rev_best", "_rev_levels", "_rev_lock", "_rev_bos_seen", "_rev_yield",
         # Scale-in lots, and they belong here for the reason the warning above gives: a
         # restored position that dropped them would carry the base's stop while the adds it
         # actually holds went unpriced and unclosed. `_add_stop` is the stop the last add was
@@ -1086,6 +1126,10 @@ class Execution:
         # profit, which is exactly the over-spend the ratchet check exists to stop.
         "_adds", "_add_lots", "_add_stop", "_base_qty", "_add_limit", "_add_armed",
         "_add_pending", "_add_pend_stop", "_add_last_px", "_add_tp_level",
+        # The "1m break" leg bookkeeping — without it a restored trade re-seeds its best price
+        # and can add twice on one push. ⚠ New 2026-09-25: a record saved by an older version
+        # lacks these, and `restore_position` refuses it; migrate it at promote.
+        "_brk_ext", "_brk_bounce", "_brk_count", "_brk_used", "_brk_nadds",
         # Which re-entry trigger armed the open secondary. It DECIDES the exit ladder — the
         # reclaim half carries its own first target and its own bank percentage — so a restored
         # trade that lost it would manage against the other half's rungs, silently.
@@ -1405,6 +1449,8 @@ class Execution:
         to return. MEASURED 2026-08-23: 29 of 90 re-entry orders waited over 30 minutes for that
         return and 8 waited over 12 hours, and Aaron's 2025-08-19 reclaim is one of the 8. A market
         entry buys a worse price and a wider stop in exchange for never missing the move."""
+        if src == SHIFT_SRC:
+            return True    # the shift IS the signal; its edge is the confirming bar's close
         if (src == LVL_SRC
                 and getattr(self._cfg, "exec_lvl_confluence", "None") == "Shift confirms"):
             # The level memory's confirmed entry is a MARKET order by design: the shift is the
@@ -1438,6 +1484,10 @@ class Execution:
         # stop floor below still reads the raw stop distance, which is the right question (a leg
         # too short to trade is too short whatever size you put on it).
         risk_pct = cfg.exec_risk_pct * getattr(cfg, "exec_sec_risk_pct", 100.0) / 100.0
+        if SHIFT_SRC in (getattr(arm, "l_src", None), getattr(arm, "s_src", None)):
+            # The 1-minute SOS-then-BOS entry is the FIRST trade on its setup, so it risks what a
+            # first trade risks — the re-entry's fraction describes a different trade.
+            risk_pct = cfg.exec_risk_pct
         if arm.l_armed and arm.l_edge is not None and arm.l_sl is not None:
             dist = arm.l_edge - arm.l_sl
             if self._stop_clears_floor(dist, arm.l_edge):
@@ -1556,6 +1606,7 @@ class Execution:
         # accumulating state while a position from the other side is open, and that path never
         # runs then.
         self._record_misses(sig, seq, dec, long_edge, short_edge)
+        self.shift_ctx = self._shift_context(sig, seq)
 
         # ── Phase B: at close, (re)place orders for the next bar ──
         if self._pos_dir != 0 and self._entry_kind != "secondary":
@@ -1636,7 +1687,12 @@ class Execution:
             elif self._time_stop_due(sig):
                 self._pending_close = ("time-stop", "TIME")
         elif self._pos_dir == 0:
-            self._place_entries(sig, seq, dec, dec.long_edge, dec.short_edge)
+            if getattr(self._cfg, "exec_shift_entry", False):
+                # The 1-minute SOS-then-BOS entry REPLACES the resting limit: with no edge nothing
+                # rests, and any order left from before is pulled the same way a dead setup's is.
+                self._place_entries(sig, seq, dec, None, None)
+            else:
+                self._place_entries(sig, seq, dec, dec.long_edge, dec.short_edge)
         # else: a secondary is open — managed on the fill-clock stream (step_secondary), not here.
 
         return dec
@@ -1750,6 +1806,34 @@ class Execution:
         return (lo <= sig.ny_hour < hi) if lo < hi else (sig.ny_hour >= lo or sig.ny_hour < hi)
 
     # ── missed-setup watch (Pine f_w23Arm / f_w23, 3116-3194 + 4022-4023) ────────
+    def _shift_context(self, sig, seq):
+        """The live setup on each side for the 1-minute SOS-then-BOS entry (`exec_shift_entry`).
+
+        A DECISION input, so it is read off the sequence here rather than off the miss watch,
+        which is reporting-only. A side qualifies while its setup is armed by an ENABLED source,
+        SOS'd, has tagged the 0.5, and the 15m fib still points its way. Whether it has already
+        been traded, or its window has closed, is the fill clock's to know (`ShiftEntry`).
+        """
+        cfg = self._cfg
+        if not getattr(cfg, "exec_shift_entry", False):
+            return (None, None)
+        if sig.fibo_p10 is None or sig.fibo_p7 is None:
+            return (None, None)
+        out = []
+        for d, on, stage, sos_bar, swp, div, tagged in (
+            (1, cfg.exec_longs, seq.l_stage, seq.l_sos_bar, seq.sos_l_swp, seq.sos_l_div,
+             seq.l_half or seq.l_618),
+            (-1, cfg.exec_shorts, seq.s_stage, seq.s_sos_bar, seq.sos_s_swp, seq.sos_s_div,
+             seq.s_half or seq.s_618),
+        ):
+            sos_ms = self._bar_ms.get(sos_bar) if sos_bar is not None else None
+            ok = (on and stage >= 2 and tagged and sos_ms is not None and sig.fibo_dir == d
+                  and ((cfg.exec_arm_sweep and swp) or (cfg.exec_arm_div and div)))
+            out.append(ShiftCtx(dir=d, sos_ms=int(sos_ms), from_ms=int(sig.time_ms),
+                                stop=float(sig.fibo_p10), extreme=float(sig.fibo_p7))
+                       if ok else None)
+        return (out[0], out[1])
+
     def _record_misses(self, sig, seq, dec, long_edge, short_edge) -> None:
         """Track each side's live setup and book a MISS when it dies without trading.
 
@@ -1834,7 +1918,8 @@ class Execution:
                 # gates are already resolved through the enable-toggles exactly as `_armed`
                 # reads them — so "armed" means the same thing in an alert as in a decision.
                 self._setup_ctx[slot] = self._setup_context(
-                    sig, m, is_long, arm_swp, arm_div, veto, late, htf_any, tight, quiet)
+                    sig, m, is_long, arm_swp, arm_div, veto, late, htf_any, tight, quiet,
+                    touched=bool(zone_hit))
                 continue
 
             # it died (or traded) — book the miss, then close the watch either way
@@ -2092,7 +2177,7 @@ class Execution:
 
     def _setup_context(self, sig, m: _MissWatch, is_long: bool, arm_swp: bool, arm_div: bool,
                        veto: bool, late: bool, htf_any: bool, tight: bool,
-                       quiet: bool) -> dict:
+                       quiet: bool, touched: bool) -> dict:
         """Freeze what this side's live setup looks like on this bar.
 
         ⚠ **`tight` / `quiet` carry NO DEFAULT, and that is deliberate.** A default of False
@@ -2171,6 +2256,12 @@ class Execution:
 
         announce = self._announce_ready(sig, m.sos_bar, is_long)
 
+        # For the research feed (`backtest/setup_feed.py`), never a decision. `touched` is the
+        # zone LATCH the 1-minute entry reads (`_shift_context`: the 0.5 or the 0.618 tagged),
+        # which is NOT `zone_met` — that one also wants a gap. `leg` is copied off the same
+        # signal fields `_shift_context` freezes, and like `zone` it is None while no fib is live.
+        leg = (float(sig.fibo_p7), float(sig.fibo_p10)) if (
+            sig.fibo_dir != 0 and sig.fibo_p7 is not None and sig.fibo_p10 is not None) else None
 
         return {
             "key": self._setup_key(is_long, m.sos_bar, m.sos_ms),
@@ -2202,6 +2293,8 @@ class Execution:
             "zone": zone,
             "stop": proj_stop,
             "blocked_by": tuple(blocked),
+            "touched": touched,
+            "leg": leg,
         }
 
     def _book_setup_end(self, ctx: Optional[dict], state: str, reason: str,
@@ -2227,7 +2320,7 @@ class Execution:
             side=ctx["side"], state=state, confluences=ctx["confluences"],
             zone=ctx["zone"], entry=None, stop=ctx["stop"], targets=(),
             blocked_by=ctx["blocked_by"], reason=(f"{label} — {reason}" if label else reason),
-            tradeable=ctx["tradeable"],
+            tradeable=ctx["tradeable"], touched=ctx["touched"], leg=ctx["leg"],
         ))
 
     def live_setups(self) -> List[SetupSnapshot]:
@@ -2261,6 +2354,7 @@ class Execution:
                 tradeable=ctx["tradeable"],
                 announce_resting=ctx["announce_resting"],
                 paused_by=() if resting else self._pull_why[slot],
+                touched=ctx["touched"], leg=ctx["leg"],
             ))
         return out
 
@@ -2328,9 +2422,15 @@ class Execution:
             if key == self._blk_keys[slot]:
                 continue
             self._blk_keys[slot] = key
+            sl, tp1, tp2 = self._bracket(sig, edge, is_long, count=False)
+            if sl is not None:
+                # A refusal is always a PRIMARY — the re-entries have their own records.
+                tp1 = self._first_rung(dir_=1 if is_long else -1, entry=edge, stop=sl,
+                                       kind="primary", src=None, fib_tp1=tp1)
             self.blocks.append(BlockedSetup(
                 dir=1 if is_long else -1, index=sig.index, time_ms=sig.time_ms,
-                codes=list(cs), edge=float(edge), sos_bar=int(sos_bar)))
+                codes=list(cs), edge=float(edge), sos_bar=int(sos_bar),
+                stop=sl, tp1=tp1, tp2=tp2))
 
     def _stamp_account_clock(self, sig) -> None:
         """Tell the account the current bar time — unless something else owns the clock.
@@ -2458,10 +2558,8 @@ class Execution:
         fib = _freeze_fib(sig) if (long_armed or short_armed) else None
 
         if long_armed:
-            sl = self._sl_anchor(sig, long_edge, True) - cfg.exec_sl_buf_tk * cfg.mintick
+            sl, tp1, tp2 = self._bracket(sig, long_edge, True)
             dist = long_edge - sl
-            deep = long_edge <= sig.fibo_p3       # at/below 0.618
-            tp1, tp2 = self._ladder_levels(sig, deep, long_edge, 1)
             if self._stop_clears_floor(dist, long_edge) \
                     and not self._too_deep(sig, long_edge, True):
                 qty = self._qty_for_risk(cfg.exec_risk_pct, dist)
@@ -2477,10 +2575,8 @@ class Execution:
             self._pend_long = None
 
         if short_armed:
-            sl = self._sl_anchor(sig, short_edge, False) + cfg.exec_sl_buf_tk * cfg.mintick
+            sl, tp1, tp2 = self._bracket(sig, short_edge, False)
             dist = sl - short_edge
-            deep = short_edge >= sig.fibo_p3
-            tp1, tp2 = self._ladder_levels(sig, deep, short_edge, -1)
             if self._stop_clears_floor(dist, short_edge) \
                     and not self._too_deep(sig, short_edge, False):
                 qty = self._qty_for_risk(cfg.exec_risk_pct, dist)
@@ -2495,6 +2591,25 @@ class Execution:
         else:
             self._pend_short = None
 
+
+    def _bracket(self, sig, edge: float, is_long: bool, *, count: bool = True
+                 ) -> Tuple[Optional[float], Optional[float], Optional[float]]:
+        """`(stop, tp1, tp2)` for an order resting at `edge` — the ONE pricing both the order and
+        the blocked-setup record read, so a refusal can never be graded on a bracket the order
+        would not have had. `tp1` is the fib rung the order rests with; the fill may move it
+        (`_first_rung`). `count=False` keeps a reporting call out of `tp_level_fallbacks`.
+
+        All three None when the stop has no anchor (no live fib) — reachable only from
+        `_record_blocks`; a caller placing an order is already past `fibs_ready`."""
+        cfg = self._cfg
+        anchor = self._sl_anchor(sig, edge, is_long)
+        if anchor is None or sig.fibo_p3 is None:
+            return None, None, None
+        buf = cfg.exec_sl_buf_tk * cfg.mintick
+        sl = anchor - buf if is_long else anchor + buf
+        deep = edge <= sig.fibo_p3 if is_long else edge >= sig.fibo_p3   # at/past 0.618
+        tp1, tp2 = self._ladder_levels(sig, deep, edge, 1 if is_long else -1, count=count)
+        return sl, tp1, tp2
 
     def _gate_reasons(self, sig, dec, is_long: bool, armed: bool,
                       flat_window: bool) -> Tuple[str, ...]:
@@ -3091,7 +3206,7 @@ class Execution:
         # `exec_sec_*`, and a level-memory trade only carries `kind="secondary"` because it
         # borrows that order path. Letting them reach it would re-price a rung Run 42 graded,
         # off settings that describe a different trade.
-        if kind == "secondary" and pend.src != LVL_SRC:
+        if kind == "secondary" and pend.src not in _OWN_TRADE_SRCS:
             # `exec_sec_tp2_x` — REPLACE the second rung with a multiple of the FIRST one's
             # distance, so a re-entry's two targets are in order by construction. Off by default.
             # ⚠ Unlike the floor below, this overrides the fib in BOTH directions: it pulls IN a
@@ -3134,6 +3249,9 @@ class Execution:
         self._pending_rev = None
         self._rev_best = None
         self._rev_levels = []
+        self._rev_lock = False
+        self._rev_bos_seen = False
+        self._rev_yield = False
         self._filled_qty = 0.0
         # Snapshot the OPENING size and clear the add ledger. Every add sizes off `_base_qty`
         # rather than the live position: sizing off the live one would compound, so add #2
@@ -3149,6 +3267,11 @@ class Execution:
         self._add_pend_stop = None
         self._add_last_px = None
         self._add_tp_level = None
+        self._brk_ext = None
+        self._brk_bounce = False
+        self._brk_count = 0
+        self._brk_used = False
+        self._brk_nadds = 0
         self._sos_bar_open = pend.sos_bar
         self._risk_usd = abs(granted) * abs(fill_price - pend.sl) * self._pv()
         self._entry_equity = self._equity_realized      # R yardstick baseline
@@ -3189,6 +3312,16 @@ class Execution:
                 self._traded_sos_l, self._traded_sos_l_ms = pend.sos_bar, sos_ms
             else:
                 self._traded_sos_s, self._traded_sos_s_ms = pend.sos_bar, sos_ms
+            # 🔴 A setup that FILLED was never blocked. A veto or the final hour can refuse a
+            # setup on one bar and lift on the next, and the same order then rests and fills —
+            # so an earlier refusal of THIS leg was a delay, not a trade that never happened.
+            # Left in, the chart tagged a taken trade "Blocked" (2021-10-19, filled at the very
+            # price the tag named) and any audit of a rule counted trades it did not stop:
+            # 71 of 294 blocked setups in run 467118f513e9 were later traded.
+            # Live is unaffected — the runner drains `blocks` every bar, before any fill.
+            self.blocks = [b for b in self.blocks
+                           if not (b.dir == pend.dir
+                                   and self._same_leg(pend.sos_bar, sos_ms, b.sos_bar))]
         self._pend_long = self._pend_short = self._pend_sec = None
         side = "Long" if pend.dir > 0 else "Short"
         dec.fills.append(Fill("entry", side, fill_price, granted, pend.dir))
@@ -3624,7 +3757,7 @@ class Execution:
         # guard its stop-out would retire a re-entry leg it has nothing to do with — the two
         # features are only ever on together by choice, and that is when it would bite.
         if (self._entry_kind == "secondary" and self._stage == 0
-                and self._entry_src != LVL_SRC):
+                and self._entry_src not in _OWN_TRADE_SRCS):
             self._sec_stop_dir = self._pos_dir
         # The PRIMARY's own record on this leg, for the looser `exec_sec_require` gates. `_stage`
         # is still the trade's final stage here (it is reset a few lines below), so stage 0 means
@@ -3692,6 +3825,9 @@ class Execution:
         self._pending_rev = None
         self._rev_best = None
         self._rev_levels = []
+        self._rev_lock = False
+        self._rev_bos_seen = False
+        self._rev_yield = False
         self._adds = []
         self._add_lots = []
         self._add_stop = None
@@ -3702,6 +3838,11 @@ class Execution:
         self._add_pend_stop = None
         self._add_last_px = None
         self._add_tp_level = None
+        self._brk_ext = None
+        self._brk_bounce = False
+        self._brk_count = 0
+        self._brk_used = False
+        self._brk_nadds = 0
         self._entry_equity = None
 
     def _equity_at_entry_delta(self) -> float:
@@ -4000,6 +4141,117 @@ class Execution:
                 locked += (stop - px) * d * qty * pv
         return locked
 
+    def observe_fast_breaks(self, ts_ms: int, breaks, direction: int = 0) -> None:
+        """Buffer one fast bar's INTERNAL breaks for the "1m break" scale-in. Called by the dual
+        clock on EVERY fast bar; a no-op unless that mode is on and a position is open."""
+        cfg = self._cfg
+        if (not breaks or self._pos_dir == 0 or not getattr(cfg, "exec_scale_in", False)
+                or getattr(cfg, "exec_scale_mode", "Trail") != "1m break"):
+            return
+        for d, kind in breaks:
+            self._fast_breaks.append((int(ts_ms), int(d), kind, int(direction or 0)))
+
+    def _place_break_add(self, sig) -> None:
+        """PLACE a "1m break" add: after a bounce against the trade, the SECOND 1-minute internal
+        break back in its direction. Market, sized at this 15m close, filled at the next open.
+
+        The rule, in the direction frame (a short's prices negated), from the second target on:
+
+        * the best price since the second target is tracked; a NEW best starts a new push and
+          re-arms — one add per push;
+        * a 1m internal break AGAINST the trade marks a bounce and resets the count;
+        * after a bounce, the second 1m internal break (either kind) BACK in the trade's
+          direction adds — but only once the 1m EXTERNAL trend points the trade's way too.
+          "Second" is `exec_scale_brk_n` (2; Run 50 measured 1, 2 and 3);
+        * and only on a 15m bar that CLOSES the trade's way — otherwise it keeps waiting.
+
+        🔴 **EVERY LOT SHARES THE TRADE'S ONE TRAILING STOP.** Aaron, 2026-09-24: per-add stops
+        behind the bounce are "bad because price could come back and hit those easily" — and
+        the measurement agreed (3 in 4 stopped).
+
+        Sized like every add — worst case at the shared stop is flat — and **NET OF COSTS**: what
+        the trade has paid, the exit side still owed on every open lot, and this add's own round
+        trip. Without that, "flat at the stop" was flat before costs (5 trades since 2020 closed
+        just under zero on exactly their costs under the shipped rule).
+
+        MEASURED 2026-09-24 before it was built (scratch replay, 2020-01-01 → 2026-09-24, PU
+        Prime ECN costs, 3 adds x 0.5x, adds decided at the 15m close): against the shipped
+        "Trail", 14 trades made worse instead of 42, NO winner turned into a scratch instead of
+        5, worst drop 6.45R instead of 7.27R — for +24.1R over no adds instead of +43.3R. The
+        goal it was chosen for is protecting winners, not the most R.
+
+        ⚠ **PYTHON ONLY.** The Pine has no 1-minute feed, so the parity gate can never see it.
+        ⚠ **It needs the dual clock's fast feed at ONE minute** — config refuses otherwise.
+        """
+        cfg, d = self._cfg, self._pos_dir
+        # The breaks of the fast bars INSIDE this 15m bar. The dual clock steps a 15m bar only
+        # once a fast bar opening at or after its CLOSE arrives, and before that fast bar is fed
+        # to the structure engine — so everything buffered at or after this bar's open fell
+        # inside it. Earlier ones belong to a bar this method was not called on (flat, or the
+        # fill bar) and are dropped, never carried forward.
+        # ⚠ Not keyed on `self.bar_ms`: that defaults to five minutes and only the lab sets it.
+        events = [(dd, fdir) for (ms, dd, _k, fdir) in self._fast_breaks if ms >= sig.time_ms]
+        self._fast_breaks = []
+        if self._stage < 2:
+            return
+        hi = sig.high if d > 0 else -sig.low
+        if len(self._adds) > self._brk_nadds:        # an add filled since the last bar
+            self._brk_nadds = len(self._adds)
+            self._brk_used = True
+        if self._brk_ext is None or hi > self._brk_ext:
+            self._brk_ext = hi
+            self._brk_bounce, self._brk_count, self._brk_used = False, 0, False
+        if len(self._adds) >= cfg.exec_scale_max_adds or self._brk_used:
+            return
+        fire = False
+        for dd, fdir in events:
+            if dd == -d:
+                self._brk_bounce, self._brk_count = True, 0
+            elif self._brk_bounce:
+                self._brk_count += 1
+                # 🔴 AND THE 1-MINUTE TREND MUST ALREADY POINT THE TRADE'S WAY. Two small breaks
+                # back can print while the bounce is still the bigger 1m move — MEASURED: 23 of 42
+                # adds fired that way before this line (Aaron, 2026-09-25: "it should only add if
+                # price is going in the direction of the trade"). Not yet → keep waiting; a later
+                # break back re-checks. With it, adding never deepened the worst drawdown
+                # (5.98R, the same as no adds) — Run 46.
+                if self._brk_count >= int(cfg.exec_scale_brk_n) and fdir == d:
+                    fire = True
+                    break
+        if not fire:
+            return
+        # 🔴 AND THE 15m CANDLE IT IS DECIDED ON MUST CLOSE THE TRADE'S WAY (Aaron, 2026-09-26:
+        # "you cannot scale in a candle that is not moving in the direction of the trade"). A
+        # failed candle does NOT spend the push — the next break back re-checks on a later bar.
+        # The 1m candle needs no rule of its own: a break only counts on a 1m CLOSE past the
+        # level, so the firing candle already closes the trade's way (0 of 23 adds changed).
+        # MEASURED (Run 50): 1 add of 23 blocked, trades made worse 5 -> 4 banked at H4 H/L.
+        if (sig.close - sig.open) * d <= 0:
+            return
+        self._brk_used = True                       # this push is spent, placed or refused
+        pv, stop, level = self._pv(), self._current_stop(), sig.close
+        if (level - stop) * d <= 0:
+            return
+        reserve, cost_unit = 0.0, 0.0
+        if self._profile is not None:
+            sp = 0.0 if getattr(self._profile, "bid_ask_fills", False) else self._spread()
+            open_qty = (self._qty - self._filled_qty) + sum(lot[1] for lot in self._adds)
+            reserve = (-self._costs_usd + self._profile.commission(open_qty)
+                       + sp / 2.0 * open_qty * pv)
+            # Commission is linear in size on every measured profile (a flat rate per unit).
+            cost_unit = 2.0 * self._profile.commission(1.0) + sp * pv
+        budget = self._locked_at_stop(stop) - reserve
+        per_unit = (level - stop) * d * pv + cost_unit
+        if budget <= 0 or per_unit <= 0:
+            return
+        add_qty = min(budget / per_unit, self._base_qty * cfg.exec_scale_cap_x)
+        if add_qty <= 1e-9:
+            return
+        self._add_limit = level
+        self._add_pending = add_qty
+        self._add_pend_stop = stop
+        self._add_armed = True
+
     def _maybe_scale_in(self, sig) -> None:
         """PLACE an add order on a runner the trail is already protecting (Pine `execScaleIn`).
 
@@ -4043,6 +4295,8 @@ class Execution:
         cfg = self._cfg
         if not getattr(cfg, "exec_scale_in", False) or self._pos_dir == 0:
             return
+        if getattr(cfg, "exec_scale_mode", "Trail") == "1m break":
+            return self._place_break_add(sig)
         # A RESTING order does NOT consume a slot: Pine's `lAddN` increments when the order
         # FILLS, and re-placing while one rests re-uses the same entry id, which replaces it.
         if self._stage < 2 or len(self._adds) >= cfg.exec_scale_max_adds:
@@ -4146,7 +4400,7 @@ class Execution:
             self._add_armed = False
             self._add_pending = None
             return
-        if getattr(cfg, "exec_scale_mode", "Trail") == "Trail":
+        if getattr(cfg, "exec_scale_mode", "Trail") in ("Trail", "1m break"):
             price = sig.open          # market: TradingView fills it at the next bar's open
         else:
             reached = (sig.low <= self._add_limit) if d > 0 else (sig.high >= self._add_limit)
@@ -4170,7 +4424,7 @@ class Execution:
         # "Trail" add is a MARKET order at this bar's open, so the whole bar is genuinely the
         # lot's and both sides seed at the fill — `_manage_open` runs later in this same `step`
         # and widens it with the bar. Reporting only; no decision reads any of it.
-        limit_fill = getattr(cfg, "exec_scale_mode", "Trail") != "Trail"
+        limit_fill = getattr(cfg, "exec_scale_mode", "Trail") not in ("Trail", "1m break")
         if not limit_fill:
             ext_hi = ext_lo = price
         elif d > 0:
@@ -4243,7 +4497,7 @@ class Execution:
             return self._tp2, self._tp1
         return self._tp1, self._tp2
 
-    def _ladder_levels(self, sig, deep: bool, entry: float, dir_: int):
+    def _ladder_levels(self, sig, deep: bool, entry: float, dir_: int, *, count: bool = True):
         """The two fib prices this setup's rungs sit on — (tp1, tp2).
 
         🔴 **ONE FUNCTION BECAUSE IT WAS TWO COPIES.** The long and short blocks each carried the
@@ -4273,7 +4527,8 @@ class Execution:
             price = getattr(sig, attr, None)
             # `is None` and not falsy: a price of 0.0 is a price. Rule 1.
             if price is None or (price - entry) * dir_ <= 0:
-                self.tp_level_fallbacks += 1
+                if count:
+                    self.tp_level_fallbacks += 1
                 out.append(auto)
             else:
                 out.append(price)
@@ -4344,6 +4599,10 @@ class Execution:
                 # 15m fib behind the trade to fall back to. A target in R is the only rung it
                 # has, which is why its config refuses anything but a positive multiple.
                 tp_r = getattr(self._cfg, "exec_lvl_tp_r", -1.0)
+            elif src == SHIFT_SRC:
+                # The 1-minute SOS-then-BOS entry reads the FIRST trade's target: in R off the real
+                # fill when one is set, otherwise the frozen 15m 0.0 the arm priced.
+                tp_r = getattr(self._cfg, "exec_tp1_r", -1.0)
             else:
                 tp_r = getattr(self._cfg, "exec_sec_tp_r", -1.0)
             if tp_r > 0 and dist > 0:
@@ -4371,6 +4630,8 @@ class Execution:
                 # 100 by default — the whole position off at its R target with no runner
                 # behind it, which is the ladder Run 42 graded.
                 own = getattr(self._cfg, "exec_lvl_tp1_pct", 100.0)
+            elif src == SHIFT_SRC:
+                own = self._cfg.exec_tp1_pct    # the first trade's own bank
             else:
                 own = getattr(self._cfg, "exec_sec_tp1_pct", -1.0)
             if own != -1.0:
@@ -4423,6 +4684,29 @@ class Execution:
             return None
         tp = float(tp)
         return tp if math.isfinite(tp) and tp > 0 else None
+
+    def add_exit_price(self) -> Optional[float]:
+        """The price the scale-in lots bank at on the NEXT bar, or `None` to ride them.
+
+        Part of the live contract (`strategies/python/live_contract.py` → `EXECUTION_ATTRS`). The
+        bridge rests it on every add ticket as the broker's take-profit, so an add banked at the
+        H4 high/low fills THERE — without it the bridge could only close the lots at market on the
+        next 15m close, up to a whole bar away from the price this book records.
+
+        ⚠ **It is `_add_tp_level`, staged at the last close for the next bar**, in the same slot and
+        for the same reason as the stop: that is the level `_manage_open_bar` tests this bar
+        against, so the broker and the emulator watch one price.
+
+        ⚠ **`None` while flat, with no live add, or on "Ride"** — `_add_tp_target` already answers
+        None for the last two, and a stale level must never outlive the lots it was for.
+        """
+        if self._pos_dir == 0 or not any(lot[1] > 1e-12 for lot in self._adds):
+            return None
+        lvl = self._add_tp_level
+        if lvl is None:
+            return None
+        lvl = float(lvl)
+        return lvl if math.isfinite(lvl) and lvl > 0 else None
 
     def planned_full_exit_price(self, pend) -> Optional[float]:
         """The whole-position target a RESTING order would carry if it filled at its own price.
@@ -4585,6 +4869,8 @@ class Execution:
         "gap": ("exec_gap_be_r", "exec_gap_be_keep_r"),
         "Structure shift": ("exec_shift_be_r", "exec_shift_be_keep_r"),
         LVL_SRC: ("exec_lvl_be_r", "exec_lvl_be_keep_r"),
+        # The first trade on its setup, so the PRIMARY's rule — not a re-entry's.
+        SHIFT_SRC: ("exec_be_arm_r", "exec_be_keep_r"),
     }
 
     def _protect_rule(self) -> Tuple[float, float]:
@@ -4874,6 +5160,23 @@ class Execution:
         sink = Decision(index=sig_fast.index)
         self._stamp_account_clock(sig_fast)
 
+        # ── Phase 0: the trade's OWN stop comes first ──
+        # 🔴 The ladder's stop is filled on the 15m path, after every fast bar inside that 15m
+        # bar has already run. A fast bar that trades through that stop has hit it — the 15m
+        # step will fill it at the stop's own price — so nothing here may close the trade later
+        # in the same 15m bar at a WORSE price. Found 2026-09-26 on the 2022-08-03 long: the stop
+        # (1762.84) was hit at 14:00, a shift printed at 14:05, and this path closed at the 14:10
+        # open (1759.74), turning +0.18R into -0.94R. Once the stop is touched this path stands
+        # down for the rest of the trade, whose close the 15m step now owns.
+        if self._pos_dir != 0 and self._entry_kind == "primary" and not self._rev_yield:
+            d = self._pos_dir
+            stop = self._current_stop()
+            if (d > 0 and sig_fast.low <= stop) or (d < 0 and sig_fast.high + self._exit_adj() >= stop):
+                self._rev_yield = True
+        if self._rev_yield:
+            self._pending_rev = None
+            return
+
         # ── Phase A: the order decided last bar is a MARKET order the broker already has ──
         act, self._pending_rev = self._pending_rev, None
         if act is not None and self._pos_dir != 0 and self._entry_kind == "primary":
@@ -4895,6 +5198,12 @@ class Execution:
                     self._stage = 2
                 self._rev_done = True
 
+        # ── Phase A2: the give-back stop, if a shift has already set it ──
+        # A resting stop, so it fills at its own price, or at the open when the bar opens past
+        # it — the same rule every stop here uses. Priced off the best as of the LAST fast bar's
+        # close, never this bar's, because this bar's extreme may come after the touch.
+        self._rev_lock_hit(sig_fast, sink)
+
         # ── Phase B: decide at this bar's close ──
         # The high-water mark is carried on THIS frame, from this bar's own extreme, so a trade
         # that spikes and turns inside one 15m bar is armed by the move that actually happened.
@@ -4907,7 +5216,88 @@ class Execution:
             if self._cfg.exec_rev_trigger == "Level rejected":
                 self._rev_track_levels(sig_fast, levels)
         if self._reversal_due(m1):
-            self._pending_rev = self._cfg.exec_rev_exit
+            if self._cfg.exec_rev_exit == "Give-back stop":
+                self._set_rev_lock(sig_fast)
+            else:
+                self._pending_rev = self._cfg.exec_rev_exit
+        # The "a break our way first" gate is fed AFTER the decision, so a break and a shift on
+        # the same fast bar do not satisfy it — the break has to come BEFORE the shift.
+        if (self._pos_dir != 0 and self._entry_kind == "primary" and not self._rev_bos_seen
+                and self._rev_armed()):
+            ours = (getattr(m1, "new_bull_bos", False) if self._pos_dir > 0
+                    else getattr(m1, "new_bear_bos", False))
+            if ours:
+                self._rev_bos_seen = True
+
+    def _rev_lock_level(self) -> Optional[float]:
+        """Where the give-back stop sits: the price that hands back `exec_rev_giveback_pct` of
+        the open profit, measured from the ENTRY to the trade's best fast-frame price.
+
+        A short at 4370 whose best is 4291 at 50% -> 4330.5. None when there is no profit to
+        protect (best not yet in front of the entry), which is never a price to rest a stop at.
+        """
+        if self._rev_best is None:
+            return None
+        d = self._pos_dir
+        run = (self._rev_best - self._entry) * d
+        if run <= 0:
+            return None
+        return self._rev_best - d * run * self._cfg.exec_rev_giveback_pct / 100.0
+
+    def _set_rev_lock(self, sig_fast) -> None:
+        """A shift has fired the give-back stop. Rest it, or leave now if price is already past.
+
+        "Past" is judged on THIS bar's close, the moment the rule decided. A trade already back
+        through the level has no stop left to rest — it leaves at the next fast bar's open, the
+        one-bar delay every exit here is built on.
+        """
+        lvl = self._rev_lock_level()
+        self._rev_done = True
+        if lvl is None:
+            return
+        if (sig_fast.close - lvl) * self._pos_dir <= 0:
+            self._pending_rev = "Close"
+            return
+        self._rev_lock = True
+
+    def _rev_lock_hit(self, sig_fast, dec) -> None:
+        """Fill the give-back stop on this fast bar if price reached it.
+
+        ⚠ IT ONLY TIGHTENS. When the ladder's own stop is already tighter than this level, this
+        does nothing and the ladder's stop governs on its own clock, exactly as it would have.
+        """
+        if not self._rev_lock or self._pos_dir == 0 or self._entry_kind != "primary":
+            return
+        lvl = self._rev_lock_level()
+        if lvl is None:
+            return
+        d = self._pos_dir
+        if (lvl - self._current_stop()) * d <= 0:
+            return                        # the ladder's stop is tighter; leave it to the ladder
+        adj = self._exit_adj()
+        hit = sig_fast.low <= lvl if d > 0 else sig_fast.high + adj >= lvl
+        if not hit:
+            return
+        price = self._fill_price(lvl, sig_fast.open + adj, False)
+        self._close_at(sig_fast, price, "reversal", dec, tag="REV")
+
+    def _rev_armed(self) -> bool:
+        """Has the trade gone far enough in front for the reversal exit to watch it?
+
+        "R" (default): the best must be worth `exec_rev_arm_r` of the FROZEN entry risk.
+        "Target 2 price": the best must have reached the trade's own second fib target —
+        Aaron's arming point on the 2026-09-21 chart, a price rather than an R number.
+        """
+        cfg = self._cfg
+        if self._rev_best is None:
+            return False
+        d = self._pos_dir
+        if getattr(cfg, "exec_rev_arm_at", "R") == "Target 2 price":
+            return (self._rev_best - self._tp2) * d >= 0
+        dist = abs(self._entry - self._init_stop)
+        if dist <= 0:
+            return False
+        return (self._rev_best - self._entry) * d / dist >= cfg.exec_rev_arm_r
 
     def _rev_track_levels(self, bar, levels) -> None:
         """Count failed visits to each major level AHEAD of price; set this bar's answer.
@@ -4976,12 +5366,9 @@ class Execution:
             against = bool(m1.new_bear_sos) if d > 0 else bool(m1.new_bull_sos)
         if not against:
             return False
-        dist = abs(self._entry - self._init_stop)
-        if dist <= 0:
-            return False
-        if self._rev_best is None:
-            return False
-        return (self._rev_best - self._entry) * d / dist >= cfg.exec_rev_arm_r
+        if getattr(cfg, "exec_rev_need_bos", False) and not self._rev_bos_seen:
+            return False        # the break our way has not printed since the rule armed
+        return self._rev_armed()
 
     def _apply_giveback(self) -> None:
         """Do what the guard is set to do. Called only when it is both due and unspent.

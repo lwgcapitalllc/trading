@@ -351,6 +351,16 @@ defaults now describe the bot that trades.
 - ⚠ **The golden export ran at 10** and the gate reads risk off it, so parity is untouched.
 
 
+## The breakeven cushion is 35 ticks (2026-09-29)
+
+After the first target the stop moves to the entry plus this cushion. It is 35 on Aaron's go after
+`sos_fade_optimization.md` Run 58 re-measured every width ON THE LAB (+0.4 ± 0.1R vs 30, P 1.00, no
+trade flips), in the Python default, both Pine files and all three bots' settings. 🔴 **It was 60
+for one day off a study that did not reconcile with the lab** — on the lab 60 loses a +5.8R winner
+and is −3.7 ± 6.0R; 40–55 are all inside noise. **Quote only lab-reconciled numbers for this
+setting.** ⚠ **B-LEG, BOS and Realign inherit this config and PIN 30** — none was measured at 35.
+A share-of-risk cushion was tested three times here (Runs 17, 26, 57) and lost every time.
+
 ## A re-entry when the GAP IS GONE — measured, and it ships OFF (2026-09-22)
 
 `exec_sec_poi_fallback` ∈ {Off, **Primary entry**}, **default Off and inert**. On, a gap re-entry
@@ -426,6 +436,19 @@ base lot alone made that exact for ONE add and double-spent from the second onwa
 - ⚠ **Two live-side defects found with it and NOT fixed**: the bot buys each add a full bar
   after the lab does, and the ledger records the risk an add was SIZED at, not the risk it took.
 - Story, arithmetic, the grid and the mutation record: `notes/sizing_and_risk_history.md`.
+- 🟢 **THE DEFAULT ADD IS `"1m break"` SINCE 2026-09-26 (Run 50, Aaron's call)**: after a bounce,
+  the second 1-minute break back (`exec_scale_brk_n` = 2) with the 1m trend agreeing, on a 15m
+  candle CLOSING the trade's way (a failed candle keeps waiting), shared stop, sized net of costs,
+  banked at the H4 high/low. Against no adds: +5.2R, 4 trades worse, 0 winners scratched,
+  drawdown unchanged — "Trail" was +55.7R with 46 worse and 54.4R of it from 5 trades.
+- ⚠ **It forced the fill clock default 5 → 1 minute**: the add reads 1-minute structure off the
+  re-entry's fast feed and refuses anything else. Default runs load 5x the bars. The reversal exit
+  and give-back stop were MEASURED at 5 — set the clock to 5 to reproduce them.
+- ⚠ **A one-frame `run()` and "Secondary re-entries" OFF both REFUSE on the defaults** — pick
+  "Trail" or switch adds off there. The Pine cannot run it, so its default stays "Trail", the gate
+  decodes an absent mode as "Trail", and the test fixtures standing in for an export pin it.
+- ⚠ **The live bot runs no adds (2026-09-26)** — `sos_fade_demo` config. This rule needs a
+  1-minute fast feed on the live bot and a promote before it can go there.
 
 ## Flat before the close — `flat_mode`, and it is NOT `flat_by_close` any more
 
@@ -568,3 +591,9 @@ Most-cited code: `compare_strategy.py`, `sos_fade.meta.json`, `sos_fade_strategy
 ### `notes/entry_window.md` — The no-entry window (New York hours), measured, OFF
 
 **Read before touching:** `entry_window.py` or the no-entry window settings. Every window tried lost R; the drawdown cut was one 2022 stretch.
+
+🔴 **2026-09-26: the "1m break" add can run live.** The bridge now accepts it (it buys at market on the 15m close, like "Trail") and rests each add ticket's take-profit at the level the strategy banks it at — `add_exit_price()`, new in the live contract — so an add banked at the H4 high/low fills THERE instead of at market a bar later. Live it needs the re-entry on and its fill clock at 1 minute, because the live runner builds the 1-minute feed only for the re-entry. Detail: `algos/notes/account-anchor-scale-in-and-targets.md`.
+
+### `notes/shift_entry.md` — The 1-minute SOS-then-BOS entry (built 2026-09-28, OFF)
+
+**Read before touching:** `shift_entry.py`, `exec_shift_entry`, or `dual_clock.FAST_CLOCK_FLAGS`.

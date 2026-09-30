@@ -64,6 +64,20 @@ def pytest_report_header(config) -> str:
     return _HOOK_NOTICE
 
 
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _private_notify_dir(tmp_path, monkeypatch):
+    """Every test gets its OWN Telegram send log, outbox and health-policy memory (2026-09-26).
+
+    `algos/shared/notify_log.py` writes one line per send and `alert_policy.py` remembers what it
+    has said; both read this variable per call. Without it a test that sends through the real
+    notifier writes into the checkout's own log, and — worse — one test's remembered alert HOLDS
+    an identical alert in the next, so a suite passes or fails on the order it ran in."""
+    monkeypatch.setenv("LWG_NOTIFY_DIR", str(tmp_path / "notify_log"))
+
+
 _ENGINES = _ROOT / "engines"
 if str(_ENGINES) not in sys.path:
     sys.path.insert(0, str(_ENGINES))

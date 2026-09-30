@@ -277,8 +277,11 @@ def config_from_export(df: pd.DataFrame, base: Optional[SosFadeConfig] = None,
         # Only read the three sub-values when the feature was actually ON in the export. With
         # it off they are never consulted, and an older export can legitimately lack them.
         sm = get("cfg_scale_mode")
-        if sm is not None:
-            vals["exec_scale_mode"] = "Trail" if int(round(sm)) == 0 else "BOS retest"
+        # 🔴 Absent reads as the PINE's default, "Trail" — never the base config's. Since
+        # 2026-09-26 the Python default is "1m break", which the Pine cannot run at all, so
+        # falling back on it would replay an add no export can ever have placed.
+        vals["exec_scale_mode"] = ("Trail" if sm is None or int(round(sm)) == 0
+                                   else "BOS retest")
         sa = get("cfg_scale_adds")
         if sa is not None and int(round(sa)) > 0:
             vals["exec_scale_max_adds"] = int(round(sa))

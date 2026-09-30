@@ -1,0 +1,12 @@
+2026-09-27 16:54:17,937 [INFO] SOS Fade | SosFadeStrategy v319 | hash f637740fe800 | commit b12025a3 | frozen | LIVE
+2026-09-27 16:54:18,456 [INFO] Connected | #35710389 | $0.00 | PUPrime-Live
+2026-09-27 16:54:18,456 [INFO] MT5 connection lock released
+2026-09-27 16:54:18,579 [ERROR] Startup failed: MT5 reports a balance of $0.00 for this account, and initial_capital is 0 — the strategy would size every trade off nothing.
+Traceback (most recent call last):
+  File "C:\trading\algos\markets\fx\instances\sos_fade_2\deployed\algos\live\runner.py", line 2252, in _run
+    self.strategy, scfg = self._build_strategy()
+                          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\trading\algos\markets\fx\instances\sos_fade_2\deployed\algos\live\runner.py", line 910, in _build_strategy
+    raise RuntimeError(
+RuntimeError: MT5 reports a balance of $0.00 for this account, and initial_capital is 0 — the strategy would size every trade off nothing.
+

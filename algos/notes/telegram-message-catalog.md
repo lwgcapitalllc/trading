@@ -48,6 +48,17 @@ message is about, not how severe it is — and is not part of the severity syste
 | 🚫 | A setup was blocked by one of your own rules |
 | 👋 | A setup died with no trade |
 
+**A message that could not be delivered the first time** (no answer from Telegram, HTTP 429 or 5xx)
+is re-sent by the every-minute monitor for up to 24 hours, with one extra last line (2026-09-26):
+```
+⛔ TRADING OFF · SOS Fade · LIVE
+Margin call on the account.
+Every order it sends will be refused. …
+(delayed, first tried 3:04 PM CDT)
+```
+Every send, delivered or not, is also one line in the box's send log — see
+`notes/telegram-and-notifications.md` → *The health room's noise*.
+
 **Every message in every room is plain text — no Markdown, ever.** A bot label, a symbol or a
 traceback path is full of underscores, and Telegram's Markdown parser opens an italic on a lone
 underscore and either eats the rest of the name silently (even count) or rejects the whole
@@ -108,11 +119,22 @@ Startup failed: <the exception>
 It is down and will stay down until someone looks at it.
 ```
 
-**TRADING OFF** — the account itself can no longer trade (margin call, broker restriction).
+**TRADING OFF** — the account itself can no longer trade (margin call, broker restriction, or the
+terminal has lost the broker's server). **Held 15 minutes and sent once per ACCOUNT** (2026-09-26):
+if trading comes back inside that, neither this nor its BACK ON is sent.
 ```
 ⛔ TRADING OFF · SOS Fade · LIVE
-Margin call on the account.
+The terminal has lost its connection to the broker's server.
 Every order it sends will be refused. If a trade triggers meanwhile it halts and needs a restart. It keeps watching and will say when trading is back.
+Held 15 min to see whether it cleared on its own - it has not. First seen 9:55 PM CDT. Account 34957946: one message for every bot on it.
+```
+
+**NOT BACK ONLINE** — a Command Center deploy, start or restart, three minutes on, and the bot has
+not come back (the box's watchdog, 2026-09-26). Never held.
+```
+⛔ NOT BACK ONLINE · SOS Fade · LIVE
+The command center deployed and restarted it at 2:02 PM CDT and it has not come back online in 3 minutes.
+It is not trading. Check its log - usually a version pin, the MT5 login or a startup error.
 ```
 
 **STILL HALTED** — trading came back on the account, but this bot had already halted.
@@ -185,11 +207,33 @@ The bot folders could not be read (<the error>), so no bot is being watched.
 Check the box's disk and the algos folder.
 ```
 
-**REVIEW** (alert level) — the hourly reviewer found something no live alert caught.
+**REVIEW** (alert level) — the hourly reviewer found something no live alert caught. ⚠ Since
+2026-09-26 it is NOT sent when the send log shows the real-time alert for the same event already
+reached the room (or was held on purpose) — it still shows on the Bots page.
 ```
 ⛔ REVIEW · SOS Fade · LIVE
 It refused to start — the code is not the promoted version
 At 6:06 PM CDT: <the recorded detail>
+```
+A live halt is ONE finding (it was two):
+```
+⛔ REVIEW · SOS Fade · LIVE
+Bridge is HALTED right now — the bot is placing nothing
+It stopped placing orders at 3:00 AM CDT: emulator and broker disagree.
+Its latest heartbeat, at 3:55 AM CDT, still says halted, while the watchdog and the Bots page both read RUNNING. It will not resume until it is restarted and agrees with the broker again — check the account.
+```
+
+**REMINDER — HALTED / REMINDER — DOWN** — a bot on a LIVE account, once an hour until it clears
+(2026-09-26). Demo accounts get none. Never held.
+```
+⛔ REMINDER — HALTED · SOS Fade · LIVE
+Halted for 2 h 0 min: emulator and broker disagree. It is placing nothing.
+Check the account, then restart it. This repeats every hour until it clears.
+```
+```
+⛔ REMINDER — DOWN · SOS Fade · LIVE
+Down for 1 h 0 min, and nobody stopped it. It is not trading.
+Start it from the command center, or check its log. This repeats every hour until it is back.
 ```
 
 **RE-ENTRY FAILED** — the re-entry watcher graded a trade and something did not check out.
@@ -231,10 +275,13 @@ lives.* Five failed re-sends: *Gave up after 5 re-sends. No order is resting. �
 *Not re-sent: the strategy already counts this trade as open … The bot will halt at the next check
 because the broker holds no position — look at the account.*
 
-**NO SETUP MESSAGES** — sent once per start by a bot whose strategy cannot report setups (2026-09-16).
-Plain text, no header.
+**NO SETUP MESSAGES** — a bot whose strategy cannot report setups (2026-09-16). In the house shape
+with the version since 2026-09-26, and sent **once per bot per strategy version** (it came on every
+restart).
 ```
-Realign (demo): no setup messages. Its strategy (RealignStrategy) does not report its setups yet, so the signals room will stay silent for this bot. Trades and health messages are unaffected.
+⚠️ NO SETUP MESSAGES · Realign · demo
+Its strategy (RealignStrategy, v12) does not report its setups yet, so the signals room will stay silent for this bot.
+Trades and health messages are unaffected. Said once per version.
 ```
 
 **STALLED** — the process is alive but has not moved through bars.
@@ -261,10 +308,11 @@ Reason: <the exception>
 **SETTINGS NOT APPLIED** — a config change on disk was refused.
 ```
 ⚠️ SETTINGS NOT APPLIED · SOS Fade · LIVE
-Its config changed on disk but the new values were refused, so it is still trading the ones it started with.
-Refused: <the field(s) and why>
-Restart it to take them.
+Its config changed on disk in ways a running bot cannot take, so it is still trading the settings it started with.
+25 settings need a restart: exec_risk_pct, exec_sl_deep, fib_e1 and 22 more.
+Restart it to apply them.
 ```
+(A count and the first three names since 2026-09-26 — it listed every field with both values.)
 
 **ORPHAN ORDERS** — resting orders at the broker under this bot's magic with no record here.
 ```
@@ -325,6 +373,44 @@ Broker now: long -80.54 · short +32.67
 Backtests (puprime_ecn) — long: lab holds -79.60, 1.2% away · short: lab holds +31.29, 4.2% away
 Nothing changed here — re-pricing the lab is a separate, deliberate commit.
 ```
+
+### 📦 One message per Command Center action (2026-09-26)
+
+The Command Center sends one message BEFORE it touches the bot, and the bot EDITS it into the
+outcome once it is online — no STOPPED, no separate ONLINE. If it does not come back in three
+minutes the watchdog sends NOT BACK ONLINE (above).
+```
+📦 PROMOTED · SOS Fade · LIVE          →   📦 DEPLOYED · SOS Fade · LIVE
+v397 → v399 · deployed                     v397 → v399, back online
+Restarting it now.                         Trading live · XAUUSD.p M15 · $10,752.18
+                                           v399 (abcd1234) · account 34957946
+
+▶️ STARTING · SOS Fade · LIVE          →   ✅ ONLINE · SOS Fade · LIVE
+Requested from the command center.         Started from the command center.
+This message will say when it is online.   Trading live · XAUUSD.p M15 · $10,752.18 …
+
+🔄 RESTARTING · SOS Fade · LIVE        →   ✅ RESTARTED · SOS Fade · LIVE
+Requested from the command center.         Restarted from the command center — back online. …
+```
+A Command Center STOP is one ℹ️ STOPPED — the bot's own when it shut down cleanly, the Command
+Center's when it had to be terminated.
+
+### What is HELD rather than sent (2026-09-26)
+
+Nothing below is lost: each is one `held` line in the box's send log, and the daily summary counts
+it. The rules and the reasoning are in `notes/telegram-and-notifications.md` → *Stage 2*.
+
+- A repeat of the same fault about the same bot (the 17 Sep startup loop: 17 WILL NOT START → 1).
+- OFFLINE / STALLED / NO MT5 LINK that recover inside 5 minutes, with their RESTARTED / BACK ONLINE /
+  RECOVERED / RECONNECTED, and the bot's own ONLINE after such a restart.
+- TRADING OFF that comes back inside 15 minutes, with its BACK ON; the other bots' copies of an
+  account's OFF; any BACK ON whose OFF was never sent.
+- The chat bot's own RESTARTED and COMMANDS ONLINE.
+- A bot's STOPPED during a Command Center deploy or restart.
+- NO SETUP MESSAGES after the first for a version; TRADE SHRUNK at 100% (not sent at all).
+
+**Never held:** HALTED and anything with HALT in it, FLEET HALT, ACCOUNT MISMATCH, CLOSE FAILED,
+ORDER REFUSED / REJECTED, NOT BACK ONLINE, CANNOT SEE THE BOTS, every REMINDER.
 
 ### ✅ OK — a CRITICAL or WARNING state just resolved
 
@@ -394,6 +480,13 @@ It was asked to close a trade and is not in one. Nothing changed.
 ℹ️ ONLINE · SOS Fade · LIVE
 Trading live · XAUUSD.p M15 · $10,752.18
 
+ℹ️ DAILY SUMMARY · Health room
+The 24 hours to 8:00 AM CDT, Sep 26.
+Held 21: WILL NOT START 16 (SOS Fade · LIVE 16); OFFLINE 5 (SOS Fade · LIVE 3, Extreme Leg · LIVE 2).
+Longest trading-off: 7 min (account 34957946).
+Auto-restarts: 2 (SOS Fade · LIVE 2).
+Delivered late: 1 · Given up after 24 h: 0.
+
 ℹ️ OVERNIGHT COST — FIRST READING · SOS Fade · LIVE · XAUUSD.p
 Per lot, per night.
 First reading on record — nothing to compare it against yet.
@@ -411,6 +504,13 @@ Nothing changed here — re-pricing the lab is a separate, deliberate commit.
 SOS Fade · XAUUSD.p · 2 of 3
 Swept Day Low · 0.5-0.886 tagged, FVG live · not tagged yet
 Zone 3,405.10 – 3,418.60 · stop 3,418.60
+
+👀 SETUP FORMING · LONG
+Realign · XAUUSD.p · 1 of 3
+Bearish 15m shift in an uptrend, momentum against · 5m break pending · 5m realign pending
+TP1 3,331.20
+(a market-entry setup has no zone; the stop appears once the 5m counter move prints)
+(no demo/LIVE tag in the trades or signals rooms — each holds one kind; the health room keeps it)
 
 🎯 0.25 lots · BUY LIMIT RESTING
 2 of 3
@@ -517,23 +617,44 @@ telling somebody about it.
   risk dollars it wanted, and WHICH of the three rules refused it: under half its own size, under
   the account's entry floor, or essentially nothing free. The reason is the "XYZ" half of the ask;
   "refused" alone is what Aaron already had.
-- *TRADE SHRUNK — SHARED ACCOUNT* — the trade went on at a reduced size, with the percentage of
-  its intended size it took. This is the quieter half: the trade appears as normal, and only its
-  dollars are wrong against every other trade on the account. ⚠ It can only happen to a
-  MARKET-entry bot; a resting-order bot is refused instead, because its order is already at the
-  broker.
+- *TRADE SHRUNK — SHARED ACCOUNT* (market-entry bot) / *ORDER SHRUNK — SHARED ACCOUNT*
+  (resting-order bot) — the entry went on at a reduced size, with the risk it wanted, the room that
+  was free and the percentage of its size it took. The ask is also stated as a percentage of the
+  balance, and when that differs from the bot's usual share the message says so (FFT sizes sweep
+  setups at 1.5x, so a "5% bot" asks 7.5%). No percentage is printed when the balance cannot be
+  read. 🔴 **Rewritten 2026-09-30:** it said "the trade is on" for every bot, and on FFT
+  (2026-09-29) it was a limit order that never filled, was put back to full size an hour later
+  without a word, and was then cancelled. Resting bots shrink at placement too — the old line here
+  saying only a market bot could be shrunk was wrong.
+
+```
+⚠️ ORDER SHRUNK — SHARED ACCOUNT · FFT · demo
+The account's shared risk limit was nearly used up by other bots, so a bullish order went in smaller than planned. It wanted to risk $1,114.71 (7.5% of the balance — above its usual 5% because its strategy sizes this kind of setup differently), only $747.98 was free, so it took 67% of its size.
+The order is waiting at the smaller size and nothing has filled yet. If room frees up first, the bot puts it back to full size and says so.
+No repeat of this message while the same setup stays trimmed.
+```
+
+- *ORDER BACK TO FULL SIZE* (2026-09-30) — a resting order that was announced as shrunk has been
+  re-placed at its full size. Sent once, only for a side that was told it shrank, and only when
+  nothing cut the sizing on that bar — a bigger but still-trimmed order is not full size, and a
+  re-size from a balance change on an order never shrunk says nothing.
+
+```
+✅ ORDER BACK TO FULL SIZE · FFT · demo
+Room freed up on the account, so the bullish order that was shrunk is back to its full size (0.3 → 0.45 lots). It has not filled yet.
+```
 
 **How often they speak.** One message per side per EPISODE. A setup that cannot be afforded is
 re-offered on every bar it lives, so a message per occurrence mutes the channel before the day it
 matters — the same reasoning as `ORDER REFUSED`. A side that goes a whole bar without being cut
 ends its episode, and the next cut on that side speaks again.
 
-⚠ **There is no "room is back" message here, deliberately.** `NO ACCOUNT RISK LEFT` /
+⚠ **Apart from ORDER BACK TO FULL SIZE, there is no "room is back" message here, deliberately.** `NO ACCOUNT RISK LEFT` /
 `ACCOUNT RISK AVAILABLE` already cover the account running dry and recovering. These two are about
 one specific setup, and the follow-up is visible either way: the trade appears, or the next
 episode speaks.
 
-**Ledger:** `budget_cut` and `budget_shrunk`, both in the DECISION stream — they answer "why was
+**Ledger:** `budget_cut`, `budget_shrunk` and (2026-09-30) `budget_restored`, all in the DECISION stream — they answer "why was
 there no trade, or why was that trade small", and nothing is wrong with the machinery.
 ⚠ Both names are written as literals in two separate calls. `test_ledger_streams` greps this
 folder for the names it must route, and a name built inline is a name the guard cannot see — it
@@ -615,7 +736,27 @@ health room's four severity icons are a separate, closed set and are not touched
 
 ---
 
-## Follower mode — the trades room states no sizes and no dollars (2026-09-24)
+## Sizes shown, in BOTH rooms, under ONE switch (2026-09-27) — supersedes the section below
+
+**Aaron's call:** *"make lot sizes show equally ... and yes show when we scale in ... make sure all
+messages are as equal as possible."* `alerts.SHOW_SIZE` is now **True**, and it governs the signals
+room too: the setup thread passes it at both of its sized messages (the resting limit's header and
+the moved-order lots line), so the two rooms can never again disagree about whether a size is stated.
+
+- **The add is announced either way.** With sizes on it is the sized message (`Added 0.20 lots at
+  about 3,300.00 · 1.20 lots now open · every lot on the same stop …`); with sizes off it says
+  `Added to the position at about 3,300.00 · Every lot on the same stop …`. Silence was wrong: a
+  follower whose thread never says the bot added is copying a trade the thread does not describe.
+- **One spelling per figure.** Lots are always two places (the entry printed `0.5 lots` while the
+  rest of its own thread printed `0.50`), and R is always two places (the hand-close header printed
+  `+0.7R` where WIN/LOSS prints `+0.70R`).
+- ⚠ **This reverses Kelly's 2026-09-24 request** for the rooms people follow. Hiding size again is
+  the one line — and now hides it in both rooms at once.
+- Proof: `test_follower_mode.py` (the OFF rendering of every message, and a structural pin that
+  both rooms read the switch — mutation-checked), `test_live_bridge.py` (an add is still announced
+  with sizes off — mutation-checked by restoring the old gate).
+
+## Follower mode — the trades room states no sizes and no dollars (2026-09-24) — SUPERSEDED above
 
 **Kelly's call:** *"I don't want the lot size to be shared, just details to follow the bot how it
 trades."* The trades room is read by people following the bot, so it now carries prices, stop moves

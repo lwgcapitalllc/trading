@@ -358,7 +358,13 @@ def _one_replay(cost_kwargs: tuple = ()):
     from strategies.python.sos_fade import LAB_STRATEGY
 
     profile = _profile(**dict(cost_kwargs)) if cost_kwargs else None
-    cfg = LAB_STRATEGY["config"]()
+    # Pinned to the 15m "Trail" add: the default became "1m break" on 2026-09-26, which needs a
+    # 1-minute feed this 15m-only replay does not carry. This file tests the cost re-pricing, not
+    # the add, and "Trail" still hands it multi-leg trades to re-price. The add TARGET is left at
+    # its default ("H4 H/L") on purpose: banking adds at their own level writes a rung into `legs`
+    # that is not the base's, and that is what took commission and swap off the replay until
+    # `reprice._base_legs` (2026-09-27). Pinning it back to "Ride" turns that case green vacuously.
+    cfg = LAB_STRATEGY["config"](exec_scale_mode="Trail")
     s = build_strategy(
         LAB_STRATEGY["strategy"], cfg, initial_capital=10_000.0, cost_profile=profile
     )

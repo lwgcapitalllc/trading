@@ -64,6 +64,11 @@ CLAUDE.md gets at most one index line.
     and `--no-secondary` switches off the RE-ENTRY rather than the clock, saying which in its note.
     ⚠ **Any future feature that fills on the faster feed has to be added THERE**, exactly like the
     commit hook's per-day exemptions: a rule that enumerates today's shapes stops working silently.
+    ✅ **Since 2026-09-28 that list lives in ONE place** — SOS Fade's `dual_clock.FAST_CLOCK_FLAGS`,
+    read here through `uses_fast_clock` (imported by its full `strategies.python...` path, since a
+    bare `sos_fade` import only worked when another test had put it on the path). It also names
+    the 1-minute SOS-then-BOS entry. The `--no-secondary` note now says "another trigger" rather
+    than naming the level memory.
   - `trades.csv` now carries **`kind`** (primary / secondary). Without it no reader could tell a
     15m setup from its re-entry, and the two are sized, stopped and targeted differently.
   - **`--server`** picks the broker cache to replay, same flag and meaning as `axis_sweep.py`'s.
@@ -1883,3 +1888,28 @@ in Asian session at eight, eight fifteen, sometimes nine, nine thirty, ten".
 - ⚠ **11:30–15:30 New York is 48 trades for +7.0R, and 15.4R of that is ONE trade** — without it,
   45 trades for −8.4R. It looks like a dead zone and it is NOT yet a finding: refusing those entries
   frees the position slot, and only a replay can price what queues behind them.
+
+### `exit_study.py --separation` — does any reversal signal tell a real turn from a pause? No (2026-09-25)
+
+**The question.** The exit rules above all lost. This asks whether any signal SEPARATES: when it fires on a trade already up 1R (or 2R), is the turn real, or does the move carry on? Only the first armed fire per trade per signal counts. REAL = the trade never later beats its best-at-fire by 0.5R AND closes below what leaving at the next bar's open would have banked. Everything else is FALSE. Thresholds are the `SEP_*` constants, set before any result.
+
+**MEASURED 2026-09-25, XAUUSD.p M15, 2020-01-01 -> 2025-08-31, `puprime_ecn` charged, secondary off — 129 trades; 72 reached 1R (showed 286.2R, kept 153.9R), 50 reached 2R (showed 254.3R, kept 157.9R).** 42 rows: 12 signals on 1m / 5m / 15m, two arm levels.
+
+- 🔴 **No signal separates. Every row loses R, from −24.2R (a 2.5-ATR bar against the trade, 15m, armed at 2R) to −86.8R.** No row reaches 60% precision with a positive total.
+- 🔴 **The one row over 60% precision still loses 48.7R** — the 5m displacement bar armed at 2R is right 17 times in 28, saving 1.61R each, and the 11 misses cost 6.91R each. The misses are the runners: only 8 trades closed at 5R or more, and nearly every signal fires on all 8.
+- **The five new signals do no better than the old ones**: failed gap (5m, 15m), no new best for 8/16/32 bars, displacement bar (5m, 15m), 15m structure shift, 1m internal shift. All fire on 25–80% of armed trades, so none is dead or always-on.
+- ⚠ **The label is blunt on one side**: 363 of 951 FALSE fires still banked more than holding did — the move carried on by 0.5R, then gave it all back. A precision figure understates how often leaving helped; the net-R column does not, and it is negative everywhere.
+- ⚠ **Cheap mode**: one book re-walked, so nothing here is a replay.
+
+- 🔴 **2026-09-26: the fill clock default is 1m again (5m since 2026-08-21)**, because SOS Fade's new default add ("1m break") reads 1-minute structure off the same feed. `run_report.py` and the overlap audit now load 1-minute bars for SOS Fade by default; the overlap baseline was re-recorded the same day (`notes/strategy-overlap.md`).
+
+## `tools/study_vs_lab.py` — a study's trades matched against a lab run (2026-09-28)
+
+Matches on direction and entry minute (`--tol-min`, default 0), nearest first, each trade once.
+Prints three groups — both, study only, lab only — with count, mean R and sum R, the same-outcome
+rate on the matched group, and a reason for every unmatched trade that the tool can SEE: a
+study-only trade inside a lab position, or a lab-only trade tied to its study setup and timed
+before or after the study's start point for it. "Lab was flat" and "no study setup" are
+UNEXPLAINED, and are the finding. The study's file format is in the tool's docstring. Tests:
+`tests/test_study_vs_lab.py` (7; direction, nearest-first, the holding window and the
+no-setup case each watched RED by mutation). Why it exists: `notes/study-reconciliation.md`.

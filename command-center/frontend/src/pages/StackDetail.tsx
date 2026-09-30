@@ -15,6 +15,8 @@ import {
 import StickyHeader from '@/components/StickyHeader'
 import {
   useStack,
+  useStackCombo,
+  useRetryStackCombo,
   useStrategies,
   useDeleteStack,
   useCancelStack,
@@ -78,6 +80,7 @@ import type {
   DailyPnlPoint,
   StackSharedReport,
   StackMode,
+  StackCombo,
 } from '@/types'
 import { usePeriodWindow } from '@/hooks/usePeriodWindow'
 
@@ -150,7 +153,8 @@ type Basis =
   | 'screen' // every leg had its own full account, so any subset is honestly additive
   | 'shared' // every leg on: the shared book, exactly as replayed
   | 'solo' // one leg on: its SOLO CONTROL replay, i.e. genuinely "if the others never existed"
-  | 'unmeasured' // a subset nobody replayed — refuse rather than compose one
+  | 'combo' // a mix of 2+ legs short of all: ITS OWN shared replay (`services/stack_combos`)
+  | 'unmeasured' // a mix whose replay is not stored yet (or cannot exist) — never composed
 
 interface Combined {
   run: RunDetail
@@ -173,17 +177,21 @@ function composeCombined(
   legs: StackStrategyLeg[],
   enabled: Set<string>,
   mode: StackMode,
-  win?: { from: string; to: string }
+  win?: { from: string; to: string },
+  combo?: StackCombo['legs']
 ): Combined {
   const complete = legs.filter((l) => l.status === 'complete')
   const active = complete.filter((l) => enabled.has(l.strategy_id))
 
   // A screen replayed each leg on its own full account, so a subset of it is a real experiment —
   // nothing could ever have blocked anything, and removing a leg removes only its own trades. A
-  // SHARED stack has exactly two books on disk: the one where every leg ran, and one solo control
-  // per leg. Anything between them was never replayed.
+  // SHARED stack stores the book where every leg ran and one solo control per leg; any mix in
+  // between is REPLAYED on its own shared account (`combo`, fetched by the page) and is
+  // `unmeasured` only until that replay is stored. It is never sliced out of the full book —
+  // there every leg sized off a balance all of them grew.
   const allOn = active.length === complete.length
   const soloOf = (l: StackStrategyLeg) => (l.solo_equity_curve?.length ? l : null)
+  const comboCovers = !!combo && active.every((l) => combo[l.strategy_id])
   const basis: Basis =
     mode !== 'shared'
       ? 'screen'
@@ -191,15 +199,19 @@ function composeCombined(
         ? 'shared'
         : active.length === 1 && soloOf(active[0])
           ? 'solo'
-          : 'unmeasured'
+          : active.length > 1 && comboCovers
+            ? 'combo'
+            : 'unmeasured'
 
   // On the solo basis the leg's own control book REPLACES its shared one — same trades, sized off
-  // its own account instead of the portfolio's.
-  const books = active.map((l) =>
-    basis === 'solo'
-      ? { leg: l, equity_curve: l.solo_equity_curve ?? [], daily_pnl: l.solo_daily_pnl ?? [] }
-      : { leg: l, equity_curve: l.equity_curve, daily_pnl: l.daily_pnl }
-  )
+  // its own account instead of the portfolio's. On the combo basis the mix's own replay does.
+  const bookOf = (l: StackStrategyLeg) =>
+    basis === 'solo' && enabled.has(l.strategy_id)
+      ? { equity_curve: l.solo_equity_curve ?? [], daily_pnl: l.solo_daily_pnl ?? [] }
+      : basis === 'combo' && combo?.[l.strategy_id]
+        ? combo[l.strategy_id]
+        : { equity_curve: l.equity_curve, daily_pnl: l.daily_pnl }
+  const books = active.map((l) => ({ leg: l, ...bookOf(l) }))
 
   // ONE shared account. Every leg was backtested against the SAME opening balance, so the portfolio
   // starts THERE — not at the sum of the legs. Summing showed $20k for two legs of a $10k account and
@@ -326,7 +338,7 @@ function composeCombined(
   const legTrades = new Map(
     complete.map((l) => [
       l.strategy_id,
-      l.equity_curve.filter((p) => p.direction && (!windowed || inWindow(p.date))).length,
+      bookOf(l).equity_curve.filter((p) => p.direction && (!windowed || inWindow(p.date))).length,
     ])
   )
 
@@ -335,13 +347,16 @@ function composeCombined(
   // position cannot touch it), which is exactly why the row leads with it rather than with dollars.
   // `shared_summary.json` stores the same number per leg and the two agree to 4dp; deriving it here
   // means the row still has an answer on a screen, which has no summary at all.
+  // ⚠ Read off the book ON SCREEN (`bookOf`), not always the full shared one. Re-sizing cannot move
+  // R, but the cap CAN — a trade it trimmed or refused in one mix may be taken whole in another
+  // (SOS Fade: 171.57R with all three, 172.65R alone) — so each row matches the curve above it.
   // ⚠ Windowed like the count above, and deliberately NOT rebased — R is normalised to each trade's
   // own risk, so the scale that moves every dollar on this page cannot touch it. That invariance is
   // the reason the row leads with R, and it is what makes a windowed row comparable to a full one.
   const legR = new Map(
     complete.map((l) => [
       l.strategy_id,
-      l.equity_curve.reduce(
+      bookOf(l).equity_curve.reduce(
         (a, p) => a + (p.direction && (!windowed || inWindow(p.date)) ? (p.r ?? 0) : 0),
         0
       ),
@@ -494,6 +509,17 @@ function BasisChip({ basis }: { basis: Basis }) {
       </span>
     )
   }
+  if (basis === 'combo') {
+    return (
+      <span
+        data-testid="basis-chip"
+        className="text-[10px] px-2 py-[3px] rounded-pill bg-accent/10 text-accent border border-accent/25 flex items-center gap-1"
+      >
+        these strategies, replayed together
+        <InfoTip text="The strategies left on were replayed on their own shared account — same window, costs, balance and risk cap as the full stack, with the others absent. These are not the full stack's numbers with some strategies taken out: without the others, the balance each one sizes off and the room under the cap are both different." />
+      </span>
+    )
+  }
   if (basis === 'solo') {
     return (
       <span
@@ -510,36 +536,71 @@ function BasisChip({ basis }: { basis: Basis }) {
       data-testid="basis-chip"
       className="text-[10px] px-2 py-[3px] rounded-pill bg-warn-muted text-warn-text flex items-center gap-1"
     >
-      never replayed
-      <InfoTip text="This combination of strategies was never run on a shared account, so there are no numbers for it. Only two books exist: every strategy together, and each one alone." />
+      not replayed yet
+      <InfoTip text="This mix of strategies has no stored replay yet, so there are no numbers for it until the replay below finishes. Numbers are never cut out of the full stack's book — inside it each strategy sized off a balance all of them grew." />
     </span>
   )
 }
 
-// The stand-in for the three KPI cards when the reader has picked a combination nobody replayed.
-// It states what exists rather than what is missing, and offers the way back.
-function UnmeasuredCard({ onAllOn }: { onAllOn: () => void }) {
+// The stand-in for the three KPI cards while a mix of strategies is being replayed — or, when it
+// cannot be, the reason why. It never composes an answer out of the full book.
+function UnmeasuredCard({
+  status,
+  onRetry,
+  onAllOn,
+}: {
+  status: StackCombo | undefined
+  onRetry: () => void
+  onAllOn: () => void
+}) {
+  const pct = status?.progress?.pct ?? 0
+  const title = status?.refused
+    ? 'This mix cannot be replayed'
+    : status?.error
+      ? 'The replay of this mix failed'
+      : 'Replaying this mix of strategies'
   return (
     <div className={`${panelCardCls(false, false, 'flex-1')}`} data-testid="unmeasured-card">
-      <CardHead title="No numbers for this combination" />
-      <div className="text-[12px] text-text-secondary leading-[1.5] mt-1">
-        A shared account was replayed <strong className="text-text-primary">twice</strong>: once
-        with every strategy competing for one balance, and once per strategy running alone. Any
-        other subset is a different experiment that nobody has run.
+      <CardHead title={title} />
+      {status?.refused ? (
+        <div className="text-[12px] text-text-secondary leading-[1.5] mt-1">{status.refused}</div>
+      ) : status?.error ? (
+        <div className="text-[12px] text-text-secondary leading-[1.5] mt-1">{status.error}</div>
+      ) : (
+        <>
+          <div className="text-[12px] text-text-secondary leading-[1.5] mt-1 flex items-center gap-2">
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-accent" />
+            {status?.progress?.phase === 'queued'
+              ? 'Queued behind another mix.'
+              : `Running these strategies on their own shared account — ${pct}%.`}
+          </div>
+          <div className="h-1 rounded bg-bg-sunken mt-2 overflow-hidden">
+            <div className="h-full bg-accent transition-all" style={{ width: `${pct}%` }} />
+          </div>
+          <div className="text-[11px] text-text-tertiary leading-[1.45] mt-2">
+            Same window, costs, balance and risk cap as the full stack. It takes a few minutes the
+            first time and is saved, so this mix opens instantly after that.
+          </div>
+        </>
+      )}
+      <div className="flex gap-2 mt-3">
+        {status?.error && (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="text-[11px] px-2.5 py-[5px] rounded border border-accent/30 text-accent hover:bg-accent/10 transition-colors"
+          >
+            Try again
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onAllOn}
+          className="text-[11px] px-2.5 py-[5px] rounded border border-accent/30 text-accent hover:bg-accent/10 transition-colors"
+        >
+          Switch every strategy back on
+        </button>
       </div>
-      <div className="text-[11px] text-text-tertiary leading-[1.45] mt-2">
-        Composing one from the stored trades would be misleading rather than approximate — inside
-        the shared book each strategy sizes off a balance <em>all</em> of them grew, so its dollars
-        there are not what it would have made without the others. Leave one strategy on to see its
-        solo replay, or switch them all back on for the portfolio.
-      </div>
-      <button
-        type="button"
-        onClick={onAllOn}
-        className="mt-3 self-start text-[11px] px-2.5 py-[5px] rounded border border-accent/30 text-accent hover:bg-accent/10 transition-colors"
-      >
-        Switch every strategy back on
-      </button>
     </div>
   )
 }
@@ -1222,7 +1283,19 @@ export function StackDetail() {
   //
   // ⚠ The window is handed to `composeCombined`, never applied to its result. It owns every figure
   // on this page, so it is the only place that can filter them all at once. See the block inside it.
-  const combinedFull = useMemo(() => composeCombined(legs, enabled, mode), [legs, enabled, mode])
+  // A mix of two or more legs short of all of them, on a shared stack, is its OWN replay — asked
+  // for here and queued first in line on the backend when it is not stored yet.
+  const completeCount = completeIds ? completeIds.split(',').length : 0
+  const comboIds =
+    mode === 'shared' && enabled.size > 1 && enabled.size < completeCount ? [...enabled] : null
+  const comboQuery = useStackCombo(stackId ?? null, comboIds)
+  const retryCombo = useRetryStackCombo()
+  const comboStatus = comboIds ? comboQuery.data : undefined
+  const comboBooks = comboStatus?.available ? comboStatus.legs : undefined
+  const combinedFull = useMemo(
+    () => composeCombined(legs, enabled, mode, undefined, comboBooks),
+    [legs, enabled, mode, comboBooks]
+  )
   const dates = usePeriodWindow(combinedFull.equity, stack?.start_date ?? '', stack?.end_date ?? '')
   // ⚠ Refused on the `unmeasured` basis rather than silently windowing nothing. That basis means
   // the reader has switched legs to a combination this stack never replayed, so there is no book to
@@ -1230,15 +1303,15 @@ export function StackDetail() {
   // stack did nothing in 2023" instead of "nobody ever ran this".
   const periodBlocked =
     combinedFull.basis === 'unmeasured'
-      ? 'This combination of strategies was never replayed, so there is no book to cut a period out of. Switch every strategy back on, or leave just one.'
+      ? 'This mix of strategies is still being replayed, so there is no book to cut a period out of yet.'
       : null
 
   const combined = useMemo(
     () =>
       dates.active
-        ? composeCombined(legs, enabled, mode, { from: dates.from, to: dates.to })
+        ? composeCombined(legs, enabled, mode, { from: dates.from, to: dates.to }, comboBooks)
         : combinedFull,
-    [dates.active, dates.from, dates.to, legs, enabled, mode, combinedFull]
+    [dates.active, dates.from, dates.to, legs, enabled, mode, combinedFull, comboBooks]
   )
   const hasResults = combined.hasResults
 
@@ -1774,7 +1847,13 @@ export function StackDetail() {
               {combined.basis === 'unmeasured' ? (
                 <div className="flex flex-col lg:flex-row gap-2.5 items-stretch">
                   <div className="lg:w-[285px] shrink-0">{verdictCard}</div>
-                  <UnmeasuredCard onAllOn={() => setEnabled(new Set(completeIds.split(',')))} />
+                  <UnmeasuredCard
+                    status={comboStatus}
+                    onRetry={() =>
+                      stackId && comboIds && retryCombo.mutate({ stackId, ids: comboIds })
+                    }
+                    onAllOn={() => setEnabled(new Set(completeIds.split(',')))}
+                  />
                 </div>
               ) : (
                 <PerformancePanel
