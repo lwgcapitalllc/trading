@@ -30,3 +30,4 @@
 2026-09-30 03:12:26,540 [INFO] Equity re-anchored to the account after warm-up: 17,487.73 → 14,862.76
 2026-09-30 03:12:27,446 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
 2026-09-30 11:10:12,028 [INFO] Equity re-anchored to the account flat between trades: 14,862.76 → 14,862.23
+2026-09-30 11:36:59,252 [INFO] Equity re-anchored to the account flat between trades: 14,862.23 → 15,319.09
