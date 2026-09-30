@@ -3096,7 +3096,11 @@ class LiveRunner:
         self.ledger.bar(ps.dec, ps.sig, ps.seq)
         self._drain_records()
         try:
-            self.bridge.sync(ps.dec, ps.sig)
+            # The close in UTC, so the bridge can tell a fill from this bar from one that landed
+            # during the priority wait above (`bridge._fill_after_the_bar`).
+            self.bridge.sync(
+                ps.dec, ps.sig, bar_close_ms=ps.bar.timestamp_ms + self.feed.bar_seconds * 1000
+            )
         finally:
             # AFTER the strategy has stepped — the resting order is rebuilt inside
             # `execution.step`, so reading it any earlier reports last bar's price beside this

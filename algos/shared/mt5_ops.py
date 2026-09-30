@@ -847,6 +847,25 @@ class BotMT5:
         pos = mt5.positions_get(symbol=symbol or self.symbol)
         return [p for p in (pos or []) if p.magic == self.magic]
 
+    @staticmethod
+    def opened_utc_ms(position) -> Optional[int]:
+        """When a position opened, in true UTC epoch milliseconds — or `None` if it carries no time.
+
+        🔴 **The one line that turns a position's BROKER-clock time into UTC.** MT5 stamps
+        `time_msc` in the server's wall clock (UTC+2/+3), the same trap `get_candles` fixes for
+        bars, and a bar's close is UTC. Compared raw, every fill would read two or three hours late.
+
+        `None` is "cannot tell", never zero: a caller must fall back to what it did before it
+        could ask (the bridge halts), not treat an unstamped fill as one from 1970.
+        """
+        ms = int(getattr(position, "time_msc", 0) or 0)
+        if ms <= 0:
+            ms = int(getattr(position, "time", 0) or 0) * 1000
+        if ms <= 0:
+            return None
+        naive = _broker_clock.to_utc(_broker_clock.broker_naive_from_epoch(ms // 1000))
+        return int(naive.replace(tzinfo=timezone.utc).timestamp()) * 1000 + ms % 1000
+
     def open_positions_strict(self, symbol: str = None) -> Optional[list]:
         """This bot's open positions, or **`None` when the terminal could not be asked.**
 

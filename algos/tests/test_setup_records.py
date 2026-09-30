@@ -27,6 +27,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 _ALGOS = Path(__file__).resolve().parent.parent
 _REPO = _ALGOS.parent
@@ -163,13 +164,15 @@ def test_the_BAR_PATH_is_what_calls_it(monkeypatch):
     class _Bridge:
         state = None
 
-        def sync(self, dec, sig):
+        def sync(self, dec, sig, bar_close_ms=None):
             self.synced = True
 
     class _Primary:
         dec = sig = seq = None
+        bar = SimpleNamespace(timestamp_ms=1_790_766_540_000)  # a real step always carries it
 
     r.bridge = _Bridge()
+    r.feed = SimpleNamespace(bar_seconds=900)
     r._settle_primary(_Primary())
     assert [row["event"] for row in r.ledger.rows] == ["setup"]
     assert getattr(r.bridge, "synced", False), "the bar path did not run to the broker sync"

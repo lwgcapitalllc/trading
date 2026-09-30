@@ -125,12 +125,16 @@ def test_the_bar_that_carried_an_extreme_leg_refusal_reaches_its_broker_check(tm
     r.strategy = SimpleNamespace(execution=ex)
     r.ledger = Ledger(tmp_path, "extreme_leg_demo")
     synced = []
-    r.bridge = SimpleNamespace(sync=lambda dec, sig: synced.append(dec), state=None)
+    r.bridge = SimpleNamespace(sync=lambda dec, sig, **kw: synced.append(dec), state=None)
+    r.feed = SimpleNamespace(bar_seconds=300)  # production has one; the close is read off it
     r.setup_alerts = None
     r.log = SimpleNamespace(error=lambda *a, **k: None)
 
     dec = SimpleNamespace()
-    r._settle_primary(SimpleNamespace(dec=dec, sig=SimpleNamespace(), seq=SimpleNamespace()))
+    bar = SimpleNamespace(timestamp_ms=_T)  # a real step always carries its bar
+    r._settle_primary(
+        SimpleNamespace(bar=bar, dec=dec, sig=SimpleNamespace(), seq=SimpleNamespace())
+    )
 
     assert synced == [dec], "the bar never reached its broker check"
     assert ex.blocks == [], "the refusal was not drained, so the next bar writes it again"

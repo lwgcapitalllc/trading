@@ -62,8 +62,12 @@ class _Pend:
 
 
 class _Pos:
-    def __init__(self, ticket, type_, price_open, volume, sl, tp=0.0):
+    def __init__(self, ticket, type_, price_open, volume, sl, tp=0.0, opened_ms=None):
         self.ticket, self.type = ticket, type_
+        # When it opened, ALREADY in UTC — the conversion from the broker's clock is
+        # `mt5_ops.BotMT5.opened_utc_ms`, pinned in `test_mt5_ops_pending.py`. `None` is what the
+        # real one answers for a position with no time: "cannot tell".
+        self.opened_ms = opened_ms
         self.price_open, self.volume, self.sl = price_open, volume, sl
         # 🔴 **A REAL MT5 POSITION ALWAYS CARRIES THIS AND THIS FAKE DID NOT UNTIL 2026-09-08.**
         # The target reconciliation reads `p.tp` to decide whether the broker already holds the
@@ -160,6 +164,10 @@ class _FakeMt5Ops:
         if self.refuse_placement != "silent":
             self.last_refusal = dict(self.refuse_placement)
         return True
+
+    @staticmethod
+    def opened_utc_ms(position):
+        return position.opened_ms
 
     def get_open_positions(self, symbol=None):
         # Remember every ticket that has ever been open, so `_book()` can keep a filled order
@@ -4656,6 +4664,71 @@ def test_other_resting_orders_are_pulled_while_the_fill_waits(tmp_path):
     assert b.state is live_bridge.BridgeState.LIVE
     assert ("cancel", long_) in ops.actions
     assert ("cancel", short) not in ops.actions
+
+
+# ── the primary's OWN fill, landing during the priority wait (2026-09-30) ──────
+#
+# 🔴 The FFT demo bot halted on its own winning long. It is 4th on its account, so it checks each
+# bar up to a minute after the close; its limit filled 40s into the NEXT bar, inside that wait.
+
+_CLOSE = 1_790_766_600_000  # 11:10:00 UTC, the close of the bar being checked
+
+
+def _primary_long_filled(tmp_path, opened_ms):
+    ex = _FakeExecution(pend_long=_Pend(1, 4179.66, 53.0, 4165.71))
+    b, ops, ledger, notes = _bridge(ex, instance_dir=tmp_path)
+    b.sync(_Dec(), _Sig(), bar_close_ms=_CLOSE - 60_000)  # the limit rests at the broker
+    ticket = ops.orders[0].ticket
+    ops.positions = [_Pos(ticket, 0, 4179.66, 0.53, 4165.71, opened_ms=opened_ms)]
+    return b, ops, ex, ledger, ticket
+
+
+def test_a_fill_AFTER_the_bar_closed_is_booked_on_the_next_bar_not_halted(tmp_path):
+    """Today's sequence. RED before the fix: the first `sync` halted with "does not know about".
+    MUTATION: delete the `_fill_after_the_bar` call in `sync` -> red."""
+    b, ops, ex, ledger, ticket = _primary_long_filled(tmp_path, _CLOSE + 40_000)
+    b.sync(_Dec(), _Sig(), bar_close_ms=_CLOSE)  # strategy still flat: it has not seen that bar
+    assert b.state is live_bridge.BridgeState.LIVE, b.halt_reason
+
+    ex._pos_dir, ex._pend_long = 1, None  # the next bar: the strategy fills the same limit
+    b.sync(_Dec(stop=4165.71), _Sig(), bar_close_ms=_CLOSE + 60_000)
+    assert b.state is live_bridge.BridgeState.LIVE, b.halt_reason
+    assert b._pos_ticket == ticket
+    assert [kw for k, kw in ledger.rows if k == "opened"][0]["intent"] == "primary"
+
+
+def test_a_fill_INSIDE_the_bar_with_the_strategy_flat_still_halts_at_once(tmp_path):
+    """Both sides saw that bar and disagree — a real disagreement, never deferred.
+    MUTATION: drop the `opened < bar_close_ms` test -> red."""
+    b, _ops, _ex, _l, _t = _primary_long_filled(tmp_path, _CLOSE - 1)
+    b.sync(_Dec(), _Sig(), bar_close_ms=_CLOSE)
+    assert b.state is live_bridge.BridgeState.HALTED
+    assert "does not know about" in b.halt_reason
+
+
+def test_the_grace_is_ONE_bar_so_a_wrong_clock_cannot_hide_a_disagreement_for_ever(tmp_path):
+    """A fill read as "after" on every bar (a clock rule off by an hour) must still halt.
+    MUTATION: drop the `_late_fill` check -> red."""
+    b, _ops, _ex, _l, _t = _primary_long_filled(tmp_path, _CLOSE + 3_600_000)
+    b.sync(_Dec(), _Sig(), bar_close_ms=_CLOSE)
+    assert b.state is live_bridge.BridgeState.LIVE
+    b.sync(_Dec(), _Sig(), bar_close_ms=_CLOSE + 60_000)  # strategy still flat a bar later
+    assert b.state is live_bridge.BridgeState.HALTED
+    assert "does not know about" in b.halt_reason
+
+
+def test_a_fill_with_no_readable_time_halts_as_before(tmp_path):
+    """ "Cannot tell" must not read as "after" (rule 1). MUTATION: treat None as late -> red."""
+    b, _ops, _ex, _l, _t = _primary_long_filled(tmp_path, None)
+    b.sync(_Dec(), _Sig(), bar_close_ms=_CLOSE)
+    assert b.state is live_bridge.BridgeState.HALTED
+
+
+def test_a_late_position_that_is_not_our_order_still_halts(tmp_path):
+    b, ops, _ex, _l, ticket = _primary_long_filled(tmp_path, _CLOSE + 40_000)
+    ops.positions = [_Pos(ticket + 50, 0, 4179.66, 0.53, 4165.71, opened_ms=_CLOSE + 40_000)]
+    b.sync(_Dec(), _Sig(), bar_close_ms=_CLOSE)
+    assert b.state is live_bridge.BridgeState.HALTED
 
 
 # ── re-adopting a recordless position by REPLAY (2026-09-17) ───────────────────

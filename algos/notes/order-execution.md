@@ -791,6 +791,35 @@ hourly review reads the PROCESS list before calling a missing health record a fa
 stopped with a stale `running` status no longer raises it daily (`log_review.running_keys`).
 Extreme Leg has no second bar stream, so it never reaches the fill clock.
 
+## 🔴 The priority wait halted the FFT demo bot on its OWN winning fill (2026-09-30)
+
+**What happened.** `fft_1` (M1, 4th in priority on demo 700152905) rested a long limit at 4179.66
+(T395958618). A bot below others on its account checks each bar up to ~60s after the close
+(`runner._wait_for_priority`, since 2026-09-15). The limit filled ~40s into the 11:10 UTC bar,
+inside that wait; the 11:09 bar was reconciled at 11:10:40 with the broker already holding the
+trade and the strategy still flat, so `_agrees` halted: `MT5 holds a position the strategy does
+not know about`. The strategy filled the same limit on the 11:10 bar a minute later. The trade won
+at its broker target (+$456) while the bot sat halted 11:10 → 15:10. The 2026-09-17 fix above did
+not cover it: that guard runs on the fill clock only, and this was the ordinary bar check.
+⚠ **The live extreme-leg bot (priority 2, waits ~17s every 15 min) carried the same exposure.**
+
+**The fix (`bridge._fill_after_the_bar`).** `sync` is now handed the bar's close in UTC. If the
+broker's only position is this bridge's own resting primary limit (ticket and side, the shared
+`_our_primary_fill`), the strategy is flat, and the position OPENED at or after that close, the bar
+leaves it alone and the next bar books it. The open time is converted from the broker's clock in
+ONE place, `mt5_ops.BotMT5.opened_utc_ms` (the `broker_clock` rule `get_candles` uses).
+- A fill INSIDE the bar with the strategy flat still halts at once.
+- **One bar of grace per ticket.** A clock rule off by an hour would otherwise read every later bar
+  as "after" and defer a real disagreement for ever; capped, the worst case is a halt one bar late
+  with the broker stop in place.
+- An unreadable open time (`None`) or no close handed in defers nothing — the old halt.
+
+**TESTED 2026-09-30:** five tests in `tests/test_live_bridge.py`, two in
+`tests/test_mt5_ops_pending.py`; each part of the fix removed by mutation turns one red.
+⚠ **Not yet run against a real fill** — rule 9 until the first deferred fill appears in a bot's
+log as `PRIMARY LIMIT FILLED | … after this bar closed`. A re-entry (secondary) fill during the
+wait is NOT covered; no re-entry order has ever reached a broker.
+
 ## ✋ A trade the OWNER closes by hand is booked as his, and the bot keeps trading (2026-09-17)
 
 **Before:** closing the bot's trade in the terminal booked an ordinary exit and HALTED the bot on

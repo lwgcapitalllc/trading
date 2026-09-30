@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 _ROOT = Path(__file__).resolve().parents[2]
 for _p in (_ROOT, _ROOT / "algos" / "live", _ROOT / "algos" / "shared"):
@@ -250,7 +251,7 @@ def _runner_with(bridge_sync):
         # would be the more dangerous direction, so it holds the real enum.
         state = live_bridge.BridgeState.LIVE
 
-        def sync(self, dec, sig):
+        def sync(self, dec, sig, bar_close_ms=None):
             order.append("bridge")
             bridge_sync()
 
@@ -265,11 +266,13 @@ def _runner_with(bridge_sync):
     r.strategy = object()
     r.log = _Log()
     r._drain_records = lambda: None
+    r.feed = SimpleNamespace(bar_seconds=900)  # the close is bar open + this; production has one
     return r, order
 
 
 class _Ps:
     dec = sig = seq = None
+    bar = SimpleNamespace(timestamp_ms=1_790_766_540_000)  # a real step always carries its bar
 
 
 def test_the_alert_is_written_AFTER_the_broker_has_been_asked():

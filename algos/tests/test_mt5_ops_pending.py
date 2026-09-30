@@ -215,6 +215,22 @@ def test_get_candles_converts_broker_time_to_true_utc(mt5ops):
     assert df["time"].iloc[0] == pd.Timestamp("2026-01-15 10:00:00", tz="UTC")
 
 
+def test_a_positions_open_time_is_converted_to_true_utc_too(mt5ops):
+    """The 2026-09-30 FFT fill: 14:10:40.123 on the broker's clock in September (UTC+3) is
+    11:10:40.123 UTC. Read raw, every fill would look three hours after the bar it belongs to.
+    MUTATION: return `ms` unconverted -> red."""
+    mt5_ops, _ = mt5ops
+    broker = pd.Timestamp("2026-09-30 14:10:40").value // 10**6 + 123
+    utc = pd.Timestamp("2026-09-30 11:10:40", tz="UTC").value // 10**6 + 123
+    p = type("P", (), {"time_msc": broker, "time": broker // 1000})()
+    assert mt5_ops.BotMT5.opened_utc_ms(p) == utc
+
+
+def test_a_position_with_no_time_answers_cannot_tell_never_zero(mt5ops):
+    mt5_ops, _ = mt5ops
+    assert mt5_ops.BotMT5.opened_utc_ms(type("P", (), {"time_msc": 0, "time": 0})()) is None
+
+
 def test_get_candles_follows_the_dst_switch(mt5ops):
     """July is UTC+3, January UTC+2. A single constant offset would be wrong for half the year
     — and wrong in the direction that smears session boundaries rather than failing loudly."""

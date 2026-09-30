@@ -704,6 +704,8 @@ class OrderBridge:
         # The primary fill the fill clock is leaving for the 15-minute bar (logged once per
         # ticket). See `_primary_fill_awaiting_its_bar`.
         self._deferred_fill: Optional[int] = None
+        # The fill the BAR check has already given its one bar of grace. See `_fill_after_the_bar`.
+        self._late_fill: Optional[int] = None
         # A broker position found at startup with no record — checked against the warm-up replay
         # by `_adopt_by_replay`, never adopted before that.
         self._replay_candidate = None
@@ -1545,13 +1547,17 @@ class OrderBridge:
             return None
         return alerts.RestingOrder(float(held.price), float(held.sl), float(held.lots))
 
-    def sync(self, dec, sig) -> None:
+    def sync(self, dec, sig, bar_close_ms: Optional[int] = None) -> None:
         """Reconcile once, for the bar that just closed. Order matters: observe what the broker
-        did during the bar, THEN compare, THEN act."""
+        did during the bar, THEN compare, THEN act. `bar_close_ms` is that bar's close in UTC —
+        see `_fill_after_the_bar`, the one thing that reads it."""
         if self.state is BridgeState.HALTED:
             return
 
         positions = self._mt5.get_open_positions()
+        # 🔴 BEFORE anything observes the position — the 2026-09-30 FFT halt.
+        if self._fill_after_the_bar(positions, bar_close_ms):
+            return
         # BEFORE `_observe_close`, and the order is the whole design. A commanded exit leaves
         # the emulator flat with the broker still holding, which `_agrees` halts on — correctly,
         # because that is otherwise indistinguishable from a position vanishing for a reason
@@ -1768,14 +1774,11 @@ class OrderBridge:
         every OTHER resting order is pulled: one position slot, and a second fill would be a trade
         the strategy has no model of.
         """
-        if self._pos_ticket is not None or self._ex._pos_dir != 0 or len(positions) != 1:
+        p = self._our_primary_fill(positions)
+        if p is None:
             return False
-        p = positions[0]
         d = 1 if p.type == 0 else -1
         filled = primary_slot(d)
-        rest = self._rest.get(filled)
-        if rest is None or int(rest.ticket) != int(p.ticket):
-            return False
         if self._deferred_fill != int(p.ticket):
             self._deferred_fill = int(p.ticket)
             self._log.info(
@@ -1783,9 +1786,63 @@ class OrderBridge:
                 f"bar closes; the fill clock leaves it alone until then."
             )
             self._ledger.event("primary_fill_deferred", ticket=int(p.ticket), dir=d)
+        self._pull_other_rests(filled)
+        return True
+
+    def _our_primary_fill(self, positions):
+        """The broker's one position, if it is THIS bridge's own resting primary limit, filled
+        while the strategy is still flat. Matched on TICKET and SIDE — see the method above."""
+        if self._pos_ticket is not None or self._ex._pos_dir != 0 or len(positions) != 1:
+            return None
+        p = positions[0]
+        rest = self._rest.get(primary_slot(1 if p.type == 0 else -1))
+        if rest is None or int(rest.ticket) != int(p.ticket):
+            return None
+        return p
+
+    def _pull_other_rests(self, filled) -> None:
+        """One position slot: while a fill waits to be booked, no other order may rest."""
         for slot, held in list(self._rest.items()):
             if held is not None and slot != filled:
                 self._drop_rest(slot, held, "cancel (the primary filled)")
+
+    def _fill_after_the_bar(self, positions, bar_close_ms: Optional[int]) -> bool:
+        """Did our own primary limit fill AFTER the bar being reconciled closed? If so this bar
+        leaves it alone, and the next one books it.
+
+        🔴 **Built 2026-09-30, after the FFT demo bot halted on its own winning trade.** The bar
+        check does not run at the close: a bot below others on its account first waits up to a
+        minute for them (`runner._wait_for_priority`). Its limit filled 40 seconds into the NEXT
+        bar, inside that wait, so the broker held a trade from a bar the strategy had not seen yet
+        and `_agrees` halted — the very mid-bar comparison this module's docstring rules out.
+        The strategy booked the same fill one bar later. The live extreme-leg bot waits ~17s every
+        15 minutes and carries the same exposure.
+
+        ✅ **Decided on the FILL's own time, not on how late this check ran**, so a fill inside
+        the bar just closed still halts at once, exactly as before.
+
+        ⚠ **One bar of grace per ticket, never more.** If the broker clock rule were ever wrong by
+        an hour, every later bar would also read the fill as "after" and a real disagreement would
+        be deferred for ever. Capped, the worst case is a halt one bar late, with the broker stop
+        protecting the position throughout. An unreadable time (`None`) or no close handed in
+        defers nothing — both fall through to the halt, the behaviour before this existed.
+        """
+        if bar_close_ms is None:
+            return False
+        p = self._our_primary_fill(positions)
+        if p is None or self._late_fill == int(p.ticket):
+            return False
+        opened = self._mt5.opened_utc_ms(p) if hasattr(self._mt5, "opened_utc_ms") else None
+        if opened is None or opened < int(bar_close_ms):
+            return False
+        self._late_fill = int(p.ticket)
+        d = 1 if p.type == 0 else -1
+        self._log.info(
+            f"PRIMARY LIMIT FILLED | T{p.ticket} after this bar closed — the strategy books it on "
+            f"the next bar."
+        )
+        self._ledger.event("primary_fill_deferred", ticket=int(p.ticket), dir=d, late=True)
+        self._pull_other_rests(primary_slot(d))
         return True
 
     def _fast_decision(self) -> "_FastDec":
