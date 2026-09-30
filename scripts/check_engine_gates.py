@@ -79,7 +79,7 @@ STRATEGIES = REPO / "strategies" / "python"
 ROOTS = (ENGINES, STRATEGIES)
 
 # Raise this as golden exports are added, so losing one is a failure rather than a quieter run.
-MIN_GOLDEN_EXPORTS = 17
+MIN_GOLDEN_EXPORTS = 18
 
 
 def _gateable(root):

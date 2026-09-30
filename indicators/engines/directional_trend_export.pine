@@ -1,0 +1,495 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/ MPL-2.0
+//@version=6
+// ── PARITY-EXPORT BUILD (DIRECTIONAL TREND — the JARVIS BIAS + STR rows) ────────────────────────
+// Instrumented build used ONLY to validate the Python port (engines/directional_trend/) against
+// mpc_jarvis.pine. It reproduces the panel's five direction rows — BIAS W, BIAS D, STR 4H, STR 15m,
+// STR 1m — with every drawing removed and one plot() column per value.
+//
+// COPIED VERBATIM from mpc_jarvis.pine, and must not drift from it:
+//   * f_biasState                              (mpc ~1482-1504)
+//   * type MTFStruct / processMTF / f_mtfStruct (mpc ~1519-1909)
+//   * pbBuffer = 0.0                            (mpc line 66)
+//
+// DELIBERATE DEVIATION — NON-REPAINTING, mirrored in engines/directional_trend/engine.py (the same
+// call Aaron made for the liquidity engine, 2026-07-05). Jarvis reads the higher timeframes with a
+// plain request.security, which on a live bar shows the DEVELOPING candle's state. Here every
+// higher-timeframe value is the last CLOSED candle's — `[1]` with lookahead_on — which is what a bot
+// can actually trade on. The row matching the CHART timeframe comes from the chart engine on the
+// bar itself, exactly as Jarvis sources it.
+//
+// Columns (TradingView names the export column after the plot title):
+//   dt_w_state, dt_d_state : 1 Bullish, -1 Bearish, 0 Neutral
+//   dt_w_desc,  dt_d_desc  : 0 Inside range, 1 Close > prev high, 2 Close < prev low,
+//                            3 Swept high, 4 Swept low
+//   dt_h4_dir, dt_m15_dir, dt_m1_dir : 1 bullish, -1 bearish, 0 no break yet
+//   dt_h4_ev,  dt_m15_ev,  dt_m1_ev  : 0 none, 1 Shift, 2 Expansion, 3 Continuation
+//   dt_m1_* is na unless the chart IS 1-minute.
+//
+// HOW TO EXPORT: put this on VANTAGE:XAUUSD at 15m (validates W, D, 4H, 15m over a long window),
+// and again at 1m (validates the 1m row). Chart menu → Export chart data → CSV. Then:
+//   python3 engines/directional_trend/tools/compare_directional_trend.py <csv>
+indicator("Directional Trend EXPORT", overlay = false)
+
+int   majorLength = 15
+float pbBuffer    = 0.0
+
+int _chartSec = timeframe.in_seconds()
+if barstate.isfirst and not (_chartSec == 60 or _chartSec == 180 or _chartSec == 300 or _chartSec == 900)
+    runtime.error("Directional Trend EXPORT runs on a 1, 3, 5 or 15 minute chart only")
+
+//============================================================
+//  BIAS — f_biasState, verbatim from mpc_jarvis.pine
+//============================================================
+f_biasState(float highAction, float lowAction, float closeAction, float highContext, float lowContext, string tfPrefix) =>
+    string state = "Neutral"
+    string desc  = "Inside " + tfPrefix + " Range"
+
+    bool bullishClosure = closeAction > highContext
+    bool bearishClosure = closeAction < lowContext
+    bool bearishSweep   = highAction > highContext and closeAction <= highContext
+    bool bullishSweep   = lowAction < lowContext and closeAction >= lowContext
+
+    if bullishClosure
+        state := "Bullish"
+        desc  := "Close > Prev " + tfPrefix + " High"
+    else if bearishClosure
+        state := "Bearish"
+        desc  := "Close < Prev " + tfPrefix + " Low"
+    else if bearishSweep
+        state := "Bearish"
+        desc  := "Swept " + tfPrefix + " High"
+    else if bullishSweep
+        state := "Bullish"
+        desc  := "Swept " + tfPrefix + " Low"
+
+    [state, desc]
+
+// Non-repainting twin of Jarvis's f_htfBias: [1] and [2] of the HTF series, lookahead_on.
+f_htfBiasClosed(string htf, string tfPrefix) =>
+    [high1, low1, close1, high2, low2] = request.security(syminfo.tickerid, htf, [high[1], low[1], close[1], high[2], low[2]], lookahead = barmerge.lookahead_on)
+    f_biasState(high1, low1, close1, high2, low2, tfPrefix)
+
+f_descCode(string desc) =>
+    str.startswith(desc, "Close >") ? 1 : str.startswith(desc, "Close <") ? 2 : str.startswith(desc, "Swept") and str.endswith(desc, "High") ? 3 : str.startswith(desc, "Swept") and str.endswith(desc, "Low") ? 4 : 0
+
+f_stateCode(string state) =>
+    state == "Bullish" ? 1 : state == "Bearish" ? -1 : 0
+
+[dEstState, dEstDesc] = f_htfBiasClosed("D", "D")
+[wEstState, wEstDesc] = f_htfBiasClosed("W", "W")
+
+//============================================================
+//  STR — MTFStruct / processMTF / f_mtfStruct, verbatim from mpc_jarvis.pine
+//============================================================
+// A DRAWING-FREE port of the main SMCStructure.process() state machine below, so
+// the 1m/15m/4H rows use the EXACT SAME pullback engine that draws the SOS/BOS on
+// your chart — not an approximation. Every line/label call is stripped; the state
+// logic is identical. It runs inside request.security so each timeframe is tracked
+// on its own bars, independent of the chart timeframe. The current (forming) bar of
+// a higher timeframe can still update until it closes — standard request.security.
+   // dir: 1 = bullish (last break up), -1 = bearish, 0 = not yet established.
+   // ev : the latest structural event, encoding the video's sequence —
+        // 1 = SHIFT       (a break that REVERSED direction — an SOS/CHoCH),
+        // 2 = EXPANSION   (the FIRST same-direction break after a shift),
+        // 3 = CONTINUATION (any further same-direction break after that).
+type MTFStruct
+    int    length
+    float  ash             = na
+    int    ash_loc         = na
+    string ash_type        = ""
+    float  asl             = na
+    int    asl_loc         = na
+    string asl_type        = ""
+    float  last_conf_high     = na
+    int    last_conf_high_loc = na
+    float  last_conf_low      = na
+    int    last_conf_low_loc  = na
+    int    dir            = 0
+    bool   choch_lock     = false
+    int    pb_mode        = 0
+    int    pb_count       = 0
+    float  pb_level       = na
+    float  pb_extreme     = na
+    int    pb_extreme_loc = na
+    bool   pb_started     = false
+    float  pb_last_qualify_close = na
+    float  pb_last_qualify_high  = na
+    float  pb_extreme_close      = na
+    float  prev_close     = na
+    float  prev_high      = na
+    float  prev_low       = na
+    bool   seeded         = false
+    bool   bull_bos       = false
+    float  bull_bos_high  = na
+    int    bull_bos_h_loc = na
+    float  bull_bos_low   = na
+    int    bull_bos_l_loc = na
+    bool   bear_bos       = false
+    float  bear_bos_high  = na
+    int    bear_bos_h_loc = na
+    float  bear_bos_low   = na
+    int    bear_bos_l_loc = na
+    bool   new_swing_high = false
+    bool   new_swing_low  = false
+    bool   bull_sos       = false
+    bool   bear_sos       = false
+
+method mtfCreateAsh(MTFStruct st, float val, int loc) =>
+    st.ash      := val
+    st.ash_loc  := loc
+    st.ash_type := ""
+
+method mtfCreateAsl(MTFStruct st, float val, int loc) =>
+    st.asl      := val
+    st.asl_loc  := loc
+    st.asl_type := ""
+
+// Byte-for-byte the state logic of SMCStructure.process(); drawing removed.
+method processMTF(MTFStruct st, float ph_val, float pl_val) =>
+    st.bull_bos := false
+    st.bear_bos := false
+    st.new_swing_high := false
+    st.new_swing_low  := false
+    st.bull_sos := false
+    st.bear_sos := false
+
+    bool is_inside = false
+    if not na(st.prev_high) and not na(st.prev_low)
+        is_inside := high < st.prev_high and low > st.prev_low
+
+    if st.choch_lock
+        if st.dir == 1 and not na(pl_val)
+            st.choch_lock := false
+        else if st.dir == -1 and not na(ph_val)
+            st.choch_lock := false
+
+    if st.pb_mode == 1
+        if not st.pb_started
+            st.pb_started            := true
+            st.pb_extreme            := high
+            st.pb_extreme_loc        := bar_index
+            st.pb_extreme_close      := na
+            st.pb_count              := 0
+            st.pb_last_qualify_close := na
+            st.pb_last_qualify_high  := na
+        else
+            bool extreme_updated_1 = false
+            if na(st.pb_extreme) or high > st.pb_extreme
+                st.pb_extreme            := high
+                st.pb_extreme_loc        := bar_index
+                st.pb_extreme_close      := na
+                st.pb_count              := 0
+                st.pb_last_qualify_close := na
+                st.pb_last_qualify_high  := na
+                extreme_updated_1        := true
+            bool extreme_is_bearish_1 = extreme_updated_1 and close < open
+            bool is_candle1_1 = na(st.pb_last_qualify_close) and not extreme_updated_1
+            if (not is_inside or is_candle1_1) and (not extreme_updated_1 or extreme_is_bearish_1)
+                float threshold = na(st.pb_last_qualify_high) ? st.pb_extreme : st.pb_last_qualify_high
+                if close < threshold - pbBuffer
+                    st.pb_count              += 1
+                    st.pb_last_qualify_close := close
+                    st.pb_last_qualify_high  := low
+            if st.pb_count >= 3 and not na(st.pb_extreme) and not na(st.pb_extreme_loc)
+                st.ash      := st.pb_extreme
+                st.ash_loc  := st.pb_extreme_loc
+                st.ash_type := "LOCKED"
+                st.new_swing_high := true
+                st.pb_mode    := 0
+                st.pb_count   := 0
+                st.choch_lock := false
+
+    else if st.pb_mode == -1
+        if not st.pb_started
+            st.pb_started            := true
+            st.pb_extreme            := low
+            st.pb_extreme_loc        := bar_index
+            st.pb_extreme_close      := na
+            st.pb_count              := 0
+            st.pb_last_qualify_close := na
+            st.pb_last_qualify_high  := na
+        else
+            bool extreme_updated_m1 = false
+            if na(st.pb_extreme) or low < st.pb_extreme
+                st.pb_extreme            := low
+                st.pb_extreme_loc        := bar_index
+                st.pb_extreme_close      := na
+                st.pb_count              := 0
+                st.pb_last_qualify_close := na
+                st.pb_last_qualify_high  := na
+                extreme_updated_m1       := true
+            bool extreme_is_bullish_m1 = extreme_updated_m1 and close > open
+            bool is_candle1_m1 = na(st.pb_last_qualify_close) and not extreme_updated_m1
+            if (not is_inside or is_candle1_m1) and (not extreme_updated_m1 or extreme_is_bullish_m1)
+                float threshold = na(st.pb_last_qualify_high) ? st.pb_extreme : st.pb_last_qualify_high
+                if close > threshold + pbBuffer
+                    st.pb_count              += 1
+                    st.pb_last_qualify_close := close
+                    st.pb_last_qualify_high  := high
+            if st.pb_count >= 3 and not na(st.pb_extreme) and not na(st.pb_extreme_loc)
+                st.asl      := st.pb_extreme
+                st.asl_loc  := st.pb_extreme_loc
+                st.asl_type := "LOCKED"
+                st.new_swing_low := true
+                st.pb_mode    := 0
+                st.pb_count   := 0
+                st.choch_lock := false
+
+    st.prev_close := close
+    st.prev_high  := high
+    st.prev_low   := low
+
+    if na(st.ash) and na(st.asl) and not st.seeded
+        if not na(ph_val)
+            st.mtfCreateAsh(ph_val, bar_index[st.length])
+            st.dir := -1
+        else if not na(pl_val)
+            st.mtfCreateAsl(pl_val, bar_index[st.length])
+            st.dir := 1
+
+    if not st.seeded
+        if not na(st.ash) and na(st.asl)
+            float seed_low = low
+            int   seed_loc = bar_index
+            int   lb       = math.min(bar_index, 500)
+            for i = 0 to lb
+                if low[i] < seed_low
+                    seed_low := low[i]
+                    seed_loc := bar_index - i
+            if seed_low < st.ash
+                st.asl      := seed_low
+                st.asl_loc  := seed_loc
+                st.asl_type := ""
+                st.seeded := true
+        else if not na(st.asl) and na(st.ash)
+            float seed_high = high
+            int   seed_loc  = bar_index
+            int   lb        = math.min(bar_index, 500)
+            for i = 0 to lb
+                if high[i] > seed_high
+                    seed_high := high[i]
+                    seed_loc  := bar_index - i
+            if seed_high > st.asl
+                st.ash      := seed_high
+                st.ash_loc  := seed_loc
+                st.ash_type := ""
+                st.seeded := true
+        else if not na(st.ash) and not na(st.asl)
+            st.seeded := true
+
+    if na(st.last_conf_high) and na(st.last_conf_low)
+        if not na(ph_val) and not na(st.ash) and st.ash_type == "" and st.pb_mode == 0
+            if ph_val > st.ash
+                st.mtfCreateAsh(ph_val, bar_index[st.length])
+        if not na(pl_val) and not na(st.asl) and st.asl_type == "" and st.pb_mode == 0
+            if pl_val < st.asl
+                st.mtfCreateAsl(pl_val, bar_index[st.length])
+
+    bool ash_broken = not na(st.ash) and close > st.ash
+    bool asl_broken = not na(st.asl) and close < st.asl
+
+    if ash_broken
+        st.bull_bos := true
+        st.bull_bos_high  := st.ash
+        st.bull_bos_h_loc := st.ash_loc
+
+        bool was_in_bear_pb = st.pb_mode == -1 and not na(st.pb_extreme) and not na(st.pb_extreme_loc)
+        st.pb_mode  := 0
+        st.pb_count := 0
+
+        bool is_choch = st.dir == -1
+        if is_choch
+            st.bull_sos := true
+            st.choch_lock := true
+
+        st.last_conf_high     := st.ash
+        st.last_conf_high_loc := st.ash_loc
+        st.ash                := na
+        st.dir                := 1
+
+        if was_in_bear_pb
+            st.bull_bos_low   := st.pb_extreme
+            st.bull_bos_l_loc := st.pb_extreme_loc
+            st.asl      := st.pb_extreme
+            st.asl_loc  := st.pb_extreme_loc
+            st.asl_type := "LOCKED"
+            if not is_choch
+                st.last_conf_low     := st.pb_extreme
+                st.last_conf_low_loc := st.pb_extreme_loc
+            st.pb_extreme            := high
+            st.pb_extreme_loc        := bar_index
+            st.pb_extreme_close      := na
+            st.pb_last_qualify_close := na
+            st.pb_last_qualify_high  := na
+            st.pb_started            := true
+            st.pb_count              := 0
+            st.pb_level              := na
+            st.pb_mode               := 1
+            st.pb_started            := true
+        else
+            if not na(st.asl)
+                bool already_conf_low = (st.asl == st.last_conf_low and st.asl_loc == st.last_conf_low_loc)
+                if not already_conf_low
+                    st.last_conf_low     := st.asl
+                    st.last_conf_low_loc := st.asl_loc
+                st.asl      := na
+
+            float lowest_val = low
+            int   lowest_loc = bar_index
+            int   bars_back  = na(st.last_conf_high_loc) ? bar_index : bar_index - st.last_conf_high_loc
+            if bars_back > 0
+                int max_lb = math.min(math.min(bars_back, 1490), bar_index)
+                for i = 0 to max_lb
+                    if low[i] < lowest_val
+                        lowest_val := low[i]
+                        lowest_loc := bar_index - i
+
+            // 🔴 THE REFUSED-WICK SNAP *IS* REPEATED HERE, AND THE NOTE THAT USED TO SIT HERE
+            // WAS RIGHT ABOUT THE OLD GUARD AND WRONG ABOUT THIS ONE. The 2026-08-20 tie guard
+            // only moved a *_loc, and no *_loc in this method has a consumer — so omitting it
+            // really was a no-op. This snap moves the VALUE, and `st.asl := lowest_val` two lines
+            // down is the level the next break is tested against (`asl_broken = close < st.asl`).
+            // Omit it here and the MTF rows, f_rev15's leg and the chart engine would answer
+            // differently about the same bar. See the low side of process() for the mechanism.
+            if not na(st.last_conf_low_loc) and (lowest_val == st.last_conf_low or (lowest_val < st.last_conf_low and lowest_loc <= st.last_conf_low_loc))
+                lowest_val := st.last_conf_low
+                lowest_loc := st.last_conf_low_loc
+
+            st.bull_bos_low   := lowest_val
+            st.bull_bos_l_loc := lowest_loc
+
+            st.asl      := lowest_val
+            st.asl_loc  := lowest_loc
+            st.asl_type := ""
+
+            st.pb_mode               := 1
+            st.pb_count              := 0
+            st.pb_level              := na
+            st.pb_extreme            := high
+            st.pb_extreme_loc        := bar_index
+            st.pb_extreme_close      := na
+            st.pb_last_qualify_close := na
+            st.pb_last_qualify_high  := na
+            st.pb_started            := true
+
+    else if asl_broken
+        st.bear_bos := true
+        st.bear_bos_low   := st.asl
+        st.bear_bos_l_loc := st.asl_loc
+
+        bool was_in_bull_pb = st.pb_mode == 1 and not na(st.pb_extreme) and not na(st.pb_extreme_loc)
+        st.pb_mode  := 0
+        st.pb_count := 0
+
+        bool is_choch = st.dir == 1
+        if is_choch
+            st.bear_sos := true
+            st.choch_lock := true
+
+        st.last_conf_low     := st.asl
+        st.last_conf_low_loc := st.asl_loc
+        st.asl               := na
+        st.dir               := -1
+
+        if was_in_bull_pb
+            st.bear_bos_high  := st.pb_extreme
+            st.bear_bos_h_loc := st.pb_extreme_loc
+            st.ash      := st.pb_extreme
+            st.ash_loc  := st.pb_extreme_loc
+            st.ash_type := "LOCKED"
+            if not is_choch
+                st.last_conf_high     := st.pb_extreme
+                st.last_conf_high_loc := st.pb_extreme_loc
+            st.pb_extreme            := low
+            st.pb_extreme_loc        := bar_index
+            st.pb_extreme_close      := na
+            st.pb_last_qualify_close := na
+            st.pb_last_qualify_high  := na
+            st.pb_started            := true
+            st.pb_count              := 0
+            st.pb_level              := na
+            st.pb_mode               := -1
+            st.pb_started            := true
+        else
+            float highest_val = high
+            int   highest_loc = bar_index
+            int   bars_back   = na(st.last_conf_low_loc) ? bar_index : bar_index - st.last_conf_low_loc
+            if bars_back > 0
+                int max_lb = math.min(math.min(bars_back, 1490), bar_index)
+                for i = 0 to max_lb
+                    if high[i] > highest_val
+                        highest_val := high[i]
+                        highest_loc := bar_index - i
+
+            if not na(st.ash)
+                bool already_conf_high = (st.ash == st.last_conf_high and st.ash_loc == st.last_conf_high_loc)
+                if not already_conf_high
+                    st.last_conf_high     := st.ash
+                    st.last_conf_high_loc := st.ash_loc
+                st.ash      := na
+            else
+                if highest_val != st.last_conf_high
+                    st.last_conf_high     := highest_val
+                    st.last_conf_high_loc := highest_loc
+
+            // 🔴 Mirror of the low side, and repeated here for the same reason: this snap moves
+            // the VALUE, and `st.ash := highest_val` below is what the next break is tested
+            // against. See the note on the low side of processMTF.
+            if not na(st.last_conf_high_loc) and (highest_val == st.last_conf_high or (highest_val > st.last_conf_high and highest_loc <= st.last_conf_high_loc))
+                highest_val := st.last_conf_high
+                highest_loc := st.last_conf_high_loc
+
+            st.bear_bos_high  := highest_val
+            st.bear_bos_h_loc := highest_loc
+
+            st.ash      := highest_val
+            st.ash_loc  := highest_loc
+            st.ash_type := ""
+
+            st.pb_mode               := -1
+            st.pb_count              := 0
+            st.pb_level              := na
+            st.pb_extreme            := low
+            st.pb_extreme_loc        := bar_index
+            st.pb_extreme_close      := na
+            st.pb_last_qualify_close := na
+            st.pb_last_qualify_high  := na
+            st.pb_started            := true
+
+// Runs the real engine on one timeframe and returns [dir, event].
+// event: 1 shift (SOS), 2 expansion (first BOS after a shift), 3 continuation.
+f_mtfStruct(int len) =>
+    var mtf = MTFStruct.new(length = len)
+    var int sEv = 0
+    var int breaksSinceShift = 0
+    float ph = ta.pivothigh(high, len, len)
+    float pl = ta.pivotlow(low,  len, len)
+    mtf.processMTF(ph, pl)
+    if mtf.bull_sos or mtf.bear_sos
+        sEv := 1                                   // shift — the break reversed direction
+        breaksSinceShift := 0
+    else if mtf.bull_bos or mtf.bear_bos
+        breaksSinceShift += 1
+        sEv := breaksSinceShift == 1 ? 2 : 3       // expansion, then continuation
+    [mtf.dir, sEv]
+
+// Non-repainting HTF read: the last CLOSED candle's state.
+f_mtfStructClosed(int len) =>
+    [d, e] = f_mtfStruct(len)
+    [d[1], e[1]]
+
+[chartDir, chartEv] = f_mtfStruct(majorLength)
+[m15Dir,  m15Ev]  = request.security(syminfo.tickerid, "15",  f_mtfStructClosed(majorLength), lookahead = barmerge.lookahead_on)
+[m240Dir, m240Ev] = request.security(syminfo.tickerid, "240", f_mtfStructClosed(majorLength), lookahead = barmerge.lookahead_on)
+
+int _d15 = _chartSec == 900 ? chartDir : m15Dir
+int _e15 = _chartSec == 900 ? chartEv  : m15Ev
+int _d1  = _chartSec == 60  ? chartDir : na
+int _e1  = _chartSec == 60  ? chartEv  : na
+
+color c0 = color.new(color.gray, 100)
+plot(f_stateCode(wEstState), "dt_w_state", c0), plot(f_descCode(wEstDesc), "dt_w_desc", c0)
+plot(f_stateCode(dEstState), "dt_d_state", c0), plot(f_descCode(dEstDesc), "dt_d_desc", c0)
+plot(m240Dir, "dt_h4_dir", c0),  plot(m240Ev, "dt_h4_ev", c0)
+plot(_d15, "dt_m15_dir", c0),    plot(_e15, "dt_m15_ev", c0)
+plot(_d1, "dt_m1_dir", c0),      plot(_e1, "dt_m1_ev", c0)

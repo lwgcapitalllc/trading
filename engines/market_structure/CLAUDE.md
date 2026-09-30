@@ -105,6 +105,7 @@ already-known level fires. Internal structure has no pivot lag at all. See
 | Live/algos bots | `algos/shared/structure_engine.py` (thin shim over `market_structure.StructureEngine`) | Wired |
 | `engines/fibonacci/` | reads the public `ExternalEvents` + `InternalEvents` (i_confirmed / ifib_seed) via its own `StructureSnapshot` | Wired |
 | `engines/order_blocks/` | reads the public `ExternalEvents` + `InternalEvents` via its own `StructureSnapshot` | Wired |
+| `engines/directional_trend/` | one `StructureEngine` per timeframe (4H / 15m / 1m) for the JARVIS STR rows — reads `dir` + the external SOS/BOS flags only. Gated 2026-09-30 | Built, no bot reads it yet |
 | Command-center backtest lab | `command-center/backend/services/` | Not yet wired — future consumer, not touched by this port |
 
 **`InternalEvents` OB-creation gate (`int_bull_break` / `int_bear_break` / `int_break_origin_loc`).**

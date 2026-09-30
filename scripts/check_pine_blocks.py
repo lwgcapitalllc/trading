@@ -139,6 +139,25 @@ def _fvg_mitigation(text: str):
     return m.group(1) if m else None
 
 
+def _code_block(text: str, start: str, end: str):
+    """A whole block from `start` to `end`, comments and spacing stripped, for a verbatim-copy check.
+
+    Used where the port copies a block WHOLE rather than one setting from it. Comments are dropped so
+    a harness may annotate its copy; any code difference is drift.
+    """
+    m = re.search(start, text, re.M)
+    if not m:
+        return None
+    e = re.search(end, text[m.start() :], re.M)
+    if not e:
+        return None
+    lines = (
+        re.sub(r"\s*//.*$", "", ln).strip()
+        for ln in text[m.start() : m.start() + e.end()].splitlines()
+    )
+    return "\n".join(re.sub(r"\s+", " ", ln) for ln in lines if ln)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Specs
 # ─────────────────────────────────────────────────────────────────────────────
@@ -188,6 +207,18 @@ SPECS = [
         "extract": lambda t: _numeric_setting(t, "eqPivotLen"),
         "min_files": 8,
         "why": "decides how sharp a turn counts as a pivot",
+    },
+    {
+        "name": "weekly/daily bias rule (f_biasState, whole block)",
+        "extract": lambda t: _code_block(t, r"^f_biasState\(", r"^\s+\[state, desc\]"),
+        "min_files": 9,
+        "why": "the BIAS W / D rows - engines/directional_trend ports it and bots will gate on it",
+    },
+    {
+        "name": "multi-timeframe structure (MTFStruct .. f_mtfStruct, whole block)",
+        "extract": lambda t: _code_block(t, r"^type MTFStruct", r"^\s+\[mtf\.dir, sEv\]"),
+        "min_files": 2,
+        "why": "the STR 4H / 15m / 1m rows - engines/directional_trend ports it and bots will gate on it",
     },
 ]
 
@@ -261,18 +292,22 @@ def main(argv=None) -> int:
             scanner_broken += 1
             continue
 
+        def _short(v):  # a whole-block value is hundreds of lines - name it, do not print it
+            r = repr(v)
+            return r if len(r) <= 60 else f"<{r.count(chr(92) + 'n') + 1}-line block>"
+
         if drift:
             failures += len(drift)
             print(f"\n🔴 DRIFT: {spec['name']}")
-            print(f"   the indicator says: {expected}   ({spec['why']})")
+            print(f"   the indicator says: {_short(expected)}   ({spec['why']})")
             for f, val in sorted(drift):
-                print(f"     {val!r:>10}  {f.relative_to(REPO)}")
+                print(f"     {_short(val):>10}  {f.relative_to(REPO)}")
         elif args.verbose:
-            print(f"\n✓ {spec['name']}: {len(found) + 1} copies agree on {expected!r}")
+            print(f"\n✓ {spec['name']}: {len(found) + 1} copies agree on {_short(expected)}")
             for f, val in sorted(found):
-                print(f"     {val!r:>10}  {f.relative_to(REPO)}")
+                print(f"     {_short(val):>10}  {f.relative_to(REPO)}")
         else:
-            print(f"✓ {spec['name']}: {len(found) + 1} copies agree on {expected!r}")
+            print(f"✓ {spec['name']}: {len(found) + 1} copies agree on {_short(expected)}")
 
     if scanner_broken:
         print(

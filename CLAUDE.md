@@ -52,7 +52,7 @@ welcomed."*
 
 **Purpose:** Standing instructions for Claude Code across all subsystems.
 **Scope:** This covers repo-wide rules, VPS workflow, and branch conventions. It does NOT cover subsystem internals — each subsystem has its own CLAUDE.md.
-**Status:** Active — four apps, **13** canonical engines (count them with `ls engines`, never from memory — this line said "ten" for weeks), one LIVE bot, and tooling in various stages of production.
+**Status:** Active — four apps, **14** canonical engines (count them with `ls engines`, never from memory — this line said "ten" for weeks), one LIVE bot, and tooling in various stages of production.
 **Last reviewed:** 2026-08-12 — see `HISTORY.md` for the working diary (what each pass found, measured and cost).
 
 ---
@@ -191,6 +191,7 @@ each engine's own CLAUDE.md and is not restated here.
 | `candlesticks/` | 15 classic patterns — a CONFLUENCE source to AND into a setup, never a filter on its own |
 | `regime/` | 5 regime labels; each bot owns its own `REGIME_RISK_TABLE` |
 | `news/` | Macro-release blackouts; inert before its cache's earliest date, by decision |
+| `directional_trend/` | JARVIS BIAS W/D + STR 4H/15m/1m rows; reads `market_structure/` + `liquidity/` period keys |
 
 ### The rest
 

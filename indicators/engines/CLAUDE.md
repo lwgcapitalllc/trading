@@ -125,6 +125,15 @@ faithfully instead of pretending to cover a branch it cannot reach.
 ⚠ **57 of TradingView's 64 plot slots.** `fib_export.pine` is at 63 of 64, which is why the band
 could not simply be added there — that direction is closed, not merely unattractive.
 
+## `directional_trend_export.pine` (2026-09-30) — the JARVIS direction rows
+
+The parity harness for `engines/directional_trend/`. It copies Jarvis's bias rule and its
+multi-timeframe structure block **verbatim**, and `scripts/check_pine_blocks.py` holds both copies
+to Jarvis — so editing either block in `mpc_jarvis.pine` turns that check red until this file moves
+too. ⚠ **It deliberately differs from Jarvis in ONE way:** higher timeframes are read from the last
+CLOSED candle (`[1]` + lookahead_on), because Jarvis's live panel shows the developing candle and a
+bot must not trade that. Runs on a 1, 3, 5 or 15 minute chart only.
+
 ## Key paths & entry points
 
 - `indicators/engines/smc_engine_v2.pine` — the current pullback-only rewrite (v6 Pine Script), overlay indicator named "SMC Engine"

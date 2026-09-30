@@ -30,6 +30,7 @@ if str(_ENGINES) not in sys.path:
     sys.path.insert(0, str(_ENGINES))
 
 from candlesticks.engine import CandlestickEngine  # noqa: E402
+from directional_trend import DirectionalTrend  # noqa: E402
 from equal_highs_lows import EqualHighsLowsEngine  # noqa: E402
 from fair_value_gaps import FairValueGapEngine  # noqa: E402
 from fair_value_gaps import engine as fvg_module  # noqa: E402
@@ -59,6 +60,7 @@ PAIRS = [
     (RsiDivergenceEngine, "overbought", "divOB", MPC, None),
     (RsiDivergenceEngine, "valid_bars", "divValidBars", RSI_EXPORT, None),
     (StructureEngine, "major_length", "majorLength", MPC, None),
+    (DirectionalTrend, "major_length", "majorLength", MPC, None),
     (OrderBlockEngine, "max_active", "maxActiveOB", MPC, None),
     (OrderBlockEngine, "body_only", "obBodyOnly", MPC, None),
     (OrderBlockEngine, "max_age", "OB_MAX_AGE", MPC, None),

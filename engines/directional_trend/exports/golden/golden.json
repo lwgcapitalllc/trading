@@ -1,0 +1,14 @@
+{
+  "csv": "VANTAGE_XAUUSD_M15_21492bars.csv",
+  "warmup": 3209,
+  "broker": "Vantage",
+  "symbol": "XAUUSD",
+  "timeframe": "M15",
+  "bars": 21492,
+  "first_bar_epoch": 1762124400,
+  "harness": "indicators/engines/directional_trend_export.pine",
+  "taken": "2026-09-30",
+  "_why_provenance": "Broker, symbol and timeframe are recorded because a cross-cutting run on 2026-09-01 recorded NEITHER and reproducing it cost three replays.",
+  "_why_warmup": "MEASURED: every mismatch before bar 3209 (2025-12-22) is on the 4H row, which TradingView's 4H series enters warm (history before the chart's first bar) while Python starts cold and discards its first partial 4H candle. The weekly, daily and 15m rows match from their first warm bar. From bar 3209 to the end all eight fields match on all 18,283 bars.",
+  "_why_no_1m_golden": "The 1m row is the same direct-feed path the 15m row takes on this file. Checked by hand on a 1m export (2026-09-06 to 2026-09-30): 24,425 of 24,425 bars matched from bar 0. That file is too short for its 4H row to warm up, so it is not a clean golden."
+}

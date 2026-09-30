@@ -148,6 +148,7 @@ Feature toggles (`enable_daily`/`enable_weekly`/…/`enable_sessions`), `hide_mi
 
 ## Relationship to the other engines
 
+- **Consumed by `engines/directional_trend/`** (gated 2026-09-30) — it imports the day / week / 4H period keys and the rollover default, so moving a boundary here moves the JARVIS bias rows too.
 - **Consumes `engines/sessions/`** for the Asia/London/NY session H/L. It composes and drives its own
   `SessionEngine` (or one you inject), and turns each `closed` `SessionRange` into a pair of session
   levels. Session H/L is *computed* by the sessions engine; the **sweep/mitigation tracking is added

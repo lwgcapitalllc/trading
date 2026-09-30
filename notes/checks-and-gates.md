@@ -36,6 +36,8 @@ Watched RED by mutation, and the mutant exits 1 rather than passing quietly.
 ⚠ **It cannot tell you the INDICATOR is right** — only that the copies match it. That is rule 14
 arriving in a new place.
 
+⚠ **Nine as of 2026-09-29** — two WHOLE-BLOCK specs added for `engines/directional_trend/`: Jarvis's bias rule (9 copies) and its multi-timeframe structure block (2 copies), compared with comments stripped. Watched red by editing one line of the export's copy.
+
 ⚠ **Seven rules as of 2026-09-10** — the five equal-level ones plus the gap cap's counting basis and
 the gap mitigation rule. The cap spec went red the moment it existed: four strategy files were
 counting EVERY gap against the cap while their drop scan skipped the protected ones, which makes the
