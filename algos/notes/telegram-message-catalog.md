@@ -617,23 +617,44 @@ telling somebody about it.
   risk dollars it wanted, and WHICH of the three rules refused it: under half its own size, under
   the account's entry floor, or essentially nothing free. The reason is the "XYZ" half of the ask;
   "refused" alone is what Aaron already had.
-- *TRADE SHRUNK — SHARED ACCOUNT* — the trade went on at a reduced size, with the percentage of
-  its intended size it took. This is the quieter half: the trade appears as normal, and only its
-  dollars are wrong against every other trade on the account. ⚠ It can only happen to a
-  MARKET-entry bot; a resting-order bot is refused instead, because its order is already at the
-  broker.
+- *TRADE SHRUNK — SHARED ACCOUNT* (market-entry bot) / *ORDER SHRUNK — SHARED ACCOUNT*
+  (resting-order bot) — the entry went on at a reduced size, with the risk it wanted, the room that
+  was free and the percentage of its size it took. The ask is also stated as a percentage of the
+  balance, and when that differs from the bot's usual share the message says so (FFT sizes sweep
+  setups at 1.5x, so a "5% bot" asks 7.5%). No percentage is printed when the balance cannot be
+  read. 🔴 **Rewritten 2026-09-30:** it said "the trade is on" for every bot, and on FFT
+  (2026-09-29) it was a limit order that never filled, was put back to full size an hour later
+  without a word, and was then cancelled. Resting bots shrink at placement too — the old line here
+  saying only a market bot could be shrunk was wrong.
+
+```
+⚠️ ORDER SHRUNK — SHARED ACCOUNT · FFT · demo
+The account's shared risk limit was nearly used up by other bots, so a bullish order went in smaller than planned. It wanted to risk $1,114.71 (7.5% of the balance — above its usual 5% because its strategy sizes this kind of setup differently), only $747.98 was free, so it took 67% of its size.
+The order is waiting at the smaller size and nothing has filled yet. If room frees up first, the bot puts it back to full size and says so.
+No repeat of this message while the same setup stays trimmed.
+```
+
+- *ORDER BACK TO FULL SIZE* (2026-09-30) — a resting order that was announced as shrunk has been
+  re-placed at its full size. Sent once, only for a side that was told it shrank, and only when
+  nothing cut the sizing on that bar — a bigger but still-trimmed order is not full size, and a
+  re-size from a balance change on an order never shrunk says nothing.
+
+```
+✅ ORDER BACK TO FULL SIZE · FFT · demo
+Room freed up on the account, so the bullish order that was shrunk is back to its full size (0.3 → 0.45 lots). It has not filled yet.
+```
 
 **How often they speak.** One message per side per EPISODE. A setup that cannot be afforded is
 re-offered on every bar it lives, so a message per occurrence mutes the channel before the day it
 matters — the same reasoning as `ORDER REFUSED`. A side that goes a whole bar without being cut
 ends its episode, and the next cut on that side speaks again.
 
-⚠ **There is no "room is back" message here, deliberately.** `NO ACCOUNT RISK LEFT` /
+⚠ **Apart from ORDER BACK TO FULL SIZE, there is no "room is back" message here, deliberately.** `NO ACCOUNT RISK LEFT` /
 `ACCOUNT RISK AVAILABLE` already cover the account running dry and recovering. These two are about
 one specific setup, and the follow-up is visible either way: the trade appears, or the next
 episode speaks.
 
-**Ledger:** `budget_cut` and `budget_shrunk`, both in the DECISION stream — they answer "why was
+**Ledger:** `budget_cut`, `budget_shrunk` and (2026-09-30) `budget_restored`, all in the DECISION stream — they answer "why was
 there no trade, or why was that trade small", and nothing is wrong with the machinery.
 ⚠ Both names are written as literals in two separate calls. `test_ledger_streams` greps this
 folder for the names it must route, and a name built inline is a name the guard cannot see — it

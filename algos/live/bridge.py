@@ -689,6 +689,12 @@ class OrderBridge:
         # next cut on it speaks again. Without it the first refusal would be the only one this bot
         # ever reported.
         self._budget_seen: set[int] = set()
+        # Sides whose RESTING order was announced as shrunk and not yet announced as restored.
+        # Deliberately NOT tied to the episode above: the episode ends when a bar goes uncut, but
+        # the good news is the RE-PLACE at full size, which `_sync_slot` does after that bar.
+        # Cleared when the strategy stops wanting the order (filled or cancelled), so a later,
+        # unrelated re-size — a balance change after another bot's trade closes — says nothing.
+        self._shrink_told: set[int] = set()
         # The same idea for the PARTIAL path, keyed on the cause rather than on a side: a
         # position that cannot be banked re-offers the identical problem on every 15m bar, and
         # an alert per bar is one nobody reads by the third. Cleared when a bank succeeds and
@@ -2902,6 +2908,7 @@ class OrderBridge:
             # The strategy no longer wants an order here, so nothing is waiting to be re-sent.
             self._retry.pop(slot, None)
             self._reject_alerted[slot] = ""
+            self._shrink_told.discard(direction)
             if held is not None:
                 self._drop_rest(slot, held, "cancel")
             self._refused[slot] = ""
@@ -2936,6 +2943,8 @@ class OrderBridge:
             if not self._drop_rest(slot, held, "re-size"):
                 return
             self._place(slot, lots, pend, sig, plan)
+            if lots > held.lots and self._rest[slot] is not None:
+                self._announce_restored(direction, held.lots, lots)
             return
 
         if self._moved(held.price, pend.edge) or self._moved(held.sl, pend.sl):
@@ -3142,17 +3151,85 @@ class OrderBridge:
             )
             return
         kept = (granted / wanted * 100.0) if wanted else 0.0
+        # 🔴 **A resting bot's shrink is an ORDER, not a trade (2026-09-30).** This said "the
+        # trade is on" for every bot, and on FFT it was a limit that never filled — re-placed at
+        # full size an hour later and then cancelled, with no word of either. The market bot's
+        # shrink IS its fill, so only it may say a trade is open.
+        market = self._entry_style() == "market"
+        if market:
+            title = "TRADE SHRUNK — SHARED ACCOUNT"
+            what = "trade opened"
+            after = (
+                "It is open at the smaller size, so a win or a loss will be smaller in dollars "
+                "than usual."
+            )
+        else:
+            title = "ORDER SHRUNK — SHARED ACCOUNT"
+            what = "order went in"
+            after = (
+                "The order is waiting at the smaller size and nothing has filled yet. If room "
+                "frees up first, the bot puts it back to full size and says so."
+            )
+            self._shrink_told.add(direction)
         self._notify(
             alert(
                 WARNING,
-                "TRADE SHRUNK — SHARED ACCOUNT",
+                title,
                 self._message_name(),
-                f"A {side} setup went on SMALLER than this bot wanted. It asked for "
-                f"${wanted:,.2f} of risk and the account had ${granted:,.2f} free, "
-                f"so it took {kept:,.0f}% of its intended size.",
-                "The trade is on at the reduced size, so its dollars will be smaller than "
-                "usual while its R is unchanged. This will not repeat while the same setup "
-                "keeps being trimmed.",
+                f"The account's shared risk limit was nearly used up by other bots, so a "
+                f"{side} {what} smaller than planned. It wanted to risk "
+                f"${wanted:,.2f}{self._risk_share_note(wanted)}, only ${granted:,.2f} was "
+                f"free, so it took {kept:,.0f}% of its size.",
+                after,
+                "No repeat of this message while the same setup stays trimmed.",
+            ),
+            notify.HEALTH,
+        )
+
+    def _risk_share_note(self, wanted: float) -> str:
+        """`wanted` as a share of the balance, and why it differs from the bot's usual share.
+
+        🔴 **Why this exists:** the FFT alert asked for 7.5% from a bot everybody knows as a 5%
+        bot — its strategy sizes one kind of setup at 1.5x — and read as impossible. Stated
+        generically (above or below the usual) because the reason lives in the strategy.
+
+        ⚠ Rule 1: an unreadable balance or an undeclared usual share prints NOTHING rather than
+        a percentage worked out from an invented number. Never raises — it sits inside an alert.
+        """
+        try:
+            basis = self._account_balance()
+            usual = getattr(getattr(self._ex, "cfg", None), "exec_risk_pct", None)
+            if not basis or not wanted:
+                return ""
+            pct = wanted / basis * 100.0
+            if usual is None or abs(pct - float(usual)) < 0.05:
+                return f" ({pct:.1f}% of the balance)"
+            way = "above" if pct > float(usual) else "below"
+            return (
+                f" ({pct:.1f}% of the balance — {way} its usual {float(usual):g}% because its "
+                f"strategy sizes this kind of setup differently)"
+            )
+        except Exception:
+            return ""
+
+    def _announce_restored(self, direction: int, was_lots: float, now_lots: float) -> None:
+        """A shrunk resting order has just been re-placed at FULL size — say so, once.
+
+        ⚠ Only for a side we TOLD was shrunk, and only when nothing cut it this bar: a re-size
+        that is still trimmed (a bit more room, not all of it) is not "back to full size".
+        """
+        if direction not in self._shrink_told or direction in self._budget_seen:
+            return
+        self._shrink_told.discard(direction)
+        side = "bullish" if direction > 0 else "bearish"
+        self._ledger.event("budget_restored", dir=direction, was_lots=was_lots, lots=now_lots)
+        self._notify(
+            alert(
+                OK,
+                "ORDER BACK TO FULL SIZE",
+                self._message_name(),
+                f"Room freed up on the account, so the {side} order that was shrunk is back to "
+                f"its full size ({was_lots:g} → {now_lots:g} lots). It has not filled yet.",
             ),
             notify.HEALTH,
         )

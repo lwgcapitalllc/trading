@@ -121,6 +121,8 @@ _DECISION_EVENTS = {
     # so `order_refused` never runs — no order ever reached the broker to be refused.
     "budget_cut",
     "budget_shrunk",
+    # A shrunk RESTING order re-placed at full size once room freed up (2026-09-30).
+    "budget_restored",
     # A resting order the BROKER removed without filling it (margin, expiry, a hand delete).
     # A decision, not health: it is the answer to "why was there no trade on that setup".
     "order_vanished",

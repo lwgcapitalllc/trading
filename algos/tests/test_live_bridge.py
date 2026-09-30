@@ -4470,6 +4470,98 @@ def test_a_SHRINK_that_kept_all_its_size_is_recorded_but_NOT_announced():
     assert [n for n in notes if "TRADE SHRUNK" in n], "a real cut in the same episode still speaks"
 
 
+def test_a_RESTING_bot_is_told_its_ORDER_shrank_never_that_a_trade_is_on():
+    """🔴 FFT, 2026-09-29: "the trade is on at the reduced size" about a limit that never filled.
+
+    Mutation run RED 2026-09-30: forcing the market wording back on every bot failed both asserts.
+    """
+    b, _, _, notes, acct = _armed_bridge(market=False)
+    assert _ask(acct, 500.0, room=300.0) == 300.0
+    body = "\n".join(notes)
+    assert "ORDER SHRUNK" in body
+    assert "nothing has filled yet" in body
+    assert "TRADE SHRUNK" not in body and "is open" not in body
+
+
+def test_an_ask_ABOVE_the_usual_share_says_so_in_percent():
+    """FFT asked 7.5% while known as a 5% bot (its sweep setups size 1.5x) and read as impossible.
+
+    Mutation run RED 2026-09-30: returning "" from `_risk_share_note` failed the first assert.
+    """
+    from backtest.portfolio.account import SoloAccount
+
+    ex = _ExSized(SoloAccount(balance=10_000.0), risk_pct=5.0)
+    b, _, _, notes = _bridge(ex, account_risk_cap_pct=10.0)
+    b._account_balance = lambda: 10_000.0
+    b._entry_style = lambda: "limit"
+    b.refresh_account_room()
+    assert _ask(ex._account, 750.0, room=500.0) == 500.0
+    body = "\n".join(notes)
+    assert "7.5% of the balance" in body, body
+    assert "above its usual 5%" in body, body
+
+
+def test_an_UNREADABLE_balance_prints_no_percentage_at_all():
+    """Rule 1: a percentage off an invented balance is worse than none."""
+    b, _, _, notes, acct = _armed_bridge(market=False)
+    b._account_balance = lambda: None
+    acct.external_room = 300.0
+    assert _ask(acct, 500.0, room=300.0) == 300.0
+    body = "\n".join(notes)
+    assert "ORDER SHRUNK" in body and "% of the balance" not in body
+
+
+def _shrunk_then_restored_bridge():
+    """A resting order placed shrunk by the real account, then offered at full size."""
+    from backtest.portfolio.account import SoloAccount
+
+    ex = _ExSized(SoloAccount(balance=10_000.0))
+    ex.planned_full_exit_price = lambda pend: None
+    b, ops, ledger, notes = _bridge(ex, account_risk_cap_pct=10.0)
+    b._account_balance = lambda: 10_000.0
+    b._entry_style = lambda: "limit"
+    b.refresh_account_room()
+    assert _ask(ex._account, 1_000.0, room=500.0) == 500.0  # the shrink, as the account makes it
+    b._sync_slot(live_bridge.PRIMARY_LONG, _Pend(1, 3300.0, 50.0, 3290.0), _Sig())
+    b.refresh_account_room()  # a new bar; nothing cut it yet
+    return b, ops, ledger, notes
+
+
+def test_a_shrunk_order_RE_PLACED_at_full_size_says_so_once():
+    """FFT, 2026-09-29: 0.3 → 0.45 lots at 15:46 and nobody was told the warning was over.
+
+    Mutation run RED 2026-09-30: removing the `_announce_restored` call left no message.
+    """
+    b, ops, ledger, notes = _shrunk_then_restored_bridge()
+    b._sync_slot(live_bridge.PRIMARY_LONG, _Pend(1, 3300.0, 100.0, 3290.0), _Sig())
+    restored = [n for n in notes if "BACK TO FULL SIZE" in n]
+    assert len(restored) == 1, notes
+    assert "0.5 → 1 lots" in restored[0]
+    assert "event:budget_restored" in ledger.kinds()
+
+
+def test_a_re_size_that_is_STILL_trimmed_is_not_called_full_size():
+    """More room but not all of it is a bigger shrunk order, not good news.
+
+    Mutation run RED 2026-09-30: dropping the `_budget_seen` check sent BACK TO FULL SIZE.
+    """
+    b, ops, ledger, notes = _shrunk_then_restored_bridge()
+    b._budget_seen.add(1)  # the strategy's sizing on this bar was cut again
+    b._sync_slot(live_bridge.PRIMARY_LONG, _Pend(1, 3300.0, 100.0, 3290.0), _Sig())
+    assert ops.actions[-1][:3] == ("place", "bullish", 1.0), (
+        "the re-size itself must happen, or this proves nothing"
+    )
+    assert not [n for n in notes if "BACK TO FULL SIZE" in n]
+
+
+def test_a_re_size_on_a_side_never_told_shrunk_says_nothing():
+    """A balance change after another bot's trade closes re-sizes orders too. Not news."""
+    b, ops, ledger, notes = _shrunk_then_restored_bridge()
+    b._shrink_told.clear()
+    b._sync_slot(live_bridge.PRIMARY_LONG, _Pend(1, 3300.0, 100.0, 3290.0), _Sig())
+    assert not [n for n in notes if "BACK TO FULL SIZE" in n]
+
+
 def test_a_size_that_FITS_says_nothing_at_all():
     """The alert must fire on the cut, never on the asking — or every bar is an alert."""
     b, _, _, notes, acct = _armed_bridge()
