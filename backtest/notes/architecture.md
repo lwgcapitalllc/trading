@@ -396,3 +396,16 @@ IS the 5m trend, so the rule needing the 1m to run against the 5m can never pass
 fails with FFT's own reason. Extreme leg's hook only records the frame and its own replay resets
 it from the data, so stating it changes none of its results. **Mutations run, all red:** the hook
 call removed, each of the three callers' argument removed, first gap read instead of smallest.
+
+## `replay.stack_config_for` — a loop that builds its own stack asks the INSTANCE (2026-09-30)
+
+`stack_config_for(strategy)` returns the strategy's per-instance `stack_config()` when it has one,
+else its static `engine_config()`. The optimizer (`optimizer.py::_replay_one`), the live warm-up and
+the lab's progress loop all go through it. 🔴 **They called `engine_config()` directly until
+2026-09-30**, and a static method cannot see an instance's settings — so SOS Fade's "RSI Length" and
+"Pivot Width (bars)" replayed 14 / 5 whatever they were set to, in every sweep, stress test and
+live warm-up. Only `run()` / `run_dual()` applied the per-instance layer. A new loop that builds an
+`EngineStack` must use this helper or it re-opens the hole. `tools/veto_study.py` now sets the two
+dials as bot settings: the settings WIN over an engine override handed into `run()`.
+MEASURED: Pivot Width 7 set through the setting gives −5.41R on the 2018-2026 replay, identical to
+Run 68's engine-set arm. Tests: `strategies/python/sos_fade/tests/test_divergence_dials.py`.

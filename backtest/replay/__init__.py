@@ -13,7 +13,7 @@ engines and drives them; it never reimplements detection.
 
 from .build import UNSTATED, build_strategy, frame_minutes
 from .loop import ReplayBar, iter_bars
-from .stack import BarState, EngineConfig, EngineStack, run
+from .stack import BarState, EngineConfig, EngineStack, run, stack_config_for
 
 __all__ = [
     "build_strategy",
@@ -25,4 +25,5 @@ __all__ = [
     "EngineConfig",
     "EngineStack",
     "run",
+    "stack_config_for",
 ]

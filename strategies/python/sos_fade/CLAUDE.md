@@ -324,17 +324,13 @@ bot and a 15m bot on one account meant one of the two was replayed on a frame no
 measured it on — and the combined table said *portfolio*. Rules for the lab side:
 `command-center/backend/CLAUDE.md` → *A stack leg runs on its own frame*.
 
-## ⚠ Two divergence settings reach NO engine (found 2026-09-10, NOT fixed)
+## The two divergence settings reach the engine (dead 2026-09-10, wired 2026-09-30)
 
-The divergence RSI length and pivot width live on the config and are read by nothing: the RSI
-engine is built from the stack's own config, which `engine_config()` never maps them onto. So a
-run at any other value replays exactly the defaults. **Harmless today only because both sides are
-14 / 5** — the Pine locks them as constants, and the editor hides them. 🔴 **The stress test's
-sensitivity pass still perturbs them** (stress test 630cefbebd8347db did), and every such shift is
-a replay that CANNOT move, reported as a measured shift — which reads as *insensitive to this
-setting* rather than *never consulted*. The parity gate reads both from an export's settings
-columns and still cannot catch it at 14 / 5. The fix is to map them in `engine_config()`'s caller —
-value-neutral at the defaults.
+"RSI Length" and "Pivot Width (bars)" are mapped onto the divergence engine by `stack_config()`,
+and win over any engine config handed in. 🔴 Until 2026-09-30 every stack-building loop used the
+static `engine_config()`, so any other value replayed 14 / 5 — and Run 68 measured the width alone
+moves 5-11R. **A loop that builds its own stack goes through `backtest.replay.stack_config_for`.**
+Value-neutral at 14 / 5 (tested); live only after a promote. The 25 / 75 zone is still not a setting.
 
 ## The default risk per trade is 5%, the share the live bot runs (2026-09-13)
 

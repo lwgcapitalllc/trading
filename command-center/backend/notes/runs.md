@@ -867,3 +867,11 @@ ends, the core count, and whether the result came from the rerun cache.
 - ⚠ Python runs only; the file is removed on a rerun that carries none. Not shown on the page —
   read the file.
 - MEASURED live, run f4d596d79a0f: 13.5s elapsed, 11.5s computing, share 0.853.
+
+## The python run loop builds the strategy instance's stack (2026-09-30)
+
+`python_runner._replay` builds its `EngineStack` through `backtest.replay.stack_config_for`. It
+called the static `engine_config()` until 2026-09-30, so a lab run or stress test that moved SOS
+Fade's "RSI Length" or "Pivot Width (bars)" replayed 14 / 5 and reported it as measured. ⚠ **A
+stress-test sensitivity reading on either setting taken before this date measured nothing** — re-run
+it. Test: `tests/test_python_runner.py::test_the_progress_loop_builds_the_instances_stack`.

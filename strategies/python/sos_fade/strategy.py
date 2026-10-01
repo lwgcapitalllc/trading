@@ -99,11 +99,20 @@ class SosFadeStrategy:
         pre-built `BarState`, so the live runner and the optimizer build the stack themselves; one
         that skips this hands the strategy a state with `order_blocks=None`. That does not silently
         degrade — `pois_for()` raises — which is the whole reason this returns a config rather than
-        mutating something later.
+        mutating something later. They reach it through `backtest.replay.stack_config_for`.
+
+        ⚠ **The divergence engine's RSI length and pivot width come from THIS config, overriding
+        whatever `engine_config` carries.** They are the "RSI Length" and "Pivot Width (bars)"
+        settings, and until 2026-09-30 nothing mapped them, so every run at another value replayed
+        14 / 5 (`sos_fade_optimization.md` Run 68 measured that the width alone moves 5-11R). The
+        parity gate unpacks both from the export into this config, so it now sees them too.
         """
-        base = engine_config or self.engine_config()
-        if self.config.exec_poi_source != "FVG" and not base.order_blocks:
-            import dataclasses
+        import dataclasses
+
+        c = self.config
+        base = dataclasses.replace(engine_config or self.engine_config(),
+                                   rsi_len=int(c.div_rsi_len), rsi_pivot_len=int(c.div_pivot_len))
+        if c.exec_poi_source != "FVG" and not base.order_blocks:
             return dataclasses.replace(base, order_blocks=True)
         return base
 

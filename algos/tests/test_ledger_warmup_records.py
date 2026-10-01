@@ -178,3 +178,21 @@ def test_a_strategy_without_the_lists_is_not_a_crash(monkeypatch):
     r.warm()  # must not raise
     warmed = [kw for name, kw in r.ledger.events if name == "warmed"]
     assert warmed[0]["replayed_setups"] == 0
+
+
+def test_warm_builds_the_stack_the_strategy_instance_asks_for(monkeypatch):
+    """🔴 `warm()` called the static `engine_config()` until 2026-09-30, which cannot see the bot's
+    own settings — so SOS Fade's "RSI Length" and "Pivot Width (bars)" reached no engine live
+    either. Harmless at the live 14 / 5. Watched RED against the pre-fix runner."""
+    r, _ = _warmed_runner(monkeypatch, bars=250)
+    import backtest.replay as replay
+
+    seen = []
+    monkeypatch.setattr(
+        replay,
+        "EngineStack",
+        lambda cfg: seen.append(cfg) or SimpleNamespace(step=lambda bar: SimpleNamespace()),
+    )
+    r.strategy.stack_config = lambda: "per-instance"
+    r.warm()
+    assert seen == ["per-instance"]

@@ -594,3 +594,36 @@ def test_a_symbol_with_no_measured_profile_says_to_measure_it():
             {"cost_layers": ["spread"], "broker_profile": "puprime_ecn", "instrument": "EURJPY.p"}
         )
     assert "measure it" in str(exc.value)
+
+
+def test_the_progress_loop_builds_the_instances_stack(monkeypatch):
+    """`_replay` drives its own bar loop, so it must ask the strategy INSTANCE for its stack —
+    it called the static `engine_config()` until 2026-09-30, and SOS Fade's "RSI Length" and
+    "Pivot Width (bars)" never reached the engine in a lab run. Watched RED pre-fix."""
+    from types import SimpleNamespace
+
+    import backtest.replay as replay
+
+    seen = []
+
+    class _Built(Exception):
+        pass
+
+    def capture(cfg):
+        seen.append(cfg)
+        raise _Built
+
+    monkeypatch.setattr(replay, "EngineStack", capture)
+    strategy = SimpleNamespace(
+        execution=SimpleNamespace(bar_ms=0),
+        engine_config=lambda: "static",
+        stack_config=lambda: "per-instance",
+    )
+    import pandas as pd
+
+    df = pd.DataFrame(
+        {"close": [1.0, 1.0]}, index=pd.date_range("2026-05-01", periods=2, freq="15min")
+    )
+    with pytest.raises(_Built):
+        python_runner._replay("job", strategy, df, 2)
+    assert seen == ["per-instance"]

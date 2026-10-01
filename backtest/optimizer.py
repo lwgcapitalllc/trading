@@ -192,7 +192,13 @@ def _replay_one(
     row is byte-identical to what it has always been.
     """
     from backtest.output import build_kpis
-    from backtest.replay import EngineStack, build_strategy, frame_minutes, iter_bars
+    from backtest.replay import (
+        EngineStack,
+        build_strategy,
+        frame_minutes,
+        iter_bars,
+        stack_config_for,
+    )
 
     _refuse_unreplayable(combo.config, fast_df, strategy_cls)
     strategy = build_strategy(
@@ -222,7 +228,7 @@ def _replay_one(
     if len(df.index) > 1:
         strategy.execution.bar_ms = int(df.index.to_series().diff().min().total_seconds() * 1000)
 
-    stack = EngineStack(strategy.engine_config())
+    stack = EngineStack(stack_config_for(strategy))
     for bar in iter_bars(df):
         strategy.step(stack.step(bar))
 

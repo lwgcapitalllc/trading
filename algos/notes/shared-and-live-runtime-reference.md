@@ -387,3 +387,12 @@ FILTER over what changed on disk, not a list of fields every bot must have.
 measurement beside the control. **Do not read this widening as the line moving.** A free-form
 strategy number still goes lab → backtest → promote. What earned the exception is a two-state
 switch whose both states are measured.
+
+## The warm-up builds the stack the strategy INSTANCE asks for (2026-09-30)
+
+`LiveRunner.warm()` builds its `EngineStack` through `backtest.replay.stack_config_for`, not the
+strategy's static `engine_config()`. Before this, SOS Fade's "RSI Length" and "Pivot Width (bars)"
+never reached the live divergence engine. **No live trade moved**: the live bots run 14 / 5, the
+values the static config already carried, and a strategy with no per-instance layer (the extreme
+leg) falls back to the same call as before. ⚠ Reaches the box only through a promote. Test:
+`algos/tests/test_ledger_warmup_records.py::test_warm_builds_the_stack_the_strategy_instance_asks_for`.

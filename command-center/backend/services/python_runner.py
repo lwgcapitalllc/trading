@@ -650,12 +650,12 @@ def _replay(job_id: str, strategy, df, total: int) -> None:
     is minutes of work; a progress bar frozen at 15% and a Stop button that does nothing are not
     acceptable for that.
     """
-    from backtest.replay import EngineStack, iter_bars
+    from backtest.replay import EngineStack, iter_bars, stack_config_for
 
     if len(df.index) > 1:
         strategy.execution.bar_ms = int(df.index.to_series().diff().min().total_seconds() * 1000)
 
-    stack = EngineStack(strategy.engine_config())
+    stack = EngineStack(stack_config_for(strategy))
     # ⚠ 1/500th of the run, not 1/100th. `_set` is a dict update under a lock, so the cost is
     # nothing; the granularity is what the person watching sees. At 1% steps a 156,721-bar run
     # moved the bar 100 times over several minutes and looked frozen between jumps.

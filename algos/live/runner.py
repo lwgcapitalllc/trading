@@ -1778,7 +1778,7 @@ class LiveRunner:
 
     def warm(self):
         """Replay history through the strategy WITHOUT acting on any of it."""
-        from backtest.replay import EngineStack, iter_bars
+        from backtest.replay import EngineStack, iter_bars, stack_config_for
 
         df = self.feed.history(self.cfg.warmup_bars)
         if len(df) < 200:
@@ -1787,7 +1787,7 @@ class LiveRunner:
                 f"{self.cfg.symbol}. The engines cannot warm on that — check the symbol name "
                 f"first (a wrong broker suffix returns nothing and looks exactly like this)."
             )
-        self.stack = EngineStack(self.strategy.engine_config())
+        self.stack = EngineStack(stack_config_for(self.strategy))
         self.strategy.execution.bar_ms = self.feed.bar_seconds * 1000
         # Built HERE and not at startup, because a re-warm rebuilds the stack and the clock holds
         # a reference to it. One object, one lifetime — a clock left pointing at the previous

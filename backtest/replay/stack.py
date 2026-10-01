@@ -424,3 +424,18 @@ def run(df: pd.DataFrame, config: EngineConfig | None = None, warmup: int = 0):
         state = stack.step(bar)
         if bar.index >= warmup:
             yield state
+
+
+def stack_config_for(strategy) -> EngineConfig:
+    """The engine stack a strategy INSTANCE needs — its `stack_config()` if it has one, else its
+    static `engine_config()`.
+
+    Every loop that builds its own stack goes through here: the live runner, the optimizer and the
+    lab's progress loop. 🔴 **They called `engine_config()` directly until 2026-09-30, and that is
+    how SOS Fade's "RSI Length" and "Pivot Width" reached no engine for their whole life** —
+    `engine_config()` is static, so it cannot see an instance's settings, and only `run()` /
+    `run_dual()` applied the per-instance layer. A setting a stack-building loop skips replays the
+    engine default and reports it as measured.
+    """
+    own = getattr(strategy, "stack_config", None)
+    return own() if callable(own) else strategy.engine_config()

@@ -15,9 +15,9 @@ WHAT THE VETO IS (signals.py `sos_aware_veto`) — two halves, and it only ever 
             superseded by a structure break, and younger than 100 bars, blocks that side.
   A divergence itself: RSI pivot 5 bars each side, the pivot's RSI inside 25 / 75 (the ENGINE's
   zone, which the bot's settings do not expose).
-  ⚠ The bot's "RSI Length" and "Pivot Width" settings are NOT read by anything in Python — the
-    engine is built from its own defaults (14 / 5), in the lab and live. The shape arms below set
-    the ENGINE directly for that reason.
+  ⚠ The bot's "RSI Length" and "Pivot Width" settings reached no engine when Run 68 was taken, so
+    its shape arms set the ENGINE directly. They were wired 2026-09-30 and the bot's settings now
+    WIN over an engine override, so those arms set the settings instead — same values, same stack.
 
 THE ARMS
   anatomy   whole veto off; extreme half off; divergence half off
@@ -65,11 +65,11 @@ ARMS = {
     "lifetime 50": ("lifetime", {"div_valid_bars": 50}, {}),
     "lifetime 150": ("lifetime", {"div_valid_bars": 150}, {}),
     "lifetime 200": ("lifetime", {"div_valid_bars": 200}, {}),
-    "pivot 3": ("pivot", {}, {"rsi_pivot_len": 3}),
-    "pivot 7": ("pivot", {}, {"rsi_pivot_len": 7}),
-    "pivot 10": ("pivot", {}, {"rsi_pivot_len": 10}),
-    "RSI length 9": ("rsi length", {}, {"rsi_len": 9}),
-    "RSI length 21": ("rsi length", {}, {"rsi_len": 21}),
+    "pivot 3": ("pivot", {"div_pivot_len": 3}, {}),
+    "pivot 7": ("pivot", {"div_pivot_len": 7}, {}),
+    "pivot 10": ("pivot", {"div_pivot_len": 10}, {}),
+    "RSI length 9": ("rsi length", {"div_rsi_len": 9}, {}),
+    "RSI length 21": ("rsi length", {"div_rsi_len": 21}, {}),
     "div zone 30/70": ("div zone", {}, {"rsi_oversold": 30.0, "rsi_overbought": 70.0}),
     "div zone 20/80": ("div zone", {}, {"rsi_oversold": 20.0, "rsi_overbought": 80.0}),
 }
