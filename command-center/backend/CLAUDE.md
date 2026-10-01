@@ -247,6 +247,7 @@ Most-cited code: `services/stack_risk_budget.py`, `services/bot_account_registry
 - Checking the account list against the BOX — `services/terminal_scan.py` (2026-09-10)
 - 🔴 An assignment may only write a param the RECEIVING strategy declares (2026-09-04)
 - The account's net is measured off what went IN (2026-09-12)
+- A figure the bots STOPPED stating is not one they never stated — the `confirmed` basis (2026-10-01)
 - A balance is an account's only if it was READ on that account (2026-09-14)
 - A LIVE account names its own Telegram channels, and no door puts a bot on one that does not (2026-09-13)
 - An account's demo/live field is LOCKED on the page — and now on the save route too (2026-09-14)

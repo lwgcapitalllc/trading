@@ -761,6 +761,14 @@ two made the row read as a name with some settings after it.
 and the account's net names the balance and the bot that recorded it. The backtest page's own
 *1439.7x of what* lesson, and it bites harder here because two bots legitimately anchor differently.
 
+🔴 **THE DENOMINATOR HAS THREE BASES, AND THE PAGE SAYS WHICH (2026-10-01).** *Deposits*: what went
+in, as a bot states it now. *Confirmed*: what went in as of the LAST reading that stated it, shown
+with that time and the caveat that money moved since would read as profit or loss. *Opening*: only
+for an account that never stated it. Until today a bot that stopped stating it (a deal the broker
+lost) dropped the live account straight to *opening* — its first $451.97 — and the page read
++2,226.8% for a true +1.99%. The figures and the rule are the backend's
+(`backend/notes/accounts-risk.md`); this page only words them.
+
 ⚠ **The header sums net across ACCOUNTS, never across bots**, and an account whose net nobody
 could measure is LEFT OUT and said, never added in as zero.
 

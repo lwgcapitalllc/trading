@@ -487,6 +487,10 @@ class AccountEarnings(BaseModel):
     # still reads as growth. ⚠ Declared, or Pydantic drops them and the page cannot say which.
     capital_in: Optional[float] = None
     net_basis: str = "opening"
+    # "confirmed" (2026-10-01): no reading states what went in now, so the net is off the LAST pulse
+    # that did, and this is when that pulse was taken. A deposit or withdrawal after it reads as
+    # profit or loss — the page says so. None on every other basis. ⚠ Declared, or Pydantic drops it.
+    net_confirmed_at: Optional[str] = None
     attributed_usd: Optional[float] = None
     unattributed_usd: Optional[float] = None
     # 🔴 Whether the bots' figures and the balance they are subtracted from were read at the same

@@ -514,9 +514,13 @@ export interface AccountEarnings {
    *  (deposits less withdrawals, off the broker's own history), the % time-weighted, so a deposit
    *  or a withdrawal is never a return. 'opening' = the balance less `opening_balance`, the older
    *  basis for an account whose bots have not read their history — there a deposit still reads as
-   *  growth. Optional: an older payload or recording carries neither. */
+   *  growth. Optional: an older payload or recording carries neither.
+   *  'confirmed' (2026-10-01) = no reading states what went in NOW, so the net is off the LAST pulse
+   *  that did — `capital_in` is that figure and `net_confirmed_at` when it was taken. Money moved in
+   *  or out after that reads as profit or loss, and the page has to say so. */
   capital_in?: number | null
-  net_basis?: 'deposits' | 'opening'
+  net_basis?: 'deposits' | 'confirmed' | 'opening'
+  net_confirmed_at?: string | null
   attributed_usd: number | null
   unattributed_usd: number | null
   /** 🔴 Whether the bots' figures and the balance they are subtracted from were read at the same

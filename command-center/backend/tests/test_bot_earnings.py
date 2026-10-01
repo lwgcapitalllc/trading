@@ -1182,3 +1182,142 @@ def test_on_the_deposits_basis_a_DEPARTED_bot_counts_even_with_no_opening_readin
     assert demo["net_basis"] == "deposits"
     assert demo["unattributed_usd"] == 0.0
     assert next(b for b in demo["bots"] if b["bot_key"] == "gone")["pct_of_opening"] == 2.5
+
+
+# ── a figure the bots STOPPED stating is not a figure they never stated ─────────────────────
+#
+# 🔴 2026-10-01 07:25 UTC: a broker deal went missing from MT5's history, the live bots' rebuild of
+# what went in came out $0.35 short, and they refused — writing `capital_in` None on every pulse.
+# The account fell back to the opening basis: the $9.86k transfer read as profit, +2,226.8%, and
+# SOS Fade's $615.14 as 136.1% of the $451.97 first transfer. The last pulse that DID state it
+# (07:14:15Z) read balance $10,287.06, in $10,311.48, return -0.24%.
+
+
+def _confirmed_then_refused(archive):
+    archive(
+        "sos",
+        "2026-10-01",
+        [
+            _start(_LIVE, "2026-09-11T00:00:00+00:00"),
+            _close(615.14, r=1.0, ts="2026-09-20T02:00:00+00:00"),
+        ],
+    )
+    archive(
+        "sos",
+        "2026-10-01",
+        [
+            {
+                **_pulse(_LIVE, 10200.00, "2026-10-01T06:59:15+00:00"),
+                "capital_in": 10311.48,
+                "return_pct": -1.0,
+            },
+            {
+                **_pulse(_LIVE, 10287.06, "2026-10-01T07:14:15+00:00"),
+                "capital_in": 10311.48,
+                "return_pct": -0.24,
+            },
+            # The refusal: a balance, and no figure for what went in.
+            {**_pulse(_LIVE, 10290.00, "2026-10-01T07:29:15+00:00"), "capital_in": None},
+        ],
+        kind="health",
+    )
+
+
+def test_a_refused_capital_figure_falls_back_to_the_LAST_CONFIRMED_one_not_the_opening(archive):
+    """The incident on its own numbers. The live bot reports $10,516.38 and no `capital_in`; the
+    last pulse that stated it is the basis, and the % chains the bot's own time-weighted figure
+    on from that pulse's balance: (1 - 0.0024) x 10,516.38 / 10,287.06 - 1 = +1.98%.
+
+    RED on the code before this: basis "opening", net +$10,064.41 (+2,226.8%).
+    MUTATION: take the confirmed figure off the FIRST stating pulse → red on the %.
+    """
+    _confirmed_then_refused(archive)
+    acct = be.account_earnings([_live_bot(balance=10516.38, capital_in=None, pct=None)])[0]
+
+    assert acct["net_basis"] == "confirmed"
+    assert acct["capital_in"] == 10311.48
+    assert acct["net_usd"] == 204.90
+    assert acct["net_pct"] == 1.98
+    assert acct["net_confirmed_at"] == "2026-10-01T07:14:15+00:00"
+    assert acct["bots"][0]["pct_of_opening"] == 5.97
+    assert acct["unattributed_usd"] == round(204.90 - 615.14, 2)
+
+
+def test_a_confirmed_figure_with_no_return_derives_it_off_what_went_in(archive):
+    """A confirmed pulse with no return % still has what went in; the % is then the plain net over
+    it, never None beside a dollar net. MUTATION: leave the % None → red."""
+    archive("sos", "2026-10-01", [_start(_LIVE, "2026-09-11T00:00:00+00:00")])
+    archive(
+        "sos",
+        "2026-10-01",
+        [{**_pulse(_LIVE, 10000.0, "2026-10-01T07:14:15+00:00"), "capital_in": 10000.0}],
+        kind="health",
+    )
+    acct = be.account_earnings([_live_bot(balance=10500.0, capital_in=None, pct=None)])[0]
+
+    assert acct["net_basis"] == "confirmed"
+    assert (acct["net_usd"], acct["net_pct"]) == (500.0, 5.0)
+
+
+def test_the_LATEST_confirmed_figure_wins_across_bots(archive):
+    """Two bots on one account, each with its own last stating pulse. The account takes the newer,
+    whichever bot read it. MUTATION: take the first bot's → red."""
+    archive("sos", "2026-10-01", [_start(_LIVE, "2026-09-11T00:00:00+00:00")])
+    archive("ext", "2026-10-01", [_start(_LIVE, "2026-09-11T00:00:00+00:00")])
+    archive(
+        "sos",
+        "2026-10-01",
+        [{**_pulse(_LIVE, 9000.0, "2026-10-01T05:00:00+00:00"), "capital_in": 9000.0}],
+        kind="health",
+    )
+    archive(
+        "ext",
+        "2026-10-01",
+        [{**_pulse(_LIVE, 10000.0, "2026-10-01T07:00:00+00:00"), "capital_in": 10000.0}],
+        kind="health",
+    )
+    acct = be.account_earnings(
+        [
+            _live_bot("sos", balance=10100.0, capital_in=None, pct=None),
+            _live_bot("ext", balance=10100.0, capital_in=None, pct=None),
+        ]
+    )[0]
+
+    assert acct["net_basis"] == "confirmed"
+    assert acct["capital_in"] == 10000.0
+    assert acct["net_confirmed_at"] == "2026-10-01T07:00:00+00:00"
+
+
+def test_an_account_that_NEVER_stated_what_went_in_stays_on_the_opening(archive):
+    """No pulse ever carried `capital_in`, so there is nothing to confirm and the opening basis is
+    still the only one. MUTATION: treat any pulse as confirmed → red."""
+    archive("old", "2026-07-31", [_start(), _close(1197.09)])
+    archive(
+        "old", "2026-08-01", [_pulse(_DEMO, 9996.99, "2026-07-31T00:15:00+00:00")], kind="health"
+    )
+    acct = be.account_earnings([_bot("old", "SOS Fade", anchor=9996.99)])[0]
+
+    assert acct["net_basis"] == "opening"
+    assert acct["capital_in"] is None
+    assert acct["net_confirmed_at"] is None
+
+
+def test_a_LIVE_capital_figure_beats_a_confirmed_past_one(archive):
+    """A bot stating `capital_in` now is the deposits basis, whatever an older pulse said.
+    MUTATION: prefer the confirmed pulse → red."""
+    _confirmed_then_refused(archive)
+    acct = be.account_earnings([_live_bot(balance=10516.38, capital_in=10311.48, pct=1.9)])[0]
+
+    assert acct["net_basis"] == "deposits"
+    assert acct["net_pct"] == 1.9
+    assert acct["net_confirmed_at"] is None
+
+
+def test_the_confirmed_time_survives_the_response_model():
+    """MUTATION: drop `net_confirmed_at` from the model → red."""
+    from models import AccountEarnings
+
+    out = AccountEarnings(
+        account=_LIVE, net_basis="confirmed", net_confirmed_at="2026-10-01T07:14:15+00:00"
+    ).model_dump()
+    assert out["net_confirmed_at"] == "2026-10-01T07:14:15+00:00"

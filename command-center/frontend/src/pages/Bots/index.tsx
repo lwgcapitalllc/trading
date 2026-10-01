@@ -1083,12 +1083,16 @@ function AccountNet({
   // 🔴 On the DEPOSITS basis the net is the balance less what went IN and the % is time-weighted,
   // so a deposit or a withdrawal is never a return (2026-09-12). The referent is the money put in:
   // an account opened at $451.97 and topped up to $10,312.48 is measured against the $10,312.48.
+  // ⚠ On the CONFIRMED basis (2026-10-01) the money put in is the last figure the bots stated, so a
+  // deposit or a withdrawal since then is inside the net — the tooltip says so, with the time.
   const from =
     e.net_basis === 'deposits' && e.capital_in != null
       ? `${money(e.capital_in, false)} put in (deposits less withdrawals). The % is time-weighted, so a deposit or a withdrawal never counts as a return.`
-      : `Opened at ${money(e.opening_balance, false)}${
-          openingRecorder(e) ? `, recorded by ${openingRecorder(e)}` : ''
-        }.`
+      : e.net_basis === 'confirmed' && e.capital_in != null
+        ? `Net of the money put in as of ${e.net_confirmed_at ? readTime(e.net_confirmed_at) : 'the last reading that stated it'} (${money(e.capital_in, false)}) — the account's deal history has not added up since, so a deposit or withdrawal after that would show here as profit or loss.`
+        : `Opened at ${money(e.opening_balance, false)}${
+            openingRecorder(e) ? `, recorded by ${openingRecorder(e)}` : ''
+          }.`
   // ⚠ Text, not a filled pill (2026-09-12): a green block on every account heading was a large
   // part of what read as "everything is green". The sign's colour stays on the figures.
   return (
@@ -1149,7 +1153,8 @@ function Unattributed({ e }: { e: AccountEarnings }) {
         </span>
         <span className="text-[10.5px] text-text-tertiary">
           {/* On the deposits basis a deposit or a withdrawal is already out of the net, so it is not
-           *  one of the causes this line may name (2026-09-12). */}
+           *  one of the causes this line may name (2026-09-12). ⚠ On the CONFIRMED basis it stays
+           *  named: one made after the last confirmed figure is inside the net (2026-10-01). */}
           {missing > 0
             ? `— a manual fill, ${e.net_basis === 'deposits' ? '' : 'a deposit, '}or ${missing === 1 ? 'a bot whose record has' : `${missing} bots whose records have`} not arrived`
             : `— a manual fill, ${e.net_basis === 'deposits' ? '' : 'a deposit, '}or a trade older than the record`}

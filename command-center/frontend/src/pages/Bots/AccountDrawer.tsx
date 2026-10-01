@@ -654,7 +654,7 @@ export function AccountDrawer({
           {/* 🔴 On the DEPOSITS basis the referent is what went in, not the opening: a deposit or
            *  a withdrawal is taken out of the net and the % is time-weighted (2026-09-12). */}
           {earnings?.net_usd != null &&
-          (earnings.net_basis === 'deposits'
+          (earnings.net_basis === 'deposits' || earnings.net_basis === 'confirmed'
             ? earnings.capital_in != null
             : earnings.opening_balance != null) ? (
             <p className="text-[11.5px] text-text-tertiary mt-[8px] leading-[1.55]">
@@ -666,6 +666,22 @@ export function AccountDrawer({
               </span>{' '}
               {earnings.net_basis === 'deposits' && earnings.capital_in != null ? (
                 <>on {money(earnings.capital_in)} put in, deposits less withdrawals.</>
+              ) : earnings.net_basis === 'confirmed' && earnings.capital_in != null ? (
+                /* ⚠ The last figure the bots STATED (2026-10-01) — money moved since is inside the
+                 *  net, so the sentence says so rather than reading as the deposits basis. */
+                <>
+                  on {money(earnings.capital_in)} put in as of{' '}
+                  {earnings.net_confirmed_at
+                    ? new Date(earnings.net_confirmed_at).toLocaleString('en-GB', {
+                        day: 'numeric',
+                        month: 'short',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
+                    : 'the last reading that stated it'}{' '}
+                  — the account's deal history has not added up since, so a deposit or withdrawal
+                  after that would show here as profit or loss.
+                </>
               ) : earnings.opening_balance != null ? (
                 <>
                   since it opened at {money(earnings.opening_balance)}

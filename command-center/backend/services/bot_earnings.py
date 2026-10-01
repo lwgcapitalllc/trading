@@ -652,7 +652,13 @@ def balance_readings(bot_key: str) -> dict[int, dict]:
     """The FIRST and LAST balance each account showed this bot, off its own pulses.
 
     `{account: {"first_at", "first_balance", "last_at", "last_balance", "last_capital_in",
-    "last_return_pct"}}`, the instants as datetimes. Empty when the bot has no health record here.
+    "last_return_pct", "confirmed_at", "confirmed_balance", "confirmed_capital_in",
+    "confirmed_return_pct"}}`, the instants as datetimes. Empty when the bot has no health record
+    here.
+
+    `confirmed_*` is the LATEST pulse that stated `capital_in` — all four off that one pulse, and
+    `confirmed_at` None when no pulse on the account ever stated it. It is what the account's net
+    falls back to when the bots stop stating it (2026-10-01: a deal missing from MT5's history).
     """
     folder = ARCHIVE / bot_key / "ledger"
     health = sorted(folder.glob("health-*.jsonl")) if folder.is_dir() else []
@@ -676,15 +682,26 @@ def balance_readings(bot_key: str) -> dict[int, dict]:
                     "last_balance": balance,
                     "last_capital_in": capital_in,
                     "last_return_pct": return_pct,
+                    "confirmed_at": None,
+                    "confirmed_balance": None,
+                    "confirmed_capital_in": None,
+                    "confirmed_return_pct": None,
                 }
-                continue
-            if at < cur["first_at"]:
-                cur["first_at"], cur["first_balance"] = at, balance
-            if at >= cur["last_at"]:
-                # ⚠ All three off ONE pulse, so a net is never one reading's balance less another
-                # reading's deposits.
-                cur["last_at"], cur["last_balance"] = at, balance
-                cur["last_capital_in"], cur["last_return_pct"] = capital_in, return_pct
+                cur = seen[account]
+            else:
+                if at < cur["first_at"]:
+                    cur["first_at"], cur["first_balance"] = at, balance
+                if at >= cur["last_at"]:
+                    # ⚠ All three off ONE pulse, so a net is never one reading's balance less
+                    # another reading's deposits.
+                    cur["last_at"], cur["last_balance"] = at, balance
+                    cur["last_capital_in"], cur["last_return_pct"] = capital_in, return_pct
+            if capital_in is not None and (
+                cur["confirmed_at"] is None or at >= cur["confirmed_at"]
+            ):
+                # ⚠ The same one-pulse rule: balance, capital and return all off this pulse.
+                cur["confirmed_at"], cur["confirmed_balance"] = at, balance
+                cur["confirmed_capital_in"], cur["confirmed_return_pct"] = capital_in, return_pct
     _readings_cache[bot_key] = (fp, {a: dict(v) for a, v in seen.items()})
     return seen
 
@@ -692,9 +709,10 @@ def balance_readings(bot_key: str) -> dict[int, dict]:
 def _account_readings(readings: dict[str, dict[int, dict]], account: int) -> dict | None:
     """The first and last balance ANY bot read on this account, and which bot read the first.
 
-    `None` when no bot left a reading of it.
+    Also `confirmed`: the latest pulse, across every bot, that stated what went in — `None` when
+    none ever did. `None` overall when no bot left a reading of it.
     """
-    first = last = None
+    first = last = confirmed = None
     for bot_key, by_account in readings.items():
         r = by_account.get(account)
         if not r:
@@ -708,9 +726,17 @@ def _account_readings(readings: dict[str, dict[int, dict]], account: int) -> dic
                 "capital_in": r.get("last_capital_in"),
                 "return_pct": r.get("last_return_pct"),
             }
+        c_at = r.get("confirmed_at")
+        if c_at is not None and (confirmed is None or c_at > confirmed["at"]):
+            confirmed = {
+                "at": c_at,
+                "balance": r["confirmed_balance"],
+                "capital_in": r["confirmed_capital_in"],
+                "return_pct": r.get("confirmed_return_pct"),
+            }
     if first is None or last is None:
         return None
-    return {"first": first, "last": last}
+    return {"first": first, "last": last, "confirmed": confirmed}
 
 
 # ── One strategy, one record per account ─────────────────────────────────────────────────────
@@ -922,22 +948,47 @@ def account_earnings(bots: list[dict], as_of: datetime | None = None) -> list[di
             capital_in, capital_ret = seen["last"].get("capital_in"), seen["last"].get("return_pct")
 
         # "deposits": the balance less what went in, the % time-weighted as the bot measured it.
-        # "opening": the older basis, for an account whose bots have not read their history.
-        basis = "deposits" if balance is not None and capital_in is not None else "opening"
+        # "confirmed": no reading states what went in NOW, but an earlier pulse did — the last one
+        #   that did is the basis (2026-10-01, below). ⚠ Money moved in or out AFTER that pulse
+        #   reads as profit or loss, and the page says so beside the figure.
+        # "opening": the older basis, only for an account that has NEVER had a stated figure.
+        confirmed = seen.get("confirmed") if seen else None
+        if balance is not None and capital_in is not None:
+            basis = "deposits"
+        elif balance is not None and confirmed is not None:
+            # 🔴 2026-10-01 07:25 UTC: a deal missing from MT5's history put the live bots' rebuild
+            # $0.35 out, they refused and wrote None, and the account fell back to its $451.97
+            # first transfer — the $9.86k deposit read as +2,226.8%. A figure the bots STOPPED
+            # stating is not one they never stated.
+            basis = "confirmed"
+        else:
+            basis = "opening"
         net_usd = net_pct = None
+        net_confirmed_at = None
         if basis == "deposits":
             net_usd = round(balance - capital_in, 2)
             net_pct = capital_ret
+        elif basis == "confirmed":
+            capital_in = confirmed["capital_in"]
+            net_confirmed_at = confirmed["at"].isoformat()
+            net_usd = round(balance - capital_in, 2)
+            r_then, bal_then = confirmed["return_pct"], confirmed["balance"]
+            if r_then is not None and bal_then and bal_then > 0:
+                # The bot's own time-weighted figure, chained on from that pulse's balance — the
+                # move since is pure trading as long as no money moved (the caveat above).
+                net_pct = round(((1 + r_then / 100) * (balance / bal_then) - 1) * 100, 2)
+            elif capital_in > 0:
+                net_pct = round((balance - capital_in) / capital_in * 100, 2)
         elif balance is not None and opening:
             net_usd = round(balance - opening, 2)
             net_pct = round((balance - opening) / opening * 100, 2)
         # ⚠ A deposits net covers the account's WHOLE life, so every bot that ever traded here is
         # inside its window — the departed ones too, exactly as on the account's own opening.
-        whole = own_opening or basis == "deposits"
+        whole = own_opening or basis in ("deposits", "confirmed")
         # What a bot's dollars are a share OF. On the deposits basis, what went in: a bot's $516 on
         # an account topped up to $10,312.48 is 5%, never 114% of the $451.97 it opened at.
         # ⚠ Nothing once everything has been taken out — a share of zero or less is not a share.
-        if basis == "deposits":
+        if basis in ("deposits", "confirmed"):
             share_base = capital_in if capital_in > 0 else None
         else:
             share_base = opening
@@ -988,8 +1039,13 @@ def account_earnings(bots: list[dict], as_of: datetime | None = None) -> list[di
                 "net_usd": net_usd,
                 "net_pct": net_pct,
                 # What went in, present exactly on the deposits basis, and which basis the net is.
-                "capital_in": round(capital_in, 2) if basis == "deposits" else None,
+                "capital_in": (
+                    round(capital_in, 2) if basis in ("deposits", "confirmed") else None
+                ),
                 "net_basis": basis,
+                # When the figure for what went in was last STATED — present exactly on the
+                # "confirmed" basis, so the page can say a deposit since then reads as profit.
+                "net_confirmed_at": net_confirmed_at,
                 "attributed_usd": attributed,
                 "unattributed_usd": unattributed,
                 # Named, never silently folded into the unattributed figure: a bot whose record

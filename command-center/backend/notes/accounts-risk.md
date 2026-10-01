@@ -559,8 +559,9 @@ counted as growth. Rules and evidence: `algos/CLAUDE.md` → *A deposit is not a
 - ⚠ **A bot's `pct_of_opening` divides by `capital_in` on that basis** — the name predates it; a
   share of an opening a deposit has dwarfed is the same bug one column over. Nothing once
   `capital_in` ≤ 0.
-- ⚠ **No `capital_in` keeps the `opening` basis** — an older runner, no link, or a history that did
-  not add up. Never read that absence as nothing put in; `_num` refuses a bool.
+- ⚠ **No `capital_in` keeps the `opening` basis ONLY when no pulse on the account ever stated one**
+  — an older runner, or an account never read. Never read that absence as nothing put in; `_num`
+  refuses a bool. Where an earlier pulse DID state it, see the third basis below.
 - ⚠ **`capital_in` and `net_basis` are declared on `AccountEarnings`**, or Pydantic drops them.
 - ⚠ **An account switches basis only once its bots restart onto the new runner**, so the page can
   show one basis for one account and the other for the next; `net_basis` is what tells them apart.
@@ -569,6 +570,33 @@ Tests: 10 in `tests/test_bot_earnings.py` (one over three bad values), the fleet
 included. **16 bugs planted in memory, 16 caught** — one survived first: the only departed-bot case
 had an opening reading from before its trade, so it counted either way and could not tell the two
 bases apart. It has a case with no such reading now.
+
+## A figure the bots STOPPED stating is not one they never stated — the `confirmed` basis (2026-10-01)
+
+🔴 **Three bases now, not two.** At 07:25 UTC a broker deal went missing from MT5's history, the
+live bots' rebuild of what went in came out $0.35 short, and they refused and wrote `capital_in`
+None on every pulse. The account fell back to `opening` ($451.97, the first transfer): the $9.86k
+deposit read as **+2,226.8%**, and SOS Fade's $615.14 as **136.1%** of the account.
+
+- **`deposits`** — a current reading states `capital_in`. Unchanged.
+- **`confirmed`** — no current reading states it, but an earlier pulse on the account did.
+  `balance_readings` keeps, per account, the LATEST pulse with `capital_in` (`confirmed_at`,
+  `_balance`, `_capital_in`, `_return_pct`, all off that one pulse), and `_account_readings` takes
+  the latest across bots. net = balance − that `capital_in`; `net_pct` chains the bot's own
+  time-weighted figure on from that pulse's balance, `((1 + r/100) × balance / confirmed_balance − 1)`,
+  or the plain net over `capital_in` when the pulse carried no return. Shares divide by
+  `capital_in`, and the whole-life rule (`whole`) holds as on `deposits`. `net_confirmed_at` says when.
+- **`opening`** — only for an account that has NEVER had a stated figure.
+
+⚠ **The caveat is the price of the fallback, and the page states it**: money put in or taken out
+AFTER `net_confirmed_at` reads as profit or loss. The account figure's tooltip and the drawer say
+so with the time, and the "Not from these bots" line keeps "a deposit" among its causes on this
+basis (it drops it only on `deposits`).
+
+MEASURED on the real archive at a live balance of $10,516.38: `confirmed` at 07:14:15Z, in
+$10,311.48, net **+$204.90 / +1.98%** (was +2,226.8%). Tests: 6 in `tests/test_bot_earnings.py`,
+the incident one watched RED first (`assert 'opening' == 'confirmed'`); two mutations run (first
+stating pulse kept; first bot's kept) and both caught.
 
 ## A balance is an account's only if it was READ on that account (2026-09-14)
 
