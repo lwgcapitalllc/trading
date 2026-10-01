@@ -223,7 +223,7 @@ def _live_pairing(df15, df5, boundary, lag15_ms=0):
     # way to make this pass and is the WRONG one: it would encode "the bridge might be missing"
     # into the money path, and a missing bridge would then silently place nothing while the
     # emulator filled — the exact divergence that halts a bot.
-    r.bridge = SimpleNamespace(sync_fast=lambda step: None, dry_run=True)
+    r.bridge = SimpleNamespace(sync_fast=lambda step, bar_close_ms=None: None, dry_run=True)
 
     seen = []
     real_step = r.clock.step_fast
@@ -588,9 +588,11 @@ class _RecordingBridge:
     def __init__(self, dry_run):
         self.dry_run = dry_run
         self.steps: list = []
+        self.closes: list = []
 
-    def sync_fast(self, step):
+    def sync_fast(self, step, bar_close_ms=None):
         self.steps.append(step)
+        self.closes.append(bar_close_ms)
 
 
 class _CountingLedger:
@@ -609,6 +611,7 @@ def _observer(dry_run):
     """
     r = LiveRunner.__new__(LiveRunner)
     r.bridge = _RecordingBridge(dry_run)
+    r.fast_feed = SimpleNamespace(bar_seconds=300)  # production never observes without one
     r.ledger = _CountingLedger()
     r.log = SimpleNamespace(info=lambda *a, **k: None, warning=lambda *a, **k: None)
     return r
@@ -726,3 +729,17 @@ def test_every_fast_bar_hands_its_breaks_to_the_1m_break_add_even_with_the_re_en
     assert seen, "no fast bar handed its breaks over"
     assert seen == sorted(seen) and set(seen) <= set(stepped)
     assert len(seen) == len(stepped), f"{len(stepped) - len(seen)} fast bars never observed"
+
+
+def test_the_bridge_is_handed_the_fast_bar_CLOSE_so_a_late_reentry_fill_is_not_a_halt():
+    """2026-10-01, live SOS Fade: the re-entry filled 4.7s after a one-minute bar closed and the
+    check on that bar ran at +8s, so the bridge saw a trade the strategy had not reached yet and
+    halted. The bridge can only tell "after the close" from "inside the bar" if it is told the
+    close. MUTATION: drop `bar_close_ms` from the `sync_fast` call in `_observe_secondary` -> red.
+    """
+    r = _observer(dry_run=True)
+    bar = _bars(_frames()[1])[0]
+    r._observe_secondary(
+        SimpleNamespace(bar=bar, primaries=[], arm=None, filled_dir=None, stopped_dir=None)
+    )
+    assert r.bridge.closes == [bar.timestamp_ms + 300_000]

@@ -820,6 +820,35 @@ ONE place, `mt5_ops.BotMT5.opened_utc_ms` (the `broker_clock` rule `get_candles`
 log as `PRIMARY LIMIT FILLED | … after this bar closed`. A re-entry (secondary) fill during the
 wait is NOT covered; no re-entry order has ever reached a broker.
 
+## 🔴 The live SOS Fade bot halted on its OWN re-entry fill (2026-10-01)
+
+**What happened.** `sos_fade_demo` (live 34957946) closed its primary at breakeven at 08:15 UTC and
+placed the re-entry buy limit at 4159.79 at 08:16:07 (T368996332, 0.17 lots). **MEASURED off the
+broker's ticks:** the 08:16 one-minute bar never reached it (lowest ask 4160.08); the ask first
+touched it at **08:17:04.7**. The fill clock checked the 08:16 bar at **08:17:08**, four seconds
+after the fill, so the broker held a trade from a bar the strategy had not closed yet: `HALTED: MT5
+holds a position the strategy does not know about`. The trade ran on its broker stop alone and
+closed about $218 up with nobody managing it; the bot placed nothing for the rest of the day. The
+demo copy (`sos_fade_1`) placed the same limit, checked the 08:16 bar a few seconds EARLIER, filled
+on the 08:17 bar and banked +0.88R. **It was a race, not a strategy disagreement**: any re-entry
+fill in the seconds between a fast bar's close and its check halted — the 2026-09-30 note above
+had named exactly this gap ("a re-entry fill during the wait is NOT covered").
+
+**The fix.** `_fill_after_the_bar` now covers BOTH resting kinds (`_our_resting_fill`, ticket and
+side against the order this bridge rested) on BOTH clocks: `sync_fast` is handed the fast bar's
+close by `runner._observe_secondary` and asks with `clock="fast"`; `sync` already asked on the main
+clock and now also matches a re-entry fill, because when a one-minute and a 15-minute bar close
+together the fill clock runs first and the 15-minute check then meets the same fill. **One bar of
+grace per ticket PER CLOCK** (`_late_fill` is a set of `(ticket, clock)`), so each clock defers a
+shared-close fill once and a wrong broker clock still halts a bar later. A fill INSIDE the bar, a
+position that is not our order, or an unreadable open time still halts at once.
+
+**TESTED 2026-10-01:** five tests in `tests/test_live_bridge.py` (today's sequence replayed tick
+for tick), one in `tests/test_dual_feed_merge.py` (the runner hands over the close). Mutations run:
+dropping the fast-clock call (3 red), keying the latch on the ticket alone (the shared-close test
+red), dropping the close in the runner (the runner test red). ⚠ **Not yet run against a real
+fill** — rule 9 until a bot logs `RE-ENTRY LIMIT FILLED | … after this bar closed`.
+
 ## ✋ A trade the OWNER closes by hand is booked as his, and the bot keeps trading (2026-09-17)
 
 **Before:** closing the bot's trade in the terminal booked an ordinary exit and HALTED the bot on

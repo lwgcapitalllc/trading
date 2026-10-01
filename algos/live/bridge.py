@@ -738,7 +738,7 @@ class OrderBridge:
         # ticket). See `_primary_fill_awaiting_its_bar`.
         self._deferred_fill: Optional[int] = None
         # The fill the BAR check has already given its one bar of grace. See `_fill_after_the_bar`.
-        self._late_fill: Optional[int] = None
+        self._late_fill: set = set()  # (ticket, clock) pairs already given their one bar
         # A broker position found at startup with no record — checked against the warm-up replay
         # by `_adopt_by_replay`, never adopted before that.
         self._replay_candidate = None
@@ -1659,7 +1659,7 @@ class OrderBridge:
             # and what this carries only begins to matter afterwards. See `save_setup_watch`.
             self.save_setup_watch()
 
-    def sync_fast(self, step) -> None:
+    def sync_fast(self, step, bar_close_ms: Optional[int] = None) -> None:
         """Reconcile the RE-ENTRY, on the fill clock. **G18 stage 2.**
 
         `sync` above owns the primary's two slots and any position the PRIMARY opened. This owns
@@ -1715,6 +1715,9 @@ class OrderBridge:
         # 🔴 BEFORE anything observes the position — the 2026-09-17 halt on both SOS Fade bots.
         # See `_primary_fill_awaiting_its_bar`.
         if self._primary_fill_awaiting_its_bar(positions):
+            return
+        # 🔴 The re-entry's own fill landing after this fast bar closed — the 2026-10-01 halt.
+        if self._fill_after_the_bar(positions, bar_close_ms, clock="fast"):
             return
         self._observe_close(positions, dec, sig, owner="secondary")
         if self.state is BridgeState.HALTED:
@@ -1802,13 +1805,27 @@ class OrderBridge:
     def _our_primary_fill(self, positions):
         """The broker's one position, if it is THIS bridge's own resting primary limit, filled
         while the strategy is still flat. Matched on TICKET and SIDE — see the method above."""
+        found = self._our_resting_fill(positions, kinds=("primary",))
+        return found[0] if found else None
+
+    def _our_resting_fill(self, positions, kinds=("primary", "secondary")):
+        """`(position, slot)` if the broker's one position is one of THIS bridge's own resting
+        limits of the given kinds, filled while the strategy is still flat — else None.
+
+        Matched on TICKET and SIDE against the order this bridge itself rested (MT5 carries a
+        triggered pending order's ticket through to its position). The re-entry joined on
+        2026-10-01 — see `_fill_after_the_bar`.
+        """
         if self._pos_ticket is not None or self._ex._pos_dir != 0 or len(positions) != 1:
             return None
         p = positions[0]
-        rest = self._rest.get(primary_slot(1 if p.type == 0 else -1))
-        if rest is None or int(rest.ticket) != int(p.ticket):
-            return None
-        return p
+        d = 1 if p.type == 0 else -1
+        for kind in kinds:
+            slot = primary_slot(d) if kind == "primary" else secondary_slot(d)
+            rest = self._rest.get(slot)
+            if rest is not None and int(rest.ticket) == int(p.ticket):
+                return p, slot
+        return None
 
     def _pull_other_rests(self, filled) -> None:
         """One position slot: while a fill waits to be booked, no other order may rest."""
@@ -1816,8 +1833,10 @@ class OrderBridge:
             if held is not None and slot != filled:
                 self._drop_rest(slot, held, "cancel (the primary filled)")
 
-    def _fill_after_the_bar(self, positions, bar_close_ms: Optional[int]) -> bool:
-        """Did our own primary limit fill AFTER the bar being reconciled closed? If so this bar
+    def _fill_after_the_bar(
+        self, positions, bar_close_ms: Optional[int], clock: str = "main"
+    ) -> bool:
+        """Did one of our own limits fill AFTER the bar being reconciled closed? If so this bar
         leaves it alone, and the next one books it.
 
         🔴 **Built 2026-09-30, after the FFT demo bot halted on its own winning trade.** The bar
@@ -1825,34 +1844,61 @@ class OrderBridge:
         minute for them (`runner._wait_for_priority`). Its limit filled 40 seconds into the NEXT
         bar, inside that wait, so the broker held a trade from a bar the strategy had not seen yet
         and `_agrees` halted — the very mid-bar comparison this module's docstring rules out.
-        The strategy booked the same fill one bar later. The live extreme-leg bot waits ~17s every
-        15 minutes and carries the same exposure.
+        The strategy booked the same fill one bar later.
+
+        🔴 **Extended to the RE-ENTRY and to the fill clock on 2026-10-01, after the live SOS Fade
+        bot halted on its own re-entry.** Its re-entry buy limit at 4159.79 was placed at 08:16:07;
+        the 08:16 one-minute bar never reached it (lowest ask 4160.08) and the ask first touched it
+        at 08:17:04.7 (MEASURED, broker ticks). The fill clock checked the 08:16 bar at 08:17:08 —
+        four seconds after the fill — so the broker held a trade from a bar the strategy had not
+        closed yet, and `_agrees` halted with "doesn't know about". The demo copy placed the same
+        limit, checked that bar a few seconds earlier, filled it on the 08:17 bar and banked
+        +0.88R; the live trade ran on its broker stop alone. Any fill in the seconds between a bar's
+        close and its check did this — the 2026-09-30 fix covered only the primary on the main
+        clock. Both clocks now ask, for both kinds of resting order: the fill clock with `clock`
+        "fast", and the main clock too, because when a one-minute and a 15-minute bar close
+        together the fill clock runs first and the 15-minute check then sees the same fill.
 
         ✅ **Decided on the FILL's own time, not on how late this check ran**, so a fill inside
         the bar just closed still halts at once, exactly as before.
 
-        ⚠ **One bar of grace per ticket, never more.** If the broker clock rule were ever wrong by
-        an hour, every later bar would also read the fill as "after" and a real disagreement would
-        be deferred for ever. Capped, the worst case is a halt one bar late, with the broker stop
-        protecting the position throughout. An unreadable time (`None`) or no close handed in
-        defers nothing — both fall through to the halt, the behaviour before this existed.
+        ⚠ **One bar of grace per ticket PER CLOCK, never more.** If the broker clock rule were ever
+        wrong by an hour, every later bar would also read the fill as "after" and a real
+        disagreement would be deferred for ever. Capped, the worst case is a halt one bar late,
+        with the broker stop protecting the position throughout. Per clock, because the two clocks
+        each meet the same fill once at a shared close. An unreadable time (`None`) or no close
+        handed in defers nothing — both fall through to the halt, the behaviour before this existed.
         """
         if bar_close_ms is None:
             return False
-        p = self._our_primary_fill(positions)
-        if p is None or self._late_fill == int(p.ticket):
+        found = self._our_resting_fill(positions)
+        if found is None:
+            return False
+        p, slot = found
+        if (int(p.ticket), clock) in self._late_fill:
             return False
         opened = self._mt5.opened_utc_ms(p) if hasattr(self._mt5, "opened_utc_ms") else None
         if opened is None or opened < int(bar_close_ms):
             return False
-        self._late_fill = int(p.ticket)
-        d = 1 if p.type == 0 else -1
-        self._log.info(
-            f"PRIMARY LIMIT FILLED | T{p.ticket} after this bar closed — the strategy books it on "
-            f"the next bar."
-        )
-        self._ledger.event("primary_fill_deferred", ticket=int(p.ticket), dir=d, late=True)
-        self._pull_other_rests(primary_slot(d))
+        self._late_fill.add((int(p.ticket), clock))
+        d = slot[1]
+        if slot[0] == "secondary":
+            self._log.info(
+                f"RE-ENTRY LIMIT FILLED | T{p.ticket} after this bar closed — the strategy books "
+                f"it on the next bar."
+            )
+            self._ledger.event(
+                "secondary_fill_deferred", ticket=int(p.ticket), dir=d, late=True, clock=clock
+            )
+        else:
+            self._log.info(
+                f"PRIMARY LIMIT FILLED | T{p.ticket} after this bar closed — the strategy books "
+                f"it on the next bar."
+            )
+            self._ledger.event(
+                "primary_fill_deferred", ticket=int(p.ticket), dir=d, late=True, clock=clock
+            )
+        self._pull_other_rests(slot)
         return True
 
     def _fast_decision(self) -> "_FastDec":

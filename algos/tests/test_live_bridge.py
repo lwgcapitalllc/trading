@@ -4755,6 +4755,79 @@ def test_a_late_position_that_is_not_our_order_still_halts(tmp_path):
     assert b.state is live_bridge.BridgeState.HALTED
 
 
+# ── the RE-ENTRY's own fill, landing after its fast bar closed (2026-10-01) ─────
+#
+# 🔴 The live SOS Fade bot halted on its own re-entry: buy limit 4159.79 placed 08:16:07, the
+# 08:16 bar never reached it, the ask touched it at 08:17:04.7, and the fill clock checked the
+# 08:16 bar at 08:17:08. The demo copy checked a few seconds earlier and banked +0.88R.
+
+_FAST_CLOSE = 1_790_842_620_000  # 08:17:00 UTC, the close of the one-minute bar being checked
+
+
+def _reentry_long_filled(tmp_path, opened_ms):
+    ex = _FakeExecution(pend_sec=_Pend(1, 4159.79, 17.0, 4145.40), entry_kind="secondary")
+    b, ops, ledger, notes = _bridge(ex, instance_dir=tmp_path)
+    b.sync_fast(_fast_step(), bar_close_ms=_FAST_CLOSE - 60_000)  # the limit rests at the broker
+    ticket = ops.orders[0].ticket
+    ops.positions = [_Pos(ticket, 0, 4159.79, 0.17, 4145.40, opened_ms=opened_ms)]
+    return b, ops, ex, ledger, ticket
+
+
+def test_a_reentry_fill_AFTER_its_fast_bar_closed_is_booked_on_the_next_bar_not_halted(tmp_path):
+    """Today's sequence. RED before the fix (watched 2026-10-01): the first `sync_fast` halted
+    with "doesn't know about". MUTATION: delete the `_fill_after_the_bar` call in `sync_fast`."""
+    b, ops, ex, ledger, ticket = _reentry_long_filled(tmp_path, _FAST_CLOSE + 4_700)
+    b.sync_fast(_fast_step(), bar_close_ms=_FAST_CLOSE)  # strategy still flat: bar not reached
+    assert b.state is live_bridge.BridgeState.LIVE, b.halt_reason
+    assert [kw["clock"] for k, kw in ledger.rows if k == "event:secondary_fill_deferred"] == [
+        "fast"
+    ]
+
+    ex._pos_dir, ex._pend_sec = 1, None  # the next fast bar: the strategy fills the same limit
+    b.sync_fast(_fast_step(), bar_close_ms=_FAST_CLOSE + 60_000)
+    assert b.state is live_bridge.BridgeState.LIVE, b.halt_reason
+    assert b._pos_ticket == ticket
+    assert [kw for k, kw in ledger.rows if k == "opened"][0]["intent"] == "secondary"
+
+
+def test_a_reentry_fill_INSIDE_its_bar_with_the_strategy_flat_still_halts(tmp_path):
+    """Both sides saw that bar and disagree — never deferred."""
+    b, _ops, _ex, _l, _t = _reentry_long_filled(tmp_path, _FAST_CLOSE - 1)
+    b.sync_fast(_fast_step(), bar_close_ms=_FAST_CLOSE)
+    assert b.state is live_bridge.BridgeState.HALTED
+    assert "doesn't know about" in b.halt_reason
+
+
+def test_the_reentry_grace_is_ONE_fast_bar(tmp_path):
+    """A clock rule off by an hour reads every bar as "after"; it must still halt a bar later."""
+    b, _ops, _ex, _l, _t = _reentry_long_filled(tmp_path, _FAST_CLOSE + 3_600_000)
+    b.sync_fast(_fast_step(), bar_close_ms=_FAST_CLOSE)
+    assert b.state is live_bridge.BridgeState.LIVE
+    b.sync_fast(_fast_step(), bar_close_ms=_FAST_CLOSE + 60_000)
+    assert b.state is live_bridge.BridgeState.HALTED
+
+
+def test_at_a_shared_close_the_15_minute_check_also_waits_for_the_reentry_fill(tmp_path):
+    """A one-minute and a 15-minute bar close together; the fill clock runs first, then the main
+    check meets the same late fill. Each clock gets its own one bar, so the main check must not
+    halt on a fill the fill clock just deferred. MUTATION: key the latch on the ticket alone."""
+    b, ops, ex, _l, ticket = _reentry_long_filled(tmp_path, _FAST_CLOSE + 4_700)
+    b.sync_fast(_fast_step(), bar_close_ms=_FAST_CLOSE)
+    b.sync(_Dec(), _Sig(), bar_close_ms=_FAST_CLOSE)
+    assert b.state is live_bridge.BridgeState.LIVE, b.halt_reason
+    ex._pos_dir, ex._pend_sec = 1, None
+    b.sync_fast(_fast_step(), bar_close_ms=_FAST_CLOSE + 60_000)
+    assert b.state is live_bridge.BridgeState.LIVE, b.halt_reason
+    assert b._pos_ticket == ticket
+
+
+def test_a_late_position_that_is_not_our_reentry_order_still_halts_on_the_fill_clock(tmp_path):
+    b, ops, _ex, _l, ticket = _reentry_long_filled(tmp_path, _FAST_CLOSE + 4_700)
+    ops.positions = [_Pos(ticket + 50, 0, 4159.79, 0.17, 4145.40, opened_ms=_FAST_CLOSE + 4_700)]
+    b.sync_fast(_fast_step(), bar_close_ms=_FAST_CLOSE)
+    assert b.state is live_bridge.BridgeState.HALTED
+
+
 # ── re-adopting a recordless position by REPLAY (2026-09-17) ───────────────────
 #
 # Tonight's two trades opened with no restart record. On restart, the warm-up replay is allowed to

@@ -1323,7 +1323,14 @@ class LiveRunner:
         day of *nothing armed*, and the decision ledger is the one file nothing else in the world
         holds a copy of — burying it is not free.
         """
-        self.bridge.sync_fast(step)
+        # The fast bar's CLOSE, so a re-entry fill landing between that close and this check is
+        # booked on the next fast bar rather than halted (`bridge._fill_after_the_bar`, 2026-10-01).
+        bar = getattr(step, "bar", None)
+        close = getattr(bar, "timestamp_ms", None)
+        self.bridge.sync_fast(
+            step,
+            bar_close_ms=None if close is None else int(close) + self.fast_feed.bar_seconds * 1000,
+        )
 
         if step.arm is None:
             return
