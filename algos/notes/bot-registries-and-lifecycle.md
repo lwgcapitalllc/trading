@@ -413,3 +413,18 @@ check disabled); a copy with no runner is never called rehearsed.
 - 🔴 **`sos_fade_demo` was NOT pinned and must not be until its next promote.** Its frozen code (built from e0b07884, 2026-09-22) does not declare those settings, and the runner refuses to start on a setting its code does not know. Pinning them would leave the live bot unable to restart.
 - `sos_fade_1` and `sos_fade_2` (unpromoted, so they run the repo's code) were pinned at the same defaults later the same day, Aaron's call. That leaves `sos_fade_demo` as the test's only failure until its next promote.
 - ⚠ **The test reads the REPO's dataclass for every bot, including frozen ones**, so for a promoted bot it can demand a key the running code would refuse. The pin belongs in the same change as the promote that ships the setting.
+
+## 🔴 A promote with nothing new to load pinned a hash the bot then refused (2026-10-01)
+
+Live SOS Fade would not start after a promote that printed *"code is UNCHANGED … nothing new for
+the bot to load"*: `Deployed code does not match this bot's pinned version — pinned c65b650d… /
+on disk b50c92e7…`. The no-op branch of `promote.py` re-pins the record (so the Bots page stops
+asking for a deploy), and it pinned `new_hash` — taken over every tree the tool COPIES — while
+`version.verify_pin` checks `cfg.source_roots`, the roots the bot LOADS. Two root sets never hash
+alike, so **every no-op promote since 2026-09-23 left a bot that could not restart**; it only
+surfaces at the next start, which is why it looked like the restart's fault. The no-op pin now uses
+the same `deployment_hash(cfg.source_roots)` as the deploy branch.
+
+⚠ **A bot already left in this state is repaired by `promote.py --redeploy`**, which takes the
+deploy branch and re-pins correctly. Test: `test_promote_version.py` →
+`test_a_NO_OP_promote_pins_the_SAME_hash_the_runner_verifies` (mutation run, red).

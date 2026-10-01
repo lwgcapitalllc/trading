@@ -473,3 +473,19 @@ def test_an_UNREADABLE_snapshot_reports_neither_a_change_nor_a_match(tmp_path):
     staging = tmp_path / "staging"
     _tree(staging / "fft", {"strategy.py": "RISK = 5\n"})
     assert promote_tool.snapshot_hashes(_Cfg(tmp_path / "gone"), staging, TREES) == (None, None)
+
+
+def test_a_NO_OP_promote_pins_the_SAME_hash_the_runner_verifies():
+    """🔴 2026-10-01: a no-op promote of live SOS Fade pinned the hash of every tree the tool
+    COPIES, the runner verified the roots the bot LOADS, and the bot refused to start ("pinned
+    c65b650d… / on disk b50c92e7…"). Both branches that write a pin must hash `cfg.source_roots`.
+    Read off the source, like the preflight guard above, because the branch needs a whole box to
+    drive. MUTATION: put `new_hash` back in the no-op `write_pin` -> red (watched 2026-10-01)."""
+    src = Path(promote_tool.__file__).read_text(encoding="utf-8")
+    noop = src.split("if idle and not args.dry_run and not args.redeploy:", 1)[1].split(
+        "return 0", 1
+    )[0]
+    code = "\n".join(ln for ln in noop.splitlines() if not ln.lstrip().startswith("#"))
+    assert "write_pin(" in code, "could not find the no-op pin — the guard is vacuous"
+    assert "deployment_hash(cfg.source_roots)" in code
+    assert "new_hash" not in code

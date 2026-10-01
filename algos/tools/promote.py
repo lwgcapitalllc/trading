@@ -924,7 +924,20 @@ def main(argv=None) -> int:
     idle = nothing_new(cfg, was, staging, trees, cfg.strategy_params)
     if idle and not args.dry_run and not args.redeploy:
         shutil.rmtree(staging, ignore_errors=True)
-        write_pin(cfg, new_hash, commit, date.today().isoformat(), n, version=to_version)
+        # 🔴 **PINNED OVER `cfg.source_roots`, THE ROOTS THE RUNNER VERIFIES (2026-10-01).** This
+        # wrote `new_hash` — taken over every tree this tool COPIES — while `version.verify_pin`
+        # checks the 3-7 roots the bot loads. Two root sets never hash alike, so every no-op
+        # promote left a pin the bot refused at its next start: live SOS Fade would not start,
+        # "pinned c65b650d… / on disk b50c92e7…", after a no-op promote that was meant to change
+        # nothing. Same expression as the deploy branch below, so the two cannot drift again.
+        write_pin(
+            cfg,
+            deployment_hash(cfg.source_roots),
+            commit,
+            date.today().isoformat(),
+            n,
+            version=to_version,
+        )
         print(f"{_NOOP_MARK}")
         print("  nothing new for the bot to load — the snapshot is already what it is running.")
         print("  the bot was NOT restarted, and its record now names this commit.")
