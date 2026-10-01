@@ -88,6 +88,7 @@
     "exec_rec_be_keep_r": 0.0,
     "exec_gap_be_r": -1.0,
     "exec_gap_be_keep_r": 0.0,
+    "exec_shift_entry": false,
     "exec_shift_be_r": -1.0,
     "exec_shift_be_keep_r": 0.0,
     "exec_sec_stop": "0.886",

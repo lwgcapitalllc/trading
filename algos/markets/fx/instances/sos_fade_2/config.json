@@ -126,6 +126,7 @@
     "exec_sh_tp1_pct": 100.0,
     "exec_sh_tp_r": 2.0,
     "exec_shift_be_keep_r": 0.0,
+    "exec_shift_entry": false,
     "exec_shift_be_r": -1.0,
     "exec_short_hold": false,
     "exec_time_stop_hrs": 36.0,
