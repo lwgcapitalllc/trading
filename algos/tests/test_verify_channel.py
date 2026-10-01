@@ -160,7 +160,7 @@ def test_the_message_says_WHAT_it_is_and_WHY_it_arrived(box):
     unexplained message in a channel somebody has just been handed reads as a bot misbehaving."""
     tool.main(["--kind", "trade", "--chat-id", "-1009999999999", "--account", str(_LIVE)])
     text = box.posted[0]["text"]
-    assert "TEST MESSAGE" in text and "trade channel" in text
+    assert text.splitlines()[0] == "ℹ️ TEST MESSAGE · trade channel"
     assert str(_LIVE) in text and "-1009999999999" in text
     assert "Nothing is trading because of this message" in text
 

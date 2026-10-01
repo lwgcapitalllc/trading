@@ -243,7 +243,18 @@ class SetupAlerts:
         # reply to, and the thread would read backwards.
         if WATCHING_MSG not in sent:
             sent.add(WATCHING_MSG)
-            if self._on(WATCHING_MSG):
+            if snap.blocked_by and not snap.is_terminal and BLOCKED_MSG not in sent:
+                # 🔴 **Refused on the bar it is first announced: ONE message, not two**
+                # (2026-10-01, extreme_leg_demo 01:20 UTC). SETUP FORMING quoted a target price
+                # had already passed, and BLOCKED landed under it in the same second. The root IS
+                # the refusal now, it prints no prices, and BLOCKED is marked said so it is not
+                # repeated as a reply. Gated on the BLOCKED category, which is the message sent.
+                sent.add(BLOCKED_MSG)
+                if self._on(BLOCKED_MSG):
+                    self._threads[snap.key] = self._post(
+                        alerts.format_blocked_root(snap, self._digits, self._display)
+                    )
+            elif self._on(WATCHING_MSG):
                 self._threads[snap.key] = self._post(
                     alerts.format_watching(snap, self._digits, self._display)
                 )
@@ -253,7 +264,7 @@ class SetupAlerts:
         if snap.blocked_by and BLOCKED_MSG not in sent:
             sent.add(BLOCKED_MSG)
             if self._on(BLOCKED_MSG):
-                self._post(alerts.format_blocked(snap, self._digits), reply_to=root)
+                self._post(alerts.format_blocked(snap, self._digits, self._display), reply_to=root)
 
         # 🔴 **`announce_resting` is checked BEFORE `sent` is marked, and the order is the whole
         # point.** Marking it first would consume the setup's one resting-message slot on a bar
@@ -269,7 +280,7 @@ class SetupAlerts:
 
         if snap.is_terminal:
             if RESOLVED_MSG not in sent and self._on(RESOLVED_MSG):
-                self._post(alerts.format_resolved(snap, self._digits), reply_to=root)
+                self._post(alerts.format_resolved(snap, self._digits, self._display), reply_to=root)
             # Drop the bookkeeping. A process meant to run for months cannot keep a dict entry
             # per setup it has ever seen — ~11 a month forever is a slow leak with no symptom.
             self._forget(snap.key)
@@ -333,7 +344,13 @@ class SetupAlerts:
             if self._on(ENTRY_ZONE_MSG):
                 lots = now.lots if now is not None else None
                 self._post(
-                    alerts.format_entry_zone(snap, self._digits, lots, show_size=alerts.SHOW_SIZE),
+                    alerts.format_entry_zone(
+                        snap,
+                        self._digits,
+                        lots,
+                        show_size=alerts.SHOW_SIZE,
+                        display=self._display,
+                    ),
                     reply_to=root,
                 )
             self._save()
@@ -347,7 +364,7 @@ class SetupAlerts:
             if snap.paused_by and snap.state != RESTING and PAUSED_MARK not in sent:
                 sent.add(PAUSED_MARK)
                 if self._on(ENTRY_ZONE_MSG):
-                    self._post(alerts.format_order_withdrawn(snap), reply_to=root)
+                    self._post(alerts.format_order_withdrawn(snap, self._display), reply_to=root)
                 self._save()
             return
         before = self._order.get(snap.key)
@@ -364,6 +381,7 @@ class SetupAlerts:
                     now if asked else None,
                     before if asked else None,
                     show_size=alerts.SHOW_SIZE,
+                    display=self._display,
                 ),
                 reply_to=root,
             )
@@ -490,7 +508,7 @@ class SetupAlerts:
             for snap in resolved:
                 if not snap.is_terminal or snap.key not in self._sent or snap.key in still_live:
                     continue
-                self._close(snap.key, alerts.format_resolved(snap, self._digits))
+                self._close(snap.key, alerts.format_resolved(snap, self._digits, self._display))
             if live_keys is None:
                 self._save()
                 return
@@ -500,7 +518,10 @@ class SetupAlerts:
                 unmatched = self._adopt(unmatched, live)
             for key in unmatched:
                 about = self._about.get(key) or {}
-                self._close(key, alerts.format_lost(about.get("side"), about.get("symbol") or ""))
+                self._close(
+                    key,
+                    alerts.format_lost(about.get("side"), about.get("symbol") or "", self._display),
+                )
             self._stored_scheme = self._key_scheme
             self._save()
         except Exception as e:  # noqa: BLE001 — see the module docstring

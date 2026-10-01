@@ -58,7 +58,11 @@ def _who(row) -> str:
 def _span(seconds) -> str:
     minutes = int(seconds) // 60
     hours, minutes = divmod(minutes, 60)
-    return f"{hours} h {minutes} min" if hours else f"{max(minutes, 1)} min"
+    if not hours:
+        minutes = max(minutes, 1)
+        return f"{minutes} minute{'s' if minutes != 1 else ''}"
+    hrs = f"{hours} hour{'s' if hours != 1 else ''}"
+    return f"{hrs} {minutes} minute{'s' if minutes != 1 else ''}" if minutes else hrs
 
 
 def _grouped(rows) -> str:
@@ -85,8 +89,9 @@ def summarise(rows, problem, found: int, start: datetime, end: datetime) -> str:
             LABEL,
             "Health room",
             period,
-            f"The send log could not be read ({problem}), so this cannot say what was held, late "
-            f"or lost. Check algos/logs/notify on the box.",
+            f"The send log couldn't be read, so this can't say what was held back, late or "
+            f"lost. Reason: {problem}",
+            "Check the send log on the trading server.",
         )
     if not found:
         return alert(
@@ -94,8 +99,9 @@ def summarise(rows, problem, found: int, start: datetime, end: datetime) -> str:
             LABEL,
             "Health room",
             period,
-            "There is no send log for this period — either nothing was sent at all, or nothing is "
-            "writing it. Check algos/logs/notify on the box.",
+            "Nothing was logged in this period: either nothing was sent, or the send log isn't "
+            "being written.",
+            "Check the send log on the trading server.",
         )
     rows = [r for r in rows if r.get("label") != LABEL]
     held = [r for r in rows if r.get("outcome") == notify_log.HELD]
@@ -118,12 +124,12 @@ def summarise(rows, problem, found: int, start: datetime, end: datetime) -> str:
     ]
 
     lines = [period]
-    lines.append(f"Held {len(held)}: {_grouped(held)}." if held else "Nothing held.")
+    lines.append(f"Held back {len(held)}: {_grouped(held)}." if held else "Nothing held back.")
     if offs:
         worst = max(offs, key=lambda r: r.get("duration_s") or 0)
         acct = worst.get("account")
         lines.append(
-            f"Longest trading-off: {_span(worst['duration_s'])}"
+            f"Longest time trading was off: {_span(worst['duration_s'])}"
             f"{f' (account {acct})' if acct is not None else ''}."
         )
     if restarts:
@@ -134,17 +140,23 @@ def summarise(rows, problem, found: int, start: datetime, end: datetime) -> str:
             + ")."
         )
     if chat_bot:
-        lines.append(f"The Telegram bot was restarted {len(chat_bot)} time(s).")
+        lines.append(
+            f"The Telegram bot was restarted {len(chat_bot)} "
+            f"time{'s' if len(chat_bot) != 1 else ''}."
+        )
     trades = [r for r in late + gave_up if r.get("kind") != HEALTH]
     lines.append(
-        f"Delivered late: {len(late)} · Given up after 24 h: {len(gave_up)}"
-        + (f" (of them {len(trades)} trade or setup message(s))" if trades else "")
+        f"Delivered late: {len(late)} · Given up after 24 hours: {len(gave_up)}"
+        + (
+            f" ({len(trades)} of them "
+            + ("a trade or setup message)" if len(trades) == 1 else "trade or setup messages)")
+            if trades
+            else ""
+        )
         + "."
     )
     if refused:
-        lines.append(
-            f"Refused by Telegram or no room to send to: {len(refused)} — {_grouped(refused)}."
-        )
+        lines.append(f"Refused by Telegram or no room set: {len(refused)}: {_grouped(refused)}.")
     return alert(INFO, LABEL, "Health room", *lines)
 
 

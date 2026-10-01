@@ -53,7 +53,7 @@ def test_an_add_is_ANNOUNCED_with_sizes_off_just_without_the_lots():
     m = alerts.format_scaled_in(
         lots_added=0.2, lots_now=1.2, price=3300.0, stop=3290.0, show_size=False
     )
-    assert "ADDED TO POSITION" in m and "at about 3,300.00" in m and "3,290.00" in m
+    assert "ADDED TO TRADE" in m and "at about 3,300.00" in m and "3,290.00" in m
     assert "lots" not in m and "0.20" not in m and "1.20" not in m
 
 
@@ -61,11 +61,25 @@ def test_the_signals_room_hides_size_with_the_same_switch():
     from types import SimpleNamespace
 
     snap = SimpleNamespace(
-        side=1, entry=3290.0, stop=3280.0, targets=[3310.0], met=2, of=3, confluences=[]
+        side=1,
+        direction="LONG",
+        strategy="SosFadeStrategy",
+        symbol="XAUUSD.p",
+        entry=3290.0,
+        stop=3280.0,
+        targets=[3310.0],
+        met=2,
+        of=3,
+        confluences=[],
     )
     on = alerts.format_entry_zone(snap, 2, 0.25, show_size=True)
     off = alerts.format_entry_zone(snap, 2, 0.25, show_size=False)
-    assert "0.25 lots" in on and "lots" not in off and "BUY LIMIT RESTING" in off
+    assert (
+        "0.25 lots" in on
+        and "lots" not in off
+        and "ORDER WAITING" in off
+        and "Buy at 3,290.00" in off
+    )
 
 
 def test_entry_states_prices_and_no_size():
@@ -89,7 +103,7 @@ def test_partial_bank_says_that_it_banked_not_how_much():
     m = alerts.format_partial_banked(
         lots_banked=0.12, lots_before=0.37, lots_after=0.25, show_size=False
     )
-    assert "rest is still running" in m
+    assert "rest is still open" in m
     assert "lots" not in m and "0.12" not in m and "0.37" not in m
 
 
@@ -104,7 +118,7 @@ def test_stop_moves_are_untouched_they_never_carried_a_size():
     m = alerts.format_stop_moved(
         direction=1, entry=3290.0, was=3280.0, now=3301.5, opening_stop=3280.0
     )
-    assert "locking +1.15R" in m and "$" not in m and "lots" not in m
+    assert "locks in +1.15R" in m and "$" not in m and "lots" not in m
 
 
 def test_mutation_turning_sizes_back_on_reintroduces_the_leak():

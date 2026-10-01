@@ -119,7 +119,17 @@ for _p in (
 
 import live_config  # noqa: E402  (algos/live/live_config.py)
 from account_flows import account_return  # noqa: E402  (algos/shared/account_flows.py)
-from alert_format import CRITICAL, INFO, OK, WARNING, alert, joined, money  # noqa: E402
+from alert_format import (  # noqa: E402
+    CRITICAL,
+    INFO,
+    OK,
+    WARNING,
+    alert,
+    joined,
+    money,
+    plural,
+    when,
+)
 from bridge import (  # noqa: E402
     BridgeState,
     OrderBridge,
@@ -133,6 +143,7 @@ from feed import (  # noqa: E402
 )
 from fleet_halt import read_fleet_halt  # noqa: E402  (algos/shared/fleet_halt.py)
 from ledger import Ledger  # noqa: E402
+from param_labels import change_text, label_for  # noqa: E402  (algos/shared/param_labels.py)
 from version import VersionMismatch, current_commit, verify_pin  # noqa: E402
 
 
@@ -178,19 +189,21 @@ _SYMBOL_TRADE_MODES = {0: "disabled", 1: "long only", 2: "short only", 3: "close
 _SYMBOL_TRADE_FULL = 4
 
 
-def refused_summary(names, shown: int = 3) -> str:
-    """`3 settings need a restart: a, b, c and 22 more.` — for SETTINGS NOT APPLIED (2026-09-26).
+def refused_summary(names, shown: int = 3, package=None) -> str:
+    """`25 changes need a restart: Risk % per trade, Deep stop, Entry level 1 and 22 more.` — for
+    SETTINGS NOT APPLIED (2026-09-26).
 
     It listed every refused setting with both values until this date: up to 25 raw names and
     reprs in one message, which is a log line, not an alert. The full detail still goes to the
-    log and the ledger; the message says how many and names the first few.
+    log and the ledger; the message says how many and names the first few — by the label the
+    Command Center shows (2026-09-30), never the code name.
     """
-    names = [str(n) for n in names]
+    names = [label_for(n, package) for n in names]
     if not names:
         return ""
     head = ", ".join(names[:shown])
     more = len(names) - shown
-    noun = "setting needs" if len(names) == 1 else "settings need"
+    noun = "change needs" if len(names) == 1 else "changes need"
     return f"{len(names)} {noun} a restart: {head}{f' and {more} more' if more > 0 else ''}."
 
 
@@ -228,19 +241,21 @@ def trading_block(account, terminal, symbol, symbol_name: str) -> tuple[bool | N
     # which flag moved then was not recorded. A terminal that does not carry the field (every test
     # double) is not treated as disconnected.
     if terminal is not None and getattr(terminal, "connected", None) is False:
-        return False, "the terminal has lost its connection to the broker's server"
+        return False, "MetaTrader has lost its connection to the broker"
     if said_no(account, "trade_allowed"):
-        return False, "the broker has switched trading off for this account — it is read-only"
+        return False, "the broker has made this account read-only, so it cannot trade"
     if said_no(account, "trade_expert"):
         return False, "the broker does not allow automated trading on this account"
     if said_no(terminal, "trade_allowed"):
-        return False, "the terminal's AutoTrading button is off"
+        return False, "the Algo Trading button in MetaTrader is off"
     mode = getattr(symbol, "trade_mode", None) if symbol is not None else None
     if mode is None:
         unknown = True
     elif int(mode) != _SYMBOL_TRADE_FULL:
         label = _SYMBOL_TRADE_MODES.get(int(mode), f"mode {mode}")
-        return False, f"the broker has {symbol_name} on {label}"
+        if label == "disabled":
+            return False, f"the broker has turned off trading in {symbol_name}"
+        return False, f"the broker has set {symbol_name} to {label}"
     return (None, None) if unknown else (True, None)
 
 
@@ -606,6 +621,18 @@ class LiveRunner:
         except Exception:
             return self.cfg.display_name
 
+    @property
+    def _account_label(self) -> str:
+        """`Account 34957946 · LIVE` — the subject of a message about the ACCOUNT rather than this
+        bot (TRADING OFF / BACK ON). NEVER raises, like `_label`."""
+        name = f"Account {self.cfg.account}"
+        try:
+            import bot_state
+
+            return bot_state.labelled(name, self.cfg.account)
+        except Exception:
+            return name
+
     def _unnamed_channels(self) -> str:
         """Which of a LIVE account's required Telegram channels are not set, as words a person
         reads (`"trades"`, `"signals"`, `"trades and signals"`). `""` means this bot may start.
@@ -792,7 +819,7 @@ class LiveRunner:
 
     #: What the Command Center's one message becomes once the bot is back, per action.
     _ACTION_DONE = {
-        "promote": ("📦", "DEPLOYED"),
+        "promote": (OK, "DEPLOYED"),
         "restart": (OK, "RESTARTED"),
         "start": (OK, "ONLINE"),
     }
@@ -825,9 +852,9 @@ class LiveRunner:
                     else f"{now_v}, back online"
                 )
             elif action == "restart":
-                first = "Restarted from the command center — back online."
+                first = "Restarted from the Command Center and back online."
             else:
-                first = "Started from the command center."
+                first = "Started from the Command Center."
             from notify import edit_telegram
 
             return edit_telegram(
@@ -1209,9 +1236,8 @@ class LiveRunner:
                     WARNING,
                     "RE-ENTRY FEED GAP",
                     self._label,
-                    f"Missed {gap} {self.fast_feed.timeframe} bars on the re-entry's fill clock, "
-                    f"so it re-warmed that feed. The 15-minute stream and any open trade are "
-                    f"unaffected.",
+                    f"Missed {gap} bars on the {self.fast_feed.timeframe} feed the re-entry uses, "
+                    f"so it reloaded that feed. The main chart and any open trade are fine.",
                     "Nothing to do unless it repeats.",
                 )
             )
@@ -1538,9 +1564,10 @@ class LiveRunner:
                     CRITICAL,
                     "NO MT5 LINK",
                     self._label,
-                    "Lost its connection to the terminal — still running, but seeing no market at all.",
-                    f"Retrying every {_LINK_RETRY_SECONDS}s. If it does not come back, check "
-                    f"MetaTrader on the VPS.",
+                    "Lost its connection to MetaTrader. It is still running but cannot see the "
+                    "market.",
+                    f"Retrying every {_LINK_RETRY_SECONDS} seconds. If it doesn't come back, check "
+                    f"MetaTrader on the server.",
                 )
             )
 
@@ -1576,13 +1603,13 @@ class LiveRunner:
                 OK if not halted else CRITICAL,
                 "RECONNECTED" if not halted else "RECONNECTED — STILL HALTED",
                 self._label,
-                f"Back on the terminal after {down / 60:.0f} minutes. It re-warmed on the bars it "
-                f"missed.",
+                f"Back on MetaTrader after {plural(round(down / 60), 'minute')}. It caught up "
+                f"on the bars it missed.",
                 (
                     "Nothing to do."
                     if not halted
-                    else f"It is still halted ({self.bridge.halt_reason}) and will place "
-                    f"nothing. Check the account, then restart it."
+                    else f"It is still halted ({self.bridge.halt_reason}) and places nothing. "
+                    f"Check the account, then restart it."
                 ),
             )
         )
@@ -1705,10 +1732,9 @@ class LiveRunner:
                         WARNING,
                         "NO SETUP MESSAGES",
                         self._label,
-                        f"Its strategy ({self.cfg.strategy_class}, {self.cfg.version_label}) does "
-                        f"not report its setups yet, so the signals room will stay silent for this "
-                        f"bot.",
-                        "Trades and health messages are unaffected. Said once per version.",
+                        f"This strategy ({self.cfg.version_label}) can't report its setups yet, "
+                        f"so the signals room stays silent for this bot.",
+                        "Trade and health messages still arrive. Said once per version.",
                     )
                 )
                 return
@@ -2133,10 +2159,9 @@ class LiveRunner:
                     CRITICAL,
                     "WILL NOT START",
                     self._label,
-                    f"Live account {self.cfg.account} names no {unnamed} channel, so there is "
-                    f"nowhere to report real money.",
-                    "It is down and will stay down. Enter the channel on Bots → Accounts, then "
-                    "start it.",
+                    f"Live account {self.cfg.account} has no {unnamed} channel set, so the bot "
+                    f"has nowhere to report real-money trades.",
+                    "Set the channel on the Command Center's Accounts page, then start it.",
                 )
             )
             return 5, reason
@@ -2179,10 +2204,8 @@ class LiveRunner:
                     CRITICAL,
                     "WILL NOT START",
                     self._label,
-                    "It has never been deployed, so it has no pinned code of its own — it would "
-                    "trade whatever the repo on this box happens to hold.",
-                    "It is down and will stay down. Deploy it from the command center's Configure "
-                    "tab, then start it.",
+                    "It has never been deployed, so it has no approved code version of its own.",
+                    "Deploy it from the Command Center's Configure tab, then start it.",
                 )
             )
             return 7, reason
@@ -2203,9 +2226,9 @@ class LiveRunner:
                     CRITICAL,
                     "WILL NOT START",
                     self._label,
-                    "The code on disk is not the version this bot was promoted to run, so it "
+                    "The code on the server is not the approved code version for this bot, so it "
                     "refused to start.",
-                    "It is down and will stay down. Promote it again, or restore the snapshot.",
+                    "Deploy it again from the Command Center.",
                 )
             )
             return 2, "version pin mismatch"
@@ -2311,8 +2334,9 @@ class LiveRunner:
                     CRITICAL,
                     "WILL NOT START",
                     self._label,
-                    f"Startup failed: {e}",
-                    "It is down and will stay down until someone looks at it.",
+                    "It failed while starting up and is not trading.",
+                    f"Reason: {e}",
+                    "Check its log, then start it again.",
                 )
             )
             return 5, f"startup failed: {e}"
@@ -2321,7 +2345,7 @@ class LiveRunner:
         # three, so it consumes the thread below — a deploy is finished once the bot is back.
         facts = joined(
             [
-                "Trading live" if not self.dry_run else "Dry run — it will place no orders",
+                "Trading live" if not self.dry_run else "Practice run: it places no orders",
                 f"{self.cfg.symbol} {self.cfg.timeframe}",
                 # `probe_link` is the ONE way this class asks for a balance — it returns None
                 # when the terminal cannot be reached, and `money()` renders that as "unknown"
@@ -2331,9 +2355,7 @@ class LiveRunner:
                 money(self.probe_link()[1]),
             ]
         )
-        version_line = (
-            f"{self.cfg.version_label} ({self.source_hash[:8]}) · account {self.cfg.account}"
-        )
+        version_line = f"{self.cfg.version_label} · account {self.cfg.account}"
         # A Command Center deploy, start or restart said one message; turn it into the outcome
         # rather than adding another (2026-09-26). Anything short of a landed edit sends ONLINE.
         if not self._finish_action(facts, version_line):
@@ -2482,9 +2504,10 @@ class LiveRunner:
                                         WARNING,
                                         "DROPPED A BAR",
                                         self._label,
-                                        f"Failed to process the {row.name} bar, so it is re-warming "
-                                        f"the engines on the history it missed.",
+                                        f"Couldn't process the {when(row.name)} bar, so it is "
+                                        f"reloading recent history to catch up.",
                                         f"Reason: {e}",
+                                        "Nothing to do unless it repeats.",
                                     )
                                 )
                             if bar_errors >= 10:
@@ -2493,9 +2516,10 @@ class LiveRunner:
                                         CRITICAL,
                                         "STOPPING",
                                         self._label,
-                                        "Ten bars in a row failed to process and re-warming is not "
-                                        "fixing it, so it is shutting itself down.",
+                                        "Ten bars in a row failed and reloading didn't fix it, "
+                                        "so it is shutting itself down.",
                                         f"Last error: {e}",
+                                        "Check its log, then start it again.",
                                     )
                                 )
                                 return 6, f"10 consecutive bar errors, last: {e}"
@@ -2532,9 +2556,10 @@ class LiveRunner:
                             CRITICAL,
                             "STOPPING",
                             self._label,
-                            "Ten passes of its main loop failed in a row, so it is shutting itself "
-                            "down rather than running blind.",
+                            "Ten checks in a row failed, so it is shutting itself down rather "
+                            "than trade blind.",
                             f"Last error: {e}",
+                            "Check its log, then start it again.",
                         )
                     )
                     return 6, f"10 consecutive loop errors, last: {e}"
@@ -2553,7 +2578,7 @@ class LiveRunner:
                 INFO,
                 "STOPPED",
                 self._label,
-                "Shut down cleanly. It will not come back on its own.",
+                "Shut down cleanly. It won't come back on its own.",
             ),
             thread=True,
         )
@@ -2677,11 +2702,15 @@ class LiveRunner:
                 INFO,
                 "CLOSE REQUESTED" if took else "NOTHING TO CLOSE",
                 self._label,
-                reason,
                 (
-                    "It closes on the next bar and the bot keeps looking for setups."
+                    f"Asked to close its trade ({reason}). It closes on the next bar."
                     if took
-                    else "It was asked to close a trade and is not in one. Nothing changed."
+                    else f"Asked to close its trade ({reason}), but it has none open."
+                ),
+                (
+                    "The bot keeps looking for setups. Nothing to do."
+                    if took
+                    else "Nothing changed."
                 ),
             )
         )
@@ -2717,7 +2746,7 @@ class LiveRunner:
             # Routed through the bridge rather than a second flag of our own, so there is ONE
             # place that answers "may this bot place an order" and one halt reason a reader can
             # find. A second gate here would be a second thing to keep in step.
-            self.bridge.halt(f"fleet halt — {reading.reason}")
+            self.bridge.halt(f"every bot was told to stop: {reading.reason}")
         # HEALTH, not TRADE: this is the machinery refusing to trade, and it must not sit in the
         # room that is only opened when a fill arrives.
         self._notify_health(
@@ -2725,9 +2754,9 @@ class LiveRunner:
                 CRITICAL,
                 "FLEET HALT",
                 self._label,
-                reading.reason,
-                "It keeps running and keeps its open positions and their stops. Clear the flag and "
-                "restart the bots to resume — clearing it alone will not.",
+                f"{reading.reason[:1].upper()}{reading.reason[1:]}.",
+                "Open trades keep their stops. To resume, switch the fleet stop off and restart "
+                "the bots.",
             )
         )
 
@@ -2772,10 +2801,7 @@ class LiveRunner:
         if seen is None or seen == self.cfg.account:
             return
         self._account_mismatch_halted = True
-        why = (
-            f"the terminal is logged into account {seen}, but this bot is configured for "
-            f"{self.cfg.account}"
-        )
+        why = f"MetaTrader is logged into account {seen}, but this bot trades {self.cfg.account}"
         self.log.error(
             f"ACCOUNT MISMATCH: {why}. Halting — every balance, position and order "
             f"this bot can read belongs to {seen}."
@@ -2783,16 +2809,17 @@ class LiveRunner:
         self.ledger.event("account_mismatch", observed=seen, expected=self.cfg.account)
         if self.bridge is not None:
             # One place answers "may this bot place an order", for `_check_fleet_halt`'s reason.
-            self.bridge.halt(f"account mismatch — {why}")
+            self.bridge.halt(why)
         # HEALTH: this is the machinery refusing to trade, not a setup being refused.
         self._notify_health(
             alert(
                 CRITICAL,
                 "ACCOUNT MISMATCH",
                 self._label,
-                f"Terminal is on #{seen}; this bot trades #{self.cfg.account}.",
-                "It placed nothing and kept its open positions and their stops. Log the terminal "
-                "back, or move the bot properly in its instance config, then restart it.",
+                f"MetaTrader is logged into account {seen}, but this bot trades "
+                f"{self.cfg.account}.",
+                "Nothing was placed and open trades keep their stops. Log MetaTrader back in, or "
+                "move the bot on the Command Center's Accounts page, then restart it.",
             )
         )
 
@@ -2852,11 +2879,10 @@ class LiveRunner:
                     alert(
                         CRITICAL,
                         "TRADING OFF",
-                        self._label,
+                        self._account_label,
                         f"{why[0].upper()}{why[1:]}.",
-                        "Every order it sends will be refused. If a trade triggers meanwhile it "
-                        "halts and needs a restart. It keeps watching and will say when trading "
-                        "is back.",
+                        "No bot on this account can place orders. You'll get a message when it's "
+                        "back.",
                     )
                 )
             elif allowed is True and said is not None:
@@ -2877,8 +2903,8 @@ class LiveRunner:
                             CRITICAL,
                             "STILL HALTED",
                             self._label,
-                            "Trading is allowed on the account again, but this bot halted while "
-                            f"it was not{f' ({reason})' if reason else ''}.",
+                            "The account can trade again, but this bot stopped trading while it "
+                            f"couldn't{f' ({reason})' if reason else ''}.",
                             "Restart it to trade again.",
                         )
                     )
@@ -2888,7 +2914,7 @@ class LiveRunner:
                         alert(
                             OK,
                             "TRADING BACK ON",
-                            self._label,
+                            self._account_label,
                             "The account can trade again.",
                             "Nothing to do.",
                         )
@@ -3242,10 +3268,11 @@ class LiveRunner:
                     WARNING,
                     "SETTINGS NOT APPLIED",
                     self._label,
-                    "Its config changed on disk in ways a running bot cannot take, so it is still "
-                    "trading the settings it started with.",
-                    refused_summary([k for k, _a, _b in blocked]),
-                    "Restart it to apply them.",
+                    "Still trading its old settings. "
+                    + refused_summary(
+                        [k for k, _a, _b in blocked], package=self.cfg.strategy_package
+                    ),
+                    "Restart it when flat to apply them.",
                 )
             )
             return
@@ -3263,6 +3290,8 @@ class LiveRunner:
 
         self._cfg_mtime = mtime
         detail = ", ".join(f"{k} {a} → {b}" for k, a, b in allowed)
+        # The same change as a person reads it — the Command Center's labels, never field names.
+        shown = ", ".join(change_text(k, a, b, self.cfg.strategy_package) for k, a, b in allowed)
         # A strategy param moving needs the rebuild below; the account cap does not — nothing the
         # strategy decides reads it. It lives on the BRIDGE, which is never rebuilt, so it is handed
         # over explicitly. Both still wait for flat: one rule for when a change may land.
@@ -3305,12 +3334,12 @@ class LiveRunner:
                 OK if not halted else CRITICAL,
                 "SETTINGS APPLIED" if not halted else "SETTINGS LOADED — STILL HALTED",
                 self._label,
-                detail,
+                shown,
                 (
-                    "Applied straight away — the bot was flat. Nothing to do."
+                    "Applied straight away because the bot was flat. Nothing to do."
                     if not halted
-                    else f"Loaded, but this bot is halted ({self.bridge.halt_reason}) and will "
-                    f"place nothing. Restart it."
+                    else f"Loaded, but this bot is halted ({self.bridge.halt_reason}) and places "
+                    f"nothing. Restart it."
                 ),
             )
         )

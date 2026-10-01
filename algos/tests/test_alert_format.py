@@ -227,3 +227,9 @@ def test_the_mirror_renders_an_identical_message():
     assert cc.alert(*args) == af.alert(*args)
     assert cc.alert("✅", "WIN", "", "Made $368.00") == af.alert("✅", "WIN", "", "Made $368.00")
     assert cc.joined(["a", None, "b", ""]) == af.joined(["a", None, "b", ""])
+
+
+def test_the_mirror_has_the_same_FOUR_severity_icons():
+    """The Command Center's own ⚙️ ▶️ ⏹ 🔄 📦 🔴 were folded into these four (2026-09-30)."""
+    cc = _mirror()
+    assert (cc.CRITICAL, cc.WARNING, cc.OK, cc.INFO) == (af.CRITICAL, af.WARNING, af.OK, af.INFO)

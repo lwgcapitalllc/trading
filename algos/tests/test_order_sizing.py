@@ -231,7 +231,7 @@ def test_a_size_below_the_broker_minimum_is_refused_and_never_rounded_up():
     plan = plan_order(qty_units=20.0 / dist, entry=4300.0, stop=4350.0, spec=GOLD, point_value=1.0)
     assert not plan.ok
     assert plan.code == "below_broker_minimum"
-    assert "NOT rounding up" in plan.detail
+    assert "Not rounding up" in plan.detail
 
 
 def test_a_size_above_the_broker_maximum_is_refused_and_never_clamped():
@@ -245,7 +245,7 @@ def test_a_size_above_the_broker_maximum_is_refused_and_never_clamped():
     plan = plan_order(qty_units=20_000.0, entry=4300.0, stop=4301.0, spec=GOLD, point_value=1.0)
     assert not plan.ok
     assert plan.code == "above_broker_maximum", plan
-    assert "NOT clamping" in plan.detail
+    assert "Not clamping" in plan.detail
 
 
 def test_an_unaffordable_order_is_refused_and_never_shrunk_to_fit():
@@ -268,7 +268,7 @@ def test_an_unaffordable_order_is_refused_and_never_shrunk_to_fit():
     )
     assert not plan.ok
     assert plan.code == "insufficient_margin"
-    assert "NOT shrinking to fit" in plan.detail
+    assert "Not shrinking to fit" in plan.detail
 
 
 def test_margin_the_terminal_will_not_compute_is_a_refusal_not_a_pass():

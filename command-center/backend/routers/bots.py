@@ -127,8 +127,9 @@ from services import (
     terminal_scan,
     vps_ssh,
 )
-from services.alert_format import alert, joined
+from services.alert_format import INFO, WARNING, alert, joined
 from services.notify import send_telegram_id
+from services.param_labels import change_text
 
 
 def _current_bots() -> None:
@@ -2994,10 +2995,11 @@ def _set_account_risk_cap(account: int, update: BotAccountCapUpdate):
 
     _notify_telegram(
         alert(
-            "⚙️",
+            INFO,
             "ACCOUNT RISK CAP",
-            f"account {account}",
-            f"Cap {cap_s} written to {len(targets)} bot(s).",
+            f"Account {account}",
+            f"Account risk limit set to {cap_s} on {len(targets)} "
+            f"{'bot' if len(targets) == 1 else 'bots'}.",
             _RISK_APPLIES,
         ),
         account=account,
@@ -3201,7 +3203,7 @@ def _set_account_risk(account: int, body: BotAccountRiskRequest):
         was_cap = (
             "mixed" if not group.cap_agrees else ("none" if old_cap is None else _pct(old_cap))
         )
-        parts.append(f"cap {was_cap} → {new_cap}")
+        parts.append(f"account risk limit {was_cap} → {new_cap}")
     summary = f"account {account} — " + "; ".join(parts)
 
     if not body.deploy:
@@ -3222,7 +3224,7 @@ def _set_account_risk(account: int, body: BotAccountRiskRequest):
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS git pull failed: {e}")
     _notify_telegram(
-        alert("⚙️", "RISK CHANGED", f"account {account}", "; ".join(parts), _RISK_APPLIES),
+        alert(INFO, "RISK CHANGED", f"Account {account}", "; ".join(parts), _RISK_APPLIES),
         account=account,
     )
     return _risk_plan_view(plan, written=written, deployed=True, detail=summary)
@@ -3337,7 +3339,7 @@ def _set_account_priority(account: int, body: BotAccountPriorityRequest):
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS git pull failed: {e}")
     _notify_telegram(
-        alert("⚙️", "PRIORITY CHANGED", f"account {account}", order_words, _PRIORITY_APPLIES),
+        alert(INFO, "PRIORITY CHANGED", f"Account {account}", order_words, _PRIORITY_APPLIES),
         account=account,
     )
     return BotAccountPriorityResult(
@@ -3683,7 +3685,7 @@ def _set_bot_account(bot_name: str, update: BotAccountAssign):
 
     _notify_telegram(
         alert(
-            "⚙️",
+            INFO,
             "BOT MOVED",
             # Its name plus the kind of the account it is on NOW (the config was written above),
             # never the key: a key has underscores Telegram's Markdown eats, and says nothing
@@ -3693,16 +3695,16 @@ def _set_bot_account(bot_name: str, update: BotAccountAssign):
             + (
                 ""
                 if update.account is None
-                else f" Risk cap {plan.fields.get('account_risk_cap_pct') or 'none'}."
+                else f" Account risk limit {plan.fields.get('account_risk_cap_pct') or 'none'}."
             )
             + (f" Risks {new_risk:g}% a trade." if new_risk is not None else ""),
             (
                 # ⚠ What was ASKED for, never what finished — the deploy runs in the background
                 # and this message is written before it answers. The page watches it; a failed one
                 # leaves the bot amber there and refusing to start on the box.
-                "Being deployed now, and it stays stopped — start the bot to trade it."
+                "Being deployed now. It stays stopped until you start it."
                 if deploy_job
-                else "It has NO pinned version, so it cannot be started until one is deployed."
+                else "It has no approved code version, so deploy it before starting it."
             )
             if update.account is not None
             else "It will not start until it is on an account again.",
@@ -4081,7 +4083,7 @@ def _start_bots():
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
-    _notify_telegram(alert("▶️", "STARTING", "All bots", "Requested from the command center."))
+    _notify_telegram(alert(INFO, "STARTING", "All bots", "Requested from the Command Center."))
     return {"status": "ok", "output": out}
 
 
@@ -4104,10 +4106,10 @@ def _stop_bots():
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
     _notify_telegram(
         alert(
-            "⏹",
+            INFO,
             "STOPPED",
             "All bots",
-            "Stopped from the command center. They will not come back on their own.",
+            "Stopped from the Command Center. They won't come back on their own.",
         )
     )
     return {"status": "ok", "output": out}
@@ -4132,7 +4134,7 @@ def _restart_bots():
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
-    _notify_telegram(alert("🔄", "RESTARTING", "All bots", "Requested from the command center."))
+    _notify_telegram(alert(INFO, "RESTARTING", "All bots", "Requested from the Command Center."))
     return {"status": "ok", "output": f"{stop_out}\n{start_out}".strip()}
 
 
@@ -4899,7 +4901,7 @@ def _apply_go_live(body: GoLiveRequest):
     # one who most needs to know it happened.
     _notify_telegram(
         alert(
-            "🔴",
+            WARNING,
             "GONE LIVE",
             # The bots' NAMES — the keys (still in the commit message, where they identify files)
             # say `demo` on bots that just went live, and Telegram's Markdown eats their
@@ -4907,7 +4909,7 @@ def _apply_go_live(body: GoLiveRequest):
             ", ".join(_KEY_DISPLAY.get(k, k) for k in sorted(staged)),
             f"Moved from demo {plan.from_account} to LIVE {plan.to_account} "
             f"({registered.broker or 'broker unrecorded'}{cap_note}).",
-            "Not trading yet — every bot is stopped and has to be started.",
+            "Not trading yet. Every bot is stopped until you start it.",
         ),
         account=plan.to_account,
     )
@@ -5451,14 +5453,14 @@ def _finish_promote(
     if ok and nothing_new and not stale:
         _notify_telegram(
             alert(
-                "ℹ️",
+                INFO,
                 "NOTHING TO DEPLOY",
                 _bot_label(bot_key),
                 "It is already running this code, so nothing was deployed and it was left alone."
                 if stale is False
-                else "Nothing new was deployed and it was left alone. What the running bot is on "
-                "could not be read — if its badge says a restart is pending, restart it.",
-                "Its record now names the current commit, so the page will stop asking.",
+                else "Nothing new to deploy, so it was left alone. Its running version couldn't "
+                "be read: if its badge says a restart is pending, restart it.",
+                "Nothing to do.",
             ),
             bot_key=bot_key,
         )
@@ -5469,7 +5471,7 @@ def _finish_promote(
     if ok and stale:
         root = _notify_telegram(
             alert(
-                "🔄",
+                INFO,
                 "RESTARTING ONTO DEPLOYED CODE",
                 _bot_label(bot_key),
                 "This code was already deployed, but the bot was still running an older version.",
@@ -5500,12 +5502,14 @@ def _finish_promote(
         elif not req.restart:
             next_step = "Restart it to pick the new version up."
         elif was_running is False:
-            next_step = "It is stopped, so it was left stopped - it runs this code when started."
+            next_step = "It was stopped, so it was left stopped. It runs this code when started."
         else:
-            next_step = "Could not tell whether it is running, so it was not restarted - restart it if it is."
+            next_step = (
+                "Couldn't tell whether it is running, so it wasn't restarted. Restart it if it is."
+            )
         root = _notify_telegram(
             alert(
-                "📦",
+                INFO,
                 "PROMOTED",
                 _bot_label(bot_key),
                 joined([moved, "deployed"]) or "The new code is deployed.",
@@ -6088,6 +6092,10 @@ def _save_bot_runtime(bot_name: str, update: BotRuntimeUpdate):
     _write_instance_config(bot_key, data)
 
     changed = ", ".join(f"{k} {before[k]} → {v}" for k, v in values.items())
+    # The same change under the Configure tab's labels — what Telegram shows (2026-09-30).
+    shown = ", ".join(
+        change_text(k, before[k], v, data.get("strategy_package")) for k, v in values.items()
+    )
     if not update.deploy:
         return {"status": "ok", "changed": True, "deployed": False, "detail": changed}
 
@@ -6112,11 +6120,11 @@ def _save_bot_runtime(bot_name: str, update: BotRuntimeUpdate):
     # Telegram drops the WHOLE message on an unbalanced entity rather than escaping it.
     _notify_telegram(
         alert(
-            "⚙️",
+            INFO,
             "SETTINGS CHANGED",
             display,
-            changed,
-            "It will apply at the next bar the bot is flat.",
+            shown,
+            "It applies the next time the bot has no open trade.",
         ),
         bot_key=bot_key,
     )
@@ -6227,10 +6235,10 @@ def _start_bot(bot_name: str):
     _refuse_if_benched(bot_key)
     root = _notify_telegram(
         alert(
-            "▶️",
+            INFO,
             "STARTING",
             _bot_label(bot_key),
-            "Requested from the command center.",
+            "Requested from the Command Center.",
             "This message will say when it is online.",
         ),
         bot_key=bot_key,
@@ -6271,10 +6279,10 @@ def _stop_bot(bot_name: str):
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
     display = _bot_label(bot_key)
     text = alert(
-        "⏹",
+        INFO,
         "STOPPED",
         display,
-        "Stopped from the command center. It will not come back on its own.",
+        "Stopped from the Command Center. It won't come back on its own.",
     )
     # 🔴 **One STOPPED per stop (2026-09-26).** A bot that shut itself down cleanly has already
     # said STOPPED from the box, so this second one is held — written to the send log, not sent.
@@ -6309,10 +6317,10 @@ def _restart_bot(bot_name: str):
     # back, and the bot's own STOPPED is held while it is live — one message per restart.
     root = _notify_telegram(
         alert(
-            "🔄",
+            INFO,
             "RESTARTING",
             _bot_label(bot_key),
-            "Requested from the command center.",
+            "Requested from the Command Center.",
             "This message will say when it is back online.",
         ),
         bot_key=bot_key,

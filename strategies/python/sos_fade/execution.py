@@ -88,19 +88,33 @@ def _nearest(shallow, deep, deep_dist, shallow_dist):
     return deep if deep_dist < shallow_dist else shallow
 
 
+_LEVEL_WORDS = {"H4": "the 4-hour", "Day": "the daily", "Asia": "the Asia session",
+                "Ldn": "the London session", "NY": "the New York session",
+                "Week": "the weekly"}
+
+
+def _plain_level(name: str) -> str:
+    """`Day Low` → `the daily low`, for the signals room. The engine's short names stay as they
+    are everywhere else; this only says them the way a person would."""
+    head, _, side = (name or "").rpartition(" ")
+    words = _LEVEL_WORDS.get(head)
+    return f"{words} {side.lower()}" if words and side else (name or "a key level")
+
+
 #: The names a pulled order is reported under in the signals channel (`SetupSnapshot.paused_by`).
-#: The first three match the BLOCKED wording in `_setup_context`, so one rule reads the same in
-#: both messages.
-_PULL_VETO = "Divergence / extreme-RSI veto"
-_PULL_LATE = "Final hour (16:00-18:00 New York)"
-_PULL_SH_HOURS = "Short-hold hour window"
-_PULL_ENTRY_WINDOW = "No-entry window (New York)"
-_PULL_HTF = "HTF breakout / bias filter"
-_PULL_FLAT = "Flat-by-close window"
-_PULL_TIGHT = "Stop too tight for your minimum"
-_PULL_QUIET = "Market too quiet to fade"
-_PULL_DEEP = "Limit deeper than the short-hold maximum"
-_PULL_NO_ROOM = "No room under the account risk cap"
+#: The BLOCKED list in `_setup_context` reads the SAME constants, so one rule reads the same in
+#: both messages. ⚠ Plain English, one voice across every bot (Aaron, 2026-09-30) — no "HTF",
+#: no "veto", no setting names; the lab's hover text keeps the Pine wording in `_BLOCK_REASON`.
+_PULL_VETO = "Momentum is still against the turn"
+_PULL_LATE = "Too close to the daily close (4–6 pm New York)"
+_PULL_SH_HOURS = "Outside the hours set for short-hold trades"
+_PULL_ENTRY_WINDOW = "Inside the no-entry hours (New York)"
+_PULL_HTF = "The bigger timeframe is against this trade"
+_PULL_FLAT = "Too close to the close, when the bot goes flat"
+_PULL_TIGHT = "The stop is too close to the entry"
+_PULL_QUIET = "Market too quiet"
+_PULL_DEEP = "The entry is deeper than the short-hold limit allows"
+_PULL_NO_ROOM = "Account risk limit is full (other bots are using it)"
 
 
 @dataclass
@@ -427,15 +441,18 @@ _MISS_LABEL = {
 #: ("No retrace", "No FVG in zone", …), so a sentence restating the label is saying it twice —
 #: which is what the long forms did. Trimmed 2026-08-13 on Aaron's *"less verbose"*; the FACTS are
 #: unchanged and no code branches on this text.
+#: 🔴 **Rewritten 2026-09-30 into the one voice every bot shares** (Aaron: simple enough for
+#: anyone, the point in one glance, the same whichever bot). No band numbers, no "FVG", no "HTF",
+#: and no "All three met." — the NO TRADE header already says the setup died.
 _MISS_REASON = {
-    2: "Price never retraced into the 0.5-0.886 band.",
-    3: "Price reached the band, but no fair-value gap overlapped it — nothing to rest a limit on.",
-    4: "All three met. The divergence / extreme-RSI veto refused the entry.",
-    5: "All three met. The final-hour rule (16:00-18:00 New York) refused the entry.",
-    6: "All three met. The HTF breakout / bias filter refused the entry.",
-    7: "All three met and the limit rested — price never came back to touch it.",
-    8: "All three met. The stop sat closer than your minimum distance, so no limit was placed.",
-    9: "All three met. Volatility was under your floor — no limit was placed in a dead market.",
+    2: "Price never pulled back to the entry zone.",
+    3: "Price pulled back, but there was no clean level to place the order.",
+    4: "Momentum was still against the turn.",
+    5: "Too close to the daily close (4–6 pm New York).",
+    6: "The bigger timeframe was against this trade.",
+    7: "The order was never filled.",
+    8: "The stop was too close to the entry, so no order was placed.",
+    9: "Market too quiet, so no order was placed.",
 }
 
 
@@ -501,8 +518,7 @@ class MissedSetup:
         # Code 1 is the only DYNAMIC sentence: it has to name the source that armed the setup,
         # because "the trigger you switched off" is meaningless without saying which one.
         if self.code == 1:
-            return [f"Armed by {self.arm_text} — that arm source is switched OFF. Every other "
-                    f"confluence was there."]
+            return [f"It was triggered by {self.arm_text}, and that trigger is switched off."]
         return [_MISS_REASON.get(self.code, "")]
 
     @property
@@ -1936,20 +1952,18 @@ class Execution:
                 self._book_setup_end(ctx, FILLED, "Entered.")
                 continue
             if not flat:
-                self._book_setup_end(ctx, DEAD,
-                                     "The setup ended while another position was open.")
+                self._book_setup_end(ctx, DEAD, "Already in a trade.")
                 continue
             arm_met = arm_swp or arm_div
             zone_met = m.zone and (m.fvg or not cfg.exec_req_fvg)
             met_n = (1 if arm_met else 0) + 1 + (1 if zone_met else 0)
             if met_n < 2:
-                self._book_setup_end(ctx, DEAD,
-                                     "The setup died before reaching two confluences.")
+                self._book_setup_end(ctx, DEAD, "It never reached 2 of 3 checks.")
                 continue
             price = m.edge if m.edge is not None else m.fib
             if price is None:
                 # nothing to anchor a marker to — a record with no price can't be drawn
-                self._book_setup_end(ctx, DEAD, "The setup died with no price to report.")
+                self._book_setup_end(ctx, DEAD, "The setup ended before it had an entry price.")
                 continue
             if not arm_met:
                 code = 1
@@ -1981,8 +1995,8 @@ class Execution:
             # The alert reuses the miss's OWN sentence rather than composing a second one. Two
             # explanations for one death can disagree, and the reader has no way to tell which
             # is the strategy's.
-            self._book_setup_end(ctx, DEAD, miss.reasons[0] or miss.labels[0],
-                                 label=miss.labels[0])
+            # The sentence alone: "No retrace — Price never retraced" said everything twice.
+            self._book_setup_end(ctx, DEAD, miss.reasons[0] or miss.labels[0])
 
     # ── pre-trade setup snapshots (backtest/setups.py) — reporting only ──────────
     #
@@ -2202,25 +2216,23 @@ class Execution:
         """
         cfg = self._cfg
         arm_met = arm_swp or arm_div
+        # ⚠ These are the NAMES of the three checks, printed after a tick or a cross by the alert
+        # layer (2026-09-30) — so they name the condition, never its state ("not tagged yet").
         if arm_met:
-            arm_text = ("Sweep + RSI div" if (arm_swp and arm_div)
-                        else "Sweep" if arm_swp else "RSI divergence")
-            if arm_swp and m.swp_nm:
-                arm_text += f" · {m.swp_nm}"
+            swept = (f"Took out {_plain_level(m.swp_nm)}" if m.swp_nm
+                     else "Took out a key level")
+            arm_text = (f"{swept} + momentum divergence" if (arm_swp and arm_div)
+                        else swept if arm_swp else "Momentum divergence")
         else:
-            # Name the source that DID arm it and say it is off — "your arm source is off" is
-            # meaningless without saying which one. Same sentence `MissedSetup.reasons` uses.
-            src = "RSI divergence" if m.arm_src == "DIV" else "a liquidity sweep"
-            arm_text = f"armed by {src}, but that source is switched OFF"
+            # Name the trigger that DID arm it and say it is off — "your trigger is off" is
+            # meaningless without saying which one.
+            src = "momentum divergence" if m.arm_src == "DIV" else "a key level taken out"
+            arm_text = f"Triggered by {src}, which is switched off"
 
-        if not m.zone:
-            zone_text = "not tagged yet"
-        elif m.fvg:
-            zone_text = "0.5-0.886 tagged, FVG live"
-        elif cfg.exec_req_fvg:
-            zone_text = "0.5-0.886 tagged, but no FVG in it"
+        if m.zone and not m.fvg and cfg.exec_req_fvg:
+            zone_text = "Pulled back, but no clean entry level yet"
         else:
-            zone_text = "0.5-0.886 tagged"
+            zone_text = "Pullback to entry zone"
         zone_met = bool(m.zone) and (m.fvg or not cfg.exec_req_fvg)
 
         # The whole tradeable range, which is knowable as soon as the fib is live and is the
@@ -2248,20 +2260,20 @@ class Execution:
         blocked = []
         if arm_met and zone_met:
             if veto:
-                blocked.append("Divergence / extreme-RSI veto")
+                blocked.append(_PULL_VETO)
             if late:
-                blocked.append("Final hour (16:00-18:00 New York)")
+                blocked.append(_PULL_LATE)
             if htf_any:
-                blocked.append("HTF breakout / bias filter")
+                blocked.append(_PULL_HTF)
             # 🔴 **The two PRICE refusals, added 2026-09-03 — until then they were the only
             # shipped rules that could skip a ready setup and send NOTHING.** Both are live on
             # `sos_fade_demo` (`exec_min_stop_mode` "% of price" 0.08, `exec_min_atr_pct`
             # 0.08), so this is not a hypothetical branch — it is the gap the reader was
             # actually experiencing as silence.
             if tight:
-                blocked.append("Stop too tight for your minimum")
+                blocked.append(_PULL_TIGHT)
             if quiet:
-                blocked.append("Market too quiet to fade")
+                blocked.append(_PULL_QUIET)
 
         announce = self._announce_ready(sig, m.sos_bar, is_long)
 
@@ -2296,7 +2308,7 @@ class Execution:
                 # the name, so a detail that only makes sense under its own label reads as a bare
                 # "confirmed" in the message. A strategy owns what its confluences are CALLED —
                 # `alerts.py` must never learn what an SOS is.
-                Confluence("Shift of structure", True, "SOS confirmed"),
+                Confluence("Shift of structure", True, "Trend turned"),
                 Confluence("Retrace zone", zone_met, zone_text),
             ),
             "zone": zone,

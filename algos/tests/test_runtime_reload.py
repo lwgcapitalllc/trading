@@ -162,7 +162,7 @@ def test_a_risk_change_is_applied_while_flat(runner):
 def test_applying_it_announces_the_change(runner):
     _rewrite(runner, exec_risk_pct=5.0)
     runner._maybe_reload_runtime()
-    assert any("10.0" in n and "5.0" in n for n in runner.notes)
+    assert any("10 → 5" in n for n in runner.notes)
 
 
 def test_an_unchanged_file_is_not_reapplied(runner):
@@ -487,7 +487,7 @@ def test_any_OTHER_top_level_field_is_REFUSED_and_SAID_never_dropped_as_cosmetic
     runner._maybe_reload_runtime()
     assert "config_change_refused" in runner.ledger.kinds()
     assert runner.cfg.margin_safety_pct == 50.0, "not applied to the running bot"
-    assert any("margin_safety_pct" in str(n) for n in runner.notes), "and SAID, by name"
+    assert any("Margin safety %" in str(n) for n in runner.notes), "and SAID, by name"
 
 
 def test_the_REAL_bridge_adopts_the_cap_it_is_handed():

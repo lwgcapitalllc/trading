@@ -171,7 +171,7 @@ def test_the_two_price_refusals_were_carved_OUT_of_never_filled():
     assert _MISS_LABEL[9] == "Market too quiet"
     for code in (8, 9):
         assert "rested" not in _MISS_REASON[code]
-        assert "no limit was placed" in _MISS_REASON[code]
+        assert "no order was placed" in _MISS_REASON[code]
 
 
 def test_every_miss_code_can_render_a_label_AND_a_sentence():
@@ -191,8 +191,8 @@ def _miss(code):
 
 def test_a_dead_market_death_reads_as_a_dead_market_and_not_as_an_unfilled_limit():
     assert _miss(9).labels[0] == "Market too quiet"
-    assert "dead market" in _miss(9).reasons[0]
-    assert "price never came back" in _miss(7).reasons[0]
+    assert "too quiet" in _miss(9).reasons[0]
+    assert "never filled" in _miss(7).reasons[0]
 
 
 # ── the watch that latches them ──────────────────────────────────────────────────────────────
@@ -223,18 +223,18 @@ def _ctx(ex, tight=False, quiet=False, ready=True):
 
 def test_a_ready_setup_refused_by_the_stop_floor_SAYS_SO():
     """The whole point of the change. At HEAD this list is empty for the same inputs."""
-    assert _ctx(_ex(), tight=True)["blocked_by"] == ("Stop too tight for your minimum",)
+    assert _ctx(_ex(), tight=True)["blocked_by"] == ("The stop is too close to the entry",)
 
 
 def test_a_ready_setup_refused_by_a_dead_market_SAYS_SO():
-    assert _ctx(_ex(), quiet=True)["blocked_by"] == ("Market too quiet to fade",)
+    assert _ctx(_ex(), quiet=True)["blocked_by"] == ("Market too quiet",)
 
 
 def test_both_price_rules_are_reported_when_both_refuse():
     """Carrying every refusing rule rather than only the first is what `format_blocked` promises
     — "blocked by the veto" has to stay true on a setup the floor was also blocking."""
     assert _ctx(_ex(), tight=True, quiet=True)["blocked_by"] == (
-        "Stop too tight for your minimum", "Market too quiet to fade")
+        "The stop is too close to the entry", "Market too quiet")
 
 
 def test_a_setup_still_FORMING_reports_no_price_block():
@@ -267,8 +267,8 @@ def test_the_message_the_reader_actually_receives_names_both_rules():
                          state=WATCHING,
                          blocked_by=_ctx(_ex(), tight=True, quiet=True)["blocked_by"])
     text = alerts.format_blocked(snap)
-    assert "Stop too tight for your minimum" in text
-    assert "Market too quiet to fade" in text
+    assert "The stop is too close to the entry" in text
+    assert "Market too quiet" in text
 
 
 def test_a_caller_that_FORGETS_the_price_flags_fails_loudly():
@@ -329,39 +329,39 @@ def _watching(ex, slot=1):
 def test_the_FINAL_HOUR_names_itself_on_a_pulled_order_even_before_the_zone_is_tagged():
     """🔴 sos_fade_demo, 2026-09-16 20:15 UTC. RED without the pull reasons: paused_by is empty."""
     ex = _pull_ex(gates=(True, True, True, False, False, False, False))
-    assert _place(ex) == ("Final hour (16:00-18:00 New York)",)
+    assert _place(ex) == ("Too close to the daily close (4–6 pm New York)",)
     snap = _watching(ex)
     assert snap.state == "watching"
-    assert snap.paused_by == ("Final hour (16:00-18:00 New York)",)
+    assert snap.paused_by == ("Too close to the daily close (4–6 pm New York)",)
 
 
 def test_the_VETO_and_the_HTF_filter_name_themselves():
     ex = _pull_ex(gates=(False, True, True, False, True, False, False))
-    assert _place(ex, veto=True) == ("Divergence / extreme-RSI veto", "HTF breakout / bias filter")
+    assert _place(ex, veto=True) == ("Momentum is still against the turn", "The bigger timeframe is against this trade")
 
 
 def test_the_SHORT_HOLD_window_is_not_mislabelled_as_the_final_hour():
     """RED if the variant's window is folded into `late` for the message."""
     ex = _pull_ex(exec_short_hold=True, exec_sh_block_from=9, exec_sh_block_to=11)
-    assert _place(ex) == ("Short-hold hour window",)
+    assert _place(ex) == ("Outside the hours set for short-hold trades",)
 
 
 def test_a_TIGHT_stop_names_itself_when_the_side_was_armed():
     """MUTATION: drop `_price_reasons` from the else-branch and this reddens."""
     ex = _pull_ex(armed=(False, True), exec_min_stop_val=10.0)
-    assert _place(ex) == ("Stop too tight for your minimum",)
+    assert _place(ex) == ("The stop is too close to the entry",)
     assert ex._pend_short is None
 
 
 def test_a_QUIET_market_names_itself_when_the_side_was_armed():
     ex = _pull_ex(armed=(False, True), atr=0.01)
-    assert _place(ex) == ("Market too quiet to fade",)
+    assert _place(ex) == ("Market too quiet",)
 
 
 def test_NO_ROOM_under_the_account_cap_names_itself_at_placement():
     ex = _pull_ex(armed=(False, True))
     ex._fit_to_budget = lambda qty, entry, stop: 0.0
-    assert _place(ex) == ("No room under the account risk cap",)
+    assert _place(ex) == ("Account risk limit is full (other bots are using it)",)
 
 
 def test_NO_ROOM_at_the_fill_names_itself():
@@ -370,7 +370,7 @@ def test_NO_ROOM_at_the_fill_names_itself():
     ex._account.request_fill = lambda *a, **k: 0.0
     pend = SimpleNamespace(dir=-1, sl=100.0, qty=1.0)
     assert ex._open_position(pend, 94.0, _sig(False), Decision(index=1)) is False
-    assert ex._pull_why[1] == ("No room under the account risk cap",)
+    assert ex._pull_why[1] == ("Account risk limit is full (other bots are using it)",)
 
 
 def test_a_side_whose_ARM_SOURCE_is_off_is_not_a_pause():
@@ -398,5 +398,5 @@ def test_a_RESTING_order_never_carries_a_pause_reason():
     MUTATION: pass `_pull_why` through regardless of state and this reddens."""
     ex = _pull_ex(armed=(False, True))
     _place(ex)
-    ex._pull_why[1] = ("No room under the account risk cap",)
+    ex._pull_why[1] = ("Account risk limit is full (other bots are using it)",)
     assert _watching(ex).paused_by == ()

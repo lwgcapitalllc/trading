@@ -76,18 +76,18 @@ class FftSetupWatch:
             if ep is None:
                 continue
             if t.traded:
-                self._end(ep, FILLED, f"the limit at the 61.8 filled at {t.fill_price:g}")
+                self._end(ep, FILLED, f"Filled at {t.fill_price:g}.")
             elif strat._carry_setup is t:
                 ep.touched = True  # the bid reached it, the ask has not: the limit still rests
             else:
-                self._end(ep, DEAD, "price reached the 61.8 while " + self._rule(t.why))
+                self._end(ep, DEAD, "Price reached the entry, but " + self._rule(t.why))
 
         # 2. A limit that outlived its touch fills later, or stops resting when TP1 prints.
         for ep in [e for e in self._open.values() if e.touched]:
             if fill is not None and tuple(fill.key) == ep.leg:
-                self._end(ep, FILLED, f"the limit at the 61.8 filled at {fill.price:g}")
+                self._end(ep, FILLED, f"Filled at {fill.price:g}.")
             elif strat._carry is None:
-                self._end(ep, DEAD, "TP1 printed before the broker's ask reached the limit")
+                self._end(ep, DEAD, "Price reached the first target before the order filled")
 
         # 3. The order for the next minute: open, update or pause the setup it belongs to.
         live = None
@@ -121,23 +121,23 @@ class FftSetupWatch:
                 # posted a WITHDRAWN and a MOVED for every extension (2026-06 → 09 replay).
                 ep.why = () if strat._dropped else (self._paused(strat),)
             elif r is None:
-                ep.why = ("the 5m fib is not drawn right now",)
+                ep.why = ("The bot has no move to measure from right now",)
             else:
-                self._end(ep, DEAD, "the 5m fib moved to a new leg before price came back")
+                self._end(ep, DEAD, "Price started a new move before it came back to the entry")
 
     # ── wording — the strategy's own sentences, never re-derived ────────────────────────────
     def _rule(self, code: Optional[str]) -> str:
         if not code:
-            return "no order was resting"
+            return "no order was waiting"
         if code.startswith("unfilled"):
-            return "the limit was not filled"
+            return "the order was not filled"
         return self._why.get(code, f"refusal code {code}")
 
     def _paused(self, strat) -> str:
         r = strat.row5
         if r.sdir != r.dir:
-            return "the 5m trend is not the fib's direction"
-        return "the 5m close is not beyond the 61.8"
+            return "The 5-min trend is against this trade"
+        return "Price is not yet back past the entry level"
 
     def _key(self, strat, leg, kind: str) -> Optional[str]:
         c = strat._candles5.get(leg[1])
@@ -151,24 +151,23 @@ class FftSetupWatch:
         cfg = self._cfg
         long_ = ep.side > 0
         up, down = ("up", "down") if long_ else ("down", "up")
+        # ⚠ NAMES of the checks — the alert layer ticks or crosses them (2026-09-30).
         out = [
-            Confluence("5m trend", True, f"5m trend {up}, with the fib"),
+            Confluence("5m trend", True, f"5-min trend {up}"),
             Confluence(
                 "First leg",
                 True,
-                "the 5m first leg since the shift"
+                "First move since the trend turned"
                 if cfg.max_bos == 0
-                else f"at most {cfg.max_bos} 5m BOS since the shift",
+                else f"Early in the move (at most {cfg.max_bos} breaks)",
             ),
         ]
         if cfg.req_15m:
-            out.append(Confluence("15m trend", True, f"15m trend {up}, with the trade"))
+            out.append(Confluence("15m trend", True, f"15-min trend {up}"))
         if cfg.req_1m_against:
-            out.append(
-                Confluence("1m pullback", True, f"1m trend {down}, no 1m break {up} since the extreme")
-            )
+            out.append(Confluence("1m pullback", True, f"1-min pullback {down}"))
         if ep.kind == "second":
-            out.append(Confluence("Second touch", True, "TP1 printed after the first touch"))
+            out.append(Confluence("Second touch", True, "Second chance after the first target"))
         return tuple(out)
 
     def _snap(self, ep: _Episode, state: str, reason: str = "") -> SetupSnapshot:

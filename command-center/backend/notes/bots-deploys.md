@@ -1132,3 +1132,16 @@ All three went RED with the gate removed; the could-not-ask one went RED on `is 
 
 ⚠ **This does not clear a bot the watchdog already believes crashed.** That needs a stop request
 (the bot's record says it was asked to stop), which the watchdog honours even for a dead process.
+
+---
+
+## The Command Center's Telegram messages joined the house wording (2026-09-30)
+
+Aaron asked that every message read the same whichever sender it comes from. The Command Center's
+own messages (deploy, start, stop, restart, settings, risk, priority, bot moved, gone live) used six
+icons of their own (⚙️ ▶️ ⏹ 🔄 📦 🔴) beside the bots' four severity icons. They now use the four:
+changes and lifecycle are ℹ️, a bot coming back is ✅, GONE LIVE is ⚠️. SETTINGS CHANGED names each
+setting by the label the Configure tab shows, read from the strategy's own meta file by
+`services/param_labels.py` — a deliberate MIRROR of `algos/shared/param_labels.py`, because the two
+apps may share a data file and never each other's code. A test compares the two copies. Rules and
+the full catalog: `algos/notes/telegram-and-notifications.md` → *One voice for every bot*.

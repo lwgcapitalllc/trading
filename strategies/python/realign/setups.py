@@ -58,23 +58,23 @@ class RealignSetupWatch:
                 continue
             if rs.trigger_dir == a.dir:
                 if not was_in_position and ex._pos_dir == a.dir:
-                    self._end(strat, a, FILLED, "entered at market on the 5m realignment")
+                    self._end(strat, a, FILLED, "Entered at market.")
                 elif was_in_position:
-                    self._end(strat, a, DEAD, "the realignment fired while a trade was open")
+                    self._end(strat, a, DEAD, "Already in a trade.")
                 else:
-                    why = getattr(ex, "refusal", None) or "the order was not placed"
-                    self._end(strat, a, DEAD, f"the realignment fired, and {why}")
+                    why = getattr(ex, "refusal", None) or "no order was placed"
+                    self._end(strat, a, DEAD, f"The entry signal came, but {why}.")
             elif a.dir in new_dirs:
-                self._end(strat, a, DEAD, "a newer 15m false break replaced it")
+                self._end(strat, a, DEAD, "A newer setup replaced it.")
             elif time_ms - a.armed_ms > self._cfg.realign_window_hrs * 3_600_000:
                 self._end(
                     strat,
                     a,
                     DEAD,
-                    f"the {self._cfg.realign_window_hrs:g}-hour window closed with no realignment",
+                    f"Ran out of time: no entry signal within {self._cfg.realign_window_hrs:g} hours.",
                 )
             else:
-                self._end(strat, a, DEAD, "the 15m broke on the same way — the false break became a trend")
+                self._end(strat, a, DEAD, "The dip kept going and became a new trend.")
             del self._open[k]
         self._open.update(now)
         self._last = [self._snap(strat, a, WATCHING) for a in now.values()]
@@ -89,30 +89,20 @@ class RealignSetupWatch:
         left to happen is the two 5m moves, and the count now says so: 1 of 3, then 2 of 3."""
         cfg = self._cfg
         long_ = a.dir > 0
-        trend, against = ("an uptrend", "bearish") if long_ else ("a downtrend", "bullish")
-        setup_ok, setup = True, f"{against} 15m shift in {trend}"
+        # ⚠ NAMES of the checks — the alert layer ticks or crosses them (2026-09-30).
+        setup = ("Uptrend dipped on the 15-min" if long_ else "Downtrend bounced on the 15-min")
+        setup_ok = True
         if cfg.realign_mom_days is not None:
             m = getattr(strat.execution, "mom_dir", None)
             setup_ok = m is not None and m != a.dir
-            setup += (", momentum against" if setup_ok
-                      else ", momentum not read" if m is None
-                      else ", momentum with — would refuse")
+            if not setup_ok:
+                setup += (" (no history yet for the recent move)" if m is None
+                          else " (but the recent move is the same way)")
         out = [Confluence("15m false break", setup_ok, setup)]
-        out.append(
-            Confluence(
-                "5m counter move",
-                a.counter_bar is not None or fired,
-                "5m broke against" if a.counter_bar is not None or fired
-                else "5m break pending",
-            )
-        )
-        out.append(
-            Confluence(
-                "5m realignment",
-                fired,
-                "5m realigned" if fired else "5m realign pending",
-            )
-        )
+        out.append(Confluence("5m counter move", a.counter_bar is not None or fired,
+                              "5-min dip" if long_ else "5-min bounce"))
+        out.append(Confluence("5m realignment", fired,
+                              "5-min turn back up" if long_ else "5-min turn back down"))
         return tuple(out)
 
     def _snap(self, strat, a, state: str, reason: str = "") -> SetupSnapshot:

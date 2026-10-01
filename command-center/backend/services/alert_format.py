@@ -22,10 +22,17 @@ from __future__ import annotations
 
 from typing import Iterable, Optional
 
-__all__ = ["alert", "joined", "SPEC"]
+__all__ = ["alert", "joined", "SPEC", "CRITICAL", "WARNING", "OK", "INFO"]
 
 #: Must match `algos/shared/alert_format.SPEC` exactly. The test compares them.
 SPEC = "<icon> <LABEL> · <subject>\\n<facts>\\n<what to do>"
+
+# The four severity icons, the ONLY icons a health message uses (2026-09-30: this app's own ⚙️ ▶️
+# ⏹ 🔄 📦 🔴 folded into them). Must match `algos/shared/alert_format.py`; the test compares them.
+CRITICAL = "⛔"
+WARNING = "⚠️"
+OK = "✅"
+INFO = "ℹ️"
 
 
 def alert(icon: str, label: str, subject: str = "", *lines: str) -> str:

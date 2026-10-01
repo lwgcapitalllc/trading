@@ -637,7 +637,7 @@ def test_a_setup_armed_by_a_disabled_source_names_that_source():
     m = ex.misses[0]
     assert (m.met, m.code) == (2, 1)
     assert m.arm_met is False
-    assert "RSI divergence" in m.reasons[0] and "switched OFF" in m.reasons[0]
+    assert "RSI divergence" in m.reasons[0] and "switched off" in m.reasons[0]
 
 
 def test_a_3_of_3_that_a_rule_refused_names_the_rule_not_the_fill():

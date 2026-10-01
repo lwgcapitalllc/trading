@@ -1061,7 +1061,7 @@ def test_opening_a_position_reports_the_brokers_real_fill():
     opened = [kw for k, kw in ledger.rows if k == "opened"][0]
     assert opened["price"] == 3289.7  # what the broker gave
     assert opened["intended_price"] == 3290.0  # where the strategy rested its limit
-    assert notes and "ENTRY" in notes[0]
+    assert notes and notes[0].startswith(("📈 ENTERED", "📉 ENTERED"))
 
 
 # ── what a MESSAGE calls the bot, kept apart from the order-comment key (2026-09-11) ─────────
@@ -1078,13 +1078,13 @@ def _filled_entry(name_for_messages):
     ops.positions = [_Pos(901, 0, 3289.7, 0.42, 3280.0)]  # ...and it fills
     ex._pos_dir, ex._pend_long = 1, None
     b.sync(_Dec(stop=3280.0), _Sig())
-    return b, [n for n in notes if "ENTRY" in n][0]
+    return b, [n for n in notes if n.startswith(("📈 ENTERED", "📉 ENTERED"))][0]
 
 
 def test_the_ENTRY_alert_names_the_bot_as_the_RUNNER_says_it_never_by_its_key():
     """MUTATION: hand `format_entry` the order-comment key again -> red."""
     _b, entry = _filled_entry(lambda room=None: "SOS Fade · LIVE")
-    assert entry.splitlines()[-1] == "SOS Fade · LIVE"
+    assert entry.splitlines()[1].startswith("SOS Fade · LIVE · ")  # line 2: bot · symbol · lots
     assert "BOT_TEST" not in entry
 
 
@@ -1133,7 +1133,7 @@ def test_a_name_that_cannot_be_worked_out_costs_the_TAG_never_the_alert():
     b.halt("the fleet was stopped")
     assert notes[-1].splitlines()[0] == "⛔ HALTED · BOT_TEST"
     b2, entry = _filled_entry(boom)
-    assert entry.splitlines()[-1] == "BOT_TEST"
+    assert entry.splitlines()[1].startswith("BOT_TEST · ")  # line 2: bot · symbol · lots
 
 
 def test_the_order_comment_and_restart_record_keep_the_KEY():
@@ -1363,7 +1363,7 @@ def test_a_strategy_position_the_broker_does_not_have_halts_the_bot():
     b, ops, ledger, notes = _bridge(_FakeExecution(pos_dir=1))
     b.sync(_Dec(stop=3280.0), _Sig())
     assert b.state is live_bridge.BridgeState.HALTED
-    assert "MT5 has none" in b.halt_reason
+    assert "the broker has none" in b.halt_reason
     assert any("HALTED" in n for n in notes)
 
 
@@ -1406,7 +1406,7 @@ def test_startup_refuses_to_adopt_an_unknown_position(tmp_path):
     # refusal lands after the warm-up. This replay ended FLAT.
     b.apply_restore()
     assert b.state is live_bridge.BridgeState.HALTED
-    assert "no usable record" in b.halt_reason
+    assert "no saved record" in b.halt_reason
     assert "FLAT" in b.halt_reason
 
 
@@ -1642,7 +1642,7 @@ def test_the_halt_names_the_refusal_that_caused_it():
     b._ex._pend_long = None
     b.sync(_Dec(stop=4290.0), _Sig())
     assert b.state is live_bridge.BridgeState.HALTED
-    assert "REFUSED" in b.halt_reason
+    assert "was refused" in b.halt_reason
     assert "insufficient_margin" in b.halt_reason
 
 
@@ -1775,7 +1775,7 @@ def test_a_hand_trade_with_NO_STOP_refuses_rather_than_scoring_as_zero_risk(_stu
     assert ops.actions == []
     refusals = [e for e in ledger.rows if e[0] == "event:order_refused"]
     assert refusals[0][1]["code"] == "account_risk_unmeasurable"
-    assert "NO broker-side stop" in refusals[0][1]["detail"]
+    assert "has no stop" in refusals[0][1]["detail"]
 
 
 def test_an_unreadable_account_REFUSES_and_never_reads_as_an_empty_one(_stub_mt5):
@@ -2077,7 +2077,7 @@ def test_a_PARTIAL_add_bank_is_REFUSED_rather_than_guessed_at():
     b.sync(_Dec(stop=3280.0), _Sig())
     assert not [a for a in ops.actions if a[0] == "close"]
     assert "event:add_partial_bank" in ledger.kinds()
-    assert any("banks its adds all at once" in str(m) for m in notes)
+    assert any("always closed all at once" in str(m) for m in notes)
 
 
 def test_a_full_exit_closes_EVERY_scale_in_ticket_and_not_just_the_base():
@@ -2123,7 +2123,7 @@ def test_a_scale_in_lot_that_REFUSES_to_close_NAMES_ITSELF_in_the_halt():
     b.sync(dec, _Sig())
     assert 555 not in {a[1] for a in ops.actions if a[0] == "close"}, "the base was stranded"
     assert b.state is live_bridge.BridgeState.HALTED
-    assert any("T556" in str(m) and "could not be closed" in str(m) for m in notes)
+    assert any("#556" in str(m) and "could not be closed" in str(m) for m in notes)
 
 
 def test_the_banked_record_says_it_filled_at_MARKET_not_at_the_rung():
@@ -3461,7 +3461,7 @@ def test_a_size_the_broker_would_REFUSE_is_not_shrunk_to_fit_and_the_halt_NAMES_
     b.sync(dec, _Sig())
     assert not ops.actions
     assert b.state is live_bridge.BridgeState.HALTED
-    assert "REFUSED" in b.halt_reason, b.halt_reason
+    assert "was refused" in b.halt_reason, b.halt_reason
 
 
 def test_WARMING_mirrors_no_entry():
@@ -3726,7 +3726,7 @@ def test_an_UNREADABLE_scale_in_ledger_HALTS_rather_than_permitting():
     del b._ex._adds
     assert b._agrees(ops.positions) is False
     assert b.state is live_bridge.BridgeState.HALTED
-    assert "could not be read" in b.halt_reason
+    assert "couldn't be read" in b.halt_reason
 
 
 def test_a_position_on_the_OPPOSITE_side_HALTS_even_while_scaled_in():
@@ -3812,7 +3812,7 @@ def test_a_FAILED_add_stop_move_is_alerted_and_recorded():
     ops.move_sl_fails = (556,)
     b._sync_stop(_Dec(stop=3285.0), ops.positions)
     assert "event:add_stop_move_failed" in ledger.kinds()
-    assert any("scale-in lot" in n for n in notes)
+    assert any("scale-in trade #556" in n for n in notes)
 
 
 def test_a_SUCCESSFUL_add_stop_move_alerts_NOTHING():
@@ -3903,7 +3903,7 @@ def test_the_strategys_answer_is_read_DIRECTLY_so_a_missing_one_cannot_pass_as_N
     monkeypatch.delattr(type(b._ex), "full_exit_price")
     b._sync_take_profit(dec, ops.positions)
     assert b.state is live_bridge.BridgeState.HALTED
-    assert "promote" in (b.halt_reason or ""), "the halt must name the fix"
+    assert "deploy it again" in (b.halt_reason or ""), "the halt must name the fix"
     assert "event:halted" in ledger.kinds()
     assert not [a for a in ops.actions if a[0] == "move_sl"]
 
@@ -4390,7 +4390,7 @@ def test_a_strategy_that_cannot_say_what_a_PLANNED_order_closes_at_HALTS(monkeyp
     b.sync(_Dec(), _Sig())
     assert b.state is live_bridge.BridgeState.HALTED
     assert ops.actions == [], "a halted bot places nothing"
-    assert "promote.py" in b.halt_reason, b.halt_reason
+    assert "deploy it again" in b.halt_reason, b.halt_reason
 
 
 # ── the account cut this bot's size, and somebody is told ─────────────────────────────────────
@@ -4430,8 +4430,8 @@ def test_a_setup_REFUSED_for_lack_of_room_is_reported_and_says_WHY():
     assert _ask(acct, 500.0, room=100.0) == 0.0  # $100 is under half of $500
     body = "\n".join(notes)
     assert "SETUP REFUSED" in body
-    assert "bullish" in body
-    assert "$500.00" in body
+    assert "LONG" in body
+    assert "$500" in body
     assert "half" in body, "which rule refused it is the half of the sentence Aaron asked for"
     assert "event:budget_cut" in ledger.kinds()
 
@@ -4469,7 +4469,7 @@ def test_the_OTHER_SIDE_being_refused_is_its_own_message():
     assert _ask(acct, 500.0, room=100.0, dir=-1) == 0.0
     refusals = [n for n in notes if "SETUP REFUSED" in n]
     assert len(refusals) == 2
-    assert any("bullish" in n for n in refusals) and any("bearish" in n for n in refusals)
+    assert any("LONG" in n for n in refusals) and any("SHORT" in n for n in refusals)
 
 
 def test_a_trade_SHRUNK_to_fit_says_how_much_of_its_size_it_took():
@@ -4482,7 +4482,7 @@ def test_a_trade_SHRUNK_to_fit_says_how_much_of_its_size_it_took():
     assert _ask(acct, 500.0, room=300.0) == 300.0
     body = "\n".join(notes)
     assert "TRADE SHRUNK" in body
-    assert "$300.00" in body
+    assert "$300 of the $500" in body
     assert "60%" in body, "300 of the 500 it wanted"
     assert "event:budget_shrunk" in ledger.kinds()
 
@@ -4511,7 +4511,7 @@ def test_a_RESTING_bot_is_told_its_ORDER_shrank_never_that_a_trade_is_on():
     assert _ask(acct, 500.0, room=300.0) == 300.0
     body = "\n".join(notes)
     assert "ORDER SHRUNK" in body
-    assert "nothing has filled yet" in body
+    assert "Not filled yet" in body
     assert "TRADE SHRUNK" not in body and "is open" not in body
 
 
@@ -4635,7 +4635,7 @@ def test_the_fill_clock_leaves_the_primarys_own_fill_for_its_15_minute_bar(tmp_p
     b, ops, ex, ledger, notes, ticket = _primary_short_filled_before_its_bar(tmp_path)
     b.sync_fast(_fast_step())  # the 5-minute step runs first, strategy still flat
     assert b.state is live_bridge.BridgeState.LIVE, b.halt_reason
-    assert not any("ENTRY" in n for n in notes)
+    assert not any(n.startswith(("📈 ENTERED", "📉 ENTERED")) for n in notes)
 
     ex._pos_dir, ex._pend_short = -1, None  # the 15-minute bar closes and the emulator fills
     b.sync(_Dec(stop=4352.44), _Sig())
@@ -4652,7 +4652,7 @@ def test_a_position_that_is_not_our_resting_order_still_halts_on_the_fill_clock(
     ops.positions = [_Pos(ticket + 50, 1, 4316.98, 0.14, 4352.44)]
     b.sync_fast(_fast_step())
     assert b.state is live_bridge.BridgeState.HALTED
-    assert "does not know about" in b.halt_reason
+    assert "doesn't know about" in b.halt_reason
 
 
 def test_a_fill_on_the_WRONG_side_of_our_ticket_still_halts(tmp_path):
@@ -4668,7 +4668,7 @@ def test_if_the_strategy_does_not_fill_on_its_bar_the_15_minute_step_still_halts
     b.sync_fast(_fast_step())
     b.sync(_Dec(), _Sig())  # emulator still flat
     assert b.state is live_bridge.BridgeState.HALTED
-    assert "does not know about" in b.halt_reason
+    assert "doesn't know about" in b.halt_reason
     from position_state import read as read_record
 
     assert read_record(tmp_path) is None
@@ -4727,7 +4727,7 @@ def test_a_fill_INSIDE_the_bar_with_the_strategy_flat_still_halts_at_once(tmp_pa
     b, _ops, _ex, _l, _t = _primary_long_filled(tmp_path, _CLOSE - 1)
     b.sync(_Dec(), _Sig(), bar_close_ms=_CLOSE)
     assert b.state is live_bridge.BridgeState.HALTED
-    assert "does not know about" in b.halt_reason
+    assert "doesn't know about" in b.halt_reason
 
 
 def test_the_grace_is_ONE_bar_so_a_wrong_clock_cannot_hide_a_disagreement_for_ever(tmp_path):
@@ -4738,7 +4738,7 @@ def test_the_grace_is_ONE_bar_so_a_wrong_clock_cannot_hide_a_disagreement_for_ev
     assert b.state is live_bridge.BridgeState.LIVE
     b.sync(_Dec(), _Sig(), bar_close_ms=_CLOSE + 60_000)  # strategy still flat a bar later
     assert b.state is live_bridge.BridgeState.HALTED
-    assert "does not know about" in b.halt_reason
+    assert "doesn't know about" in b.halt_reason
 
 
 def test_a_fill_with_no_readable_time_halts_as_before(tmp_path):
@@ -4929,7 +4929,7 @@ def test_anything_but_a_proven_full_hand_close_still_HALTS_and_says_why(tmp_path
     ops.origin = setup["origin"]
     b.sync(_Dec(stop=4352.44), _Sig())
     assert b.state is live_bridge.BridgeState.HALTED
-    assert "MT5 has none" in b.halt_reason
+    assert "the broker has none" in b.halt_reason
     assert named in b.halt_reason
     assert [kw for k, kw in ledger.rows if k == "closed"][0]["reason"] != (
         live_bridge.MANUAL_CLOSE_REASON
@@ -4961,7 +4961,7 @@ def test_a_hand_TIGHTENED_stop_is_kept_and_announced_once(tmp_path):
     b.sync(_Dec(stop=4340.0), _Sig())  # the strategy ratchets, but not as far
     assert b.state is live_bridge.BridgeState.LIVE, b.halt_reason
     assert not any(a[0] == "move_sl" for a in ops.actions), ops.actions
-    assert notes[-1] == "✋ STOP MOVED BY YOU · 4301.37"
+    assert notes[-1].startswith("✋ STOP MOVED BY YOU\n") and "Stop now 4,301.37" in notes[-1]
     assert "event:stop_moved_by_hand" in ledger.kinds()
     from position_state import read as read_record
 
@@ -4988,7 +4988,7 @@ def test_a_hand_LOOSENED_stop_halts_and_says_so(tmp_path):
     ops.actions.clear()
     b.sync(_Dec(stop=4352.44), _Sig())
     assert b.state is live_bridge.BridgeState.HALTED
-    assert "LOOSER" in b.halt_reason and "4360.0" in b.halt_reason
+    assert "further away" in b.halt_reason and "4,360.00" in b.halt_reason
     assert not any(a[0] == "move_sl" for a in ops.actions)
 
 
@@ -5046,7 +5046,7 @@ def test_a_hand_LOOSENED_add_stop_halts():
     ops.actions.clear()
     b._sync_stop(_Dec(stop=3285.0), ops.positions)
     assert b.state is live_bridge.BridgeState.HALTED
-    assert "T556" in b.halt_reason
+    assert "#556" in b.halt_reason
 
 
 # ── the tracked trade vanishes while another of ours stays open (2026-09-17) ──
@@ -5058,7 +5058,7 @@ def test_a_vanished_trade_with_another_position_left_HALTS_and_adopts_nothing(tm
     ops.positions = [_Pos(9999, 1, 4320.0, 0.07, 4352.44)]
     b.sync(_Dec(stop=4352.44), _Sig())
     assert b.state is live_bridge.BridgeState.HALTED
-    assert "T9999" in b.halt_reason and "will not take them over" in b.halt_reason
+    assert "#9999" in b.halt_reason and "will not take over" in b.halt_reason
     assert b._pos_ticket is None
 
 
@@ -5155,7 +5155,7 @@ def test_a_stop_reaching_entry_is_ANNOUNCED_and_it_used_to_be_silent():
     b.sync(_Dec(stop=3290.0), _Sig())
     assert "event:stop_moved" in ledger.kinds()
     assert len(notes) == 1
-    assert notes[0].startswith("🛡 STOP AT BREAKEVEN")
+    assert notes[0].startswith("🛡 STOP MOVED TO ENTRY")
 
 
 def test_a_management_message_REPLIES_to_the_entry_and_goes_to_the_TRADES_room():
@@ -5198,8 +5198,8 @@ def test_a_trail_that_HAS_earned_the_step_sends_and_says_what_it_locked():
     notes.clear()
     b.sync(_Dec(stop=3296.0), _Sig())  # +0.60R, past the 0.5R step
     assert len(notes) == 1
-    assert notes[0].startswith("🪜 STOP TRAILED")
-    assert "locking +0.60R" in notes[0]
+    assert notes[0].startswith("🪜 PROFIT LOCKED IN")
+    assert "locks in +0.60R" in notes[0]
 
 
 def test_the_step_is_measured_from_the_LAST_MESSAGE_not_from_the_last_move():
@@ -5211,7 +5211,7 @@ def test_the_step_is_measured_from_the_LAST_MESSAGE_not_from_the_last_move():
     for stop in (3293.0, 3296.0, 3299.0):
         b.sync(_Dec(stop=stop), _Sig())
     assert len(notes) == 1
-    assert "locking +0.60R" in notes[0]
+    assert "locks in +0.60R" in notes[0]
 
 
 def test_a_trade_with_no_recorded_opening_stop_gets_ONE_message_and_then_goes_quiet():
@@ -5224,7 +5224,7 @@ def test_a_trade_with_no_recorded_opening_stop_gets_ONE_message_and_then_goes_qu
     b.sync(_Dec(stop=3296.0), _Sig())
     b.sync(_Dec(stop=3299.0), _Sig())
     assert len(notes) == 1
-    assert "R" not in notes[0].replace("STOP AT BREAKEVEN", "")
+    assert "R" not in notes[0].replace("STOP MOVED TO ENTRY", "")
 
 
 def test_the_opening_stop_is_frozen_at_the_fill_and_never_follows_the_ratchet():
@@ -5255,8 +5255,8 @@ def test_a_banked_partial_is_announced_with_what_is_still_running(monkeypatch):
     monkeypatch.setattr(live_bridge.alerts, "SHOW_SIZE", True)
     b, ops, ledger, notes = _in_trade(lots=0.42)
     b._notify_partial_banked(banked=0.17, before=0.42, after=0.25)
-    assert notes[-1].startswith("💰 PART BANKED")
-    assert "0.25 still running" in notes[-1]
+    assert notes[-1].startswith("💰 PROFIT TAKEN")
+    assert "0.25 still open" in notes[-1]
 
 
 def test_a_scale_in_counts_what_the_BROKER_GAINED_not_what_was_asked_for():
@@ -5264,9 +5264,9 @@ def test_a_scale_in_counts_what_the_BROKER_GAINED_not_what_was_asked_for():
     REQUEST would announce size the account does not hold."""
     b, ops, ledger, notes = _in_trade(lots=0.42)
     b._notify_scaled_in(added=0.20, now=0.62, price=3305.0, stop=3296.0)
-    assert notes[-1].startswith("➕ ADDED TO POSITION")
+    assert notes[-1].startswith("➕ ADDED TO TRADE")
     assert "Added 0.20 lots at about 3,305.00" in notes[-1]
-    assert "0.62 lots now open" in notes[-1]
+    assert "0.62 lots open now" in notes[-1]
 
 
 def test_an_unreadable_position_book_cannot_be_read_as_a_scale_in():
@@ -5305,9 +5305,9 @@ def test_BANKING_size_off_a_live_position_is_ANNOUNCED_at_its_call_site(monkeypa
     notes.clear()
     b.sync(_Dec(stop=3280.0), _Sig())
     assert "event:partial_banked" in ledger.kinds()
-    banked = [n for n in notes if n.startswith("💰 PART BANKED")]
+    banked = [n for n in notes if n.startswith("💰 PROFIT TAKEN")]
     assert len(banked) == 1
-    assert "Took 0.50 of 1.00 lots off · 0.50 still running" in banked[0]
+    assert "Closed 0.50 of 1.00 lots · 0.50 still open" in banked[0]
 
 
 def test_ADDING_to_a_winner_is_ANNOUNCED_at_its_call_site_and_counts_the_BROKER_book(monkeypatch):
@@ -5324,10 +5324,10 @@ def test_ADDING_to_a_winner_is_ANNOUNCED_at_its_call_site_and_counts_the_BROKER_
     b._ex._adds = [[3300.0, 20.0]]
     notes.clear()
     _add_bar(b, [_add_intent(qty=20.0, price=3300.0)])
-    added = [n for n in notes if n.startswith("➕ ADDED TO POSITION")]
+    added = [n for n in notes if n.startswith("➕ ADDED TO TRADE")]
     assert len(added) == 1
     assert "Added 0.20 lots at about 3,300.00" in added[0]
-    assert "1.20 lots now open" in added[0]
+    assert "1.20 lots open now" in added[0]
 
 
 def test_an_add_is_STILL_ANNOUNCED_with_sizes_switched_off(monkeypatch):
@@ -5340,7 +5340,7 @@ def test_an_add_is_STILL_ANNOUNCED_with_sizes_switched_off(monkeypatch):
     b._ex._adds = [[3300.0, 20.0]]
     notes.clear()
     _add_bar(b, [_add_intent(qty=20.0, price=3300.0)])
-    added = [n for n in notes if n.startswith("➕ ADDED TO POSITION")]
+    added = [n for n in notes if n.startswith("➕ ADDED TO TRADE")]
     assert len(added) == 1, "the add was not announced"
-    assert "Added to the position at about 3,300.00" in added[0]
+    assert "Added to the trade at about 3,300.00" in added[0]
     assert "lots" not in added[0]

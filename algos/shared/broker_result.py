@@ -72,3 +72,50 @@ TRANSIENT_RETCODES = frozenset(
 def is_transient(retcode) -> bool:
     """True only for a KNOWN temporary rejection. No retcode at all (no reply) is not one."""
     return retcode in TRANSIENT_RETCODES
+
+
+# ── A broker rejection in plain words (2026-09-30) ───────────────────────────────────────────
+#
+# What a person reads in the health room. The number alone means nothing to anyone, so it is
+# never shown alone: a code not in this table falls back to the broker's own comment, and with no
+# comment either, to a plain "gave no reason". Same source as the list above.
+PLAIN_REASONS = {
+    10004: "the broker re-quoted the price",
+    10013: "the broker said the order was not valid",
+    10014: "the broker does not allow that order size",
+    10015: "the broker said the price was not valid",
+    10016: "the broker does not allow that stop (usually too close to the price)",
+    10017: "trading is disabled on this account",
+    10018: "the market is closed",
+    10019: "not enough money in the account",
+    10020: "prices changed while the order was being sent",
+    10021: "the broker had no prices to fill it",
+    10024: "too many requests in a short time",
+    10026: "the broker has turned off automated trading",
+    10027: "the Algo Trading button in MetaTrader is off",
+    10028: "the broker was busy with another request",
+    10030: "the broker does not support that fill type",
+    10031: "no connection to the broker",
+    10033: "the account has hit the broker's limit on open orders",
+    10034: "the account has hit the broker's limit for this symbol",
+    10040: "the account has hit the broker's limit on open positions",
+}
+
+
+def _comment_in(detail) -> str:
+    """The broker's own sentence out of `mt5_ops.refusal_detail`'s `retcode=N '<comment>' ...`."""
+    text = str(detail or "")
+    start = text.find("'", text.find("retcode="))
+    if text.find("retcode=") < 0 or start < 0:
+        return ""
+    end = text.find("'", start + 1)
+    return text[start + 1 : end].strip() if end > start else ""
+
+
+def plain_reason(retcode, detail=None) -> str:
+    """Why the broker refused, as a sentence a person reads: `No connection to the broker.`"""
+    words = PLAIN_REASONS.get(retcode)
+    if not words:
+        comment = _comment_in(detail)
+        words = f"the broker said: {comment}" if comment else "the broker gave no reason"
+    return words[0].upper() + words[1:] + ("" if words.endswith(".") else ".")

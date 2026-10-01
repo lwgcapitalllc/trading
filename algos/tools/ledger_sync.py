@@ -530,7 +530,7 @@ def alert_decision(reason: Optional[str], state, now: datetime) -> tuple:
         # Recovered. Say so exactly once, and only if a failure was actually announced — a
         # backup that has been fine all along must never send anything.
         if prev_reason:
-            return True, "RECOVERED — the backup is reaching origin again.", {}
+            return True, "Recovered: the bots' records are reaching GitHub again.", {}
         return False, "", {}
 
     first_seen = prev.get("first_seen") if prev_reason == reason else now.isoformat()
@@ -548,8 +548,8 @@ def alert_decision(reason: Optional[str], state, now: datetime) -> tuple:
         due = True  # An unparseable timestamp is "cannot ask", so it speaks.
     if due:
         hours = _hours_since(first_seen, now)
-        since = f" for {hours} hours" if hours is not None else ""
-        return True, f"STILL FAILING{since}, unchanged since the first message.", keep
+        since = f" after {hours} hours" if hours is not None else ""
+        return True, f"Still failing{since}, for the same reason.", keep
 
     # Quiet: same cause, already said today. The commit is still safe locally and the next run
     # will try again.
@@ -616,16 +616,36 @@ def _maybe_alert(reason: Optional[str], where: str, staged: int, enabled: bool) 
         return
     now = datetime.now(timezone.utc)
     send, prefix, keep = alert_decision(reason, read_alert_state(), now)
-    if send and reason is None:
-        _alert(f"Ledger backup {prefix} ({where})")
-    elif send:
-        head = f"{prefix}\n" if prefix else ""
-        _alert(
-            f"{head}Ledger backup did NOT reach origin ({where}).\n"
-            f"{staged} file(s) committed locally; the record is on one disk until this clears.\n"
-            f"Why: {reason}"
-        )
+    if send:
+        # The house shape (`algos/shared/alert_format.py`) since 2026-09-30 — this was the last
+        # raw-text sender in the health room. `where` and the file count stay in the log.
+        print(f"  backup alert ({where}, {staged} file(s) committed locally): {prefix or reason}")
+        _alert(backup_message(reason, prefix))
     write_alert_state(keep)
+
+
+def backup_message(reason: Optional[str], prefix: str = "") -> str:
+    """The health-room text for one backup outcome. `reason=None` means it reached GitHub."""
+    # Beside THIS file, never off `REPO_ROOT` — that names the checkout being backed up.
+    sys.path.insert(0, str(_HERE.parent / "shared"))
+    from alert_format import OK, WARNING, alert  # type: ignore
+
+    if reason is None:
+        return alert(
+            OK,
+            "BACKUP WORKING",
+            "Trade records",
+            "The bots' records are reaching GitHub again. Nothing to do.",
+        )
+    return alert(
+        WARNING,
+        "BACKUP FAILING",
+        "Trade records",
+        prefix,
+        "The bots' records saved on the server but did not reach GitHub, so there is only one "
+        "copy.",
+        f"Reason: {reason}",
+    )
 
 
 def main(argv=None) -> int:

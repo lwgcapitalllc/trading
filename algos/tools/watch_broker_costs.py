@@ -206,14 +206,14 @@ def summarise(verdict: dict, bot: str, profile_key: str) -> str:
     subject = f"{_label(bot)} · {r['symbol']}"
     if verdict["first_reading"]:
         icon, label = INFO, "OVERNIGHT COST — FIRST READING"
-        why = "First reading on record — nothing to compare it against yet."
+        why = "First reading on record, so nothing to compare it with yet."
     else:
         icon, label = WARNING, "OVERNIGHT COST MOVED"
         parts = [
             f"{side} {m['was']:+.2f} → {m['now']:+.2f} ({m['by']:+.2f})"
             for side, m in verdict["moved"].items()
         ]
-        why = "Changed since the last reading — " + "; ".join(parts)
+        why = "Changed since the last reading: " + "; ".join(parts)
 
     lines = [
         "Per lot, per night.",
@@ -221,18 +221,22 @@ def summarise(verdict: dict, bot: str, profile_key: str) -> str:
         f"Broker now: long {r['long']:+.2f} · short {r['short']:+.2f}",
     ]
 
+    # ⚠ The cost profile's KEY (`puprime_ecn`) is never shown — it is a code name (2026-09-30).
     gaps = []
     for side in ("long", "short"):
         g = verdict["lab_gap"][side]
         held = g["held"]
         if held is None:
-            gaps.append(f"{side}: lab charges none on this tier")
+            gaps.append(f"{side} none")
         elif held == UNMEASURED:
-            gaps.append(f"{side}: lab refuses this tier — unmeasured")
+            gaps.append(f"{side} no figure")
         else:
-            gaps.append(f"{side}: lab holds {held:+.2f}, {_fmt_pct(g['pct'])} away")
-    lines.append(f"Backtests ({profile_key}) — " + " · ".join(gaps))
-    lines.append("Nothing changed here — re-pricing the lab is a separate, deliberate commit.")
+            gaps.append(f"{side} {held:+.2f} ({_fmt_pct(g['pct'])} off)")
+    if all(verdict["lab_gap"][s]["held"] == UNMEASURED for s in ("long", "short")):
+        lines.append("Backtests have no figure for this account type.")
+    else:
+        lines.append("Backtests use " + " · ".join(gaps))
+    lines.append("Nothing to do unless the gap grows.")
     return alert(icon, label, subject, *lines)
 
 
@@ -401,9 +405,9 @@ def main(argv=None) -> int:
                     CRITICAL,
                     "OVERNIGHT COST WATCH DOWN",
                     _label(args.bot),
-                    f"The check failed: {detail}",
-                    "Until this is fixed, a change in the broker's overnight cost will pass "
-                    "unnoticed.",
+                    "The overnight cost check failed.",
+                    f"Reason: {detail}",
+                    "Until it's fixed, a change in the broker's overnight cost goes unnoticed.",
                 ),
                 args.dry_run,
                 _account(args.bot),

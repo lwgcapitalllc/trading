@@ -197,7 +197,7 @@ class RealignExecution(Execution):
         #   attribute at all, so nothing is gated.
         if cfg.realign_trend_minutes is not None:
             if getattr(self, "trend_dir", 0) != d:
-                self.refusal = "the slower trend is not with the trade"
+                self.refusal = "the bigger trend is against this trade"
                 return
 
         # ── the N-day momentum gate ──────────────────────────────────────────────
@@ -206,10 +206,10 @@ class RealignExecution(Execution):
         if cfg.realign_mom_days is not None:
             m = getattr(self, "mom_dir", None)
             if m is None or m == d:
-                self.refusal = (f"the {cfg.realign_mom_days}-day momentum is with the trade — "
-                                "this setup only fades it" if m == d
-                                else f"not enough days yet for the {cfg.realign_mom_days}-day "
-                                "momentum read")
+                self.refusal = (f"the last {cfg.realign_mom_days} days already moved this way, "
+                                "and this setup only trades against that" if m == d
+                                else f"there are not yet {cfg.realign_mom_days} days of history "
+                                "to read the recent move")
                 return
 
         # ── where the order goes ─────────────────────────────────────────────────
@@ -224,7 +224,7 @@ class RealignExecution(Execution):
                     # would make this a market entry on part of the book and the row would
                     # be measuring a blend of the two things it exists to tell apart.
                     self.retest_no_level += 1
-                    self.refusal = "no structure level to rest the retest at"
+                    self.refusal = "there was no level to place the order at"
                     return
                 entry = st.trigger_level
             else:
@@ -233,20 +233,20 @@ class RealignExecution(Execution):
             # through the market is not a retest — it would fill at the next bar's open and
             # quietly re-become the market entry, at a worse price and under another name.
             if (entry - sig.close) * d >= 0:
-                self.refusal = "price is already past the retest level"
+                self.refusal = "price already passed the entry level"
                 return
 
         sl = st.trigger_stop - d * cfg.realign_sl_buf_tk * cfg.mintick
         dist = (entry - sl) * d
         if dist <= 0:
-            self.refusal = "the stop is not behind the entry"
+            self.refusal = "the stop would be on the wrong side of the entry"
             return
 
         # The minimum-stop guard is inherited and is the reason it matters here: qty is
         # risk / dist, so a stop collapsing onto the entry balloons the position. This
         # fork's stops are structural and can be genuinely tight.
         if not self._min_stop_ok(dist, entry):
-            self.refusal = "the stop is tighter than the minimum-stop setting"
+            self.refusal = "the stop is too close to the entry"
             return
 
         qty = (self.equity * cfg.exec_risk_pct / 100.0) / dist
@@ -277,7 +277,7 @@ class RealignExecution(Execution):
             #    retest whose limit sat EXACTLY on the target — a trade with no reward, which the
             #    third parity export caught on 2026-08-07 08:30 (limit and target both 4304.13).
             if reward <= 0 or reward < cfg.realign_min_rr * dist:
-                self.refusal = "the reward-to-risk is below the floor"
+                self.refusal = "the target is too close to be worth the risk"
                 return
 
         pend = _Pending(dir=d, edge=entry, qty=qty, sl=sl, tp1=tp1, tp2=tp2,

@@ -336,3 +336,14 @@ Full record: `algos/notes/telegram-and-notifications.md` → *A SETUP THREAD DID
   (`algos/live/ledger.mark_later_traded`), because live a refusal is written before any fill and
   cannot be removed. Test: `test_a_refusal_and_the_fill_of_its_setup_carry_the_same_setup_id`
   (RED stamping the refusal's own bar time).
+
+---
+
+## The wording reaching Telegram was rewritten into the one voice every bot shares (2026-09-30)
+
+Aaron: simple enough for anyone, the point at a glance, the same whichever bot. This package's
+check names, refusal reasons and outcome sentences were rewritten in plain English — no fib
+numbers, no "FVG"/"HTF"/"BOS", no "rule N —" prefixes, no "not a Pine rule" — and a check's detail
+now NAMES the condition, because the alert layer prints it after a ✓ or a ✗. **No decision moved:
+these strings are reporting only, and every refusal CODE is unchanged.** The rules and the
+shared vocabulary: `algos/notes/telegram-and-notifications.md` → *One voice for every bot*.

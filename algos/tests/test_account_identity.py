@@ -94,7 +94,7 @@ def test_a_different_account_HALTS_THE_BRIDGE(monkeypatch):
 
     assert r._account_mismatch_halted is True
     assert len(r.bridge.halts) == 1
-    assert "account mismatch" in r.bridge.halts[0]
+    assert "MetaTrader is logged into account" in r.bridge.halts[0]
     # BOTH numbers, because "the accounts disagree" is true of every cause at once and sends the
     # reader at whichever half they thought of first.
     assert str(THEIRS) in r.bridge.halts[0] and str(MINE) in r.bridge.halts[0]

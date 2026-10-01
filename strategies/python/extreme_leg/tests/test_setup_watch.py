@@ -60,7 +60,7 @@ def test_a_shift_that_is_taken_is_one_thread_that_ends_FILLED():
     s = snaps[0]
     assert s.key == f"ExtremeLegStrategy:L:t{T0}"
     assert s.met == s.of == 3
-    assert "H4" in s.confluences[0].detail and "session" in s.confluences[0].detail
+    assert "4-hour" in s.confluences[0].detail and "session" in s.confluences[0].detail
     assert s.stop == 98.0 and s.targets == (103.0,)
 
 
@@ -81,13 +81,13 @@ def test_a_refused_shift_is_BLOCKED_then_closed_with_the_last_refusal():
     w.observe(_st(1, age=1, raw=True, blk=BLK_TARGET_TOO_NEAR), False)
     snaps = w.drain_setups()
     assert [s.state for s in snaps] == [WATCHING]
-    assert snaps[0].blocked_by == ("the swing is nearer than the minimum",)
+    assert snaps[0].blocked_by == ("The target is too close to be worth the risk",)
     w.observe(_st(2, age=2), False)
     assert w.drain_setups()[0].blocked_by == ()  # a refusal belongs to its own bar
     w.observe(_st(3, armed=False, age=3), False)
     snaps = w.drain_setups()
     assert [s.state for s in snaps] == [DEAD]
-    assert "the swing is nearer than the minimum" in snaps[0].reason
+    assert "the target is too close to be worth the risk" in snaps[0].reason
     assert w.drain_setups() == []  # MUTATION: drop `_done.clear()` and it repeats
 
 
@@ -95,9 +95,9 @@ def test_a_ready_shift_the_slot_refused_names_WHY():
     w = _watch()
     w.observe(_st(0, age=0, swept=1), False)
     w.observe(_st(1, age=1, raw=True, go=True), True)
-    assert w.drain_setups()[0].blocked_by == ("a trade is already open",)
+    assert w.drain_setups()[0].blocked_by == ("Already in a trade",)
     w.observe(_st(2, age=2, raw=True, go=True), False)
-    assert w.drain_setups()[0].blocked_by == ("the account's risk budget had no room",)
+    assert w.drain_setups()[0].blocked_by == ("Account risk limit is full (other bots are using it)",)
 
 
 def test_a_fresh_sweep_while_armed_keeps_the_SAME_thread():

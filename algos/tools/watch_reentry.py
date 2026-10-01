@@ -125,7 +125,11 @@ def _summarise(rep: audit.Report, when: str, label: str = "") -> str:
         # ⚠ NAMED, not counted. "2 could not be checked" tells a reader nothing about whether the
         # unchecked half is the half that matters.
         lines.append("Not checked: " + "; ".join(unknown))
-    lines.append("Read the failed check(s) above." if fails else "Nothing to do.")
+    lines.append(
+        ("Read the failed check above." if len(fails) == 1 else "Read the failed checks above.")
+        if fails
+        else "Nothing to do."
+    )
     return alert(
         CRITICAL if fails else OK,
         "RE-ENTRY FAILED" if fails else "RE-ENTRY CHECKED",
@@ -241,9 +245,9 @@ def main(argv=None) -> int:
                     CRITICAL,
                     "RE-ENTRY WATCH DOWN",
                     _label(args.bot),
-                    f"The hourly check failed: {detail}",
-                    "Nothing is watching for a re-entry until this is fixed — silence does NOT "
-                    "mean nothing happened.",
+                    "The hourly re-entry check failed, so nothing is checking re-entry trades.",
+                    f"Reason: {detail}",
+                    "Until it's fixed, silence doesn't mean nothing happened. Check its log.",
                 ),
                 args.dry_run,
                 _account(args.bot),

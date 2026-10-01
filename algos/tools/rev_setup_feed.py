@@ -755,9 +755,18 @@ def main(argv: Optional[List[str]] = None) -> int:
         # market. The health room, never the student channel — this is machinery, not a signal.
         print(f"rev_setup_feed: CANNOT RUN — {e}")
         try:
+            from alert_format import CRITICAL, alert
             from notify import HEALTH, send_telegram
 
-            send_telegram(f"REV SETUP feed cannot run - {e}", HEALTH, markdown=False)
+            text = alert(
+                CRITICAL,
+                "STUDENT FEED DOWN",
+                "REV SETUP",
+                "The student setup feed cannot run, so students get no setups until it's fixed.",
+                f"Reason: {e}",
+                "Check its log on the trading server.",
+            )
+            send_telegram(text, HEALTH, markdown=False)
         except Exception as inner:  # noqa: BLE001 — the message above is already printed
             print(f"rev_setup_feed: and the health alert failed too ({inner})")
         return 1

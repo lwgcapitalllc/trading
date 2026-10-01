@@ -50,13 +50,16 @@ def message(kind: str, account, chat_id: str) -> str:
     the person who pressed the button: an unexplained message in a channel somebody has just been
     given reads as a bot misbehaving.
     """
+    from alert_format import INFO, alert
+
     where = f"account {account}" if account is not None else "a channel being set up"
-    return (
-        f"TEST MESSAGE - {kind} channel\n"
-        f"This channel has been entered as the {kind} channel for {where}.\n"
-        f"Chat {chat_id}.\n"
-        f"Nothing is trading because of this message. If you did not expect it, "
-        f"tell whoever set the account up."
+    return alert(
+        INFO,
+        "TEST MESSAGE",
+        f"{kind} channel",
+        f"This channel was entered as the {kind} channel for {where} (chat {chat_id}).",
+        "Nothing is trading because of this message. If you didn't expect it, tell whoever set "
+        "the account up.",
     )
 
 

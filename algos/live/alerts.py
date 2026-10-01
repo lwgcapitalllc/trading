@@ -115,6 +115,30 @@ def verdict(pnl_usd: float, r_multiple: Optional[float] = None, scratch_r: float
 # than no alert, because you would act on it — `docs/LIVE_SETUP_ALERTS.md` §9.
 
 
+def _sentence(text: str) -> str:
+    """A reason as one sentence: capital first letter, a full stop at the end.
+
+    🔴 **The house rule (Aaron, 2026-09-30): every bot's reasons read in ONE voice.** Each
+    strategy writes its own refusal and death sentences, and they arrived in four styles —
+    lower-case fragments, "label — Sentence", "rule 4 — …". This is the one place that evens out
+    the punctuation, so a strategy only has to get the WORDS plain.
+    """
+    t = (text or "").strip()
+    if not t:
+        return ""
+    t = t[:1].upper() + t[1:]
+    return t if t[-1] in ".!?" else t + "."
+
+
+def _bot_line(display: str, symbol: str, *extra: str) -> str:
+    """Line 2 of EVERY setup and trade message: which bot, which symbol.
+
+    🔴 **Always, including replies** (Aaron's house rules, 2026-09-30). A lock screen shows the
+    reply without the message it quotes, so a reply with no bot name names no trade at all.
+    """
+    return joined([display, symbol, *extra])
+
+
 def _zone_text(zone, digits: int) -> str:
     """The tradeable RANGE, shallow-to-deep, always printed low-to-high.
 
@@ -128,131 +152,129 @@ def _zone_text(zone, digits: int) -> str:
 
 
 def _confluence_line(snap) -> str:
-    """Every confluence on ONE line, each as the strategy's own `detail`.
+    """Every check on ONE line, ticked or crossed: `✓ Took out today's low · ✗ Pullback …`.
 
-    ⚠ **The DETAIL, not `name — detail`.** A strategy writes its details to be read
-    ("swept Day Low", "not tagged yet", "0.5-0.886 tagged, FVG live"), so the name in front of it
-    is the part that repeats on every message. Falls back to the NAME when a strategy gives no
-    detail, so a terser contributor renders something true rather than a stray separator.
+    🔴 **Ticks, not prose (Aaron, 2026-09-30).** The old line printed each strategy's own STATE
+    sentence ("SOS confirmed", "not tagged yet", "5m break pending"), so every bot read
+    differently and a reader had to parse each phrase to learn whether it was done. A tick or a
+    cross says that in one glance and reads the same for every bot; the strategy's `detail` now
+    only has to NAME the condition. Falls back to the name when a strategy gives no detail.
     """
-    parts = [(c.detail or c.name) for c in snap.confluences]
-    line = " · ".join(p for p in parts if p)
-    return line[:1].upper() + line[1:] if line else ""
+    parts = [
+        f"{'✓' if c.met else '✗'} {c.detail or c.name}"
+        for c in snap.confluences
+        if (c.detail or c.name)
+    ]
+    return " · ".join(parts)
 
 
 def _outstanding(snap) -> str:
     """What is still missing, named — and "" when everything is met.
 
     🔴 **The empty case is the load-bearing half.** An unconditional `Still missing:` with nothing
-    after it sends a reader hunting for a confluence that is already met.
+    after it sends a reader hunting for a check that is already met.
     """
-    missing = [c.name for c in snap.confluences if not c.met]
-    return f"Still missing: {', '.join(missing)}" if missing else ""
+    missing = [(c.detail or c.name) for c in snap.confluences if not c.met]
+    if not missing:
+        return ""
+    names = ", ".join(m[:1].lower() + m[1:] for m in missing)
+    return f"Still missing: {names}."
+
+
+def _targets(targets, digits: int) -> str:
+    """`Target 3,331.20`, or `Targets 3,296.10 · 3,311.75` — the word, never "TP1" (2026-09-30)."""
+    ts = [_price(t, digits) for t in targets if t]
+    if not ts:
+        return ""
+    return ("Target " if len(ts) == 1 else "Targets ") + " · ".join(ts)
 
 
 def format_watching(snap, digits: int = 2, display: str = "") -> str:
-    """A setup forming — Aaron's "2 of 3", the root of the thread.
+    """A setup forming — the root of the thread.
 
     ⚠ **"SETUP FORMING", never "POTENTIAL TRADE".** Measured over 6.5 years, 609 setups reach this
-    point and 159 fill: three of every four of these messages do not become a trade. A headline
-    that promises a trade is wrong 74% of the time, and a channel that is wrong that often is one
-    you stop reading on the day it matters.
+    point and 159 fill: three of every four of these messages do not become a trade.
 
-    ⚠ **Four lines, and it was eight** (Aaron, 2026-08-13, on the first real renders). What went is
-    everything the reader already knew by the time they reached it: the confluences one per line,
-    `Waiting on a retrace into that zone` sitting directly under `Retrace zone — not tagged yet`,
-    and `(the zone's deep edge)` explaining a number rather than giving one. **Every FACT is still
-    here** — what changed is how many lines they take. The prices are last on purpose: they are
-    what a reader opens the message again for.
+    The shape every bot shares (Aaron, 2026-09-30): the bot and its check count, the checks as
+    ticks and crosses, then the prices — what a reader opens the message again for.
 
-    ⚠ **The stop is still a PROJECTION.** No order exists yet; it is derived from the deep edge of
-    the zone. It shares a line with the zone rather than getting its own sentence, which is why the
-    wording no longer says so — if that ever reads as a resting order, put the word back rather
-    than trusting the layout to carry it.
+    ⚠ **The stop is still a PROJECTION.** No order exists yet.
 
     `display` is the BOT's name (`SOS Fade`); `snap.strategy` is only ever the class name.
     """
-    head = joined([display or snap.strategy, snap.symbol, f"{snap.met} of {snap.of}"])
+    head = _bot_line(display or snap.strategy, snap.symbol, f"{snap.met} of {snap.of} checks")
     lines = [head, _confluence_line(snap)]
+    stop = f"Stop {_price(snap.stop, digits)}" if snap.stop is not None else ""
     if snap.zone:
-        zone = f"Zone {_zone_text(snap.zone, digits)}"
-        # ⚠ The stop and the zone's deep edge are the SAME price on this strategy. `exec_sl_level`
-        # is 0.886, which is also the deep end of the 0.5-0.886 entry band — a documented property
-        # (`sos_fade/CLAUDE.md` → the `exec_sl_level` warning), not a rounding artefact. A fill
-        # at the very bottom of the zone has almost no stop distance, which is exactly what the
-        # minimum-stop guard exists to refuse.
-        if snap.stop is not None:
-            zone = f"{zone} · stop {_price(snap.stop, digits)}"
-        lines.append(zone)
+        lines.append(joined([f"Entry zone {_zone_text(snap.zone, digits)}", stop]))
     else:
-        # A MARKET-entry setup (Realign) has no zone, so its price line is the projected stop and
-        # the target — without this it printed no prices at all (2026-09-27).
-        prices = [f"Stop {_price(snap.stop, digits)}"] if snap.stop is not None else []
-        prices += [f"TP{i} {_price(t, digits)}" for i, t in enumerate(snap.targets, 1) if t]
-        lines.append(" · ".join(prices))
+        # A MARKET-entry setup has no zone, so its price line is the projected stop and target.
+        lines.append(joined([stop, _targets(snap.targets, digits)]))
     return alert("👀", "SETUP FORMING", snap.direction, *lines)
 
 
-def format_entry_zone(
-    snap, digits: int = 2, lots: Optional[float] = None, show_size: bool = True
-) -> str:
-    """A limit order is RESTING at a price, unfilled. Replies to `format_watching`.
+def _still_watching(snap) -> str:
+    return "Still watching in case this changes."
 
-    Sent ONCE per setup. Later changes to the order go out as `format_order_moved` — reversed
-    2026-09-16 (Aaron: the thread must never describe an order the account is not holding). A
-    cancellation is silent, by his call. MEASURED with `alert_rate.py`, sos_fade 2020-01 →
-    2026-09: +5.4 messages a month, 19.6 → 25.0.
 
-    🔴 **An order can rest at 2 of 3, and the message must NOT imply otherwise.** The entry edge
-    comes from a gap overlapping the 0.5-0.886 band, and a gap can be there before PRICE is — so
-    the limit is placed in advance and the retrace confluence is still outstanding. Listing only
-    the met confluences (the first version of this) hid exactly the fact a reader needs: the
-    order is real, and price has not come to it yet.
+def format_blocked_root(snap, digits: int = 2, display: str = "") -> str:
+    """A setup REFUSED on the very bar it is first announced — ONE message, not two.
 
-    🔴 **The header says RESTING because "ENTRY ZONE LIVE" was read as a FILL** (Aaron, 2026-08-14,
-    on a real send: *"I thought the trade entered when you just did a limit order"*). It had not —
-    price was 41 points above the limit and stayed there. **This is the one message in the thread
-    whose whole job is to say that an order EXISTS and has NOT filled**, and the old header said
-    neither word. `BUY LIMIT` / `SELL LIMIT` is the MT5 order type he sees in the terminal, so the
-    message and the platform now call the same thing by the same name; it also carries the
-    direction, which is why there is no `· LONG` subject to repeat it.
-
-    ⚠ **`Limit`, never `Entry`.** An entry is a price you got; a limit is a price you are offering.
-    Same misreading one line down from the header that just caused it.
-
-    ⚠ **The targets are NUMBERED.** `TP 3,296.10 · 3,311.75` leaves the reader to infer that the
-    first is TP1 — true here, and an inference the message should not be asking for.
-
-    🔴 **`lots` is the size ACTUALLY SENT TO THE BROKER, handed in by the live layer — it is never
-    derived here and this module must never learn how (2026-09-03, Aaron: *"I need to see how much
-    lots are going to be traded"*).** The strategy sizes in INSTRUMENT UNITS (ounces for gold) and
-    MT5 takes LOTS; a message that converted for itself would be a second answer competing with
-    `order_sizing`'s one seam, which is the 54.82-lots-on-$2,000 defect exactly. `bridge.
-    resting_lots` reads the placed order and this renders whatever it is given.
-
-    ⚠ **`None` prints NO SIZE rather than a zero or a guess**, because it means the caller had no
-    broker to ask — a backtest, or `alert_rate.py`. The unit is NAMED in the title for the same
-    reason the conversion is not done here: a bare number on this message is the one place a
-    reader could take ounces for lots.
+    🔴 **Why (2026-10-01, extreme_leg_demo 01:20 UTC):** the thread opened with SETUP FORMING
+    quoting a target of 4,162.44 while price stood at 4,163.35, and BLOCKED arrived under it in
+    the same second. The root described a trade that could not happen, at a target price had
+    already passed. Folded into one BLOCKED message, and it prints NO prices: no order exists, so
+    no number on it can be acted on.
     """
+    return alert(
+        "🚫",
+        "BLOCKED",
+        snap.direction,
+        _bot_line(display or snap.strategy, snap.symbol),
+        " ".join(_sentence(b) for b in snap.blocked_by),
+        _still_watching(snap),
+    )
+
+
+def format_entry_zone(
+    snap,
+    digits: int = 2,
+    lots: Optional[float] = None,
+    show_size: bool = True,
+    display: str = "",
+) -> str:
+    """A limit order is WAITING at a price, unfilled. Replies to `format_watching`.
+
+    Sent ONCE per setup; later changes go out as `format_order_moved`.
+
+    🔴 **An order can wait at 2 of 3, and the message must NOT imply otherwise.** The limit can be
+    placed before price reaches the zone, so the line naming what is still missing is the safety
+    property of this message.
+
+    🔴 **"Not filled yet" is said in words because "ENTRY ZONE LIVE" was read as a FILL** (Aaron,
+    2026-08-14). This message's whole job is to say an order EXISTS and has NOT filled.
+
+    🔴 **`lots` is the size ACTUALLY SENT TO THE BROKER, handed in by the live layer — never
+    derived here.** `None` prints no size rather than a zero or a guess.
+    """
+    # ⚠ LIMIT in the header: the MT5 order type Aaron sees in the terminal (2026-08-14), and a
+    # limit is a price offered, never an entry got — so the body says "Buy at", never "Entry".
+    side = "Buy" if snap.side > 0 else "Sell"
+    size = f"{lots:.2f} lots" if (lots is not None and show_size) else ""
     order = []
     if snap.entry is not None:
-        order.append(f"Limit {_price(snap.entry, digits)}")
+        order.append(f"{side} at {_price(snap.entry, digits)}")
     if snap.stop is not None:
-        order.append(f"stop {_price(snap.stop, digits)}")
-    lines = [f"{snap.met} of {snap.of}", " · ".join(order)]
-    if snap.targets:
-        lines.append(
-            " · ".join(f"TP{i} {_price(t, digits)}" for i, t in enumerate(snap.targets, 1) if t)
-        )
-    # ⚠ This line IS the safety property above. The full confluence dump it replaces said the same
-    # thing in three lines and buried it among two that were fine.
-    lines.append(_outstanding(snap))
-    side = "BUY" if snap.side > 0 else "SELL"
-    # The setup thread passes `SHOW_SIZE`, the same switch as the trades room (2026-09-27), so the
-    # two rooms can never again disagree about whether an order's size is stated.
-    size = f"{lots:.2f} lots · " if (lots is not None and show_size) else ""
-    return alert("🎯", f"{size}{side} LIMIT RESTING", "", *lines)
+        order.append(f"Stop {_price(snap.stop, digits)}")
+    return alert(
+        "🎯",
+        "LIMIT ORDER WAITING",
+        snap.direction,
+        _bot_line(display or snap.strategy, snap.symbol, size),
+        " · ".join(order),
+        _targets(snap.targets, digits),
+        joined(["Not filled yet.", _outstanding(snap)], " "),
+    )
 
 
 class RestingOrder(NamedTuple):
@@ -276,110 +298,115 @@ def _moved(old: Optional[float], new: Optional[float], fmt) -> str:
     return f"{fmt(old)} → {fmt(new)}"
 
 
-def format_order_moved(snap, digits: int = 2, now=None, before=None, show_size: bool = True) -> str:
-    """The resting order CHANGED — price, stop or size. Replies to the root.
+def format_order_moved(
+    snap, digits: int = 2, now=None, before=None, show_size: bool = True, display: str = ""
+) -> str:
+    """The waiting order CHANGED — price, stop or size. Replies to the root.
 
-    🔴 **Why this exists (Aaron, 2026-09-16):** the order is re-placed as the retrace levels move,
-    and a thread that only ever showed the FIRST price and size was describing an order the broker
-    no longer held. The fill would then land under a message quoting the wrong price and lots.
-    `now` / `before` are what the broker holds and what the thread last said; either may be None
-    when there is no broker to ask, and the strategy's own prices are shown instead.
+    🔴 **Why this exists (Aaron, 2026-09-16):** the order is re-placed as the levels move, and a
+    thread that only ever showed the FIRST price and size described an order the broker no longer
+    held. `now` / `before` are what the broker holds and what the thread last said; either may be
+    None when there is no broker to ask, and the strategy's own prices are shown instead.
     """
-    side = "BUY" if snap.side > 0 else "SELL"
+    side = "Buy" if snap.side > 0 else "Sell"
     p = lambda v: _price(v, digits)  # noqa: E731
     new_px = now.price if now else snap.entry
     new_sl = now.stop if now else snap.stop
     old_px = before.price if before else None
     old_sl = before.stop if before else None
-    order = [f"Limit {_moved(old_px, new_px, p)}", f"stop {_moved(old_sl, new_sl, p)}"]
-    lines = [" · ".join(x for x in order if not x.endswith(" "))]
+    size = ""
     if now is not None and show_size:
-        lots = _moved(before.lots if before else None, now.lots, lambda v: f"{v:.2f}")
-        lines.insert(0, f"{lots} lots")
-    lines.append(_outstanding(snap))
-    return alert("🔁", f"{side} LIMIT MOVED", "", *lines)
-
-
-def format_order_withdrawn(snap) -> str:
-    """The strategy pulled the resting order but still watches the setup. Replies to the root.
-
-    🔴 **Why (2026-09-16, sos_fade_demo 20:15 UTC):** the final-hour rule cancelled the sell
-    limit and the thread's last word was still "SELL LIMIT RESTING". Sent only when the strategy
-    NAMES the rule (`paused_by`); a broker cancel-and-replace stays silent, as Aaron asked.
-    """
-    side = "BUY" if snap.side > 0 else "SELL"
+        size = f"{_moved(before.lots if before else None, now.lots, lambda v: f'{v:.2f}')} lots"
+    px, sl = _moved(old_px, new_px, p), _moved(old_sl, new_sl, p)
+    order = joined([f"{side} at {px}" if px else "", f"Stop {sl}" if sl else ""])
     return alert(
-        "⏸",
-        f"{side} LIMIT WITHDRAWN",
-        "",
-        " · ".join(snap.paused_by),
-        "No order is resting. The setup is still watched, and the order returns if the rule "
-        "lifts in time.",
+        "🔁",
+        "LIMIT ORDER MOVED",
+        snap.direction,
+        _bot_line(display or snap.strategy, snap.symbol, size),
+        order,
+        joined(["Not filled yet.", _outstanding(snap)], " "),
     )
 
 
-def format_blocked(snap, digits: int = 2) -> str:
+def format_order_withdrawn(snap, display: str = "") -> str:
+    """The strategy pulled the waiting order but still watches the setup. Replies to the root.
+
+    🔴 **Why (2026-09-16, sos_fade_demo 20:15 UTC):** the final-hour rule cancelled the sell
+    limit and the thread's last word was still that an order was waiting. Sent only when the
+    strategy NAMES the rule (`paused_by`); a broker cancel-and-replace stays silent.
+    """
+    return alert(
+        "⏸",
+        "LIMIT ORDER PAUSED",
+        snap.direction,
+        _bot_line(display or snap.strategy, snap.symbol),
+        " ".join(_sentence(r) for r in snap.paused_by),
+        "The order comes back if this changes while the setup is still valid.",
+    )
+
+
+def format_blocked(snap, digits: int = 2, display: str = "") -> str:
     """One of your own rules refused a setup that was otherwise ready. Replies to the root.
 
-    Carries EVERY refusing rule rather than only the first. The Pine reports one because a chart
-    tag has room for one line; a reader asking "is this rule earning its keep" needs the whole set,
-    and "blocked by the veto" has to stay true on a setup the final-hour rule was also blocking.
+    Carries EVERY refusing rule rather than only the first — "blocked by the veto" has to stay
+    true on a setup the final-hour rule was also blocking.
     """
-    # One line, however many rules. `The setup was ready and this rule stopped it` is gone: it is
-    # what BLOCKED already means, and it was on every send this message ever made.
-    return alert("🚫", "BLOCKED", snap.direction, " · ".join(snap.blocked_by))
+    return alert(
+        "🚫",
+        "BLOCKED",
+        snap.direction,
+        _bot_line(display or snap.strategy, snap.symbol),
+        " ".join(_sentence(b) for b in snap.blocked_by),
+        _still_watching(snap),
+    )
 
 
-def format_resolved(snap, digits: int = 2) -> str:
+def format_resolved(snap, digits: int = 2, display: str = "") -> str:
     """What became of a setup — filled, or died. Replies to the root.
 
     `reason` is the STRATEGY's own sentence, never one composed here. Two explanations for one
     death can disagree, and a reader has no way to tell which one is the bot's.
     """
-    # Imported HERE, not at module level — see the block at the top of this file. By the time any
-    # message is formatted the deployed snapshot is bound, so this resolves against the code the
-    # bot was promoted with rather than against the working tree.
+    # Imported HERE, not at module level — see the block at the top of this file.
     from backtest.setups import DEAD, FILLED
 
+    bot = _bot_line(display or snap.strategy, snap.symbol)
     if snap.state == FILLED:
-        # The trade alert lands seconds later with the price, the size and the risk, so this one
-        # only has to close the thread.
-        return alert("✅", "ENTERED", snap.direction, "Size and risk are in the trade alert.")
+        # The trade alert lands seconds later with the price, the size and the risk.
+        return alert("✅", "ENTERED", snap.direction, bot, "Filled. Details in the trades room.")
     if snap.state != DEAD:
-        # Not an outcome at all. A caller that got here has a bug; saying NO TRADE would tell the
-        # reader to stop watching a setup that may still trade.
+        # Not an outcome at all. Saying NO TRADE would tell the reader to stop watching a setup
+        # that may still trade.
         raise ValueError(f"format_resolved called on a {snap.state!r} setup — not an outcome")
     # A NO TRADE is a claim that the bot refused this setup, and it must always say why.
     return alert(
-        "👋", "NO TRADE", snap.direction, snap.reason or "The strategy did not record a reason."
+        "👋",
+        "NO TRADE",
+        snap.direction,
+        bot,
+        _sentence(snap.reason) or "The bot did not record a reason.",
     )
 
 
-def format_lost(side=None, symbol: str = "") -> str:
+def format_lost(side=None, symbol: str = "", display: str = "") -> str:
     """Close a thread whose OUTCOME was never recorded, and say exactly that.
 
-    Sent once, on a start, for a setup this bot announced before it stopped and is no longer
-    watching now — the bot was down or re-warmed while the setup resolved, so the strategy's own
-    sentence for it does not exist any more.
+    Sent once, on a start, for a setup announced before the bot stopped that it is no longer
+    watching now.
 
-    🔴 **It must NOT borrow the wording of a real death.** `NO TRADE` is a claim: it says the bot
-    looked at this setup and refused it. Here the bot does not know whether it filled, died or
-    simply aged out, and a confident outcome on a setup that might have traded is a label with no
-    code behind it — the reader would stop watching a trade that was live. Say the honest thing:
-    the thread is being closed, and why the answer is missing.
+    🔴 **It must NOT borrow the wording of a real death.** `NO TRADE` says the bot looked at this
+    setup and refused it. Here the bot does not know whether it filled, died or aged out.
 
-    ⚠ **The direction is printed when it is known and simply absent when it is not.** A thread
-    stored before this field existed has no side, and guessing one would name a trade direction
-    nobody measured.
+    ⚠ **The direction is printed when it is known and simply absent when it is not.**
     """
     direction = {1: "LONG", -1: "SHORT"}.get(side, "")
     return alert(
         "🧹",
-        "THREAD CLOSED",
+        "NO LONGER TRACKED",
         direction,
-        joined([symbol, "no longer being watched"]),
-        "The bot restarted while this setup was open, so its outcome was not recorded. "
-        "It is not a trade and not a refusal — it is an answer this bot no longer has.",
+        _bot_line(display, symbol),
+        "The bot restarted while this setup was open, so how it ended is unknown.",
     )
 
 
@@ -419,20 +446,19 @@ def format_entry(
     is_long = direction.upper().startswith("L")
     side = "LONG" if is_long else "SHORT"
 
-    size = ""
-    if show_size:
-        size = f"Size {lots:.2f} lots"  # two places, as every other message states lots
-        if risk_usd is not None:
-            pct = f" ({risk_pct:g}%)" if risk_pct is not None else ""
-            size += f" · Risking ${risk_usd:,.2f}{pct}"
+    risk = ""
+    if show_size and risk_usd is not None:
+        pct = f" ({risk_pct:g}% of the account)" if risk_pct is not None else ""
+        risk = f"Risking ${risk_usd:,.2f}{pct}"
 
+    # The same shape as the signals room (2026-09-30): state and direction, then bot · symbol.
     return alert(
         "📈" if is_long else "📉",
-        "ENTRY",
-        f"{side} {symbol}",
+        "ENTERED",
+        side,
+        _bot_line(strategy, symbol, f"{lots:.2f} lots" if show_size else ""),
         f"Entry {_price(entry, digits)} · Stop {_price(stop, digits)}",
-        size,
-        strategy,
+        risk,
     )
 
 
@@ -464,9 +490,9 @@ TO_BREAKEVEN, TRAILING, TIGHTENED = "to_breakeven", "trailing", "tightened"
 
 _STOP_MARK = {TO_BREAKEVEN: "🛡", TRAILING: "🪜", TIGHTENED: "🔒"}
 _STOP_LABEL = {
-    TO_BREAKEVEN: "STOP AT BREAKEVEN",
-    TRAILING: "STOP TRAILED",
-    TIGHTENED: "STOP TIGHTENED",
+    TO_BREAKEVEN: "STOP MOVED TO ENTRY",
+    TRAILING: "PROFIT LOCKED IN",
+    TIGHTENED: "RISK REDUCED",
 }
 
 
@@ -520,6 +546,7 @@ def format_stop_moved(
     symbol: str = "",
     digits: int = 2,
     threaded: bool = True,
+    strategy: str = "",
 ) -> str:
     """The stop moved. Replies to the entry.
 
@@ -535,24 +562,23 @@ def format_stop_moved(
     r = stop_locked_r(direction=direction, entry=entry, stop=now, opening_stop=opening_stop)
 
     move = f"Stop {_moved(was, now, lambda v: _price(v, digits))}"
-    if kind is TO_BREAKEVEN and abs(now - entry) < 10**-digits:
-        move += " (entry)"
-    # ⚠ A figure that ROUNDS to zero is not printed. `risk now 0.00R` beside `(entry)` says the
-    # same thing twice and invites the reader to wonder which of the two is the rounding.
+    # ⚠ A figure that ROUNDS to zero is not printed. `now risking 0.00R` under STOP MOVED TO ENTRY
+    # says the same thing twice and invites the reader to wonder which of the two is the rounding.
     if r is not None and abs(r) >= 0.005:
-        move += f" · locking {r:+.2f}R" if r > 0 else f" · risk now {abs(r):.2f}R"
+        move += f" · locks in {r:+.2f}R" if r > 0 else f" · now risking {abs(r):.2f}R"
 
     note = ""
     if kind == TO_BREAKEVEN:
-        # ⚠ "unless price gaps through it", never "nothing left to lose". A gap or a fast market
-        # fills past a stop, and this thread's own entry message says "Risking" for the same
-        # reason — the smaller word is the accurate one.
-        note = "Out of risk on this trade now, unless price gaps through the stop."
+        # ⚠ "unless price jumps past the stop", never "nothing left to lose". A gap or a fast
+        # market fills past a stop, and this thread's own entry message says "Risking" for the
+        # same reason — the smaller word is the accurate one.
+        note = "This trade can no longer lose, unless price jumps past the stop."
 
     return alert(
         _STOP_MARK[kind],
         _STOP_LABEL[kind],
-        joined([side, symbol]) if not threaded else "",
+        side if not threaded else "",
+        _bot_line(strategy, symbol),
         move,
         note,
     )
@@ -566,6 +592,7 @@ def format_partial_banked(
     symbol: str = "",
     threaded: bool = True,
     show_size: bool = True,
+    strategy: str = "",
 ) -> str:
     """Size taken off at a rung. Replies to the entry.
 
@@ -580,14 +607,15 @@ def format_partial_banked(
     """
     return alert(
         "💰",
-        "PART BANKED",
-        symbol if not threaded else "",
+        "PROFIT TAKEN",
+        "",
+        _bot_line(strategy, symbol),
         (
-            f"Took {lots_banked:.2f} of {lots_before:.2f} lots off · {lots_after:.2f} still running"
+            f"Closed {lots_banked:.2f} of {lots_before:.2f} lots · {lots_after:.2f} still open"
             if show_size
-            else "Took part of the position off · the rest is still running"
+            else "Closed part of the position · the rest is still open"
         ),
-        "Banked at market on the bar's close, not at the rung's own price.",
+        "Taken at market price, so it can differ slightly from the target.",
     )
 
 
@@ -601,6 +629,7 @@ def format_scaled_in(
     digits: int = 2,
     threaded: bool = True,
     show_size: bool = True,
+    strategy: str = "",
 ) -> str:
     """The strategy ADDED to a winner. Replies to the entry.
 
@@ -623,15 +652,24 @@ def format_scaled_in(
     other side: an add can be refused for size or rejected outright, and a message counting the
     request would report size the account does not hold.
     """
-    added = f"Added {lots_added:.2f} lots" if show_size else "Added to the position"
+    added = f"Added {lots_added:.2f} lots" if show_size else "Added to the trade"
     if price is not None:
         added += f" at about {_price(price, digits)}"
-    held = f"{lots_now:.2f} lots now open" if show_size else ""
+    held = f"{lots_now:.2f} lots open now" if show_size else ""
     if stop is not None:
-        on_stop = f"every lot on the same stop {_price(stop, digits)}"
+        on_stop = f"all on one stop at {_price(stop, digits)}"
         held = f"{held} · {on_stop}" if held else on_stop[0].upper() + on_stop[1:]
-    lines = [added, held]
-    return alert("➕", "ADDED TO POSITION", symbol if not threaded else "", *lines)
+    return alert("➕", "ADDED TO TRADE", "", _bot_line(strategy, symbol), added, held)
+
+
+#: The strategy's exit reason, said the way a person says it. Anything not listed prints as is,
+#: so a new reason from a new bot still reaches the reader rather than vanishing.
+_EXIT_WORDS = {
+    "target": "hit target",
+    "stop": "hit stop",
+    "your stop": "hit your stop",
+    "stop moved to entry": "stopped at entry",
+}
 
 
 def format_exit(
@@ -659,9 +697,8 @@ def format_exit(
     Outcome, money, price — and nothing about what was risked, because this message hangs under
     the entry that already said so.
 
-    `threaded` says whether this really will post as a reply. When it does not — the entry alert
-    never sent, so there is no message to reply to — the header carries the symbol, because a bare
-    "WIN" floating in the group names no trade at all.
+    `threaded` is kept for the callers; the bot · symbol line is printed either way since
+    2026-09-30, so a bare "WIN" never floats in the group naming no trade.
 
     `exit_reason` is a short parenthetical like `stop` or `stop moved to entry`. It is the
     difference between reading a number and understanding it: a −0.02R scratch and a −1.00R loser
@@ -671,9 +708,9 @@ def format_exit(
     verb = {WIN: "Made", LOSE: "Lost", BREAKEVEN: "Lost"}[v]
     if v == BREAKEVEN and pnl_usd > 0:
         verb = "Made"
-    price = f"Exit {_price(exit_price, digits)}"
+    price = f"Closed at {_price(exit_price, digits)}"
     if exit_reason:
-        price += f" ({exit_reason})"
+        price += f" ({_EXIT_WORDS.get(exit_reason, exit_reason)})"
 
     if show_size:
         amount = f"{verb} ${abs(pnl_usd):,.2f}"
@@ -682,7 +719,7 @@ def format_exit(
     else:
         body = [f"{r_multiple:+.2f}R", price] if r_multiple is not None else [price]
 
-    return alert(_VERDICT_MARK[v], _VERDICT_LABEL[v], "" if threaded else symbol, *body)
+    return alert(_VERDICT_MARK[v], _VERDICT_LABEL[v], "", _bot_line(strategy, symbol), *body)
 
 
 def format_manual_close(
@@ -694,6 +731,7 @@ def format_manual_close(
     digits: int = 2,
     threaded: bool = True,
     show_size: bool = True,
+    strategy: str = "",
 ) -> str:
     """The reply when the OWNER closed the trade by hand (2026-09-17).
 
@@ -702,15 +740,28 @@ def format_manual_close(
     the header a lock screen shows; `None` (risk unknown) prints no R rather than a zero.
     """
     head = f"{r_multiple:+.2f}R" if r_multiple is not None else ""  # as the WIN/LOSS states it
-    if not threaded:
-        head = f"{head} · {symbol}" if head else symbol
     verb = "Made" if pnl_usd >= 0 else "Lost"
     money = [f"{verb} ${abs(pnl_usd):,.2f}"] if show_size else []
     return alert(
         "✋",
         "CLOSED BY YOU",
         head,
+        _bot_line(strategy, symbol),
         *money,
-        f"Exit {_price(exit_price, digits)}",
-        "The bot has flattened its own record and keeps trading.",
+        f"Closed at {_price(exit_price, digits)}",
+        "The bot keeps trading.",
+    )
+
+
+def format_stop_moved_by_you(
+    *, stop: float, symbol: str = "", digits: int = 2, strategy: str = ""
+) -> str:
+    """The owner tightened the stop at the broker and the bot KEPT it (2026-09-17). Replies to the
+    entry. It lived inline in the bridge until 2026-09-30 and had no bot line."""
+    return alert(
+        "✋",
+        "STOP MOVED BY YOU",
+        "",
+        _bot_line(strategy, symbol),
+        f"Stop now {_price(stop, digits)}. The bot keeps it.",
     )

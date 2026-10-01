@@ -369,7 +369,7 @@ def test_the_alarm_NAMES_the_file_that_stood_the_push_down(box, alerts):
 
     assert rc == 1
     assert len(alerts) == 1, f"expected exactly one alert, got {alerts}"
-    assert "Why:" in alerts[0]
+    assert "Reason:" in alerts[0]
     assert "algos/tools/promote.py" in alerts[0], f"the alarm did not name the blocker: {alerts[0]}"
 
 
@@ -650,7 +650,7 @@ def test_an_UNCHANGED_failure_says_itself_again_after_a_day():
 
     send, prefix, _ = _said("the rebase failed", keep, NOW + timedelta(hours=25))
     assert send
-    assert "STILL FAILING" in prefix
+    assert "Still failing" in prefix
     assert "25 hours" in prefix, f"the reminder must say how long: {prefix}"
 
 
@@ -667,7 +667,7 @@ def test_RECOVERY_speaks_exactly_once_and_then_says_nothing():
 
     send, prefix, keep = _said(None, failed, NOW + timedelta(hours=2))
     assert send
-    assert "RECOVERED" in prefix
+    assert "Recovered" in prefix
     assert keep == {}, "a cleared alarm must forget, or it announces recovery forever"
 
     again, _, _ = _said(None, keep, NOW + timedelta(hours=3))

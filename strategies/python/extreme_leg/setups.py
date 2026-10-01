@@ -35,6 +35,15 @@ _FAMILY_BITS = (
 )
 
 
+_FAMILY_WORDS = {"H4": "4-hour"}
+
+
+def _families(fams) -> str:
+    """`["H4", "daily", "session"]` → `4-hour, daily and session`."""
+    words = [_FAMILY_WORDS.get(f, f) for f in fams]
+    return words[0] if len(words) == 1 else ", ".join(words[:-1]) + " and " + words[-1]
+
+
 def _finite(x) -> Optional[float]:
     return float(x) if x is not None and math.isfinite(x) else None
 
@@ -113,7 +122,7 @@ class LegSetupWatch:
             ep.announced = True
 
         if entered:
-            self._end(st, d, FILLED, "entered at market on the 5m shift of structure")
+            self._end(st, d, FILLED, "Entered at market.")
             return
 
         blocked: tuple = ()
@@ -121,8 +130,8 @@ class LegSetupWatch:
             from .execution import BLOCK_TEXT
             blocked = (BLOCK_TEXT.get(code, f"refusal code {code}"),)
         elif go and not entered:
-            blocked = (("a trade is already open" if was_busy
-                        else "the account's risk budget had no room"),)
+            blocked = (("Already in a trade" if was_busy
+                        else "Account risk limit is full (other bots are using it)"),)
         if blocked:
             ep.blocked = blocked
             ep.last_block = blocked[0]
@@ -131,9 +140,10 @@ class LegSetupWatch:
             ep.blocked = ()
 
         if not armed:
-            why = f"the sweep's {self._cfg.swept_minutes}-minute window closed"
-            why += (f" — last refusal: {ep.last_block}" if ep.last_block
-                    else " with no 5m shift of structure")
+            why = (f"Ran out of time: no entry signal within {self._cfg.swept_minutes} minutes"
+                   if not ep.last_block else
+                   f"Ran out of time after {self._cfg.swept_minutes} minutes. Last block: "
+                   f"{ep.last_block[:1].lower() + ep.last_block[1:]}")
             self._end(st, d, DEAD, why)
             return
         self._last[d] = self._snap(st, d, WATCHING) if ep.announced else None
@@ -144,23 +154,20 @@ class LegSetupWatch:
         ep = self._ep[d]
         long_ = d > 0
         fams = sorted(ep.families)
+        # ⚠ NAMES of the checks — the alert layer ticks or crosses them (2026-09-30).
         conf = [Confluence(
             "Sweep", True,
-            ("Swept " + " + ".join(fams) + (" low" if long_ else " high")) if fams
-            else "level swept",
+            ("Took out the " + _families(fams) + (" low" if long_ else " high")) if fams
+            else "Took out a key level",
         )]
         if cfg.req_counter_trend:
             want = -1 if long_ else 1
             ok = st.dir15 == want
             conf.append(Confluence(
                 "15m trend", ok,
-                ("15m trend " + ("down" if long_ else "up") + ", against the trade") if ok
-                else "15m trend not against the trade yet",
+                "15-min trend " + ("down" if long_ else "up") + " (this trade catches the turn)",
             ))
-        conf.append(Confluence(
-            "Shift of structure", ep.shifted,
-            "5m shift confirmed" if ep.shifted else "waiting for the 5m shift",
-        ))
+        conf.append(Confluence("Shift of structure", ep.shifted, "5-min trend turned"))
         stop = _finite(st.stop_long if long_ else st.stop_short)
         tp = _finite(st.tp_long if long_ else st.tp_short)
         return SetupSnapshot(

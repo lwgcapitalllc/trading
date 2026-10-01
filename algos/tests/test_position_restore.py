@@ -373,7 +373,7 @@ def test_no_record_halts(tmp_path):
     b, _, _, _ = _startup(tmp_path, positions=[_held()])
     b.apply_restore()
     assert b.state is live_bridge.BridgeState.HALTED
-    assert "no usable record" in b.halt_reason
+    assert "no saved record" in b.halt_reason
 
 
 def test_a_ticket_that_does_not_match_halts_and_names_both(tmp_path):
@@ -382,7 +382,7 @@ def test_a_ticket_that_does_not_match_halts_and_names_both(tmp_path):
     _record(tmp_path, ticket=901)
     b, _, _, _ = _startup(tmp_path, positions=[_held(ticket=902)])
     assert b.state is live_bridge.BridgeState.HALTED
-    assert "T902" in b.halt_reason and "T901" in b.halt_reason
+    assert "#902" in b.halt_reason and "#901" in b.halt_reason
 
 
 def test_a_stop_moved_by_hand_halts_rather_than_being_adopted(tmp_path):
@@ -394,7 +394,7 @@ def test_a_stop_moved_by_hand_halts_rather_than_being_adopted(tmp_path):
     b, _, _, _ = _startup(tmp_path, positions=[_held(stop=3275.0)])
     assert b.state is live_bridge.BridgeState.HALTED
     assert "3280.0" in b.halt_reason and "3275.0" in b.halt_reason
-    assert "NOT be adopted" in b.halt_reason
+    assert "outside the bot" in b.halt_reason
 
 
 def test_a_stop_TIGHTENED_by_hand_is_adopted_as_the_owners(tmp_path):

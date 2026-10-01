@@ -148,14 +148,14 @@ def test_a_position_with_NO_stop_refuses_rather_than_scoring_zero():
     with an open-ended loss sit invisibly under the cap that exists to bound exactly that."""
     with pytest.raises(RiskUnmeasurable) as e:
         measure_exposure([_pos(ticket=9, stop=0.0, magic=0)], _gold())
-    assert "NO broker-side stop" in str(e.value)
-    assert "9" in str(e.value) and "unbounded" in str(e.value)
+    assert "has no stop" in str(e.value)
+    assert "#9" in str(e.value) and "no limit" in str(e.value)
 
 
 def test_a_resting_order_with_no_stop_refuses_too():
     with pytest.raises(RiskUnmeasurable) as e:
         measure_exposure([_pos(ticket=4, stop=None, resting=True)], _gold())
-    assert "order 4" in str(e.value)
+    assert "order #4" in str(e.value)
 
 
 def test_a_spec_the_broker_could_not_price_refuses():

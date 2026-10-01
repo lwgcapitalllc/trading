@@ -81,6 +81,7 @@ __all__ = [
     "WARNING",
     "OK",
     "INFO",
+    "plural",
 ]
 
 #: The box's own clock, used ONLY for a message about something that happened earlier. Telegram
@@ -186,3 +187,12 @@ def money(value: Optional[float], currency: str = "$") -> str:
 def joined(parts: Iterable[Optional[str]], sep: str = " · ") -> str:
     """Facts that belong on one line, with the ones that are missing simply absent."""
     return sep.join([str(p) for p in parts if p is not None and str(p).strip()])
+
+
+def plural(n, word: str, many: Optional[str] = None) -> str:
+    """`1 order`, `2 orders` — a real plural, never `order(s)`. `many` for an irregular one."""
+    try:
+        one = int(n) == 1
+    except (TypeError, ValueError):
+        one = False
+    return f"{n} {word if one else (many or word + 's')}"

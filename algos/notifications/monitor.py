@@ -382,7 +382,9 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
             bot_state["stop_suppressed"] = suppressed
             if not suppressed:
                 send_alert(
-                    alert(CRITICAL, "OFFLINE", name, "The process is gone. Restarting it now."),
+                    alert(
+                        CRITICAL, "OFFLINE", name, "The bot has stopped running. Restarting it now."
+                    ),
                     account,
                     bot=bot_key,
                 )
@@ -450,7 +452,7 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                         OK,
                         "RESTARTED",
                         name,
-                        "It was offline and has been restarted automatically.",
+                        "It had stopped running and was restarted automatically.",
                         "Worth checking the log for why it stopped.",
                     ),
                     account,
@@ -469,10 +471,10 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                     CRITICAL,
                     "WILL NOT START",
                     name,
-                    f"{MAX_BOT_RESTARTS} restart attempts have failed. It is not trading and will "
-                    f"not retry.",
-                    "It will stay down until someone looks. Usually a version pin or the MT5 login "
-                    "— check its log.",
+                    f"{MAX_BOT_RESTARTS} restart attempts failed, so it is not trading and has "
+                    f"stopped retrying.",
+                    "Check its log. The usual causes are the approved code version or the "
+                    "MetaTrader login.",
                 ),
                 account,
                 bot=bot_key,
@@ -504,9 +506,9 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                     WARNING,
                     "STALLED",
                     name,
-                    f"The process is alive but has not stamped its heartbeat for "
-                    f"{stale_secs / 60:.0f} minutes, so it is not working through bars.",
-                    "Restart it from the command center, or check its log.",
+                    f"It is running but hasn't checked in for {stale_secs / 60:.0f} minutes, so "
+                    f"it is not reading the market.",
+                    "Restart it from the Command Center, or check its log.",
                 ),
                 account,
                 bot=bot_key,
@@ -520,7 +522,7 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                     OK,
                     "RECOVERED",
                     name,
-                    "The heartbeat resumed and it is working through bars again.",
+                    "It is checking in and reading the market again.",
                     "Nothing to do.",
                 ),
                 account,
@@ -542,8 +544,8 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                     WARNING,
                     "SYMBOL NOT FOUND",
                     name,
-                    f"The broker does not list {sym}, so it was skipped this cycle.",
-                    "Fix the watchlist in config.json.",
+                    f"The broker doesn't list {sym}, so it was skipped this time.",
+                    "Fix the symbol in the bot's settings.",
                 ),
                 account,
                 bot=bot_key,
@@ -594,11 +596,11 @@ def check_action(bot_key: str, bot_state: dict, account, name: str, now=None) ->
             CRITICAL,
             "NOT BACK ONLINE",
             name,
-            f"The command center {verb} it at "
-            f"{when(datetime.fromtimestamp(sent_at, tz=ZoneInfo('UTC')))} and it has not come back "
-            f"online in {int((now - sent_at) // 60)} minutes.",
-            "It is not trading. Check its log - usually a version pin, the MT5 login or a startup "
-            "error.",
+            f"The Command Center {verb} it at "
+            f"{when(datetime.fromtimestamp(sent_at, tz=ZoneInfo('UTC')))} and it is still not "
+            f"back after {int((now - sent_at) // 60)} minutes. It is not trading.",
+            "Check its log. The usual causes are the approved code version, the MetaTrader login "
+            "or a startup error.",
         ),
         account,
         bot=bot_key,
@@ -623,7 +625,11 @@ REMINDER_EVERY_SECONDS = 3600
 def _span_words(seconds: float) -> str:
     minutes = int(seconds // 60)
     hours, minutes = divmod(minutes, 60)
-    return f"{hours} h {minutes} min" if hours else f"{minutes} min"
+    mins = f"{minutes} minute{'s' if minutes != 1 else ''}"
+    if not hours:
+        return mins
+    hrs = f"{hours} hour{'s' if hours != 1 else ''}"
+    return f"{hrs} {mins}" if minutes else hrs
 
 
 def check_reminder(bot_key: str, bot_state: dict, account, name: str, now=None) -> dict:
@@ -639,7 +645,7 @@ def check_reminder(bot_key: str, bot_state: dict, account, name: str, now=None) 
         elif bot_state.get("running") is True:
             live = _bot_state.read_bot(bot_key)
             if str(live.get("bridge_state") or "").lower() == "halted":
-                condition, why = "halted", str(live.get("halt_reason") or "")
+                condition, why = "halted", str(live.get("halt_reason") or "").rstrip(". ")
         rem = bot_state.get("reminder") or {}
         if condition is None:
             bot_state.pop("reminder", None)
@@ -656,7 +662,7 @@ def check_reminder(bot_key: str, bot_state: dict, account, name: str, now=None) 
                 "REMINDER — HALTED",
                 name,
                 f"Halted for {lasted}{f': {why}' if why else ''}. It is placing nothing.",
-                "Check the account, then restart it. This repeats every hour until it clears.",
+                "Check the account, then restart it. Repeats hourly until fixed.",
             )
         else:
             text = alert(
@@ -664,8 +670,7 @@ def check_reminder(bot_key: str, bot_state: dict, account, name: str, now=None) 
                 "REMINDER — DOWN",
                 name,
                 f"Down for {lasted}, and nobody stopped it. It is not trading.",
-                "Start it from the command center, or check its log. This repeats every hour "
-                "until it is back.",
+                "Start it from the Command Center, or check its log. Repeats hourly until fixed.",
             )
         send_alert(text, account, bot=bot_key)
         rem["last"] = now
@@ -721,7 +726,7 @@ def check_telegram_bot(state: dict) -> dict:
                                 OK,
                                 "RESTARTED",
                                 "Telegram bot",
-                                "It was offline and has been restarted. Commands work again.",
+                                "It had stopped and was restarted. Commands work again.",
                                 "Nothing to do.",
                             )
                         )
@@ -740,8 +745,8 @@ def check_telegram_bot(state: dict) -> dict:
                         CRITICAL,
                         "WILL NOT START",
                         "Telegram bot",
-                        f"{max_tries} restart attempts have failed, so commands are unavailable.",
-                        "RDP into the VPS and run: schtasks /run /tn SYS_TELEGRAM",
+                        f"{max_tries} restart attempts failed, so commands are unavailable.",
+                        "Log into the trading server and start the Telegram bot task.",
                     )
                 )
                 tg_state["max_retry_alerted"] = True
@@ -768,8 +773,8 @@ def _say_if_the_bots_cannot_be_seen(state: dict) -> None:
                 CRITICAL,
                 "CANNOT SEE THE BOTS",
                 "Watchdog",
-                f"The bot folders could not be read ({err}), so no bot is being watched.",
-                "Check the box's disk and the algos folder.",
+                f"The bots' folders couldn't be read, so no bot is being watched. Reason: {err}",
+                "Check the trading server's disk.",
             )
         )
     state["registry_error"] = err

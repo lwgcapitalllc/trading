@@ -45,6 +45,14 @@ from backtest.setups import (
     SetupSnapshot,
 )
 
+# The strategy's OWN sentences, never hand-typed copies — those had gone stale by 2026-09-30.
+from strategies.python.sos_fade.execution import (  # noqa: E402
+    _MISS_REASON,
+    _PULL_HTF,
+    _PULL_LATE,
+    _PULL_VETO,
+)
+
 STRAT, SYM = "SosFadeStrategy", "XAUUSD.p"
 DISPLAY = "SOS Fade"
 
@@ -58,14 +66,15 @@ def snap(**kw) -> SetupSnapshot:
 def conf(arm: str, sos: bool, zone: str, zone_met: bool):
     return (
         Confluence("Arm", True, arm),
-        Confluence("Shift of structure", sos, "confirmed"),
+        Confluence("Shift of structure", sos, "Trend turned"),
         Confluence("Retrace zone", zone_met, zone),
     )
 
 
-NOT_YET = "not tagged yet"
-FVG_LIVE = "0.5-0.886 tagged, FVG live"
-NO_FVG = "0.5-0.886 tagged, but no FVG in it"
+# The check NAMES the strategy writes; the alert ticks or crosses them (2026-09-30).
+NOT_YET = "Pullback to entry zone"
+FVG_LIVE = "Pullback to entry zone"
+NO_FVG = "Pulled back, but no clean entry level yet"
 
 # Each thread is (title, root_snapshot, [reply snapshots in order]).
 # Between them these cover: both directions, all three zone wordings, 2-of-3 and 3-of-3, an order
@@ -76,7 +85,7 @@ THREADS = [
         "1. The ordinary death — price never came back",
         snap(
             side=1,
-            confluences=conf("swept Day Low", True, NOT_YET, False),
+            confluences=conf("Took out the daily low", True, NOT_YET, False),
             zone=(3312.40, 3298.15),
             stop=3297.65,
         ),
@@ -84,9 +93,8 @@ THREADS = [
             snap(
                 side=1,
                 state=DEAD,
-                confluences=conf("swept Day Low", True, NOT_YET, False),
-                reason="No retrace — Price never retraced into the 0.5-0.886 band, so the entry zone was never "
-                "reached. This is the ordinary way a setup dies.",
+                confluences=conf("Took out the daily low", True, NOT_YET, False),
+                reason=_MISS_REASON[2],
             )
         ],
     ),
@@ -94,7 +102,7 @@ THREADS = [
         "2. Reached the zone, nothing to rest a limit on",
         snap(
             side=-1,
-            confluences=conf("swept Week High", True, NOT_YET, False),
+            confluences=conf("Took out the weekly high", True, NOT_YET, False),
             zone=(3401.80, 3417.25),
             stop=3417.75,
         ),
@@ -102,9 +110,8 @@ THREADS = [
             snap(
                 side=-1,
                 state=DEAD,
-                confluences=conf("swept Week High", True, NO_FVG, False),
-                reason="No FVG in zone — Price DID reach the 0.5-0.886 band, but no fair-value gap overlapped it while "
-                "price was there — there was nothing to rest a limit on.",
+                confluences=conf("Took out the weekly high", True, NO_FVG, False),
+                reason=_MISS_REASON[3],
             )
         ],
     ),
@@ -112,7 +119,7 @@ THREADS = [
         "3. The one you want — forming, resting, filled",
         snap(
             side=1,
-            confluences=conf("swept Prev Day Low", True, NOT_YET, False),
+            confluences=conf("Took out the daily low", True, NOT_YET, False),
             zone=(3288.90, 3271.40),
             stop=3270.90,
         ),
@@ -120,14 +127,16 @@ THREADS = [
             snap(
                 side=1,
                 state=RESTING,
-                confluences=conf("swept Prev Day Low", True, FVG_LIVE, True),
+                confluences=conf("Took out the daily low", True, FVG_LIVE, True),
                 zone=(3288.90, 3271.40),
                 entry=3279.60,
                 stop=3270.90,
                 targets=(3296.10, 3311.75, 3334.20),
             ),
             snap(
-                side=1, state=FILLED, confluences=conf("swept Prev Day Low", True, FVG_LIVE, True)
+                side=1,
+                state=FILLED,
+                confluences=conf("Took out the daily low", True, FVG_LIVE, True),
             ),
         ],
     ),
@@ -135,7 +144,7 @@ THREADS = [
         "4. An order RESTING at 2 of 3 — the limit is real, price has not come to it",
         snap(
             side=-1,
-            confluences=conf("swept Asia High", True, NOT_YET, False),
+            confluences=conf("Took out the Asia session high", True, NOT_YET, False),
             zone=(3358.20, 3372.90),
             stop=3373.40,
         ),
@@ -143,7 +152,7 @@ THREADS = [
             snap(
                 side=-1,
                 state=RESTING,
-                confluences=conf("swept Asia High", True, NOT_YET, False),
+                confluences=conf("Took out the Asia session high", True, NOT_YET, False),
                 zone=(3358.20, 3372.90),
                 entry=3366.05,
                 stop=3373.40,
@@ -152,9 +161,8 @@ THREADS = [
             snap(
                 side=-1,
                 state=DEAD,
-                confluences=conf("swept Asia High", True, NOT_YET, False),
-                reason="Never filled — All three confluences met and the limit rested — price never came back to "
-                "touch it.",
+                confluences=conf("Took out the Asia session high", True, NOT_YET, False),
+                reason=_MISS_REASON[7],
             ),
         ],
     ),
@@ -162,22 +170,21 @@ THREADS = [
         "5. Blocked by ONE of your rules, then died",
         snap(
             side=1,
-            confluences=conf("RSI divergence", True, NOT_YET, False),
+            confluences=conf("Momentum divergence", True, NOT_YET, False),
             zone=(3305.60, 3290.10),
             stop=3289.60,
         ),
         [
             snap(
                 side=1,
-                confluences=conf("RSI divergence", True, FVG_LIVE, True),
-                blocked_by=("Divergence / extreme-RSI veto",),
+                confluences=conf("Momentum divergence", True, FVG_LIVE, True),
+                blocked_by=(_PULL_VETO,),
             ),
             snap(
                 side=1,
                 state=DEAD,
-                confluences=conf("RSI divergence", True, FVG_LIVE, True),
-                reason="Divergence / RSI veto — All three confluences met. The divergence / extreme-RSI veto refused the "
-                "entry.",
+                confluences=conf("Momentum divergence", True, FVG_LIVE, True),
+                reason=_MISS_REASON[4],
             ),
         ],
     ),
@@ -185,26 +192,25 @@ THREADS = [
         "6. Blocked by THREE rules at once",
         snap(
             side=-1,
-            confluences=conf("swept Day High", True, NOT_YET, False),
+            confluences=conf("Took out the daily high", True, NOT_YET, False),
             zone=(3390.15, 3404.80),
             stop=3405.30,
         ),
         [
             snap(
                 side=-1,
-                confluences=conf("swept Day High", True, FVG_LIVE, True),
+                confluences=conf("Took out the daily high", True, FVG_LIVE, True),
                 blocked_by=(
-                    "Divergence / extreme-RSI veto",
-                    "Final hour (16:00-18:00 New York)",
-                    "HTF breakout / bias filter",
+                    _PULL_VETO,
+                    _PULL_LATE,
+                    _PULL_HTF,
                 ),
             ),
             snap(
                 side=-1,
                 state=DEAD,
-                confluences=conf("swept Day High", True, FVG_LIVE, True),
-                reason="Final hour — All three confluences met. The final-hour rule (16:00-18:00 New York) refused "
-                "the entry.",
+                confluences=conf("Took out the daily high", True, FVG_LIVE, True),
+                reason=_MISS_REASON[5],
             ),
         ],
     ),
@@ -212,27 +218,29 @@ THREADS = [
         "7. Blocked, the rule LIFTED, and it traded anyway",
         snap(
             side=1,
-            confluences=conf("swept Prev Week Low", True, NOT_YET, False),
+            confluences=conf("Took out the weekly low", True, NOT_YET, False),
             zone=(3264.70, 3248.35),
             stop=3247.85,
         ),
         [
             snap(
                 side=1,
-                confluences=conf("swept Prev Week Low", True, FVG_LIVE, True),
-                blocked_by=("HTF breakout / bias filter",),
+                confluences=conf("Took out the weekly low", True, FVG_LIVE, True),
+                blocked_by=(_PULL_HTF,),
             ),
             snap(
                 side=1,
                 state=RESTING,
-                confluences=conf("swept Prev Week Low", True, FVG_LIVE, True),
+                confluences=conf("Took out the weekly low", True, FVG_LIVE, True),
                 zone=(3264.70, 3248.35),
                 entry=3256.10,
                 stop=3247.85,
                 targets=(3273.40, 3287.90, 3309.55),
             ),
             snap(
-                side=1, state=FILLED, confluences=conf("swept Prev Week Low", True, FVG_LIVE, True)
+                side=1,
+                state=FILLED,
+                confluences=conf("Took out the weekly low", True, FVG_LIVE, True),
             ),
         ],
     ),
@@ -240,7 +248,7 @@ THREADS = [
         "8. Refused by the higher-timeframe filter",
         snap(
             side=-1,
-            confluences=conf("swept Session High", True, NOT_YET, False),
+            confluences=conf("Took out the New York session high", True, NOT_YET, False),
             zone=(3345.05, 3359.60),
             stop=3360.10,
         ),
@@ -248,9 +256,8 @@ THREADS = [
             snap(
                 side=-1,
                 state=DEAD,
-                confluences=conf("swept Session High", True, FVG_LIVE, True),
-                reason="HTF filter — All three confluences met. The HTF breakout / bias filter refused the "
-                "entry.",
+                confluences=conf("Took out the New York session high", True, FVG_LIVE, True),
+                reason=_MISS_REASON[6],
             )
         ],
     ),
@@ -262,10 +269,10 @@ def render(s: SetupSnapshot, is_root: bool) -> str:
     if is_root:
         return alerts.format_watching(s, 2, DISPLAY)
     if s.blocked_by:
-        return alerts.format_blocked(s)
+        return alerts.format_blocked(s, 2, DISPLAY)
     if s.state == RESTING:
-        return alerts.format_entry_zone(s)
-    return alerts.format_resolved(s)
+        return alerts.format_entry_zone(s, display=DISPLAY)
+    return alerts.format_resolved(s, 2, DISPLAY)
 
 
 # ── the TRADES room — one trade's whole life, as the thread will read it ─────────────────────
@@ -299,15 +306,38 @@ def _trade_threads():
             ),
             [
                 alerts.format_stop_moved(
-                    direction=1, entry=3290.00, was=3280.00, now=3290.00, opening_stop=3280.00
+                    strategy=DISPLAY,
+                    symbol=SYM,
+                    direction=1,
+                    entry=3290.00,
+                    was=3280.00,
+                    now=3290.00,
+                    opening_stop=3280.00,
                 ),
                 alerts.format_scaled_in(
-                    lots_added=0.12, lots_now=0.37, price=3305.00, stop=3296.00
+                    strategy=DISPLAY,
+                    symbol=SYM,
+                    lots_added=0.12,
+                    lots_now=0.37,
+                    price=3305.00,
+                    stop=3296.00,
                 ),
                 alerts.format_stop_moved(
-                    direction=1, entry=3290.00, was=3290.00, now=3301.50, opening_stop=3280.00
+                    strategy=DISPLAY,
+                    symbol=SYM,
+                    direction=1,
+                    entry=3290.00,
+                    was=3290.00,
+                    now=3301.50,
+                    opening_stop=3280.00,
                 ),
-                alerts.format_partial_banked(lots_banked=0.12, lots_before=0.37, lots_after=0.25),
+                alerts.format_partial_banked(
+                    strategy=DISPLAY,
+                    symbol=SYM,
+                    lots_banked=0.12,
+                    lots_before=0.37,
+                    lots_after=0.25,
+                ),
                 alerts.format_exit(
                     strategy=DISPLAY,
                     symbol=SYM,
@@ -331,7 +361,13 @@ def _trade_threads():
             ),
             [
                 alerts.format_stop_moved(
-                    direction=-1, entry=3290.00, was=3302.00, now=3296.00, opening_stop=3302.00
+                    strategy=DISPLAY,
+                    symbol=SYM,
+                    direction=-1,
+                    entry=3290.00,
+                    was=3302.00,
+                    now=3296.00,
+                    opening_stop=3302.00,
                 ),
                 alerts.format_exit(
                     strategy=DISPLAY,
@@ -356,7 +392,13 @@ def _trade_threads():
             ),
             [
                 alerts.format_stop_moved(
-                    direction=1, entry=3290.00, was=3280.00, now=3290.00, opening_stop=3280.00
+                    strategy=DISPLAY,
+                    symbol=SYM,
+                    direction=1,
+                    entry=3290.00,
+                    was=3280.00,
+                    now=3290.00,
+                    opening_stop=3280.00,
                 ),
                 alerts.format_exit(
                     strategy=DISPLAY,

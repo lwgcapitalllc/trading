@@ -249,19 +249,21 @@ def plan_order(
     if dist <= 0:
         return SizingRefusal(
             "zero_stop_distance",
-            f"stop {stop} is at the entry {entry}; qty = risk / distance is undefined and any "
-            f"size would be arbitrary.",
+            f"the stop ({stop}) is at the entry price ({entry}), so no size can be worked out.",
         )
     if qty_units <= 0:
-        return SizingRefusal("non_positive_qty", f"the strategy asked for {qty_units} units.")
+        return SizingRefusal(
+            "non_positive_qty",
+            f"the strategy asked for a size of {qty_units}, which is not a size.",
+        )
 
     if not spec.is_priceable():
         return SizingRefusal(
             "symbol_unpriceable",
-            f"{spec.symbol}: tick_size={spec.tick_size} tick_value={spec.tick_value} "
-            f"contract_size={spec.contract_size} volume_step={spec.volume_step}. The terminal "
-            f"has not said what a price move is worth, so no size can be derived. Check the "
-            f"symbol name and that it is visible in Market Watch.",
+            f"MetaTrader has not said what a price move on {spec.symbol} is worth, so no size "
+            f"can be worked out. Check the symbol name and that it shows in Market Watch. "
+            f"(Tick size {spec.tick_size}, tick value {spec.tick_value}, contract size "
+            f"{spec.contract_size}, lot step {spec.volume_step}.)",
         )
 
     intended_risk = qty_units * dist * float(point_value)
@@ -287,9 +289,9 @@ def plan_order(
         if authorised > 0 and wrong:
             return SizingRefusal(
                 "risk_not_authorised",
-                f"the order would risk {intended_risk:,.2f} but {risk_pct}% of the account's "
-                f"{account_equity:,.2f} is {authorised:,.2f}. The strategy is sizing off a "
-                f"balance the account does not have -- most likely warm-up equity that "
+                f"the order would risk {intended_risk:,.2f}, but {risk_pct:g}% of the account's "
+                f"{account_equity:,.2f} is {authorised:,.2f}. The bot is sizing off a balance "
+                f"the account does not have, most likely its practice replay's balance, which "
                 f"compounded away from the broker's.",
             )
 
@@ -299,11 +301,12 @@ def plan_order(
     if _disagree(lots_a, lots_b, unit_tolerance):
         return SizingRefusal(
             "unit_mismatch",
-            f"sizing disagrees with itself on {spec.symbol}: {lots_a:.6f} lots by risk "
+            f"two ways of sizing {spec.symbol} disagree: {lots_a:.6f} lots from the risk "
             f"({intended_risk:,.2f} over a {dist} stop at {spec.tick_value}/{spec.tick_size} "
-            f"per lot) vs {lots_b:.6f} lots by units ({qty_units} / contract {spec.contract_size}). "
-            f"A unit, a contract size, a point value or a quote currency is wrong. Refusing "
-            f"rather than picking one -- the ratio here is {max(lots_a, lots_b) / max(min(lots_a, lots_b), 1e-12):,.1f}x.",
+            f"per lot) and {lots_b:.6f} lots from the units ({qty_units} / contract "
+            f"{spec.contract_size}), {max(lots_a, lots_b) / max(min(lots_a, lots_b), 1e-12):,.1f} "
+            f"times apart. A unit, contract size, point value or quote currency is wrong, so the "
+            f"bot will not pick one.",
         )
 
     lots = round_down_to_step(lots_a, spec)
@@ -312,20 +315,17 @@ def plan_order(
     if lots < spec.volume_min:
         return SizingRefusal(
             "below_broker_minimum",
-            f"{lots_a:.6f} lots rounds to {lots}, under {spec.symbol}'s minimum "
-            f"{spec.volume_min}. NOT rounding up -- the minimum would risk "
-            f"{value_per_lot(dist, spec) * spec.volume_min:,.2f} against an intended "
+            f"the trade needs {lots_a:.6f} lots, under {spec.symbol}'s minimum of "
+            f"{spec.volume_min}. Not rounding up, because the minimum would risk "
+            f"{value_per_lot(dist, spec) * spec.volume_min:,.2f} instead of "
             f"{intended_risk:,.2f}. The account is too small for this setup's stop distance.",
         )
     if lots > spec.volume_max:
         return SizingRefusal(
             "above_broker_maximum",
-            f"{lots} lots exceeds {spec.symbol}'s maximum {spec.volume_max}. NOT clamping HERE "
-            f"-- a clamped ORDER is a different position from the one the strategy is holding, "
-            f"and the two would diverge silently. Since 2026-09-02 an oversized position is "
-            f"resized where the strategy SIZES it, so reaching this line means the lot ceiling "
-            f"never got to the strategy: lower the configured maximum to {spec.volume_max} or "
-            f"below.",
+            f"{lots} lots is over {spec.symbol}'s maximum of {spec.volume_max}. Not clamping "
+            f"the order, because a smaller order would not match the trade the bot is tracking. "
+            f"Lower the bot's maximum lot size to {spec.volume_max} or below.",
         )
 
     # ── can the account actually carry it? ──
@@ -335,24 +335,23 @@ def plan_order(
         if margin is None:
             return SizingRefusal(
                 "margin_unknown",
-                f"the terminal would not compute the margin for {lots} lots of {spec.symbol}. "
-                f"'Cannot ask' is not 'affordable' -- refusing rather than finding out at the "
-                f"fill, which is exactly how the 2026-08-07 order died.",
+                f"MetaTrader would not work out the margin for {lots} lots of {spec.symbol}, "
+                f"so the bot cannot tell whether the account can afford it.",
             )
         if free_margin is None:
             return SizingRefusal(
                 "free_margin_unknown",
-                f"margin for {lots} lots is {margin:,.2f} but the account's free margin could "
-                f"not be read, so there is nothing to compare it against.",
+                f"{lots} lots needs {margin:,.2f} margin, but the account's free margin could "
+                f"not be read, so the bot cannot tell whether it is affordable.",
             )
         ceiling = float(free_margin) * float(margin_safety_pct) / 100.0
         if margin > ceiling:
             return SizingRefusal(
                 "insufficient_margin",
-                f"{lots} lots of {spec.symbol} needs {margin:,.2f} margin; the cap is "
-                f"{ceiling:,.2f} ({margin_safety_pct:g}% of {float(free_margin):,.2f} free). "
-                f"NOT shrinking to fit -- a smaller position is not the trade the strategy is "
-                f"holding.",
+                f"not enough margin: {lots} lots of {spec.symbol} needs {margin:,.2f}, and the "
+                f"limit is {ceiling:,.2f} ({margin_safety_pct:g}% of the "
+                f"{float(free_margin):,.2f} free). Not shrinking to fit, because a smaller order "
+                f"would not match the trade the bot is tracking.",
             )
 
     risk = value_per_lot(dist, spec) * lots
@@ -361,8 +360,8 @@ def plan_order(
     if risk > intended_risk * (1.0 + unit_tolerance):
         return SizingRefusal(
             "oversized_after_rounding",
-            f"{lots} lots risks {risk:,.2f} against an intended {intended_risk:,.2f}. Rounding "
-            f"is supposed to be downward only; this is a bug in the step arithmetic.",
+            f"{lots} lots would risk {risk:,.2f}, more than the intended {intended_risk:,.2f}. "
+            f"Sizes only ever round down, so this is a bug in the bot's rounding.",
         )
 
     return SizedOrder(

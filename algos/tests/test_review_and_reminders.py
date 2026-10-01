@@ -157,7 +157,7 @@ def watch(monkeypatch):
     monkeypatch.setattr(monitor, "send_alert", lambda m, account=None, **kw: sent.append(m))
     kinds = {34957946: "live", 700152905: "demo"}
     monkeypatch.setattr(monitor._bot_state, "account_kind", lambda a: kinds.get(a))
-    live = {"bridge_state": "halted", "halt_reason": "emulator and broker disagree"}
+    live = {"bridge_state": "halted", "halt_reason": "the bot's record doesn't match the broker."}
     monkeypatch.setattr(monitor._bot_state, "read_bot", lambda k: live)
     return monitor, sent
 
@@ -174,8 +174,8 @@ def test_a_LIVE_halted_bot_is_reminded_every_hour(watch):
     _hours(monitor, {"running": True}, 3)
     assert len(sent) == 3
     assert sent[0].startswith("⛔ REMINDER — HALTED · SOS Fade · LIVE")
-    assert "Halted for 1 h 0 min: emulator and broker disagree" in sent[0]
-    assert "Halted for 3 h 0 min" in sent[-1]
+    assert "Halted for 1 hour: the bot's record doesn't match the broker. It is" in sent[0]
+    assert "Halted for 3 hours" in sent[-1]
 
 
 def test_a_LIVE_bot_that_is_DOWN_and_nobody_stopped_is_reminded(watch):

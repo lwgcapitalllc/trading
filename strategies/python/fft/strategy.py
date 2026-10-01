@@ -62,22 +62,24 @@ KEEP_5M = 2_500
 
 # Why a touched leg was not traded. One code per rule of docs/FFT_SPEC.md, in the order they are
 # checked, so the first failing rule is the one recorded.
+# 🔴 Plain English in the one voice every bot shares (Aaron, 2026-09-30) — these reach the signals
+# room. The rule NUMBERS live in docs/FFT_SPEC.md and in the order of this dict, not in the text.
 WHY = {
     "side_off": "that side is switched off",
-    "trend5": "rule 1 — the 5m trend is not the fib's direction",
-    "bos": "rule 2 — not the 5m first leg",
-    "trend15": "rule 3 — the 15m trend is not with the trade",
-    "bos15": "setting — the 15m trend has made 4+ BOS since its shift (overextended)",
-    "dir1": "rule 4 — the 1m trend is not against the trade",
-    "brk1": "rule 5 — the 1m broke in the trade's direction since the extreme",
-    "closure": "rule 9 — the market shut inside the leg",
-    "calendar": "rule 9 — the next minute is after a weekend or holiday close",
-    "ext_unknown": "the leg's extreme is older than the 5m history kept",
-    "busy": "rule 10 — an FFT trade is already open",
-    "second_off": "second touch — switched off",
-    "unsized": "no size — the stop distance is zero",
-    "room": "the account's risk cap has no room — other bots hold the budget",
-    "no_sweep": "setting — only sweep setups, and this pullback took no level",
+    "trend5": "the 5-min trend is against this trade",
+    "bos": "this is not the first move since the trend turned",
+    "trend15": "the 15-min trend is against this trade",
+    "bos15": "the 15-min trend has already run too far",
+    "dir1": "the 1-min pullback had not started",
+    "brk1": "the 1-min pullback had already ended",
+    "closure": "the market closed during the move",
+    "calendar": "the market is about to close for the weekend or a holiday",
+    "ext_unknown": "the start of the move is too old for the bot's history",
+    "busy": "already in a trade",
+    "second_off": "second chances are switched off",
+    "unsized": "the stop is on the entry price",
+    "room": "account risk limit is full (other bots are using it)",
+    "no_sweep": "the pullback did not take out a key level",
 }
 
 

@@ -82,14 +82,17 @@ def _snap(**kw):
 
 
 def _resting_head(rec):
-    return next((h for h in rec.heads() if "LIMIT RESTING" in h), None)
+    # The whole message: since 2026-09-30 the size sits on line 2 (bot · symbol · lots).
+    return next(
+        (m["text"] for m in rec.sent if "LIMIT ORDER WAITING" in m["text"].split("\n")[0]), None
+    )
 
 
 # ── the formatter renders what it is handed, and nothing when handed nothing ─────────────────
 def test_the_size_appears_on_the_resting_message():
     """MUTATION: drop `lots` from the title in `format_entry_zone` and this reddens."""
     text = live_alerts.format_entry_zone(_snap(), 2, 0.35)
-    assert "0.35 lots" in text.split("\n")[0]
+    assert "0.35 lots" in text.split("\n")[1]
 
 
 def test_the_unit_is_NAMED_and_not_left_as_a_bare_number():
@@ -109,17 +112,18 @@ def test_NO_SIZE_is_printed_when_none_was_supplied():
 
     MUTATION: default `lots` to 0.0 and this reddens on the `0.00` that appears.
     """
-    head = live_alerts.format_entry_zone(_snap(), 2).split("\n")[0]
-    assert "lots" not in head
-    assert "BUY LIMIT RESTING" in head
+    text = live_alerts.format_entry_zone(_snap(), 2)
+    assert "lots" not in text
+    assert text.split("\n")[0] == "🎯 LIMIT ORDER WAITING · LONG"
 
 
 def test_the_direction_and_the_words_that_were_hard_won_are_still_there():
     """The header was reworded after a real send was misread as a fill. Adding a size must not
     cost the two words that fixed it."""
     head = live_alerts.format_entry_zone(_snap(), 2, 0.35).split("\n")[0]
-    assert "BUY" in head and "LIMIT" in head and "RESTING" in head
-    assert "SELL" in live_alerts.format_entry_zone(_snap(side=-1), 2, 0.35)
+    assert "LIMIT" in head and "WAITING" in head and "LONG" in head
+    assert "Not filled yet." in live_alerts.format_entry_zone(_snap(), 2, 0.35)
+    assert "SHORT" in live_alerts.format_entry_zone(_snap(side=-1), 2, 0.35).split("\n")[0]
 
 
 # ── the three states, through the real transition layer ──────────────────────────────────────
@@ -194,9 +198,9 @@ def test_the_size_is_looked_up_PER_SIDE():
     )
     a.on_bar(FakeStrategy([[_snap(key="L", side=1), _snap(key="S", side=-1)]]))
     assert sorted(seen) == [-1, 1]
-    heads = " ".join(rec.heads())
-    assert "0.10 lots · BUY" in heads
-    assert "0.20 lots · SELL" in heads
+    texts = [m["text"] for m in rec.sent if "LIMIT ORDER WAITING" in m["text"]]
+    assert any("· 0.10 lots" in t and "Buy at" in t for t in texts)
+    assert any("· 0.20 lots" in t and "Sell at" in t for t in texts)
 
 
 # ── the bridge answers from the PLACED order, never from a computation ────────────────────────

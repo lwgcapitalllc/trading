@@ -114,8 +114,10 @@ WILL_NOT_START = _msg(CRITICAL, "WILL NOT START", "SOS Fade · LIVE", "Startup f
 OFFLINE = _msg(CRITICAL, "OFFLINE", "SOS Fade · LIVE", "The process is gone. Restarting it now.")
 RESTARTED = _msg(OK, "RESTARTED", "SOS Fade · LIVE", "It was offline and has been restarted.")
 ONLINE = _msg(OK, "ONLINE", "SOS Fade · LIVE", "Trading live · XAUUSD.p M15")
-OFF = _msg(CRITICAL, "TRADING OFF", "SOS Fade · LIVE", "The broker has switched trading off.")
-BACK_ON = _msg(OK, "TRADING BACK ON", "SOS Fade · LIVE", "The account can trade again.")
+OFF = _msg(
+    CRITICAL, "TRADING OFF", "Account 34957946 · LIVE", "The broker has switched trading off."
+)
+BACK_ON = _msg(OK, "TRADING BACK ON", "Account 34957946 · LIVE", "The account can trade again.")
 
 
 # ── one alert per fault ─────────────────────────────────────────────────────────────────────
@@ -222,7 +224,7 @@ def test_an_OFFLINE_that_does_NOT_recover_is_sent_at_5_minutes_and_says_so(box):
     assert box.telegram.texts == []
     box.monitor_pass(advance=5 * 60)
     (sent,) = box.telegram.texts
-    assert sent.startswith(OFFLINE) and "Held 5 min" in sent
+    assert sent.startswith(OFFLINE) and "Still happening 5 minutes later" in sent
     assert box.send(RESTARTED) == "sent", "its fault was sent, so its recovery is needed"
     assert box.send(ONLINE) == "sent"
 
@@ -283,7 +285,7 @@ def test_an_OFF_that_LASTS_is_sent_ONCE_per_account_and_ONE_back_on_follows(box)
         assert box.send(OFF, bot=bot) in ("queued", "held")
     box.monitor_pass(advance=16 * 60)
     (off,) = box.telegram.texts
-    assert "Account 34957946: one message for every bot on it." in off
+    assert "Still happening 15 minutes later" in off
     assert box.send(BACK_ON, bot="sos_fade_demo") == "sent"
     assert box.send(BACK_ON, bot="extreme_leg_demo") == "held"
     assert len(box.telegram.texts) == 2
@@ -416,10 +418,13 @@ def test_SETTINGS_NOT_APPLIED_says_how_many_and_names_the_first_few():
 
     names = [f"exec_param_{i}" for i in range(25)]
     assert refused_summary(names) == (
-        "25 settings need a restart: exec_param_0, exec_param_1, exec_param_2 and 22 more."
+        "25 changes need a restart: Param 0, Param 1, Param 2 and 22 more."
     )
-    assert refused_summary(["account"]) == "1 setting needs a restart: account."
+    assert refused_summary(["account"]) == "1 change needs a restart: Account."
     assert refused_summary([]) == ""
+    # The Command Center's label, never the code name (2026-09-30).
+    labelled = refused_summary(["exec_risk_pct"], package="sos_fade")
+    assert labelled == "1 change needs a restart: Risk % per trade."
 
 
 def test_the_runner_says_SETTINGS_NOT_APPLIED_through_the_summary():

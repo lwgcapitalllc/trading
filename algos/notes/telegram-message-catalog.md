@@ -51,9 +51,9 @@ message is about, not how severe it is — and is not part of the severity syste
 **A message that could not be delivered the first time** (no answer from Telegram, HTTP 429 or 5xx)
 is re-sent by the every-minute monitor for up to 24 hours, with one extra last line (2026-09-26):
 ```
-⛔ TRADING OFF · SOS Fade · LIVE
-Margin call on the account.
-Every order it sends will be refused. …
+⛔ TRADING OFF · Account 34957946 · LIVE
+The broker has made this account read-only, so it cannot trade.
+No bot on this account can place orders. …
 (delayed, first tried 3:04 PM CDT)
 ```
 Every send, delivered or not, is also one line in the box's send log — see
@@ -70,141 +70,167 @@ same fragile parser.
 
 ## Health room
 
+**Reworded 2026-09-30 so anyone can read it at a glance and every bot says it the same way.** Plain
+words: "the bot", never the code's own names for its parts; LONG/SHORT; "stop"; "0.14 lots at
+4,316.98"; real plurals; one short last line saying what to do. A setting is named by the label
+the Command Center shows (`shared/param_labels.py`, which reads each strategy's meta.json), never
+by its field name. An error's own text may still follow "Reason:" or "Last error:".
+
 ### ⛔ CRITICAL — trading has stopped, or cannot start
 
-**HALTED** — the bridge's position and the broker's disagree.
+**HALTED** — the bot's record and the broker's disagree, or something it cannot manage appeared.
+The middle line is the reason, and each reason is its own plain sentence (a ticket appears as
+"trade #123" only where you need it to find the trade in MetaTrader).
 ```
 ⛔ HALTED · SOS Fade · LIVE
-Position and broker disagree on price.
-Anything open keeps its broker stop. Check the account, then restart it.
+The bot thinks it has a trade open, but the broker has none. Its order filled in the bot's record and not at the broker, or the trade was closed outside the bot.
+Any open trade keeps its stop. Check the account, then restart the bot.
 ```
 
-**FLEET HALT** — the box-wide kill switch tripped.
+**FLEET HALT** — the box-wide stop switch is on, or cannot be read.
 ```
 ⛔ FLEET HALT · SOS Fade · LIVE
-risk cap exceeded across the account
-It keeps running and keeps its open positions and their stops. Clear the flag and restart the bots to resume — clearing it alone will not.
+Spread blew out.
+Open trades keep their stops. To resume, switch the fleet stop off and restart the bots.
 ```
 
-**ACCOUNT MISMATCH** — the terminal is logged into an account this bot does not trade.
+**ACCOUNT MISMATCH** — MetaTrader is logged into an account this bot does not trade.
 ```
 ⛔ ACCOUNT MISMATCH · SOS Fade · LIVE
-Terminal is on #700119432; this bot trades #34957946.
-It placed nothing and kept its open positions and their stops. Log the terminal back, or move the bot properly in its instance config, then restart it.
+MetaTrader is logged into account 700119432, but this bot trades 34957946.
+Nothing was placed and open trades keep their stops. Log MetaTrader back in, or move the bot on the Command Center's Accounts page, then restart it.
 ```
 
-**NO MT5 LINK** — lost its connection to the terminal. *(Reclassified up from its own icon
-2026-09-14 — a blind bot is the single costliest failure in this repo's history: 50 minutes
-blind with every dashboard green.)*
+**NO MT5 LINK** — lost its connection to MetaTrader. *(Critical since 2026-09-14 — a blind bot is
+the single costliest failure in this repo's history.)*
 ```
 ⛔ NO MT5 LINK · SOS Fade · LIVE
-Lost its connection to the terminal — still running, but seeing no market at all.
-Retrying every 30s. If it does not come back, check MetaTrader on the VPS.
+Lost its connection to MetaTrader. It is still running but cannot see the market.
+Retrying every 30 seconds. If it doesn't come back, check MetaTrader on the server.
 ```
 
-**WILL NOT START** — three different reasons a bot refuses to boot, same label each time:
+**WILL NOT START** — the reasons a bot refuses to boot, same label each time:
 ```
 ⛔ WILL NOT START · SOS Fade · LIVE
-Live account 34957946 names no signal channel, so there is nowhere to report real money.
-It is down and will stay down. Enter the channel on Bots → Accounts, then start it.
-```
-```
-⛔ WILL NOT START · SOS Fade · LIVE
-The code on disk is not the version this bot was promoted to run, so it refused to start.
-It is down and will stay down. Promote it again, or restore the snapshot.
+Live account 34957946 has no trades channel set, so the bot has nowhere to report real-money trades.
+Set the channel on the Command Center's Accounts page, then start it.
 ```
 ```
 ⛔ WILL NOT START · SOS Fade · LIVE
-Startup failed: <the exception>
-It is down and will stay down until someone looks at it.
+It has never been deployed, so it has no approved code version of its own.
+Deploy it from the Command Center's Configure tab, then start it.
+```
+```
+⛔ WILL NOT START · SOS Fade · LIVE
+The code on the server is not the approved code version for this bot, so it refused to start.
+Deploy it again from the Command Center.
+```
+```
+⛔ WILL NOT START · SOS Fade · LIVE
+It failed while starting up and is not trading.
+Reason: <the error>
+Check its log, then start it again.
 ```
 
-**TRADING OFF** — the account itself can no longer trade (margin call, broker restriction, or the
-terminal has lost the broker's server). **Held 15 minutes and sent once per ACCOUNT** (2026-09-26):
-if trading comes back inside that, neither this nor its BACK ON is sent.
+**TRADING OFF** — the ACCOUNT can no longer trade (MetaTrader lost the broker, the broker made it
+read-only, automated trading not allowed, the Algo Trading button off, or the symbol set to close
+only). The subject is the account, not a bot. **Held 15 minutes and sent once per account**
+(2026-09-26): if trading comes back inside that, neither this nor its BACK ON is sent. The hold
+adds the last line.
 ```
-⛔ TRADING OFF · SOS Fade · LIVE
-The terminal has lost its connection to the broker's server.
-Every order it sends will be refused. If a trade triggers meanwhile it halts and needs a restart. It keeps watching and will say when trading is back.
-Held 15 min to see whether it cleared on its own - it has not. First seen 9:55 PM CDT. Account 34957946: one message for every bot on it.
+⛔ TRADING OFF · Account 34957946 · LIVE
+MetaTrader has lost its connection to the broker.
+No bot on this account can place orders. You'll get a message when it's back.
+Still happening 15 minutes later (first seen 9:55 PM CDT).
 ```
 
 **NOT BACK ONLINE** — a Command Center deploy, start or restart, three minutes on, and the bot has
-not come back (the box's watchdog, 2026-09-26). Never held.
+not come back (the watchdog, 2026-09-26). Never held.
 ```
 ⛔ NOT BACK ONLINE · SOS Fade · LIVE
-The command center deployed and restarted it at 2:02 PM CDT and it has not come back online in 3 minutes.
-It is not trading. Check its log - usually a version pin, the MT5 login or a startup error.
+The Command Center deployed and restarted it at 2:02 PM CDT and it is still not back after 3 minutes. It is not trading.
+Check its log. The usual causes are the approved code version, the MetaTrader login or a startup error.
 ```
 
 **STILL HALTED** — trading came back on the account, but this bot had already halted.
 ```
 ⛔ STILL HALTED · SOS Fade · LIVE
-Trading is allowed on the account again, but this bot halted while it was not (emulator and broker disagree).
+The account can trade again, but this bot stopped trading while it couldn't (the bot thinks it has a trade open, but the broker has none. …).
 Restart it to trade again.
 ```
 
-**RECONNECTED — STILL HALTED** — the terminal link came back, but the bot is still halted.
+**RECONNECTED — STILL HALTED** — the MetaTrader link came back, but the bot is still halted.
 ```
 ⛔ RECONNECTED — STILL HALTED · SOS Fade · LIVE
-Back on the terminal after 4 minutes. It re-warmed on the bars it missed.
-It is still halted (emulator and broker disagree) and will place nothing. Check the account, then restart it.
+Back on MetaTrader after 4 minutes. It caught up on the bars it missed.
+It is still halted (<the halt reason>) and places nothing. Check the account, then restart it.
 ```
 
-**SETTINGS LOADED — STILL HALTED** — a config reload landed on an already-halted bot.
+**SETTINGS LOADED — STILL HALTED** — a settings change landed on an already-halted bot.
 ```
 ⛔ SETTINGS LOADED — STILL HALTED · SOS Fade · LIVE
-exec_risk_pct 5.0 -> 4.0
-Loaded, but this bot is halted (emulator and broker disagree) and will place nothing. Restart it.
+Risk % per trade 5 → 4
+Loaded, but this bot is halted (<the halt reason>) and places nothing. Restart it.
 ```
 
 **STOPPING** — the bot is shutting itself down after repeated failures (two triggers, same label):
 ```
 ⛔ STOPPING · SOS Fade · LIVE
-Ten bars in a row failed to process and re-warming is not fixing it, so it is shutting itself down.
-Last error: <the exception>
+Ten bars in a row failed and reloading didn't fix it, so it is shutting itself down.
+Last error: <the error>
+Check its log, then start it again.
 ```
 ```
 ⛔ STOPPING · SOS Fade · LIVE
-Ten passes of its main loop failed in a row, so it is shutting itself down rather than running blind.
-Last error: <the exception>
+Ten checks in a row failed, so it is shutting itself down rather than trade blind.
+Last error: <the error>
+Check its log, then start it again.
 ```
 
-**CLOSE FAILED** / **SCALE-IN CLOSE FAILED** — the bridge asked the broker to close and was refused.
+**CLOSE FAILED** / **SCALE-IN CLOSE FAILED** — the bot asked the broker to close and was refused.
 ```
 ⛔ CLOSE FAILED · SOS Fade · LIVE
-It was asked to close the open trade and the broker refused.
-The position is STILL OPEN and the bot will halt. Close it by hand.
+The bot tried to close its open trade and the broker refused.
+The trade is STILL OPEN and the bot will stop trading. Close it by hand.
 ```
 ```
 ⛔ SCALE-IN CLOSE FAILED · SOS Fade · LIVE
-It was asked to close scale-in lot T5551234 and the broker refused.
-That lot is STILL OPEN and the bot will halt. Close it by hand.
+The bot tried to close scale-in trade #5551234 and the broker refused.
+It is STILL OPEN and the bot will stop trading. Close it by hand.
 ```
 
 **OFFLINE** — the watchdog can no longer see the process.
 ```
 ⛔ OFFLINE · SOS Fade · LIVE
-The process is gone. Restarting it now.
+The bot has stopped running. Restarting it now.
 ```
 
-**WILL NOT START** (watchdog gave up restarting a bot, or the command bot):
+**WILL NOT START** (the watchdog gave up restarting a bot, or the Telegram bot):
 ```
 ⛔ WILL NOT START · SOS Fade · LIVE
-3 restart attempts have failed. It is not trading and will not retry.
-It will stay down until someone looks. Usually a version pin or the MT5 login — check its log.
+3 restart attempts failed, so it is not trading and has stopped retrying.
+Check its log. The usual causes are the approved code version or the MetaTrader login.
 ```
 ```
 ⛔ WILL NOT START · Telegram bot
-3 restart attempts have failed, so commands are unavailable.
-RDP into the VPS and run: schtasks /run /tn SYS_TELEGRAM
+3 restart attempts failed, so commands are unavailable.
+Log into the trading server and start the Telegram bot task.
 ```
 
 **CANNOT SEE THE BOTS** — the bot folder list itself could not be read.
 ```
 ⛔ CANNOT SEE THE BOTS · Watchdog
-The bot folders could not be read (<the error>), so no bot is being watched.
-Check the box's disk and the algos folder.
+The bots' folders couldn't be read, so no bot is being watched. Reason: <the error>
+Check the trading server's disk.
+```
+
+**STUDENT FEED DOWN** — the REV SETUP student feed cannot run (health room only; the students'
+channel never hears about machinery).
+```
+⛔ STUDENT FEED DOWN · REV SETUP
+The student setup feed cannot run, so students get no setups until it's fixed.
+Reason: <the error>
+Check its log on the trading server.
 ```
 
 **REVIEW** (alert level) — the hourly reviewer found something no live alert caught. ⚠ Since
@@ -212,28 +238,28 @@ Check the box's disk and the algos folder.
 reached the room (or was held on purpose) — it still shows on the Bots page.
 ```
 ⛔ REVIEW · SOS Fade · LIVE
-It refused to start — the code is not the promoted version
+It refused to start — the code is not the approved version
 At 6:06 PM CDT: <the recorded detail>
 ```
-A live halt is ONE finding (it was two):
+A live halt is ONE finding:
 ```
 ⛔ REVIEW · SOS Fade · LIVE
-Bridge is HALTED right now — the bot is placing nothing
-It stopped placing orders at 3:00 AM CDT: emulator and broker disagree.
-Its latest heartbeat, at 3:55 AM CDT, still says halted, while the watchdog and the Bots page both read RUNNING. It will not resume until it is restarted and agrees with the broker again — check the account.
+Halted right now — the bot is placing nothing
+It stopped placing orders at 3:00 AM CDT: <the halt reason>
+It still says halted at 3:55 AM CDT, though the Bots page shows it running. Check the account, then restart it.
 ```
 
 **REMINDER — HALTED / REMINDER — DOWN** — a bot on a LIVE account, once an hour until it clears
 (2026-09-26). Demo accounts get none. Never held.
 ```
 ⛔ REMINDER — HALTED · SOS Fade · LIVE
-Halted for 2 h 0 min: emulator and broker disagree. It is placing nothing.
-Check the account, then restart it. This repeats every hour until it clears.
+Halted for 2 hours: <the halt reason>. It is placing nothing.
+Check the account, then restart it. Repeats hourly until fixed.
 ```
 ```
 ⛔ REMINDER — DOWN · SOS Fade · LIVE
-Down for 1 h 0 min, and nobody stopped it. It is not trading.
-Start it from the command center, or check its log. This repeats every hour until it is back.
+Down for 1 hour, and nobody stopped it. It is not trading.
+Start it from the Command Center, or check its log. Repeats hourly until fixed.
 ```
 
 **RE-ENTRY FAILED** — the re-entry watcher graded a trade and something did not check out.
@@ -243,118 +269,123 @@ Now closed.
 risk sized correctly — used 10.0% of account, config caps at 5.0%
 1 passed · 1 failed · 1 could not be checked
 Not checked: R matches the prices
-Read the failed check(s) above.
+Read the failed check above.
 ```
 
 **RE-ENTRY WATCH DOWN** / **OVERNIGHT COST WATCH DOWN** — one of the two watcher tools crashed.
 ```
 ⛔ RE-ENTRY WATCH DOWN · SOS Fade · LIVE
-The hourly check failed: RuntimeError: ledger is unreadable
-Nothing is watching for a re-entry until this is fixed — silence does NOT mean nothing happened.
+The hourly re-entry check failed, so nothing is checking re-entry trades.
+Reason: RuntimeError: ledger is unreadable
+Until it's fixed, silence doesn't mean nothing happened. Check its log.
 ```
 ```
 ⛔ OVERNIGHT COST WATCH DOWN · SOS Fade · LIVE
-The check failed: SystemExit: could not attach to C:\MT5_FFT: terminal not running
-Until this is fixed, a change in the broker's overnight cost will pass unnoticed.
+The overnight cost check failed.
+Reason: SystemExit: could not attach to C:\MT5_FFT: terminal not running
+Until it's fixed, a change in the broker's overnight cost goes unnoticed.
 ```
 
 ### ⚠️ WARNING — nothing has stopped, worth reading
 
-**ORDER REJECTED** — the BROKER refused an order we sent (2026-09-16). Once per cause per side.
-A temporary cause (no connection, requote, prices changed, no quotes, too many requests, locked)
-is re-sent on the poll loop; anything else is not.
+**ORDER REJECTED** — the BROKER refused an order we sent (2026-09-16). Once per cause per side. The
+reason is the broker's code in plain words (`shared/broker_result.plain_reason`), or the broker's
+own comment when the code is not in the table — never the bare number. A temporary cause (no
+connection, requote, prices changed, no prices, too many requests, busy) is re-sent on the poll
+loop; anything else is not.
 ```
 ⚠️ ORDER REJECTED · SOS Fade · LIVE
-The broker rejected the bearish primary limit 0.14L @ 4316.98 (SL 4352.44).
-Pending failed (XAUUSD.p bearish 0.14L @ 4316.98): retcode=10031 'Request rejected due to absence of network connection' last_error=(1, 'Success')
-Temporary fault, so it will be re-sent in 10s and retried up to 5 times while the setup still wants it. You will hear once more: when it lands, or if it gives up.
+The broker refused a 0.14-lot SHORT order at 4,316.98 (stop 4,352.44).
+Reason: No connection to the broker.
+Retrying in 10 seconds, up to 5 times. You'll get one more message either way.
 ```
-Permanent cause — last line instead reads: *Not re-sent now: this is not a temporary fault, so the
-same order would be refused again. The strategy re-offers it at the next bar close while the setup
-lives.* Five failed re-sends: *Gave up after 5 re-sends. No order is resting. …* A market order:
-*Not re-sent: the strategy already counts this trade as open … The bot will halt at the next check
-because the broker holds no position — look at the account.*
+The last line otherwise reads — permanent cause: *Not retried, because the same order would be
+refused again. The bot offers it again at the next bar if the setup is still valid.* Five failed
+retries: *Gave up after 5 tries. No order is waiting. The bot offers it again at the next bar if the
+setup is still valid.* A market order: *Not retried: the bot already counts this trade as open, so
+it will stop trading at the next check. Look at the account.*
 
-**NO SETUP MESSAGES** — a bot whose strategy cannot report setups (2026-09-16). In the house shape
-with the version since 2026-09-26, and sent **once per bot per strategy version** (it came on every
-restart).
+**NO SETUP MESSAGES** — a bot whose strategy cannot report setups (2026-09-16). Sent **once per bot
+per strategy version**.
 ```
 ⚠️ NO SETUP MESSAGES · Realign · demo
-Its strategy (RealignStrategy, v12) does not report its setups yet, so the signals room will stay silent for this bot.
-Trades and health messages are unaffected. Said once per version.
+This strategy (v12) can't report its setups yet, so the signals room stays silent for this bot.
+Trade and health messages still arrive. Said once per version.
 ```
 
-**STALLED** — the process is alive but has not moved through bars.
+**STALLED** — the process is alive but has not checked in.
 ```
 ⚠️ STALLED · SOS Fade · LIVE
-The process is alive but has not stamped its heartbeat for 7 minutes, so it is not working through bars.
-Restart it from the command center, or check its log.
+It is running but hasn't checked in for 7 minutes, so it is not reading the market.
+Restart it from the Command Center, or check its log.
 ```
 
-**RE-ENTRY FEED GAP** — the re-entry's own fast clock missed bars and re-warmed.
+**RE-ENTRY FEED GAP** — the faster feed the re-entry uses missed bars and was reloaded.
 ```
 ⚠️ RE-ENTRY FEED GAP · SOS Fade · LIVE
-Missed 3 5m bars on the re-entry's fill clock, so it re-warmed that feed. The 15-minute stream and any open trade are unaffected.
+Missed 3 bars on the M5 feed the re-entry uses, so it reloaded that feed. The main chart and any open trade are fine.
 Nothing to do unless it repeats.
 ```
 
-**DROPPED A BAR** — one bar failed to process; the bot is re-warming from it.
+**DROPPED A BAR** — one bar failed to process; the bot is reloading recent history.
 ```
 ⚠️ DROPPED A BAR · SOS Fade · LIVE
-Failed to process the 2026-09-14 09:15:00 bar, so it is re-warming the engines on the history it missed.
-Reason: <the exception>
+Couldn't process the 9:15 AM CDT bar, so it is reloading recent history to catch up.
+Reason: <the error>
+Nothing to do unless it repeats.
 ```
 
-**SETTINGS NOT APPLIED** — a config change on disk was refused.
+**SETTINGS NOT APPLIED** — a settings change that a running bot cannot take.
 ```
 ⚠️ SETTINGS NOT APPLIED · SOS Fade · LIVE
-Its config changed on disk in ways a running bot cannot take, so it is still trading the settings it started with.
-25 settings need a restart: exec_risk_pct, exec_sl_deep, fib_e1 and 22 more.
-Restart it to apply them.
+Still trading its old settings. 25 changes need a restart: Trade longs, Trade shorts, Trade SOS Fade setups and 22 more.
+Restart it when flat to apply them.
 ```
-(A count and the first three names since 2026-09-26 — it listed every field with both values.)
 
-**ORPHAN ORDERS** — resting orders at the broker under this bot's magic with no record here.
+**ORPHAN ORDERS** — orders at the broker belonging to this bot that it never placed.
 ```
 ⚠️ ORPHAN ORDERS · SOS Fade · LIVE
-2 resting order(s) were at the broker under this bot's magic with no record of being placed. They have been cancelled.
-Nothing was opened. The usual cause is a broker request whose reply never came back. Worth reading the log for why.
+2 orders were at the broker that this bot never placed. They were cancelled. Nothing was opened.
+Worth reading the log for why.
 ```
 
-**ORDER GONE** — an order the bridge expects to see is missing from the broker.
+**ORDER GONE** — an order the bot expects is missing from the broker.
 ```
 ⚠️ ORDER GONE · SOS Fade · LIVE
-<why it is gone — e.g. cancelled at the broker, not found on reconcile>
-The strategy still expects it. Check the account's free margin.
+The SHORT order (0.14 lots at 4,316.98) disappeared from the broker without filling. The usual cause is not enough free margin.
+The bot still expects it. Check the account's free margin.
 ```
 
-**NO ACCOUNT RISK LEFT** — the shared account risk budget is fully committed.
+**NO ACCOUNT RISK LEFT** — the account's risk limit is fully used.
 ```
 ⚠️ NO ACCOUNT RISK LEFT · SOS Fade · LIVE
-This bot cannot open a trade: the account's 10% risk budget is fully committed.
-Setups will be refused until room comes back — which happens as another bot's stop moves up or its trade closes. Nothing is wrong with this bot.
+This bot can't open a trade: the account already has $1,075.22 at risk, against a limit of $1,075.22 (10% of $10,752.18).
+Setups are skipped until room frees up. Nothing is wrong with this bot.
 ```
 
-**ORDER REFUSED** — a setup was ready and the broker or a guard refused the order.
+**SETUP REFUSED — NO ROOM** / **TRADE SHRUNK** / **ORDER SHRUNK** — see the shared-account section
+below.
+
+**ORDER REFUSED** — a setup was ready and a guard refused the order before it reached the broker.
 ```
 ⚠️ ORDER REFUSED · SOS Fade · LIVE
-A primary setup was ready and no order was placed.
-Minimum stop distance not met.
-No position was opened. The strategy will keep re-offering it while the setup lives, and this will not alert again for the same reason.
+A LONG setup was ready but no order was placed.
+The trade needs 0.004000 lots, under XAUUSD.p's minimum of 0.01. Not rounding up, because the minimum would risk 25.00 instead of 10.00. The account is too small for this setup's stop distance.
+The bot offers it again while the setup is valid.
 ```
 
-**PARTIAL NOT BANKED** — a scheduled partial close did not go through.
+**PARTIAL NOT BANKED** — a planned partial close did not go through.
 ```
 ⚠️ PARTIAL NOT BANKED · SOS Fade · LIVE
-<which rung, and why the broker refused it>
-The position keeps its broker stop and the strategy keeps managing it. This will not alert again for the same reason.
+Couldn't take profit on 0.07 lots: the broker doesn't allow that size. The trade is still 0.14 lots where the bot expects 0.07, so this trade's result will differ from the backtest.
+The trade keeps its stop and the bot keeps managing it.
 ```
 
 **SYMBOL NOT FOUND** — a watchlist symbol is not on the broker.
 ```
 ⚠️ SYMBOL NOT FOUND · SOS Fade · LIVE
-The broker does not list XAUUSD.p, so it was skipped this cycle.
-Fix the watchlist in config.json.
+The broker doesn't list XAUUSD.p, so it was skipped this time.
+Fix the symbol in the bot's settings.
 ```
 
 **REVIEW** (warning level) — same finding mechanism, a lower-severity finding.
@@ -364,36 +395,66 @@ Fix the watchlist in config.json.
 <finding detail>
 ```
 
+**BACKUP FAILING** — the bots' records did not reach GitHub (the hourly ledger sync). Repeats at
+most daily for the same reason, with how long it has lasted on the first line.
+```
+⚠️ BACKUP FAILING · Trade records
+Still failing after 25 hours, for the same reason.
+The bots' records saved on the server but did not reach GitHub, so there is only one copy.
+Reason: <why>
+```
+
 **OVERNIGHT COST MOVED** — the broker re-quoted its overnight financing.
 ```
 ⚠️ OVERNIGHT COST MOVED · SOS Fade · LIVE · XAUUSD.p
 Per lot, per night.
-Changed since the last reading — long -81.18 → -80.54 (+0.64)
+Changed since the last reading: long -81.18 → -80.54 (+0.64)
 Broker now: long -80.54 · short +32.67
-Backtests (puprime_ecn) — long: lab holds -79.60, 1.2% away · short: lab holds +31.29, 4.2% away
-Nothing changed here — re-pricing the lab is a separate, deliberate commit.
+Backtests use long -79.60 (1.2% off) · short +31.29 (4.2% off)
+Nothing to do unless the gap grows.
 ```
 
-### 📦 One message per Command Center action (2026-09-26)
+**GONE LIVE** — the Command Center moved bots from a demo account to a live one.
+```
+⚠️ GONE LIVE · SOS Fade, Extreme Leg
+Moved from demo 700152905 to LIVE 34957946 (PU Prime, account risk limit 10%).
+Not trading yet. Every bot is stopped until you start it.
+```
 
-The Command Center sends one message BEFORE it touches the bot, and the bot EDITS it into the
+### One message per Command Center action (2026-09-26)
+
+The Command Center sends one ℹ️ message BEFORE it touches the bot, and the bot EDITS it into the
 outcome once it is online — no STOPPED, no separate ONLINE. If it does not come back in three
 minutes the watchdog sends NOT BACK ONLINE (above).
 ```
-📦 PROMOTED · SOS Fade · LIVE          →   📦 DEPLOYED · SOS Fade · LIVE
+ℹ️ PROMOTED · SOS Fade · LIVE          →   ✅ DEPLOYED · SOS Fade · LIVE
 v397 → v399 · deployed                     v397 → v399, back online
 Restarting it now.                         Trading live · XAUUSD.p M15 · $10,752.18
-                                           v399 (abcd1234) · account 34957946
+                                           v399 · account 34957946
 
-▶️ STARTING · SOS Fade · LIVE          →   ✅ ONLINE · SOS Fade · LIVE
-Requested from the command center.         Started from the command center.
+ℹ️ STARTING · SOS Fade · LIVE          →   ✅ ONLINE · SOS Fade · LIVE
+Requested from the Command Center.         Started from the Command Center.
 This message will say when it is online.   Trading live · XAUUSD.p M15 · $10,752.18 …
 
-🔄 RESTARTING · SOS Fade · LIVE        →   ✅ RESTARTED · SOS Fade · LIVE
-Requested from the command center.         Restarted from the command center — back online. …
+ℹ️ RESTARTING · SOS Fade · LIVE        →   ✅ RESTARTED · SOS Fade · LIVE
+Requested from the Command Center.         Restarted from the Command Center and back online. …
 ```
 A Command Center STOP is one ℹ️ STOPPED — the bot's own when it shut down cleanly, the Command
-Center's when it had to be terminated.
+Center's when it had to be terminated. **The Command Center uses only the four severity icons
+(2026-09-30)** — its own ⚙️ ▶️ ⏹ 🔄 📦 🔴 are gone:
+
+| Command Center message | Icon |
+|---|---|
+| SETTINGS CHANGED, RISK CHANGED, PRIORITY CHANGED, ACCOUNT RISK CAP, BOT MOVED | ℹ️ |
+| STARTING, RESTARTING, RESTARTING ONTO DEPLOYED CODE, STOPPED, PROMOTED, NOTHING TO DEPLOY | ℹ️ |
+| DEPLOYED (the bot's edit of PROMOTED) | ✅ |
+| GONE LIVE | ⚠️ |
+
+```
+ℹ️ SETTINGS CHANGED · SOS Fade · LIVE
+Risk % per trade 5 → 4
+It applies the next time the bot has no open trade.
+```
 
 ### What is HELD rather than sent (2026-09-26)
 
@@ -416,38 +477,48 @@ ORDER REFUSED / REJECTED, NOT BACK ONLINE, CANNOT SEE THE BOTS, every REMINDER.
 
 ```
 ✅ ORDER PLACED AFTER REJECTION · SOS Fade · LIVE
-The bearish primary order is now at the broker: T364071713 0.14L @ 4316.98 (after 1 re-send).
+The SHORT order is now at the broker: 0.14 lots at 4,316.98 (after 1 retry).
 
 ✅ BACK ONLINE · SOS Fade · LIVE
 It is running again. Nothing to do.
 
 ✅ RESTARTED · SOS Fade · LIVE
-It was offline and has been restarted automatically.
+It had stopped running and was restarted automatically.
 Worth checking the log for why it stopped.
 
 ✅ RECOVERED · SOS Fade · LIVE
-The heartbeat resumed and it is working through bars again.
+It is checking in and reading the market again.
 Nothing to do.
 
 ✅ RECONNECTED · SOS Fade · LIVE
-Back on the terminal after 4 minutes. It re-warmed on the bars it missed.
+Back on MetaTrader after 4 minutes. It caught up on the bars it missed.
 Nothing to do.
 
-✅ TRADING BACK ON · SOS Fade · LIVE
+✅ TRADING BACK ON · Account 34957946 · LIVE
 The account can trade again.
 Nothing to do.
 
 ✅ ACCOUNT RISK AVAILABLE · SOS Fade · LIVE
-$500.00 of account risk budget is free again.
+$500 of the account's risk limit is free again.
 This bot can take setups again. Nothing to do.
 
+✅ ORDER BACK TO FULL SIZE · FFT · demo
+Room freed up, so the LONG order is back to full size (0.3 → 0.45 lots). Not filled yet.
+
 ✅ TRADE RESUMED · SOS Fade · LIVE
-LONG 0.25 lots @ 3300.0 · stop 3280.0
-The bot restarted and picked its open trade back up. It manages it from the next bar. Nothing to do.
+LONG 0.25 lots at 3,300.00 · stop 3,280.00
+The bot restarted and picked its open trade back up. Nothing to do.
+
+✅ TRADE ADOPTED · SOS Fade · LIVE
+LONG 0.25 lots at 3,300.00 · stop 3,280.00
+The bot restarted without a saved record, found the same trade at the broker and picked it back up. Nothing to do.
 
 ✅ SETTINGS APPLIED · SOS Fade · LIVE
-exec_risk_pct 5.0 -> 4.0
-Applied straight away — the bot was flat. Nothing to do.
+Risk % per trade 5 → 4
+Applied straight away because the bot was flat. Nothing to do.
+
+✅ BACKUP WORKING · Trade records
+The bots' records are reaching GitHub again. Nothing to do.
 
 ✅ COMMANDS ONLINE · Telegram bot
 It is listening again. Send /help for the list.
@@ -455,7 +526,7 @@ It is listening again. Send /help for the list.
 ✅ REVIEW · SOS Fade · LIVE
 <finding title>
 <finding detail>
-Nothing to do: <what healed it, e.g. "it started at 6:12 PM CDT">
+Nothing to do: <what healed it, e.g. "It started at 6:12 PM CDT.">
 
 ✅ RE-ENTRY CHECKED · SOS Fade · LIVE · trade 902
 Still open.
@@ -467,81 +538,99 @@ Nothing to do.
 
 ```
 ℹ️ STOPPED · SOS Fade · LIVE
-Shut down cleanly. It will not come back on its own.
+Shut down cleanly. It won't come back on its own.
 
 ℹ️ CLOSE REQUESTED · SOS Fade · LIVE
-Close requested (operator) — the open trade will close on the next bar.
-It closes on the next bar and the bot keeps looking for setups.
+Asked to close its trade (operator). It closes on the next bar.
+The bot keeps looking for setups. Nothing to do.
 
 ℹ️ NOTHING TO CLOSE · SOS Fade · LIVE
-Close requested (operator) — nothing open to close.
-It was asked to close a trade and is not in one. Nothing changed.
-
-ℹ️ ONLINE · SOS Fade · LIVE
-Trading live · XAUUSD.p M15 · $10,752.18
+Asked to close its trade (operator), but it has none open.
+Nothing changed.
 
 ℹ️ DAILY SUMMARY · Health room
 The 24 hours to 8:00 AM CDT, Sep 26.
-Held 21: WILL NOT START 16 (SOS Fade · LIVE 16); OFFLINE 5 (SOS Fade · LIVE 3, Extreme Leg · LIVE 2).
-Longest trading-off: 7 min (account 34957946).
+Held back 21: WILL NOT START 16 (SOS Fade · LIVE 16); OFFLINE 5 (SOS Fade · LIVE 3, Extreme Leg · LIVE 2).
+Longest time trading was off: 7 minutes (account 34957946).
 Auto-restarts: 2 (SOS Fade · LIVE 2).
-Delivered late: 1 · Given up after 24 h: 0.
+Delivered late: 1 · Given up after 24 hours: 0.
 
 ℹ️ OVERNIGHT COST — FIRST READING · SOS Fade · LIVE · XAUUSD.p
 Per lot, per night.
-First reading on record — nothing to compare it against yet.
+First reading on record, so nothing to compare it with yet.
 Broker now: long -80.54 · short +32.67
-Backtests (puprime_cent) — long: lab refuses this tier — unmeasured · short: lab refuses this tier — unmeasured
-Nothing changed here — re-pricing the lab is a separate, deliberate commit.
+Backtests have no figure for this account type.
+Nothing to do unless the gap grows.
+
+ℹ️ TEST MESSAGE · trade channel
+This channel was entered as the trade channel for account 34957946 (chat -1009999999999).
+Nothing is trading because of this message. If you didn't expect it, tell whoever set the account up.
 ```
+
+The bot's own start banner, when no Command Center action is waiting to be edited, is
+`✅ ONLINE · SOS Fade · LIVE` / `Trading live · XAUUSD.p M15 · $10,752.18` / `v399 · account 34957946`.
 
 ---
 
 ## Signals room
 
+Rendered by the real formatters, 2026-09-30 — the house rules are in `notes/telegram-and-notifications.md` → *One voice for every bot*.
+
 ```
 👀 SETUP FORMING · LONG
-SOS Fade · XAUUSD.p · 2 of 3
-Swept Day Low · 0.5-0.886 tagged, FVG live · not tagged yet
-Zone 3,405.10 – 3,418.60 · stop 3,418.60
+SOS Fade · XAUUSD.p · 2 of 3 checks
+✓ Took out the daily low · ✓ Trend turned · ✗ Pullback to entry zone
+Entry zone 3,405.10 – 3,418.60 · Stop 3,404.60
 
 👀 SETUP FORMING · LONG
-Realign · XAUUSD.p · 1 of 3
-Bearish 15m shift in an uptrend, momentum against · 5m break pending · 5m realign pending
-TP1 3,331.20
-(a market-entry setup has no zone; the stop appears once the 5m counter move prints)
-(no demo/LIVE tag in the trades or signals rooms — each holds one kind; the health room keeps it)
+Realign · XAUUSD.p · 1 of 3 checks
+✓ Uptrend dipped on the 15-min · ✗ 5-min dip · ✗ 5-min turn back up
+Target 3,331.20
 
-🎯 0.25 lots · BUY LIMIT RESTING
-2 of 3
-Limit 3,410.00 · stop 3,418.60
-TP1 3,396.10 · TP2 3,389.75
-Still missing: Momentum shift
+🎯 LIMIT ORDER WAITING · LONG
+SOS Fade · XAUUSD.p · 0.25 lots
+Buy at 3,410.00 · Stop 3,404.60
+Targets 3,425.10 · 3,431.75
+Not filled yet. Still missing: pullback to entry zone.
 
-🔁 BUY LIMIT MOVED
-0.25 → 0.22 lots
-Limit 3,410.00 → 3,407.20 · stop 3,418.60 → 3,417.90
-Still missing: Momentum shift
+🔁 LIMIT ORDER MOVED · LONG
+SOS Fade · XAUUSD.p · 0.25 → 0.22 lots
+Buy at 3,410.00 → 3,407.20 · Stop 3,404.60 → 3,403.90
+Not filled yet. Still missing: pullback to entry zone.
 
-⏸ SELL LIMIT WITHDRAWN
-Final hour (16:00-18:00 New York)
-No order is resting. The setup is still watched, and the order returns if the rule lifts in time.
+⏸ LIMIT ORDER PAUSED · SHORT
+SOS Fade · XAUUSD.p
+Too close to the daily close (4–6 pm New York).
+The order comes back if this changes while the setup is still valid.
+
+🚫 BLOCKED · LONG
+Extreme Leg · XAUUSD.p
+Price already passed the target before the entry signal.
+Still watching in case this changes.
 
 🚫 BLOCKED · SHORT
-news blackout · final-hour cutoff
+SOS Fade · XAUUSD.p
+Big news release due. Too close to the daily close (4–6 pm New York).
+Still watching in case this changes.
 
 ✅ ENTERED · LONG
-Size and risk are in the trade alert.
+SOS Fade · XAUUSD.p
+Filled. Details in the trades room.
 
 👋 NO TRADE · SHORT
-Price closed back inside the range before the retrace tagged.
+SOS Fade · XAUUSD.p
+Price never pulled back to the entry zone.
 
-🧹 THREAD CLOSED · LONG
-XAUUSD.p · no longer being watched
-The bot restarted while this setup was open, so its outcome was not recorded. It is not a trade and not a refusal — it is an answer this bot no longer has.
+👋 NO TRADE · LONG
+Extreme Leg · XAUUSD.p
+Ran out of time after 180 minutes. Last block: price already passed the target before the entry signal.
+
+🧹 NO LONGER TRACKED · LONG
+SOS Fade · XAUUSD.p
+The bot restarted while this setup was open, so how it ended is unknown.
 ```
 
-⚠ **`🧹 THREAD CLOSED` is deliberately NOT `👋 NO TRADE`** (2026-09-16). `NO TRADE` is a
+⚠ **`🧹 NO LONGER TRACKED` is deliberately NOT `👋 NO TRADE`** (2026-09-16). `NO TRADE` is a
 CLAIM — it says the bot looked at this setup and refused it, and it carries the strategy's own
 sentence for why. This one is sent on a start, for a setup announced before the bot stopped that it
 is no longer watching: the outage swallowed the bar that knew the reason, so the bot does not know
@@ -550,30 +639,62 @@ declined. See `notes/telegram-and-notifications.md` → *A SETUP THREAD DID NOT 
 
 ## Trades room
 
+Rendered by the real formatters, 2026-09-30. Every message after the entry REPLIES to it, and every one carries the bot · symbol line.
+
 ```
-📈 ENTRY · LONG XAUUSD.p
+📈 ENTERED · LONG
+SOS Fade · XAUUSD.p · 0.25 lots
 Entry 3,300.00 · Stop 3,280.00
-Size 0.25 lots · Risking $500.00 (5%)
-SOS Fade
+Risking $500.00 (5% of the account)
 
 ✅ WIN
+SOS Fade · XAUUSD.p
 Made $500.00 · +2.50R
-Exit 3,320.00 (target)
+Closed at 3,320.00 (hit target)
 
 ❌ LOSS
+SOS Fade · XAUUSD.p
 Lost $200.00 · -1.00R
-Exit 3,280.00 (stop)
+Closed at 3,280.00 (hit stop)
 
 ➖ BREAKEVEN
+SOS Fade · XAUUSD.p
 Lost $12.50 · -0.02R
-Exit 3,299.50 (stop moved to entry)
+Closed at 3,299.50 (stopped at entry)
 
-❌ LOSS · XAUUSD.p
-Lost $200.00 · -1.00R
-Exit 3,280.00 (stop)
+🛡 STOP MOVED TO ENTRY
+SOS Fade · XAUUSD.p
+Stop 3,280.00 → 3,290.00
+This trade can no longer lose, unless price jumps past the stop.
+
+🪜 PROFIT LOCKED IN
+SOS Fade · XAUUSD.p
+Stop 3,290.00 → 3,301.50 · locks in +1.15R
+
+🔒 RISK REDUCED
+SOS Fade · XAUUSD.p
+Stop 3,280.00 → 3,290.00 · now risking 0.50R
+
+💰 PROFIT TAKEN
+SOS Fade · XAUUSD.p
+Closed 0.17 of 0.42 lots · 0.25 still open
+Taken at market price, so it can differ slightly from the target.
+
+➕ ADDED TO TRADE
+SOS Fade · XAUUSD.p
+Added 0.20 lots at about 3,305.00
+0.62 lots open now · all on one stop at 3,296.00
+
+✋ CLOSED BY YOU · +0.70R
+SOS Fade · XAUUSD.p
+Made $348.60
+Closed at 4,291.98
+The bot keeps trading.
+
+✋ STOP MOVED BY YOU
+SOS Fade · XAUUSD.p
+Stop now 4,301.37. The bot keeps it.
 ```
-(the last one is the exit when its entry alert never sent — it names the symbol instead of
-riding a reply thread, so a bare "LOSS" never floats with no trade attached)
 
 ---
 
@@ -629,9 +750,13 @@ telling somebody about it.
 
 ```
 ⚠️ ORDER SHRUNK — SHARED ACCOUNT · FFT · demo
-The account's shared risk limit was nearly used up by other bots, so a bullish order went in smaller than planned. It wanted to risk $1,114.71 (7.5% of the balance — above its usual 5% because its strategy sizes this kind of setup differently), only $747.98 was free, so it took 67% of its size.
-The order is waiting at the smaller size and nothing has filled yet. If room frees up first, the bot puts it back to full size and says so.
-No repeat of this message while the same setup stays trimmed.
+Other bots were using most of the account's risk limit, so this LONG order went in at 67% size ($748 of the $1,115 risk it wanted, 7.5% of the balance, above its usual 5%).
+Not filled yet. If room frees up first, it goes back to full size.
+```
+```
+⚠️ SETUP REFUSED — NO ROOM · SOS Fade · LIVE
+A LONG setup was ready, but the account's risk limit had only $100 free of the $500 it needed, under half, which is too small to take (other bots are using it).
+No order placed. Nothing is wrong with this bot.
 ```
 
 - *ORDER BACK TO FULL SIZE* (2026-09-30) — a resting order that was announced as shrunk has been
@@ -641,7 +766,7 @@ No repeat of this message while the same setup stays trimmed.
 
 ```
 ✅ ORDER BACK TO FULL SIZE · FFT · demo
-Room freed up on the account, so the bullish order that was shrunk is back to its full size (0.3 → 0.45 lots). It has not filled yet.
+Room freed up, so the LONG order is back to full size (0.3 → 0.45 lots). Not filled yet.
 ```
 
 **How often they speak.** One message per side per EPISODE. A setup that cannot be afforded is
@@ -662,6 +787,9 @@ caught exactly that here.
 
 ### Trades room — a hand close of the bot's own trade (2026-09-17)
 
+⚠ **The wording below is as it shipped on that date and was rewritten 2026-09-30** — the current text is in *Trades room* above.
+
+
 Replied under the trade's ENTRY message:
 
 ```
@@ -673,6 +801,9 @@ The bot has flattened its own record and keeps trading.
 
 ### Trades room — a stop the owner tightened (2026-09-17)
 
+⚠ **The wording below is as it shipped on that date and was rewritten 2026-09-30** — the current text is in *Trades room* above.
+
+
 Replied under the trade's ENTRY message, once per level:
 
 ```
@@ -680,6 +811,9 @@ Replied under the trade's ENTRY message, once per level:
 ```
 
 ### Trades room — how a trade is MANAGED, between the fill and the outcome (2026-09-22)
+
+⚠ **The wording below is as it shipped on that date and was rewritten 2026-09-30** — the current text is in *Trades room* above.
+
 
 Aaron: *"if a trade moves to break even I should get an alert saying move to break even... it
 should alert me all the way of how the trade is being managed... I need that to be consistently
@@ -737,6 +871,9 @@ health room's four severity icons are a separate, closed set and are not touched
 ---
 
 ## Sizes shown, in BOTH rooms, under ONE switch (2026-09-27) — supersedes the section below
+
+⚠ **The wording below is as it shipped on that date and was rewritten 2026-09-30** — the current text is in *Trades room* above.
+
 
 **Aaron's call:** *"make lot sizes show equally ... and yes show when we scale in ... make sure all
 messages are as equal as possible."* `alerts.SHOW_SIZE` is now **True**, and it governs the signals

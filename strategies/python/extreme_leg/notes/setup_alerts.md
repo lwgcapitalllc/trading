@@ -47,3 +47,14 @@ The Pine gate (`compare_extreme_leg.py`) was not re-run: no export is on this ma
 here touches a value the gate compares.
 
 Tests: `tests/test_setup_watch.py` (8; red before `setups.py` existed; three mutations run, each red).
+
+---
+
+## The wording reaching Telegram was rewritten into the one voice every bot shares (2026-09-30)
+
+Aaron: simple enough for anyone, the point at a glance, the same whichever bot. This package's
+check names, refusal reasons and outcome sentences were rewritten in plain English — no fib
+numbers, no "FVG"/"HTF"/"BOS", no "rule N —" prefixes, no "not a Pine rule" — and a check's detail
+now NAMES the condition, because the alert layer prints it after a ✓ or a ✗. **No decision moved:
+these strings are reporting only, and every refusal CODE is unchanged.** The rules and the
+shared vocabulary: `algos/notes/telegram-and-notifications.md` → *One voice for every bot*.

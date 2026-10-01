@@ -91,6 +91,11 @@ class AccountRisk:
         return self.total_ccy / balance
 
 
+def _n(n, word: str) -> str:
+    """`1 order`, `2 orders` — never `order(s)`."""
+    return f"{n} {word if n == 1 else word + 's'}"
+
+
 class RiskUnmeasurable(Exception):
     """The account is carrying something whose risk cannot be computed.
 
@@ -113,9 +118,9 @@ def measure_exposure(items: Sequence[Exposure], spec: SymbolSpec) -> AccountRisk
     """
     if not spec.is_priceable():
         raise RiskUnmeasurable(
-            f"the broker has not said what a tick of {spec.symbol} is worth "
-            f"(tick_size={spec.tick_size}, tick_value={spec.tick_value}), so no open risk on this "
-            f"account can be converted into money."
+            f"the broker has not said what a price move on {spec.symbol} is worth (tick size "
+            f"{spec.tick_size}, tick value {spec.tick_value}), so the account's open risk cannot "
+            f"be worked out in money."
         )
 
     total = 0.0
@@ -125,8 +130,8 @@ def measure_exposure(items: Sequence[Exposure], spec: SymbolSpec) -> AccountRisk
     for it in items:
         if it.symbol != spec.symbol:
             raise RiskUnmeasurable(
-                f"ticket {it.ticket} is on {it.symbol} and the spec describes {spec.symbol}; one "
-                f"instrument's tick value must never be applied to another's position."
+                f"trade #{it.ticket} is on {it.symbol}, not {spec.symbol}, so its risk cannot be "
+                f"worked out with {spec.symbol}'s prices."
             )
         if not it.stop:
             # 0.0 and None are the same thing here and both mean NO STOP AT THE BROKER. That is
@@ -134,9 +139,9 @@ def measure_exposure(items: Sequence[Exposure], spec: SymbolSpec) -> AccountRisk
             # it. A hand trade is the usual source. Refusing is the only honest answer: the cap
             # cannot bound a number nobody can compute.
             raise RiskUnmeasurable(
-                f"{'order' if it.resting else 'position'} {it.ticket} on {it.symbol} "
-                f"(magic {it.magic}) has NO broker-side stop, so its risk is unbounded and the "
-                f"account's open risk cannot be totalled. Attach a stop to it, or close it."
+                f"{'order' if it.resting else 'trade'} #{it.ticket} on {it.symbol} has no stop, "
+                f"so its risk has no limit and the account's open risk cannot be added up. Give "
+                f"it a stop, or close it."
             )
         # DIRECTION-AWARE, and `abs()` here is a real bug rather than a simplification — it was
         # written that way first and a test caught it. A long whose stop has ratcheted ABOVE its
@@ -194,31 +199,30 @@ def check_account_cap(
         return CapVerdict(
             allowed=False,
             code="cap_not_positive",
-            detail=f"the account risk cap is {cap_pct}%, which refuses every order. Remove the "
-            f"setting to run uncapped, or set a real percentage.",
+            detail=f"the account risk limit is set to {cap_pct}%, which refuses every order. "
+            f"Clear the setting to run without a limit, or set a real percentage.",
         )
     if balance is None or balance <= 0:
         return CapVerdict(
             allowed=False,
             code="balance_unreadable",
-            detail="the account balance could not be read, so the account-level risk cap cannot "
-            "be computed. Refusing rather than guessing — 'cannot ask' is never "
-            "'affordable'.",
+            detail="the account balance could not be read, so the account's risk limit cannot "
+            "be worked out.",
         )
 
     cap = balance * cap_pct / 100.0
     room = cap - open_risk.total_ccy
     if new_order_risk_ccy > room:
-        held = ", ".join(f"magic {m}: ${v:,.2f}" for m, v in sorted(open_risk.per_magic.items()))
+        held = ", ".join(f"bot {m}: ${v:,.2f}" for m, v in sorted(open_risk.per_magic.items()))
         return CapVerdict(
             allowed=False,
             code="account_risk_cap",
             detail=(
                 f"this order risks ${new_order_risk_ccy:,.2f} and only ${room:,.2f} is left "
-                f"under the account cap (${cap:,.2f} = {cap_pct}% of ${balance:,.2f}). "
-                f"The account already has ${open_risk.total_ccy:,.2f} on across "
-                f"{open_risk.positions} position(s) and {open_risk.resting} resting order(s)"
-                + (f" — {held}." if held else ".")
+                f"under the account's risk limit (${cap:,.2f}, {cap_pct:g}% of ${balance:,.2f}). "
+                f"The account already has ${open_risk.total_ccy:,.2f} at risk across "
+                f"{_n(open_risk.positions, 'open trade')} and {_n(open_risk.resting, 'order')}"
+                + (f" ({held})." if held else ".")
             ),
             open_risk_ccy=open_risk.total_ccy,
             cap_ccy=cap,

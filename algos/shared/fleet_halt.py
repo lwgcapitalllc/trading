@@ -123,8 +123,8 @@ def read_fleet_halt(root: Path | str | None = None) -> FleetHaltReading:
     except OSError as e:
         return FleetHaltReading(
             True,
-            f"cannot read the halt directory {directory} ({type(e).__name__}: {e}), so this bot "
-            f"cannot be told whether the fleet is halted and has stopped placing orders",
+            f"the fleet stop switch's folder {directory} can't be read ({type(e).__name__}: "
+            f"{e}), so this bot stopped placing orders to be safe",
             readable=False,
         )
 
@@ -137,8 +137,8 @@ def read_fleet_halt(root: Path | str | None = None) -> FleetHaltReading:
     except OSError as e:
         return FleetHaltReading(
             True,
-            f"cannot read the halt flag {path} ({type(e).__name__}: {e}), so this bot cannot be "
-            f"told whether the fleet is halted and has stopped placing orders",
+            f"the fleet stop switch {path} can't be read ({type(e).__name__}: {e}), so this bot "
+            f"stopped placing orders to be safe",
             readable=False,
         )
 
@@ -151,4 +151,4 @@ def read_fleet_halt(root: Path | str | None = None) -> FleetHaltReading:
             reason = path.read_text(encoding="utf-8", errors="replace").strip()
         except OSError:
             reason = ""
-    return FleetHaltReading(True, reason or f"fleet halt requested ({path})", readable=True)
+    return FleetHaltReading(True, reason or f"the fleet stop switch is on ({path})", readable=True)

@@ -282,6 +282,15 @@ def _when(ts: float) -> str:
         return "earlier"
 
 
+def _minutes(seconds: float) -> str:
+    """`15 minutes`, `1 minute`, `45 seconds` — a span written out for a person, never `15 min`."""
+    seconds = max(0, int(seconds))
+    if seconds < 90:
+        return f"{seconds} second{'s' if seconds != 1 else ''}"
+    m = round(seconds / 60)
+    return f"{m} minute{'s' if m != 1 else ''}"
+
+
 def _span(seconds: float) -> str:
     seconds = max(0, int(seconds))
     if seconds < 90:
@@ -456,12 +465,11 @@ def _decide(kind, text, *, account, bot, now) -> Decision:
                 dec.until = now + rule.defer_s
                 dec.episode = ekey
                 dec.reason = rule.note or f"held {_span(rule.defer_s)} to see whether it clears"
+                # One plain line, appended last by the outbox. The account a TRADING OFF is about
+                # is in its subject, so the suffix no longer repeats it.
                 dec.suffix = (
-                    f"Held {_span(rule.defer_s)} to see whether it cleared on its own - it has not. "
-                    f"First seen {_when(now)}."
+                    f"Still happening {_minutes(rule.defer_s)} later (first seen {_when(now)})."
                 )
-                if rule.scope == "account" and account is not None:
-                    dec.suffix += f" Account {account}: one message for every bot on it."
                 episodes[ekey] = {"state": "pending", "at": now}
                 changed = True
             else:

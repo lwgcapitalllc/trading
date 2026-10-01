@@ -1196,3 +1196,47 @@ that is already down: it is marked stopped on purpose, no restart, no reminder.
 TESTED: `tests/test_watchdog.py::test_a_stop_pressed_on_a_bot_ALREADY_down_stands_it_down`, RED
 with the check removed. The deploy that launched it is fixed on the Command Center side — see
 `command-center/backend/notes/bots-deploys.md` → *A deploy never STARTS a bot that was not running*.
+
+---
+
+## 🔴 One voice for every bot — the house rules for setup and trade messages (2026-09-30)
+
+**Aaron, 2026-09-30:** *"simple enough for anyone to understand, concise enough that I get the
+point right away, and consistent enough that they feel the same regardless of bot."* It started
+with one message nobody could read — Extreme Leg's `the swing is already the wrong side of the
+entry`, which meant price had already passed the target — and an audit found every bot writing
+its reasons in its own voice. Approved page: the before/after audit published 2026-09-30.
+
+1. **Line 1:** icon, the state in one to three words, then LONG or SHORT (never bullish / BUY).
+2. **Line 2, always — replies too:** bot name · symbol (· lots where a size is stated). A lock
+   screen shows a reply without the message it quotes.
+3. **Line 3:** what happened, one plain sentence — no jargon, no setting names, never a repeat of
+   the header. `alerts._sentence` evens out the punctuation, so a strategy only writes the words.
+4. **Prices last**, as `Entry · Stop · Target` — the word "Target", never "TP1".
+5. **A forming setup's checks are ticks and crosses** (`✓ Took out the daily low · ✗ Pullback to
+   entry zone`). A strategy's `Confluence.detail` therefore NAMES the condition and never its
+   state ("not tagged yet", "5m break pending" are gone). "Still missing:" reads the same detail.
+6. **A refused setup prints no prices** — no order exists, so no number on it can be acted on.
+7. **One shared vocabulary of reasons** — "Too close to the daily close (4–6 pm New York)",
+   "The stop is too close to the entry", "Account risk limit is full (other bots are using it)" …
+   Each strategy keeps its own reason table, but writes it in these words. SOS Fade's lab hover text
+   (`_BLOCK_REASON`) keeps the Pine wording on purpose; only what reaches Telegram changed.
+
+🔴 **Refused on the bar it is first announced = ONE message (2026-10-01, extreme_leg_demo 01:20
+UTC).** The thread opened `SETUP FORMING` quoting a target of 4,162.44 with price at 4,163.35, and
+`BLOCKED` landed under it in the same second. `SetupAlerts._handle` now folds the two: the root IS
+the BLOCKED message (`alerts.format_blocked_root`), carries no prices, and BLOCKED is marked said so
+it is not repeated as a reply. A setup announced while it could still trade keeps its SETUP FORMING
+root and a later refusal still replies to it. Tests: three in `tests/test_setup_alerts.py`, the
+first two watched RED with the fold removed.
+
+**The labels that changed:** ENTRY → ENTERED · STOP AT BREAKEVEN → STOP MOVED TO ENTRY · STOP
+TRAILED → PROFIT LOCKED IN · STOP TIGHTENED → RISK REDUCED · PART BANKED → PROFIT TAKEN · ADDED TO
+POSITION → ADDED TO TRADE · BUY/SELL LIMIT RESTING → LIMIT ORDER WAITING · LIMIT MOVED → LIMIT
+ORDER MOVED · LIMIT WITHDRAWN → LIMIT ORDER PAUSED · THREAD CLOSED → NO LONGER TRACKED. The ✋ STOP
+MOVED BY YOU message moved from an inline string in the bridge into `alerts.py` and gained its bot
+line.
+
+⚠ **Wording reaches a phone only through a PROMOTE** — the live bots import a frozen snapshot.
+⚠ **Not changed:** the REV SETUP student feed (`tools/rev_setup_feed.py`, off) keeps its own
+titles; bring it onto these rules before it is switched on.

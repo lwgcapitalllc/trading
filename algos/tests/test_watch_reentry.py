@@ -240,7 +240,7 @@ def test_a_watch_that_CANNOT_RUN_says_so_rather_than_going_quiet(box, monkeypatc
     assert len(box.sent) == 1
     assert "WATCH DOWN" in box.sent[0]
     assert "ledger is unreadable" in box.sent[0]
-    assert "does NOT mean nothing happened" in box.sent[0]
+    assert "doesn't mean nothing happened" in box.sent[0]
 
 
 def test_a_broken_NOTIFIER_still_reports_failure_through_the_exit_code(box, monkeypatch):

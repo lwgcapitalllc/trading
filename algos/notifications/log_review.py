@@ -103,6 +103,7 @@ from alert_format import CRITICAL, WARNING, alert, when  # noqa: E402
 from alert_format import OK as OK_ICON  # noqa: E402 — this file's own OK is a finding verdict
 from notify import HEALTH, chat_for, send_with_outcome  # noqa: E402
 from notify_log import QUEUED, SENT, read_window  # noqa: E402
+from param_labels import label_for  # noqa: E402  (algos/shared/param_labels.py)
 
 # How far back a run looks. Two days so a problem late yesterday is still reported this morning,
 # and so a run that crosses midnight sees the record either side of the roll.
@@ -333,6 +334,29 @@ def _burst_over(
     )
 
 
+def _reason(reason) -> str:
+    """A halt reason as it reads after a colon: one sentence, one full stop."""
+    text = str(reason or "no reason recorded").strip()
+    return text if text.endswith((".", "!", "?")) else text + "."
+
+
+def _labelled(changes, instance_dir: Path) -> str:
+    """The recorded `field: old → new, ...` with each field as the Command Center labels it."""
+    import re
+
+    text = str(changes or "?")
+    try:
+        cfg = json.loads((Path(instance_dir) / "config.json").read_text(encoding="utf-8"))
+        package = cfg.get("strategy_package")
+    except (OSError, ValueError, AttributeError):
+        package = None
+    return re.sub(
+        r"(^|, )([a-z_][a-z0-9_]*):",
+        lambda m: f"{m.group(1)}{label_for(m.group(2), package)}:",
+        text,
+    )
+
+
 def _carried_on(row: dict, pulses: List[dict]) -> Optional[str]:
     """Why a one-off incident is over — the bot heartbeat AFTER it — or `None` if nothing shows it."""
     after = _first_after(pulses, _parse_ts(row))
@@ -397,11 +421,9 @@ def _suspect_anchor(bot_key: str, state: dict) -> List[Finding]:
             WARN,
             "Check this account's opening balance",
             f"This bot recorded the account as opening at {_money(mine)}, but {others} on the "
-            f"same account. Two different things look exactly like this and only one is a "
-            f"problem. If this bot was RENAMED, the older figure is the real opening and every "
-            f"percentage this bot reports is measured from the wrong place — adopt the older "
-            f"one. If this is just a second bot that joined an account already in profit, both "
-            f"figures are correct and there is nothing to do.",
+            f"same account. If this bot was renamed, the older figure is the real opening, so "
+            f"use that one. If it is a second bot that joined an account already in profit, both "
+            f"are right and there is nothing to do.",
         )
     ]
 
@@ -472,9 +494,9 @@ def review_bot(
                 Finding(
                     f"unreadable:{now:%Y-%m-%d}",
                     ALERT,
-                    "No readable health record",
-                    f"{bot_key} is marked `{state.get('status')}` but its record cannot be read: "
-                    f"{problem}. Either it is not writing, or something is wrong with the disk.",
+                    "Its health record can't be read",
+                    f"It is marked as {state.get('status')}, but its health record can't be read, "
+                    f"so either it isn't writing or the disk has a problem. Reason: {problem}",
                 )
             )
         return findings
@@ -515,12 +537,11 @@ def review_bot(
                 Finding(
                     f"halted:{_ts(row)}",
                     ALERT,
-                    "Bridge is HALTED right now — the bot is placing nothing",
+                    "Halted right now — the bot is placing nothing",
                     f"It stopped placing orders at {_at(row)}: "
-                    f"{row.get('reason', 'no reason recorded')}.\n"
-                    f"Its latest heartbeat, at {_at(pulses[-1])}, still says halted, while the "
-                    f"watchdog and the Bots page both read RUNNING. It will not resume until it is "
-                    f"restarted and agrees with the broker again — check the account.",
+                    f"{_reason(row.get('reason'))}\n"
+                    f"It still says halted at {_at(pulses[-1])}, though the Bots page shows it "
+                    f"running. Check the account, then restart it.",
                 )
             )
         elif tense == HALT_NOW:
@@ -528,11 +549,11 @@ def review_bot(
                 Finding(
                     f"halted:{_ts(row)}",
                     ALERT,
-                    "Bridge HALTED — the bot is placing nothing",
+                    "Halted — the bot is placing nothing",
                     f"It stopped placing orders at {_at(row)}: "
-                    f"{row.get('reason', 'no reason recorded')}.\n"
-                    f"It is still running and still looks healthy everywhere else — the watchdog "
-                    f"and the Bots page both read RUNNING. Check the account.",
+                    f"{_reason(row.get('reason'))}\n"
+                    f"It looks healthy everywhere else, and the Bots page shows it running. Check "
+                    f"the account.",
                 )
             )
         elif tense == HALT_RECOVERED:
@@ -544,12 +565,11 @@ def review_bot(
                 Finding(
                     f"halted:{_ts(row)}",
                     WARN,
-                    "Bridge halted earlier — it is placing orders again now",
+                    "Halted earlier — it is placing orders again now",
                     f"It stopped placing orders at {_at(row)}: "
-                    f"{row.get('reason', 'no reason recorded')}.\n"
-                    f"Its latest heartbeat says the bridge is live again, so this is a record of "
-                    f"what happened rather than something to act on. Worth knowing WHY it halted.",
-                    resolved=f"Its heartbeat at {_at(pulses[-1])} says the bridge is live.",
+                    f"{_reason(row.get('reason'))}\n"
+                    f"It is trading again, so this is a record, not something to act on.",
+                    resolved=f"At {_at(pulses[-1])} it said the bridge is live again.",
                 )
             )
         else:
@@ -562,12 +582,11 @@ def review_bot(
                 Finding(
                     f"halted:{_ts(row)}",
                     WARN,
-                    "Bridge halted earlier — the record cannot say whether it still is",
+                    "Halted earlier — the record cannot say whether it still is",
                     f"It stopped placing orders at {_at(row)}: "
-                    f"{row.get('reason', 'no reason recorded')}.\n"
-                    f"That is the last thing its heartbeat said, and nothing has arrived since — it "
-                    f"has been stopped, or it went quiet. Nothing here can say what it would do if "
-                    f"you started it, so check WHY it halted before you do.",
+                    f"{_reason(row.get('reason'))}\n"
+                    f"It has said nothing since, so it was stopped or went quiet. Check why it "
+                    f"halted before starting it.",
                 )
             )
 
@@ -595,10 +614,9 @@ def review_bot(
             Finding(
                 f"halted_now:{occurrence}",
                 ALERT,
-                "Bridge is HALTED right now",
-                f"Its latest heartbeat, at {_at(pulses[-1])}, says the order bridge is halted, so it is "
-                f"placing nothing.\n"
-                f"It will not resume until it is restarted and agrees with the broker again.",
+                "Halted right now",
+                f"At {_at(pulses[-1])} it said it is halted, so it is placing nothing.\n"
+                f"Check the account, then restart it.",
             )
         )
 
@@ -648,7 +666,7 @@ def review_bot(
             Finding(
                 f"version_mismatch:{_ts(row)}",
                 ALERT,
-                "It refused to start — the code is not the promoted version",
+                "It refused to start — the code is not the approved version",
                 f"At {_at(row)}: {row.get('detail', '?')}",
                 resolved=f"It started at {_at(started)}." if started else None,
             )
@@ -661,9 +679,8 @@ def review_bot(
                 Finding(
                     f"unclean:{_ts(row)}",
                     WARN,
-                    "Previous run ended without shutting down",
-                    f"The run before {_at(row)} was killed, crashed, or the box went down — it wrote no "
-                    f"shutdown record.\n"
+                    "The last run ended without shutting down",
+                    f"Before {_at(row)} it was killed, crashed, or the server went down.\n"
                     f"Expected if you restarted it yourself.",
                     # ⚠ Over the moment it is written: this row IS the start that brought it
                     # back. A death that REPEATS is the restart loop's, below, and stays open.
@@ -694,10 +711,9 @@ def review_bot(
                 f"restart_loop:{_ts(unclean_starts[-1])}",
                 ALERT,
                 f"Restarted {len(unclean_starts)} times without a clean stop",
-                f"{len(unclean_starts)} of {len(starts)} starts since {_at(starts[0])} followed a "
-                f"run that recorded no clean shutdown.\n"
-                f"Either something is killing it, or it is failing and being brought back. A "
-                f"restart you asked for is not counted here.",
+                f"{len(unclean_starts)} of {len(starts)} starts since {_at(starts[0])} came "
+                f"after a run that didn't shut down cleanly.\n"
+                f"Something is killing it, or it keeps failing and being brought back.",
                 resolved=_burst_over(unclean_starts, pulses),
             )
         )
@@ -714,11 +730,11 @@ def review_bot(
             Finding(
                 f"mt5_outage:{_ts(outages[-1])}",
                 WARN,
-                f"Lost the MT5 link {len(outages)} time(s)",
-                f"Last at {_at(outages[-1])}, {len(back)} recovered, {total // 60} minutes blind in "
-                f"total.\n"
-                f"While blind it sees no bars at all. If it keeps happening, check MetaTrader on "
-                f"the VPS.",
+                f"Lost its MetaTrader connection {len(outages)} "
+                f"time{'s' if len(outages) != 1 else ''}",
+                f"Last at {_at(outages[-1])}, {len(back)} recovered, {total // 60} minutes without "
+                f"the market in total.\n"
+                f"If it keeps happening, check MetaTrader on the server.",
                 resolved=f"The link came back at {_at(restored)}." if restored else None,
             )
         )
@@ -729,10 +745,10 @@ def review_bot(
                 Finding(
                     f"mt5_storm:{_ts(outages[-1])}",
                     WARN,
-                    "The MT5 link keeps dropping",
+                    "The MetaTrader connection keeps dropping",
                     f"{len(outages)} drops since {_at(outages[0])}, the last at {_at(outages[-1])}.\n"
-                    f"Each one heals, but while it is down the bot sees no bars. Check MetaTrader "
-                    f"on the VPS.",
+                    f"Each one heals, but while it is down the bot can't see the market. Check "
+                    f"MetaTrader on the server.",
                     resolved=_burst_over(outages, pulses, settled=restored) if restored else None,
                 )
             )
@@ -744,10 +760,9 @@ def review_bot(
             Finding(
                 f"bar_error:{_ts(bar_errors[-1])}",
                 WARN,
-                f"{len(bar_errors)} bar(s) failed to process",
+                f"{len(bar_errors)} {'bar' if len(bar_errors) == 1 else 'bars'} failed to process",
                 f"Last at {_at(bar_errors[-1])}: {bar_errors[-1].get('error', '?')}\n"
-                f"Each one is a hole in the bar stream. It re-warms rather than carrying on, so "
-                f"nothing is silently skipped.",
+                f"Each time it reloads recent history, so nothing is silently skipped.",
                 resolved=_carried_on(bar_errors[-1], pulses),
             )
         )
@@ -758,7 +773,7 @@ def review_bot(
             Finding(
                 f"loop_error:{_ts(loop_errors[-1])}",
                 WARN,
-                f"{len(loop_errors)} loop error(s)",
+                f"{len(loop_errors)} failed {'check' if len(loop_errors) == 1 else 'checks'}",
                 f"Last at {_at(loop_errors[-1])}: {loop_errors[-1].get('error', '?')}",
                 resolved=_carried_on(loop_errors[-1], pulses),
             )
@@ -770,8 +785,8 @@ def review_bot(
                 Finding(
                     f"loop_storm:{_ts(loop_errors[-1])}",
                     WARN,
-                    "Its loop keeps failing",
-                    f"{len(loop_errors)} loop errors since {_at(loop_errors[0])}, the last at "
+                    "Its checks keep failing",
+                    f"{len(loop_errors)} failed checks since {_at(loop_errors[0])}, the last at "
                     f"{_at(loop_errors[-1])}: {loop_errors[-1].get('error', '?')}",
                     resolved=_burst_over(loop_errors, pulses),
                 )
@@ -783,9 +798,9 @@ def review_bot(
             Finding(
                 f"rewarm_storm:{_ts(rewarms[-1])}",
                 WARN,
-                f"Re-warmed {len(rewarms)} times",
+                f"Reloaded its history {len(rewarms)} times",
                 f"Last at {_at(rewarms[-1])}.\n"
-                f"Repeated re-warms mean the bar stream keeps breaking.",
+                f"Repeated reloads mean the price feed keeps breaking.",
                 resolved=_burst_over(rewarms, pulses),
             )
         )
@@ -818,9 +833,9 @@ def review_bot(
                 f"config_refused:{_ts(row)}",
                 WARN,
                 "A settings change was refused",
-                f"At {_at(row)}: {row.get('changes', '?')}\n"
-                f"It is still trading the OLD settings, so the Bots page may show what you asked "
-                f"for rather than what it is using. Restart it to take them.",
+                f"At {_at(row)}: {_labelled(row.get('changes'), instance_dir)}\n"
+                f"It is still trading its old settings, so the Bots page may show settings it "
+                f"isn't using. Restart it when flat to apply them.",
                 resolved=f"It started at {_at(started)}, which loads them." if started else None,
             )
         )
@@ -835,10 +850,10 @@ def review_bot(
                 Finding(
                     f"silent:{_ts(pulses[-1])}",
                     ALERT,
-                    "No heartbeat in the record",
-                    f"{bot_key} is marked `{state.get('status')}` but its last recorded heartbeat "
-                    f"was {_ts(pulses[-1])}, over "
-                    f"{int((now - last).total_seconds() // 60)} minutes ago.",
+                    "It has stopped checking in",
+                    f"It is marked as {state.get('status')}, but it last checked in at "
+                    f"{_at(pulses[-1])}, over {int((now - last).total_seconds() // 60)} minutes "
+                    f"ago.",
                 )
             )
 
@@ -866,8 +881,8 @@ def _pulse_gaps(pulses: List[dict]) -> List[Finding]:
                     f"pulse_gap:{_ts(cur)}",
                     WARN,
                     f"Went quiet for {int(gap // 60)} minutes",
-                    f"No heartbeat between {_ts(prev)} and {_ts(cur)}. Either the process was down "
-                    f"in that window or it was not turning its loop.",
+                    f"Nothing between {_at(prev)} and {_at(cur)}. It was either down or stuck in "
+                    f"that time.",
                     # Closed by construction — `cur` is the beat that ended it.
                     resolved=f"Its heartbeat resumed at {_at(cur)}.",
                 )

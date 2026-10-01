@@ -62,11 +62,11 @@ if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
 import position_state  # noqa: E402
-from alert_format import CRITICAL, OK, WARNING, alert, joined  # noqa: E402
+from alert_format import CRITICAL, OK, WARNING, alert, joined, plural  # noqa: E402
 
 # The third answer a broker call can give. Its own dependency-free module on purpose — see
 # the note in `algos/shared/broker_result.py` about what importing it from `mt5_ops` broke.
-from broker_result import UNKNOWN, is_transient  # noqa: E402
+from broker_result import UNKNOWN, is_transient, plain_reason  # noqa: E402
 from order_sizing import (  # noqa: E402
     DEFAULT_MARGIN_SAFETY_PCT,
     plan_order,
@@ -259,14 +259,14 @@ _SLOT_NAMES = {"primary": "primary", "secondary": "re-entry", "add": "scale-in"}
 # "refused" alone is the half of the sentence Aaron already has.
 # ⚠ Read with a default. A rule added on the account side must never cost the message; an
 # unrecognised reason loses the detail and keeps the alert.
+# Each is the end of one sentence: "...but the account's risk limit had <this> (other bots are
+# using it)." `{free}` and `{wanted}` are dollars, already formatted.
 _BUDGET_WHY = {
-    "share": (
-        "less than half that free, and a trade at under half its intended size is not the "
-        "trade the strategy was measured on"
-    ),
-    "floor": "less than this account's minimum size for an entry free",
-    "dust": "essentially nothing free",
+    "share": "only {free} free of the {wanted} it needed, under half, which is too small to take",
+    "floor": "only {free} free, less than the smallest trade this account allows",
+    "dust": "almost nothing free of the {wanted} it needed",
 }
+_BUDGET_WHY_DEFAULT = "too little free for the {wanted} it needed"
 
 
 def slot_label(slot) -> str:
@@ -274,6 +274,39 @@ def slot_label(slot) -> str:
     kind, direction = slot
     side = "bullish" if direction > 0 else "bearish"
     return f"{side} {_SLOT_NAMES.get(kind, kind)}"
+
+
+def _sentence(text) -> str:
+    """A reason as a sentence: capital first letter, one full stop. Empty stays empty."""
+    t = str(text or "").strip()
+    if not t:
+        return ""
+    t = t[0].upper() + t[1:]
+    return t if t.endswith((".", "!", "?")) else t + "."
+
+
+def slot_words(slot) -> str:
+    """`SHORT`, `SHORT re-entry`, `LONG scale-in` — a slot as a HEALTH message says it (2026-09-30).
+    `slot_label` stays for the log, which is read by someone who knows the slots."""
+    kind, direction = slot
+    side = "LONG" if direction > 0 else "SHORT"
+    return side + {"secondary": " re-entry", "add": " scale-in"}.get(kind, "")
+
+
+def price_text(value, digits: int = 2) -> str:
+    """`4,316.98` — a price as a person reads it: thousands separated, the symbol's own digits."""
+    try:
+        return f"{float(value):,.{int(digits)}f}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def lots_text(value) -> str:
+    """`0.14` — a lot size without float noise (`0.30000000000000004`)."""
+    try:
+        return f"{round(float(value), 4):g}"
+    except (TypeError, ValueError):
+        return str(value)
 
 
 class UnsupportedStrategyConfig(RuntimeError):
@@ -1060,18 +1093,16 @@ class OrderBridge:
         magic = self._mt5.magic
         if len(positions) > 1:
             self._halt(
-                f"MT5 holds {len(positions)} positions under magic {magic} at startup; "
-                f"this strategy takes one at a time, so no record can describe them. "
-                f"Close them by hand before starting the bot."
+                f"At startup the broker holds {len(positions)} trades belonging to this bot, "
+                f"but it only ever takes one at a time. Close them by hand before starting it."
             )
             return False
 
         p = positions[0]
         if self._instance_dir is None:
             self._halt(
-                f"MT5 already holds a position under magic {magic} at startup and this "
-                f"bridge was built with no instance directory, so it cannot read the "
-                f"position record. Close it by hand before starting the bot."
+                "At startup the broker holds a trade belonging to this bot, and the bot has "
+                "no folder to read its trade record from. Close it by hand before starting it."
             )
             return False
 
@@ -1090,17 +1121,16 @@ class OrderBridge:
         symbol = getattr(self._mt5, "symbol", "") or ""
         if record.magic != magic or (symbol and record.symbol != symbol):
             self._halt(
-                f"The position record in {position_state.path_for(self._instance_dir)} was "
-                f"written for {record.symbol} magic {record.magic}, and this bot is "
-                f"{symbol or '?'} magic {magic}. It describes a different bot's trade."
+                f"The bot's saved trade record belongs to a different bot ({record.symbol}, "
+                f"ID {record.magic}; this bot is {symbol or '?'}, ID {magic}). File: "
+                f"{position_state.path_for(self._instance_dir)}."
             )
             return False
 
         if int(p.ticket) != record.ticket:
             self._halt(
-                f"MT5 holds position T{p.ticket} under magic {magic}, but the record describes "
-                f"T{record.ticket}. Whatever is open is not the trade this bot wrote down, so it "
-                f"will not be managed. The position keeps its broker-side stop."
+                f"The broker holds trade #{p.ticket} for this bot, but the bot's record is "
+                f"for trade #{record.ticket}. It will not manage a trade it didn't record."
             )
             return False
 
@@ -1116,12 +1146,10 @@ class OrderBridge:
             diffs = []
         if diffs:
             self._halt(
-                f"The recorded position T{record.ticket} and the one MT5 holds do not match: "
+                f"The bot's record of trade #{record.ticket} doesn't match the broker's: "
                 + "; ".join(diffs)
-                + ". Something changed it outside the bot — a hand edit in the terminal is the "
-                "usual cause. It will NOT be adopted: every later stop move would be computed "
-                "off a level the strategy never chose. The position keeps its broker-side "
-                "stop; fix it by hand, or close it, then restart."
+                + ". Something changed it outside the bot, usually a hand edit in MetaTrader. "
+                "Fix it or close it by hand, then restart."
             )
             return False
 
@@ -1213,12 +1241,10 @@ class OrderBridge:
         diffs = self._replay_disagreements(p)
         if diffs:
             self._halt(
-                f"MT5 already holds position T{p.ticket} under magic {self._mt5.magic} at "
-                f"startup, and there is no usable record of it in "
-                f"{position_state.path_for(self._instance_dir)}. The warm-up replay does not hold "
-                f"the same trade: " + "; ".join(diffs) + ". The bot will NOT take it over. The "
-                "position keeps its broker-side stop. Close it by hand, or clear it, before "
-                "restarting."
+                f"At startup the broker holds trade #{p.ticket} for this bot, with no saved "
+                f"record, and the bot's replay of recent history doesn't show the same trade: "
+                + "; ".join(diffs)
+                + ". It will not take it over. Close it by hand before restarting."
             )
             return False
         self._pos_ticket = int(p.ticket)
@@ -1268,14 +1294,9 @@ class OrderBridge:
                     OK,
                     "TRADE ADOPTED",
                     self._message_name(),
-                    joined(
-                        [
-                            f"{self._side(self._pos_dir)} {self._pos_lots} lots @ {self._pos_entry}",
-                            f"stop {self._pos_stop}",
-                        ]
-                    ),
-                    "No restart record existed; the warm-up replay holds the same trade, so the "
-                    "bot manages it from the next bar.",
+                    self._position_line(),
+                    "The bot restarted without a saved record, found the same trade at the broker "
+                    "and picked it back up. Nothing to do.",
                 ),
                 notify.HEALTH,
             )
@@ -1334,11 +1355,9 @@ class OrderBridge:
             # emulator's own state shape moved under a record written by an older build. Halting
             # is the same answer as an unreadable record, for the same reason.
             self._halt(
-                f"The recorded position T{self._pos_ticket} passed every broker check and "
-                f"the strategy refused to restore it: {e}. This usually means the record "
-                f"was written by a different version of the strategy. The position keeps "
-                f"its broker-side stop; close it by hand, or clear the record, then "
-                f"restart."
+                f"The bot couldn't pick trade #{self._pos_ticket} back up: {e}. Usually the "
+                f"record was written by a different version of the bot. Close the trade by "
+                f"hand, or clear the record, then restart."
             )
             return False
         self._restored = True
@@ -1403,14 +1422,8 @@ class OrderBridge:
                     OK,
                     "TRADE RESUMED",
                     self._message_name(),
-                    joined(
-                        [
-                            f"{self._side(self._pos_dir)} {self._pos_lots} lots @ {self._pos_entry}",
-                            f"stop {self._pos_stop}",
-                        ]
-                    ),
-                    "The bot restarted and picked its open trade back up. It manages it from the "
-                    "next bar. Nothing to do.",
+                    self._position_line(),
+                    "The bot restarted and picked its open trade back up. Nothing to do.",
                 ),
                 notify.HEALTH,
             )
@@ -1617,9 +1630,8 @@ class OrderBridge:
             self._manual_flatten_bars += 1
             if self._manual_flatten_bars > _MANUAL_FLATTEN_BARS:
                 self._halt(
-                    f"You closed T{self._manual_ticket} by hand and the strategy still holds it "
-                    f"after {_MANUAL_FLATTEN_BARS} bars. Every later decision would be computed "
-                    f"against a trade that does not exist."
+                    f"You closed trade #{self._manual_ticket} by hand, and after "
+                    f"{_MANUAL_FLATTEN_BARS} bars the bot still counts it as open."
                 )
             return
 
@@ -1687,10 +1699,8 @@ class OrderBridge:
             # re-entry to ask for a fill clock), and it is a halt rather than a silent return
             # because a bot running two clocks with one of them inert is the worst of both.
             self._halt(
-                "This strategy enters at market and is also running a second bar stream. The "
-                "bridge mirrors a market entry on the primary clock only, so the fill clock "
-                "would halt on a position it has no path to open. Turn the second stream off, "
-                "or build the mirror on this clock."
+                "This strategy enters at market and also runs a second, faster feed, and the "
+                "bot can only place market orders from the main chart. Turn the second feed off."
             )
             return
 
@@ -1953,6 +1963,7 @@ class OrderBridge:
         elif manual:
             self._notify(
                 alerts.format_manual_close(
+                    strategy=self._message_name(notify.TRADE),
                     show_size=alerts.SHOW_SIZE,
                     symbol=self._mt5.symbol,
                     exit_price=price,
@@ -1987,10 +1998,11 @@ class OrderBridge:
             # magic is still open. `_observe_open` used to adopt that as the trade on the same
             # bar, silently. It is not the trade this bot sized or placed.
             self._halt(
-                f"T{gone} closed and {len(positions)} other position(s) under this bot's magic "
-                f"are still open ({', '.join('T' + str(int(q.ticket)) for q in positions)}). They "
-                f"are not the trade this bot was managing, so it will not take them over. They "
-                f"keep their broker-side stops."
+                f"Trade #{gone} closed, but {len(positions)} other "
+                f"{'trade' if len(positions) == 1 else 'trades'} for this bot "
+                f"{'is' if len(positions) == 1 else 'are'} still open "
+                f"({', '.join('#' + str(int(q.ticket)) for q in positions)}). The bot will not "
+                f"take over trades it wasn't managing."
             )
 
     # ── a trade the OWNER closed by hand (2026-09-17) ────────────────────────
@@ -2185,10 +2197,9 @@ class OrderBridge:
             # a bar that closes a trade and fills the emulator's next limit lands here identically.
             if any(getattr(f, "kind", "") == "entry" for f in fills):
                 self._halt(
-                    "The strategy closed a trade and opened another on the same bar. The broker "
-                    "still holds the OLD position and the bridge has no path that reverses in one "
-                    "bar, so it would ratchet that position's stop to the new trade's. Close the "
-                    "open position by hand, then restart."
+                    "The strategy closed a trade and opened another on the same bar, which the "
+                    "bot can't do in one step. The broker still holds the old trade. Close it by "
+                    "hand, then restart."
                 )
             return positions
 
@@ -2231,8 +2242,8 @@ class OrderBridge:
                     CRITICAL,
                     "CLOSE FAILED",
                     self._message_name(),
-                    "It was asked to close the open trade and the broker refused.",
-                    "The position is STILL OPEN and the bot will halt. Close it by hand.",
+                    "The bot tried to close its open trade and the broker refused.",
+                    "The trade is STILL OPEN and the bot will stop trading. Close it by hand.",
                 ),
                 notify.HEALTH,
             )
@@ -2309,35 +2320,32 @@ class OrderBridge:
         if edge is None or edge <= 0:
             return SizingRefusal(
                 f"{kind}_price_unreadable",
-                f"the strategy {did} and reports its fill price as {pend.edge!r}; "
-                f"there is no price to size the order against.",
+                f"the strategy {did} but gave no usable price ({pend.edge!r}), so there is "
+                f"nothing to size the order against.",
             )
         if qty is None or qty <= 0:
             return SizingRefusal(
                 f"{kind}_qty_unreadable",
-                f"the strategy {did} and reports its size as {pend.qty!r}.",
+                f"the strategy {did} but gave no usable size ({pend.qty!r}).",
             )
         if sl is None:
             return SizingRefusal(
                 f"{kind}_stop_unreadable",
-                f"the strategy {did} at market and cannot say where its stop is. The "
-                f"order is NOT being sent — a market order carries its stop with it, so sending "
-                f"one now would open an unprotected position.",
+                f"the strategy {did} at market but cannot say where its stop is. Not sent, "
+                f"because the trade would open with no stop.",
             )
         if sl <= 0:
             return SizingRefusal(
                 f"{kind}_stop_absent",
-                f"the strategy's stop for this {kind} is {sl}, which reaches the terminal as NO "
-                f"STOP rather than as a stop at zero. Refusing rather than opening a position "
-                f"nothing would close.",
+                f"the strategy's stop for this {kind} is {sl}, which MetaTrader reads as no stop "
+                f"at all. Not sent, because nothing would close the trade.",
             )
         wrong_side = (direction > 0 and sl >= edge) or (direction < 0 and sl <= edge)
         if wrong_side:
-            side = "long" if direction > 0 else "short"
             return SizingRefusal(
                 f"{kind}_stop_wrong_side",
-                f"a {side} at {edge} with its stop at {sl} would fill and stop out in the same "
-                f"instant. The two books have already parted; refusing is the answer.",
+                f"a {'LONG' if direction > 0 else 'SHORT'} at {edge} with its stop at {sl} "
+                f"would fill and stop out in the same instant, so it was not sent.",
             )
         return None
 
@@ -2375,22 +2383,20 @@ class OrderBridge:
         except (TypeError, ValueError):
             return SizingRefusal(
                 "add_bound_unreadable",
-                f"the scale-in lot cannot be bounded: base size {base!r}, cap {cap!r}. Its size "
-                f"is only ever a multiple of the base position, so without both there is nothing "
-                f"to check it against.",
+                f"the scale-in size cannot be checked: base size {base!r}, limit {cap!r}. A "
+                f"scale-in is only ever a multiple of the first position, so both are needed.",
             )
         if not (base > 0 and cap > 0):
             return SizingRefusal(
                 "add_bound_unreadable",
-                f"the scale-in lot cannot be bounded: base size {base}, cap {cap}.",
+                f"the scale-in size cannot be checked: base size {base}, limit {cap}.",
             )
         ceiling = base * cap
         if qty > ceiling * (1 + 1e-9):
             return SizingRefusal(
                 "add_over_cap",
-                f"the scale-in lot is {qty:,.4f} units against a ceiling of {ceiling:,.4f} "
-                f"({cap}x the {base:,.4f}-unit base position). A lot this size did not come from "
-                f"the affordability rule, so it is refused rather than sent.",
+                f"the scale-in is {qty:,.4f} units, over its limit of {ceiling:,.4f} ({cap}x the "
+                f"{base:,.4f}-unit first position), so it was not sent.",
             )
         return None
 
@@ -2789,10 +2795,11 @@ class OrderBridge:
                     WARNING,
                     "ORPHAN ORDERS",
                     self._message_name(),
-                    f"{len(orphans)} resting order(s) were at the broker under this bot's magic "
-                    f"with no record of being placed. They have been cancelled.",
-                    "Nothing was opened. The usual cause is a broker request whose reply never "
-                    "came back. Worth reading the log for why.",
+                    f"{plural(len(orphans), 'order')} "
+                    f"{'was' if len(orphans) == 1 else 'were'} at the broker that this bot never "
+                    f"placed. {'It was' if len(orphans) == 1 else 'They were'} cancelled. "
+                    f"Nothing was opened.",
+                    "Worth reading the log for why.",
                 ),
                 notify.HEALTH,
             )
@@ -2828,6 +2835,11 @@ class OrderBridge:
                 f"is no longer at the broker and never filled. The broker removed it — the "
                 f"usual cause is that the account could not afford to activate it."
             )
+            said = (
+                f"The {slot_words(slot)} order ({lots_text(held.lots)} lots at "
+                f"{price_text(held.price, self._digits())}) disappeared from the broker without "
+                f"filling. The usual cause is not enough free margin."
+            )
             self._log.error(why)
             self._ledger.event(
                 "order_vanished",
@@ -2844,8 +2856,8 @@ class OrderBridge:
                     WARNING,
                     "ORDER GONE",
                     self._message_name(),
-                    why,
-                    "The strategy still expects it. Check the account's free margin.",
+                    said,
+                    "The bot still expects it. Check the account's free margin.",
                 ),
                 notify.HEALTH,
             )
@@ -2873,25 +2885,25 @@ class OrderBridge:
         permissive answer here — that is how a duplicate-order incident gets read as a scale-in.
         """
         if self._add_close_failed:
-            return self._add_close_failed
+            return _sentence(self._add_close_failed)
         if self._ex._pos_dir == 0:
-            return "The strategy holds no position at all, so none of these is its own."
+            return "The bot has no trade open, so none of these are its own."
         add_units = self._open_add_units()
         if add_units is None:
             return (
-                "The strategy's scale-in ledger could not be read, so whether these are one "
-                "scaled trade or duplicate orders cannot be established. Refusing to guess."
+                "The bot's scale-in record couldn't be read, so it can't tell one scaled trade "
+                "from duplicate orders."
             )
         if add_units <= 0:
             return (
-                "The strategy is NOT scaled in — it takes one position at a time, so these are "
-                "orders it did not intend. Check for duplicate placements."
+                "The bot has no scale-ins, so these are orders it didn't intend. Check for "
+                "duplicate orders."
             )
         wrong = [p for p in positions if (1 if p.type == 0 else -1) != self._ex._pos_dir]
         if wrong:
             return (
-                f"{len(wrong)} of them are on the opposite side to the strategy's own "
-                f"position. A scale-in only ever adds to the side already held."
+                f"{len(wrong)} of them are on the opposite side to the bot's own trade, and a "
+                f"scale-in only ever adds to the same side."
             )
         return ""
 
@@ -2903,8 +2915,8 @@ class OrderBridge:
         if self._manual_flatten_waiting():
             if broker:
                 self._halt(
-                    "A position appeared at the broker while the strategy was still closing its "
-                    "record of a trade you closed by hand. It will not be managed."
+                    "A trade appeared at the broker while the bot was still recording the one "
+                    "you closed by hand. It will not manage the new one."
                 )
                 return False
             return True
@@ -2919,9 +2931,7 @@ class OrderBridge:
             # two failures must never share one message, because they call for different work.
             why = self._why_not_scaled(positions)
             if why:
-                self._halt(
-                    f"MT5 holds {len(positions)} positions under magic {self._mt5.magic}. {why}"
-                )
+                self._halt(f"The broker holds {len(positions)} trades for this bot. {why}")
                 return False
         if emu and not broker:
             # Name the refusal if there was one. The generic sentence below is true but useless
@@ -2938,11 +2948,10 @@ class OrderBridge:
                 "",
             )
             self._halt(
-                "The strategy believes it is in a position but MT5 has none. Its resting "
-                "limit filled in the emulator and not at the broker (or the position was "
-                "closed outside the bot). Every later decision would be computed against "
-                "a trade that does not exist."
-                + (f"\nThe last order on this side was REFUSED: {because}" if because else "")
+                "The bot thinks it has a trade open, but the broker has none. Its order filled "
+                "in the bot's record and not at the broker, or the trade was closed outside "
+                "the bot."
+                + (f"\nThe last order on this side was refused: {because}" if because else "")
                 + (
                     f"\nNot booked as a hand close because {self._vanished_because}."
                     if self._vanished_because
@@ -2952,8 +2961,8 @@ class OrderBridge:
             return False
         if broker and not emu:
             self._halt(
-                "MT5 holds a position the strategy does not know about. It will keep its "
-                "broker-side stop, but the bot will not manage it."
+                "The broker holds a trade for this bot that the bot doesn't know about. It "
+                "will not manage it."
             )
             return False
         return True
@@ -3207,19 +3216,19 @@ class OrderBridge:
         if self._budget_alerted.get(direction) == signature:
             return
         self._budget_alerted[direction] = signature
-        side = "bullish" if direction > 0 else "bearish"
+        side = "LONG" if direction > 0 else "SHORT"
         if blocked:
+            why = _BUDGET_WHY.get(reason, _BUDGET_WHY_DEFAULT).format(
+                free=f"${granted:,.0f}", wanted=f"${wanted:,.0f}"
+            )
             self._notify(
                 alert(
                     WARNING,
                     "SETUP REFUSED — NO ROOM",
                     self._message_name(),
-                    f"A {side} setup was ready and no order was placed. It wanted "
-                    f"${wanted:,.2f} of risk and the account had "
-                    f"{_BUDGET_WHY.get(reason, 'too little risk budget left')}.",
-                    "No position was opened and nothing is wrong with this bot — the budget "
-                    "comes back as another bot's stop moves up or its trade closes. This will "
-                    "not repeat while the same setup keeps being refused.",
+                    f"A {side} setup was ready, but the account's risk limit had {why} (other "
+                    f"bots are using it).",
+                    "No order placed. Nothing is wrong with this bot.",
                 ),
                 notify.HEALTH,
             )
@@ -3233,29 +3242,21 @@ class OrderBridge:
         if market:
             title = "TRADE SHRUNK — SHARED ACCOUNT"
             what = "trade opened"
-            after = (
-                "It is open at the smaller size, so a win or a loss will be smaller in dollars "
-                "than usual."
-            )
+            after = "The trade is open at the smaller size."
         else:
             title = "ORDER SHRUNK — SHARED ACCOUNT"
             what = "order went in"
-            after = (
-                "The order is waiting at the smaller size and nothing has filled yet. If room "
-                "frees up first, the bot puts it back to full size and says so."
-            )
+            after = "Not filled yet. If room frees up first, it goes back to full size."
             self._shrink_told.add(direction)
         self._notify(
             alert(
                 WARNING,
                 title,
                 self._message_name(),
-                f"The account's shared risk limit was nearly used up by other bots, so a "
-                f"{side} {what} smaller than planned. It wanted to risk "
-                f"${wanted:,.2f}{self._risk_share_note(wanted)}, only ${granted:,.2f} was "
-                f"free, so it took {kept:,.0f}% of its size.",
+                f"Other bots were using most of the account's risk limit, so this {side} {what} "
+                f"at {kept:,.0f}% size (${granted:,.0f} of the ${wanted:,.0f} risk it "
+                f"wanted{self._risk_share_note(wanted)}).",
                 after,
-                "No repeat of this message while the same setup stays trimmed.",
             ),
             notify.HEALTH,
         )
@@ -3277,12 +3278,9 @@ class OrderBridge:
                 return ""
             pct = wanted / basis * 100.0
             if usual is None or abs(pct - float(usual)) < 0.05:
-                return f" ({pct:.1f}% of the balance)"
+                return f", {pct:.1f}% of the balance"
             way = "above" if pct > float(usual) else "below"
-            return (
-                f" ({pct:.1f}% of the balance — {way} its usual {float(usual):g}% because its "
-                f"strategy sizes this kind of setup differently)"
-            )
+            return f", {pct:.1f}% of the balance, {way} its usual {float(usual):g}%"
         except Exception:
             return ""
 
@@ -3295,15 +3293,15 @@ class OrderBridge:
         if direction not in self._shrink_told or direction in self._budget_seen:
             return
         self._shrink_told.discard(direction)
-        side = "bullish" if direction > 0 else "bearish"
+        side = "LONG" if direction > 0 else "SHORT"
         self._ledger.event("budget_restored", dir=direction, was_lots=was_lots, lots=now_lots)
         self._notify(
             alert(
                 OK,
                 "ORDER BACK TO FULL SIZE",
                 self._message_name(),
-                f"Room freed up on the account, so the {side} order that was shrunk is back to "
-                f"its full size ({was_lots:g} → {now_lots:g} lots). It has not filled yet.",
+                f"Room freed up, so the {side} order is back to full size "
+                f"({lots_text(was_lots)} → {lots_text(now_lots)} lots). Not filled yet.",
             ),
             notify.HEALTH,
         )
@@ -3331,8 +3329,8 @@ class OrderBridge:
                 None,
                 "account_risk_unreadable",
                 (
-                    "the account's open positions and orders could not be read, so the account-level "
-                    "risk cap cannot be checked. Refusing rather than assuming the account is empty."
+                    "the account's open trades and orders could not be read, so its risk limit "
+                    "cannot be checked"
                 ),
             )
         mine = {r.ticket for r in self._rest.values() if r is not None}
@@ -3371,7 +3369,7 @@ class OrderBridge:
             return 0.0, "the account balance could not be read"
         spec = self._mt5.symbol_spec()
         if spec is None:
-            return 0.0, "the symbol specification could not be read"
+            return 0.0, "the symbol's trading details could not be read"
         others, _code, why = self._others_risk(spec)
         if others is None:
             return 0.0, why
@@ -3380,8 +3378,8 @@ class OrderBridge:
         room = cap - others.total_ccy
         if room <= 0.0:
             return 0.0, (
-                f"the account already has ${others.total_ccy:,.2f} at risk against a "
-                f"${cap:,.2f} cap ({self._risk_cap_pct}% of ${balance:,.2f})"
+                f"the account already has ${others.total_ccy:,.2f} at risk, against a limit of "
+                f"${cap:,.2f} ({self._risk_cap_pct:g}% of ${balance:,.2f})"
             )
         return room, ""
 
@@ -3404,9 +3402,8 @@ class OrderBridge:
                     WARNING,
                     "NO ACCOUNT RISK LEFT",
                     self._message_name(),
-                    f"This bot cannot open a trade: {why}.",
-                    "Setups will be refused until room comes back — which happens as another "
-                    "bot's stop moves up or its trade closes. Nothing is wrong with this bot.",
+                    f"This bot can't open a trade: {why}.",
+                    "Setups are skipped until room frees up. Nothing is wrong with this bot.",
                 ),
                 notify.HEALTH,
             )
@@ -3417,7 +3414,7 @@ class OrderBridge:
                     OK,
                     "ACCOUNT RISK AVAILABLE",
                     self._message_name(),
-                    f"${room:,.2f} of account risk budget is free again.",
+                    f"${room:,.0f} of the account's risk limit is free again.",
                     "This bot can take setups again. Nothing to do.",
                 ),
                 notify.HEALTH,
@@ -3487,8 +3484,8 @@ class OrderBridge:
 
             return SizingRefusal(
                 "symbol_unreadable",
-                f"the terminal returned no symbol info for {self._mt5.symbol}, so nothing is "
-                f"known about lot size, tick value or the volume band.",
+                f"MetaTrader returned no details for {self._mt5.symbol}, so the lot size and "
+                f"price value are unknown.",
             )
 
         self._reconcile_lot_ceiling(spec)
@@ -3685,9 +3682,9 @@ class OrderBridge:
                 WARNING,
                 "ORDER REFUSED",
                 self._message_name(),
-                f"A {slot_label(slot)} setup was ready and no order was placed.\n{plan.detail}",
-                "No position was opened. The strategy will keep re-offering it while the setup "
-                "lives, and this will not alert again for the same reason.",
+                f"A {slot_words(slot)} setup was ready but no order was placed.",
+                _sentence(plan.detail),
+                "The bot offers it again while the setup is valid.",
             ),
             notify.HEALTH,
         )
@@ -3870,23 +3867,28 @@ class OrderBridge:
         what = f"{slot_label(slot)} {'market order' if at_market else 'limit'} {lots}L" + (
             "" if at_market else f" @ {pend.edge}"
         )
-        reason = said.get("detail") or f"retcode {retcode}"
+        d = self._digits()
+        shown = (
+            f"a {lots_text(lots)}-lot {slot_words(slot)} "
+            + ("market order" if at_market else f"order at {price_text(pend.edge, d)}")
+            + f" (stop {price_text(pend.sl, d)})"
+        )
+        reason = f"Reason: {plain_reason(retcode, said.get('detail'))}"
+        tries = len(self.RETRY_BACKOFF_S)
         prev = self._retry.get(slot)
         attempt = prev["attempt"] + 1 if prev and prev["pend"] is pend else 1
         if at_market:
             key = f"market:{retcode}"
             nxt = (
-                "Not re-sent: the strategy already counts this trade as open at the bar's "
-                "price, and a late order would be a different trade. The bot will halt at the "
-                "next check because the broker holds no position — look at the account."
+                "Not retried: the bot already counts this trade as open, so it will stop "
+                "trading at the next check. Look at the account."
             )
         elif not transient:
             self._retry.pop(slot, None)
             key = f"permanent:{retcode}"
             nxt = (
-                "Not re-sent now: this is not a temporary fault, so the same order would be "
-                "refused again. The strategy re-offers it at the next bar close while the setup "
-                "lives."
+                "Not retried, because the same order would be refused again. The bot offers it "
+                "again at the next bar if the setup is still valid."
             )
         elif attempt <= len(self.RETRY_BACKOFF_S):
             wait = self.RETRY_BACKOFF_S[attempt - 1]
@@ -3902,16 +3904,15 @@ class OrderBridge:
             )
             key = f"transient:{retcode}"
             nxt = (
-                f"Temporary fault, so it will be re-sent in {wait:.0f}s and retried up to "
-                f"{len(self.RETRY_BACKOFF_S)} times while the setup still wants it. You will "
-                f"hear once more: when it lands, or if it gives up."
+                f"Retrying in {wait:.0f} seconds, up to {tries} times. You'll get one more "
+                f"message either way."
             )
         else:
             self._retry.pop(slot, None)
             key = f"gave_up:{retcode}"
             nxt = (
-                f"Gave up after {len(self.RETRY_BACKOFF_S)} re-sends. No order is resting. The "
-                f"strategy re-offers it at the next bar close while the setup lives."
+                f"Gave up after {tries} tries. No order is waiting. The bot offers it again at "
+                f"the next bar if the setup is still valid."
             )
         if self._reject_alerted.get(slot) == key:
             return
@@ -3921,7 +3922,8 @@ class OrderBridge:
                 WARNING,
                 "ORDER REJECTED",
                 self._message_name(),
-                f"The broker rejected the {what} (SL {pend.sl}).\n{reason}",
+                f"The broker refused {shown}.",
+                reason,
                 nxt,
             ),
             notify.HEALTH,
@@ -3940,9 +3942,9 @@ class OrderBridge:
                 OK,
                 "ORDER PLACED AFTER REJECTION",
                 self._message_name(),
-                f"The {slot_label(slot)} order is now at the broker: T{ticket} {lots}L @ "
-                f"{pend.edge}"
-                + (f" (after {tries} re-send{'s' if tries != 1 else ''})." if tries else "."),
+                f"The {slot_words(slot)} order is now at the broker: {lots_text(lots)} lots at "
+                f"{price_text(pend.edge, self._digits())}"
+                + (f" (after {plural(tries, 'retry', 'retries')})." if tries else "."),
             ),
             notify.HEALTH,
         )
@@ -4018,8 +4020,7 @@ class OrderBridge:
                 "PARTIAL NOT BANKED",
                 self._message_name(),
                 body,
-                "The position keeps its broker stop and the strategy keeps managing it. This "
-                "will not alert again for the same reason.",
+                "The trade keeps its stop and the bot keeps managing it.",
             ),
             notify.HEALTH,
         )
@@ -4101,8 +4102,8 @@ class OrderBridge:
                 continue
             every = False
             self._add_close_failed = (
-                f"A scale-in lot (T{ticket}) could not be closed, so the broker still holds "
-                f"size the strategy has already exited in its own book."
+                f"a scale-in (trade #{ticket}) could not be closed, so the broker still holds "
+                f"size the bot has already closed in its own record"
             )
             self._ledger.event("add_close_failed", ticket=ticket, reason=why)
             self._notify(
@@ -4110,8 +4111,8 @@ class OrderBridge:
                     CRITICAL,
                     "SCALE-IN CLOSE FAILED",
                     self._message_name(),
-                    f"It was asked to close scale-in lot T{ticket} and the broker refused.",
-                    "That lot is STILL OPEN and the bot will halt. Close it by hand.",
+                    f"The bot tried to close scale-in trade #{ticket} and the broker refused.",
+                    "It is STILL OPEN and the bot will stop trading. Close it by hand.",
                 ),
                 notify.HEALTH,
             )
@@ -4171,9 +4172,9 @@ class OrderBridge:
         if want > 1e-9:
             self._alert_once(
                 "add_partial_bank",
-                f"The broker holds {held:.2f}L of scale-in lots where the strategy expects "
-                f"{want:.2f}L. It banks its adds all at once, so nothing should ever land "
-                f"between. Nothing was closed and the bot will halt rather than choose a lot.",
+                f"The broker holds {held:.2f} lots of scale-ins where the bot expects "
+                f"{want:.2f}. They are always closed all at once, so the bot closed nothing and "
+                f"will stop trading rather than guess which to close.",
             )
             self._ledger.event("add_partial_bank", held=round(held, 2), wanted=round(want, 2))
             return positions
@@ -4225,10 +4226,9 @@ class OrderBridge:
             except (TypeError, ValueError):
                 self._alert_once(
                     "add_shortfall_unmeasurable",
-                    f"The broker holds {held:.2f}L of scale-in lots where the strategy expects "
-                    f"{want:.2f}L, and the volume step could not be read — so whether that gap "
-                    f"is ordinary rounding or a lot that never reached the broker cannot be "
-                    f"established. Nothing was halted and nothing was re-sent.",
+                    f"The broker holds {held:.2f} lots of scale-ins where the bot expects "
+                    f"{want:.2f}, and the lot step could not be read, so the bot can't tell "
+                    f"rounding from a missing order. Nothing was stopped or re-sent.",
                 )
                 self._ledger.event(
                     "add_shortfall_unmeasurable",
@@ -4245,10 +4245,9 @@ class OrderBridge:
             refusal=why or "",
         )
         self._halt(
-            f"The strategy is holding {want:.2f}L of scale-in lots and the broker has "
-            f"{held:.2f}L. It will go on ratcheting, banking and grading a position bigger than "
-            f"the account carries, so every later decision would be computed against a trade "
-            f"that does not exist." + (f"\nThe scale-in order was REFUSED: {why}" if why else "")
+            f"The bot's record has {want:.2f} lots of scale-ins and the broker has "
+            f"{held:.2f}, so the bot would be managing a bigger trade than the account holds."
+            + (f"\nThe scale-in order was refused: {why}" if why else "")
         )
 
     def _intended_open_lots(self):
@@ -4358,8 +4357,8 @@ class OrderBridge:
         if want is None:
             self._alert_once(
                 "partials_unreadable",
-                "Cannot read how much of the position should still be open, so nothing was "
-                "banked. The broker keeps whatever it holds and its stop.",
+                "The bot couldn't tell how much of the trade should still be open, so it took "
+                "no profit.",
             )
             return
         held = next((float(p.volume) for p in positions if p.ticket == self._pos_ticket), None)
@@ -4377,8 +4376,8 @@ class OrderBridge:
             # Rule 1: a retry could bank twice. Stop until a later bar reads a consistent size.
             self._alert_once(
                 "partial_unknown",
-                f"A partial close of {excess:.2f}L on T{self._pos_ticket} returned an unknown "
-                f"result. Nothing further will be banked until the position reads consistently.",
+                f"The broker didn't confirm whether {excess:.2f} lots of trade "
+                f"#{self._pos_ticket} were closed. No more profit is taken until it is clear.",
             )
             self._ledger.event(
                 "partial_unknown",
@@ -4395,9 +4394,9 @@ class OrderBridge:
             # is the safe half — but the two books now differ, so it must be SAID.
             self._alert_once(
                 "partial_refused",
-                f"Could not bank {excess:.2f}L of T{self._pos_ticket}: the broker cannot express "
-                f"that size. The position is still {held:.2f}L where the strategy expects "
-                f"{want:.2f}L, so the live result will differ from the backtest on this trade.",
+                f"Couldn't take profit on {excess:.2f} lots: the broker doesn't allow that size. "
+                f"The trade is still {held:.2f} lots where the bot expects {want:.2f}, so this "
+                f"trade's result will differ from the backtest.",
             )
             self._ledger.event(
                 "partial_refused",
@@ -4473,6 +4472,7 @@ class OrderBridge:
             self._stop_r_said = r if r is not None else (self._stop_r_said or 0.0)
             self._notify(
                 alerts.format_stop_moved(
+                    strategy=self._message_name(notify.TRADE),
                     direction=self._pos_dir,
                     entry=self._pos_entry,
                     was=was,
@@ -4498,6 +4498,7 @@ class OrderBridge:
         try:
             self._notify(
                 alerts.format_partial_banked(
+                    strategy=self._message_name(notify.TRADE),
                     show_size=alerts.SHOW_SIZE,
                     lots_banked=banked,
                     lots_before=before,
@@ -4521,6 +4522,7 @@ class OrderBridge:
         try:
             self._notify(
                 alerts.format_scaled_in(
+                    strategy=self._message_name(notify.TRADE),
                     show_size=alerts.SHOW_SIZE,
                     lots_added=added,
                     lots_now=now,
@@ -4604,10 +4606,10 @@ class OrderBridge:
             return True
         if not _tighter(self._pos_dir, have, self._pos_stop):
             self._halt(
-                f"The stop on T{self._pos_ticket} was moved to {have or 'none'}, further from price "
-                f"than the {self._pos_stop} this bot set. A LOOSER stop is more risk than the "
-                f"trade was sized for, so the bot will not trade on under it. Put it back, or "
-                f"close the trade."
+                f"The stop on trade #{self._pos_ticket} was moved to "
+                f"{price_text(have, self._digits()) if have else 'none'}, further away than the "
+                f"bot's {price_text(self._pos_stop, self._digits())}. That is more risk than the "
+                f"trade was sized for. Put the stop back, or close the trade."
             )
             return False
         self._log.info(
@@ -4620,7 +4622,12 @@ class OrderBridge:
         self._hand_stop = float(have)
         self._pos_stop = float(have)
         self._notify(
-            alert("✋", "STOP MOVED BY YOU", f"{float(have):.{self._digits()}f}"),
+            alerts.format_stop_moved_by_you(
+                stop=float(have),
+                symbol=getattr(self._mt5, "symbol", "") or "",
+                digits=self._digits(),
+                strategy=self._message_name(notify.TRADE),
+            ),
             notify.TRADE,
             reply_to=self._pos_alert_id,
         )
@@ -4663,9 +4670,8 @@ class OrderBridge:
                 and not _tighter(self._pos_dir, have, sent)
             ):
                 self._halt(
-                    f"The stop on scale-in lot T{int(p.ticket)} was moved to {have}, further from "
-                    f"price than the {sent} this bot set. A LOOSER stop is more risk than the "
-                    f"strategy sized for, so the bot will not trade on under it."
+                    f"The stop on scale-in trade #{int(p.ticket)} was moved to {have}, further "
+                    f"away than the {sent} the bot set. That is more risk than it sized for."
                 )
                 return
             if _tighter(self._pos_dir, have, want):
@@ -4688,9 +4694,9 @@ class OrderBridge:
             else:
                 self._alert_once(
                     f"add_stop_stuck_{int(p.ticket)}",
-                    f"Could not move the stop on scale-in lot T{int(p.ticket)} to {want}. That "
-                    f"size is still protected at {getattr(p, 'sl', None)}, further away than the "
-                    f"strategy believes, so a stop-out there will cost more than the backtest.",
+                    f"Couldn't move the stop on scale-in trade #{int(p.ticket)} to {want}. It is "
+                    f"still at {getattr(p, 'sl', None)}, further away, so a stop-out there costs "
+                    f"more than the backtest.",
                 )
                 self._ledger.event(
                     "add_stop_move_failed",
@@ -4753,10 +4759,9 @@ class OrderBridge:
         # the contract — the requirement would stop being a requirement and nothing would fail.
         if not callable(getattr(self._ex, "full_exit_price", None)):
             self._halt(
-                "This strategy cannot say where it closes a whole position, so the bridge can "
-                "neither put a target on the broker nor tell that apart from a trade that has "
-                "none. The usual cause is a git pull moving algos/ ahead of the frozen strategy: "
-                "run promote.py for this bot, then restart it."
+                "The strategy can't say where it takes profit, so the bot can't set a target "
+                "at the broker. Usually its code is out of step with the approved code version: "
+                "deploy it again, then restart."
             )
             return None
         price = self._ex.full_exit_price()
@@ -4779,10 +4784,9 @@ class OrderBridge:
         """
         if not callable(getattr(self._ex, "add_exit_price", None)):
             self._halt(
-                "This strategy holds scale-in lots but cannot say where it banks them, so the "
-                "bridge cannot put their target on the broker. The usual cause is a git pull "
-                "moving algos/ ahead of the frozen strategy: run promote.py for this bot, then "
-                "restart it."
+                "The strategy has scale-ins but can't say where it takes profit on them, so the "
+                "bot can't set their target at the broker. Usually its code is out of step with "
+                "the approved code version: deploy it again, then restart."
             )
             return None
         price = self._ex.add_exit_price()
@@ -4829,10 +4833,9 @@ class OrderBridge:
             return self._wanted_take_profit()
         if not callable(getattr(self._ex, "planned_full_exit_price", None)):
             self._halt(
-                "This strategy cannot say where an order it is resting would close a whole "
-                "position, so the bridge cannot put a target on it and cannot tell that apart "
-                "from an order that has none. The usual cause is a git pull moving algos/ ahead "
-                "of the frozen strategy: run promote.py for this bot, then restart it."
+                "The strategy can't say where a waiting order would take profit, so the bot "
+                "can't set its target at the broker. Usually its code is out of step with the "
+                "approved code version: deploy it again, then restart."
             )
             return None
         price = self._ex.planned_full_exit_price(pend)
@@ -4906,9 +4909,9 @@ class OrderBridge:
             else:
                 self._alert_once(
                     f"target_stuck_{ticket}",
-                    f"Could not put the target {want} on T{ticket}. That trade will still be "
-                    f"closed at market on the bar its target is reached, so its exit price will "
-                    f"differ from the backtest's by however far the bar ran after the touch.",
+                    f"Couldn't set the target {want} on trade #{ticket}. The bot still closes it "
+                    f"when the target is reached, but the exit price may differ a little from "
+                    f"the backtest.",
                 )
                 self._ledger.event(
                     "target_set_failed",
@@ -4972,7 +4975,7 @@ class OrderBridge:
                 "HALTED",
                 self._message_name(),
                 reason,
-                "Anything open keeps its broker stop. Check the account, then restart it.",
+                "Any open trade keeps its stop. Check the account, then restart the bot.",
             ),
             notify.HEALTH,
         )
@@ -5034,6 +5037,17 @@ class OrderBridge:
             self._pos_dir < 0 and price >= self._pos_stop
         )
         return "stop" if hit_stop else "closed"
+
+    def _position_line(self) -> str:
+        """`LONG 0.25 lots at 3,300.00 · stop 3,280.00` — the open trade, as a person reads it."""
+        d = self._digits()
+        return joined(
+            [
+                f"{self._side(self._pos_dir)} {lots_text(self._pos_lots)} lots at "
+                f"{price_text(self._pos_entry, d)}",
+                f"stop {price_text(self._pos_stop, d)}",
+            ]
+        )
 
     @staticmethod
     def _side(direction: int) -> str:

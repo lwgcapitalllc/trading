@@ -66,7 +66,7 @@ def test_a_MISSING_DIRECTORY_halts_rather_than_reading_as_clear(tmp_path):
     assert r.halted is True
     assert r.readable is False
     assert r.kind == "unreadable"
-    assert "cannot read the halt directory" in r.reason
+    assert "folder" in r.reason and "can't be read" in r.reason
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root can read a 000 directory")
@@ -84,7 +84,7 @@ def test_an_UNREADABLE_DIRECTORY_halts(tmp_path):
         r = read_fleet_halt(d)
         assert r.halted is True
         assert r.readable is False
-        assert "cannot read the halt flag" in r.reason
+        assert "stop switch" in r.reason and "can't be read" in r.reason
     finally:
         d.chmod(0o700)  # or tmp_path cleanup fails and takes the whole session's teardown with it
 

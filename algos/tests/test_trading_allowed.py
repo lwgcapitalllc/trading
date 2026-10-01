@@ -43,9 +43,9 @@ def test_every_flag_yes_is_allowed():
     [
         (_acct(trade_allowed=False), _TERM_ON, _FULL, "read-only"),
         (_acct(trade_expert=False), _TERM_ON, _FULL, "automated trading"),
-        (_acct(), SimpleNamespace(trade_allowed=False), _FULL, "AutoTrading"),
-        (_acct(), _TERM_ON, SimpleNamespace(trade_mode=3), "XAUUSD.p on close only"),
-        (_acct(), _TERM_ON, SimpleNamespace(trade_mode=0), "XAUUSD.p on disabled"),
+        (_acct(), SimpleNamespace(trade_allowed=False), _FULL, "Algo Trading button"),
+        (_acct(), _TERM_ON, SimpleNamespace(trade_mode=3), "XAUUSD.p to close only"),
+        (_acct(), _TERM_ON, SimpleNamespace(trade_mode=0), "turned off trading in XAUUSD.p"),
     ],
 )
 def test_each_way_trading_stops_is_named(account, terminal, symbol, words):
@@ -123,7 +123,8 @@ def test_trading_OFF_is_said_ONCE_and_recorded(monkeypatch):
 
     assert len(r.alerts) == 1
     assert "TRADING OFF" in r.alerts[0] and "read-only" in r.alerts[0]
-    assert "halts" in r.alerts[0] and "restart" in r.alerts[0]
+    assert "can place orders" in r.alerts[0] and "when it's back" in r.alerts[0]
+    assert "Account 1" in r.alerts[0].splitlines()[0], "about the ACCOUNT, not one bot"
     assert [k for k, _ in r.ledger.events] == ["trading_disabled"]
     assert (r._trade_allowed, "read-only" in r._trade_block) == (False, True)
 
@@ -201,7 +202,7 @@ def test_a_DIFFERENT_reason_is_said_again(monkeypatch):
     r._check_trading_allowed()
 
     assert len(r.alerts) == 2
-    assert "AutoTrading" in r.alerts[1]
+    assert "Algo Trading button" in r.alerts[1]
 
 
 def test_could_not_ask_leaves_what_was_said_standing(monkeypatch):

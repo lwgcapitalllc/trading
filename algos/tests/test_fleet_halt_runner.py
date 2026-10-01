@@ -75,7 +75,7 @@ def test_pulling_the_switch_HALTS_THE_BRIDGE(monkeypatch):
     assert r._fleet_halted is True
     assert len(r.bridge.halts) == 1
     assert "spread blew out" in r.bridge.halts[0]
-    assert "fleet halt" in r.bridge.halts[0]  # the bridge's own reason names WHO stopped it
+    assert "every bot was told to stop" in r.bridge.halts[0]  # names WHO stopped it
 
 
 def test_the_halt_is_recorded_and_alerted_ONCE(monkeypatch):

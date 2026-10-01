@@ -73,9 +73,10 @@ def test_a_rejection_is_ALERTED_with_the_order_the_reason_and_what_happens_next(
     """MUTATION: delete the `_on_broker_rejection` call in `_place` and this reddens."""
     _, _, _, ledger, notes, _ = _setup(NO_CONNECTION)
     (msg,) = _rejected(notes)
-    assert "limit 0.14L @ 3310.0" in msg
-    assert "absence of network connection" in msg
-    assert "re-sent in 10s" in msg
+    assert "0.14-lot SHORT order at 3,310.00 (stop 3,320.00)" in msg
+    assert "Reason: No connection to the broker." in msg
+    assert "10031" not in msg, "never the bare number"
+    assert "Retrying in 10 seconds" in msg
     row = [kw for k, kw in ledger.rows if k == "event:order_refused"][0]
     assert row["retcode"] == 10031
 
@@ -112,7 +113,7 @@ def test_a_PERMANENT_rejection_is_never_re_sent():
     b.retry_rejected()
     assert b._retry == {}
     (msg,) = _rejected(notes)
-    assert "Not re-sent now" in msg
+    assert "Not retried, because the same order would be refused again" in msg
 
 
 def test_no_retcode_at_all_is_not_a_reason_to_re_send():
@@ -150,7 +151,7 @@ def test_a_MARKET_rejection_is_alerted_and_never_re_sent():
     ops.refuse_placement = NO_CONNECTION
     b.sync(_Dec(), _Sig())
     (msg,) = _rejected(notes)
-    assert "market order" in msg and "Not re-sent" in msg
+    assert "market order" in msg and "Not retried" in msg
     assert b._retry == {}
 
 

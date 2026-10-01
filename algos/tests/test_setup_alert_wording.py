@@ -41,10 +41,11 @@ def snap(**kw) -> SetupSnapshot:
     return SetupSnapshot(**base)
 
 
-def conf(zone_met: bool, zone_detail: str = "not tagged yet"):
+def conf(zone_met: bool, zone_detail: str = "Pullback to entry zone"):
+    # Details NAME the check (2026-09-30): the alert layer ticks or crosses them.
     return (
-        Confluence("Arm", True, "swept Day Low"),
-        Confluence("Shift of structure", True, "confirmed"),
+        Confluence("Arm", True, "Took out the daily low"),
+        Confluence("Shift of structure", True, "Trend turned"),
         Confluence("Retrace zone", zone_met, zone_detail),
     )
 
@@ -67,8 +68,10 @@ def test_a_limit_resting_at_2_of_3_NAMES_what_is_still_missing():
     out = alerts.format_entry_zone(
         snap(state=RESTING, confluences=conf(False), entry=3279.6, stop=3270.9)
     )
-    assert "2 of 3" in out
-    assert "Retrace zone" in out, f"an order resting at 2 of 3 must say what is missing:\n{out}"
+    assert "Not filled yet." in out
+    assert "Still missing: pullback to entry zone." in out, (
+        f"an order resting at 2 of 3 must say what is missing:\n{out}"
+    )
 
 
 def test_a_limit_resting_at_3_of_3_does_NOT_claim_something_is_missing():
@@ -78,7 +81,7 @@ def test_a_limit_resting_at_3_of_3_does_NOT_claim_something_is_missing():
     out = alerts.format_entry_zone(
         snap(state=RESTING, confluences=conf(True, "0.5-0.886 tagged"), entry=3279.6, stop=3270.9)
     )
-    assert "3 of 3" in out
+    assert "Not filled yet." in out
     assert "missing" not in out.lower(), out
 
 
@@ -98,7 +101,7 @@ def test_the_resting_message_names_an_ORDER_that_has_NOT_filled():
     )
     head = out.split("\n")[0]
     assert "LIMIT" in head, f"the header must name the order type:\n{out}"
-    assert "RESTING" in head, f"the header must say the order has not filled:\n{out}"
+    assert "WAITING" in head, f"the header must say the order has not filled:\n{out}"
 
 
 def test_the_resting_price_is_never_called_an_ENTRY():
@@ -109,25 +112,23 @@ def test_the_resting_price_is_never_called_an_ENTRY():
         snap(state=RESTING, confluences=conf(False), entry=3279.6, stop=3270.9)
     )
     assert "Entry" not in out, f"nothing has been entered yet:\n{out}"
-    assert "Limit 3,279.60" in out, out
+    assert "Buy at 3,279.60" in out, out
 
 
 def test_a_short_says_SELL_because_the_terminal_does():
     """The order type is what MT5 shows in the terminal, so the message and the platform must
-    call one thing by one name. A long is a Buy Limit and a short is a Sell Limit — reporting
-    both as `LIMIT` would leave the direction to the body on the one line that gets read alone."""
-    assert (
-        "SELL LIMIT"
-        in alerts.format_entry_zone(
-            snap(state=RESTING, side=-1, confluences=conf(False), entry=3279.6)
-        ).split("\n")[0]
+    call one thing by one name: a LIMIT order, and a Sell for a short. The direction stays ON
+    the header line, which is the one that gets read alone (2026-09-30: `· SHORT`)."""
+    short = alerts.format_entry_zone(
+        snap(state=RESTING, side=-1, confluences=conf(False), entry=3279.6)
     )
-    assert (
-        "BUY LIMIT"
-        in alerts.format_entry_zone(
-            snap(state=RESTING, side=1, confluences=conf(False), entry=3279.6)
-        ).split("\n")[0]
+    assert short.split("\n")[0] == "🎯 LIMIT ORDER WAITING · SHORT"
+    assert "Sell at 3,279.60" in short
+    long_ = alerts.format_entry_zone(
+        snap(state=RESTING, side=1, confluences=conf(False), entry=3279.6)
     )
+    assert long_.split("\n")[0] == "🎯 LIMIT ORDER WAITING · LONG"
+    assert "Buy at 3,279.60" in long_
 
 
 def test_the_targets_are_numbered_so_the_ladder_is_not_inferred():
@@ -143,8 +144,7 @@ def test_the_targets_are_numbered_so_the_ladder_is_not_inferred():
             targets=(3296.1, 3311.75),
         )
     )
-    assert "TP1 3,296.10" in out, out
-    assert "TP2 3,311.75" in out, out
+    assert "Targets 3,296.10 · 3,311.75" in out, out  # in order: the first listed is the first hit
 
 
 def test_every_blocking_rule_is_carried_not_just_the_first():
@@ -235,9 +235,9 @@ def test_a_market_entry_setup_prints_its_stop_and_target_without_a_zone():
     out = alerts.format_watching(
         snap(confluences=conf(False), zone=None, stop=3297.7, targets=(3331.2,))
     )
-    assert out.splitlines()[-1] == "Stop 3,297.70 · TP1 3,331.20", out
+    assert out.splitlines()[-1] == "Stop 3,297.70 · Target 3,331.20", out
     no_stop = alerts.format_watching(snap(confluences=conf(False), zone=None, targets=(3331.2,)))
-    assert no_stop.splitlines()[-1] == "TP1 3,331.20", no_stop
+    assert no_stop.splitlines()[-1] == "Target 3,331.20", no_stop
 
 
 def test_no_message_ever_renders_a_blank_or_whitespace_only_line():

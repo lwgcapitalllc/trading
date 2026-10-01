@@ -426,7 +426,7 @@ def test_a_deploy_that_CANNOT_TELL_whether_the_bot_runs_does_not_launch_it(vps, 
     vps["running"] = None
     r = bots.promote_bot("fft_1", REQ)
     assert r.restarted is False and vps["launched"] == []
-    assert "Could not tell" in sent[-1]
+    assert "Couldn't tell" in sent[-1]
 
 
 def test_NOTHING_NEW_on_a_STOPPED_bot_never_reads_as_older_code_to_restart(vps, sent, monkeypatch):
@@ -530,4 +530,4 @@ def test_an_UNREADABLE_process_is_left_alone_and_the_message_says_it_could_not_t
     r = bots.promote_bot("fft_1", REQ)
     assert r.restarted is False and vps["killed"] == []
     body = "\n".join(sent)
-    assert "could not be read" in body and "already running this code" not in body
+    assert "couldn't be read" in body and "already running this code" not in body

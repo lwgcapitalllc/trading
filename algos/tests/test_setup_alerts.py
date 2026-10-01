@@ -113,7 +113,7 @@ def test_the_resting_message_is_sent_once_even_if_the_order_flickers():
     a = _alerts(rec)
     for state in (RESTING, WATCHING, RESTING, WATCHING, RESTING):
         a._handle(_snap(state=state, entry=95.0, targets=(92.0, 88.0)))
-    assert rec.heads().count("🎯 BUY LIMIT RESTING") == 1
+    assert rec.heads().count("🎯 LIMIT ORDER WAITING · LONG") == 1
 
 
 # ── threading, so an outcome is never read apart from the setup it came from ─────────────────
@@ -139,7 +139,7 @@ def test_the_root_is_sent_first_even_when_a_setup_arrives_already_RESTING():
     rec = Recorder()
     a = _alerts(rec)
     a._handle(_snap(state=RESTING, entry=95.0))
-    assert rec.heads() == ["👀 SETUP FORMING · LONG", "🎯 BUY LIMIT RESTING"]
+    assert rec.heads() == ["👀 SETUP FORMING · LONG", "🎯 LIMIT ORDER WAITING · LONG"]
     assert rec.sent[1]["reply_to"] == 1
 
 
@@ -214,7 +214,7 @@ def test_a_switched_off_category_is_suppressed_while_the_others_still_send():
     a = _alerts(rec, categories=(ENTRY_ZONE_MSG,))
     for _ in range(5):
         a._handle(_snap(state=RESTING, entry=95.0))
-    assert rec.heads() == ["🎯 BUY LIMIT RESTING"]
+    assert rec.heads() == ["🎯 LIMIT ORDER WAITING · LONG"]
 
 
 def test_an_unknown_category_name_is_dropped_rather_than_silently_enabling_everything():
@@ -478,7 +478,7 @@ def test_a_thread_whose_outcome_was_LOST_is_closed_WITHOUT_claiming_an_outcome(t
     assert len(rec2.sent) == 1
     text = rec2.sent[0]["text"]
     assert "NO TRADE" not in text
-    assert "not recorded" in text
+    assert "unknown" in text
     assert a.open_keys() == []
 
 
@@ -574,14 +574,14 @@ def test_a_NON_TERMINAL_snapshot_is_never_read_as_an_outcome_even_if_not_live(tm
     rec2 = Recorder()
     a = _alerts(rec2, state_path=state)
     a.reconcile([_snap()], live_keys=[])
-    assert [m["text"].split(" · ")[0] for m in rec2.sent] == ["🧹 THREAD CLOSED"]
+    assert [m["text"].split(" · ")[0] for m in rec2.sent] == ["🧹 NO LONGER TRACKED"]
 
 
 def test_NO_TRADE_always_says_why():
     """A refusal with no sentence is what the reader got on 2026-09-16. RED without the fallback."""
     text = alerts.format_resolved(_snap(state=DEAD, reason=""))
     assert text.startswith("👋 NO TRADE")
-    assert len(text.splitlines()) == 2
+    assert len(text.splitlines()) == 3  # header, bot · symbol, the reason
 
 
 def test_format_resolved_REFUSES_a_setup_that_has_not_ended():
@@ -616,7 +616,10 @@ def test_a_caller_with_NO_state_path_behaves_exactly_as_before(tmp_path):
     # The in-memory bookkeeping is still there and still correct, so the reconcile closes the
     # thread exactly as it would with a file. Persistence changes what survives a RESTART; it
     # changes nothing inside one process.
-    assert [m["text"].split(" · ")[0] for m in rec.sent] == ["👀 SETUP FORMING", "🧹 THREAD CLOSED"]
+    assert [m["text"].split(" · ")[0] for m in rec.sent] == [
+        "👀 SETUP FORMING",
+        "🧹 NO LONGER TRACKED",
+    ]
 
 
 def test_threads_are_DROPPED_when_the_bot_moves_to_another_TELEGRAM_CHAT(tmp_path):
@@ -693,7 +696,7 @@ def test_a_RE_PLACED_order_is_reported_with_the_BROKERS_new_price_and_lots():
     a._handle(_resting())
     broker.held[-1] = alerts.RestingOrder(4316.98, 4352.44, 0.22)
     a._handle(_resting(entry=4316.98))
-    assert [h.split("\n")[0] for h in _texts(rec)][-1] == "🔁 SELL LIMIT MOVED"
+    assert [h.split("\n")[0] for h in _texts(rec)][-1] == "🔁 LIMIT ORDER MOVED · SHORT"
     moved = _texts(rec)[-1]
     assert "0.25 → 0.22 lots" in moved
     assert "4,324.14 → 4,316.98" in moved
@@ -731,7 +734,7 @@ def test_a_PULLED_order_is_SILENT_and_its_replacement_reads_as_a_move():
     broker.held[-1] = alerts.RestingOrder(4316.98, 4352.44, 0.14)
     a._handle(_resting(entry=4316.98))
     heads = [t.split("\n")[0] for t in _texts(rec)]
-    assert heads[1:] == ["🎯 0.16 lots · SELL LIMIT RESTING", "🔁 SELL LIMIT MOVED"]
+    assert heads[1:] == ["🎯 LIMIT ORDER WAITING · SHORT", "🔁 LIMIT ORDER MOVED · SHORT"]
     assert "0.16 → 0.14 lots" in _texts(rec)[-1]
 
 
@@ -826,7 +829,7 @@ def test_under_the_SAME_scheme_an_unmatched_thread_is_never_adopted(tmp_path):
     a = _alerts(rec, state_path=state, key_scheme="time-v1")
     live = [_snap(key="Strat:S:t2", side=-1)]
     a.reconcile([], live_keys=[live[0].key], live=live)
-    assert [h.split(" · ")[0] for h in rec.heads()] == ["🧹 THREAD CLOSED"]
+    assert [h.split(" · ")[0] for h in rec.heads()] == ["🧹 NO LONGER TRACKED"]
     assert a.open_keys() == []
 
 
@@ -871,7 +874,7 @@ def test_an_order_WITHDRAWN_by_a_rule_says_so_ONCE_with_the_rule():
     for _ in range(3):
         a._handle(_resting(state=WATCHING, entry=None, paused_by=held))
     heads = [t.split("\n")[0] for t in _texts(rec)]
-    assert heads[2:] == ["⏸ SELL LIMIT WITHDRAWN"]
+    assert heads[2:] == ["⏸ LIMIT ORDER PAUSED · SHORT"]
     assert "Final hour" in _texts(rec)[2]
     assert rec.sent[2]["reply_to"] == 1
 
@@ -879,7 +882,7 @@ def test_an_order_WITHDRAWN_by_a_rule_says_so_ONCE_with_the_rule():
     broker.held[-1] = alerts.RestingOrder(4316.98, 4352.44, 0.14)
     a._handle(_resting(entry=4316.98))
     assert len(rec.sent) == 4
-    assert _texts(rec)[3].startswith("🔁 SELL LIMIT MOVED")
+    assert _texts(rec)[3].startswith("🔁 LIMIT ORDER MOVED · SHORT")
 
 
 def test_a_withdrawal_state_survives_a_restart(tmp_path):
@@ -896,7 +899,7 @@ def test_a_withdrawal_state_survives_a_restart(tmp_path):
     rec = Recorder()
     broker.held[-1] = alerts.RestingOrder(4316.98, 4352.44, 0.14)
     _alerts(rec, order_for=broker, state_path=state)._handle(_resting(entry=4316.98))
-    assert len(rec.sent) == 1 and rec.sent[0]["text"].startswith("🔁 SELL LIMIT MOVED")
+    assert len(rec.sent) == 1 and rec.sent[0]["text"].startswith("🔁 LIMIT ORDER MOVED · SHORT")
 
 
 def test_a_withdrawal_before_any_order_was_announced_says_nothing():
@@ -905,3 +908,61 @@ def test_a_withdrawal_before_any_order_was_announced_says_nothing():
     a = _alerts(rec, order_for=Broker())
     a._handle(_snap(side=-1, paused_by=("Final hour",)))
     assert len(rec.sent) == 1
+
+
+# ── refused on the bar it is first announced (2026-10-01, extreme_leg_demo 01:20 UTC) ─────────
+def _refused_on_arrival(**kw):
+    return _snap(
+        zone=None,
+        stop=4138.55,
+        targets=(4162.44,),
+        blocked_by=("Price already passed the target before the entry signal",),
+        **kw,
+    )
+
+
+def test_a_setup_REFUSED_on_its_first_bar_is_ONE_blocked_message_with_no_prices():
+    """The live thread opened with SETUP FORMING quoting a target price had already passed, and
+    BLOCKED landed under it in the same second — two messages contradicting each other.
+
+    RED (watched 2026-09-30) by deleting the fold in `_handle`: the heads come back as
+    `['👀 SETUP FORMING · LONG', '🚫 BLOCKED · LONG']` and the target price is printed.
+    """
+    rec = Recorder()
+    a = _alerts(rec, display="Extreme Leg")
+    a.on_bar(FakeStrategy([[_refused_on_arrival()]]))
+    assert rec.heads() == ["🚫 BLOCKED · LONG"]
+    text = rec.sent[0]["text"]
+    assert text.splitlines()[1] == "Extreme Leg · XAUUSD"
+    assert "Price already passed the target before the entry signal." in text
+    assert "4,162.44" not in text and "4,138.55" not in text  # no order exists to act on
+
+
+def test_the_folded_refusal_is_the_ROOT_so_the_outcome_still_threads_under_it():
+    """The BLOCKED root must carry the thread: the NO TRADE that follows replies to it, and the
+    refusal is not repeated as a reply on the next bar it is still live."""
+    rec = Recorder()
+    a = _alerts(rec, display="Extreme Leg")
+    strat = FakeStrategy(
+        [
+            [_refused_on_arrival()],
+            [_refused_on_arrival()],
+            [_snap(state=DEAD, reason="ran out of time")],
+        ]
+    )
+    for _ in range(3):
+        a.on_bar(strat)
+    assert rec.heads() == ["🚫 BLOCKED · LONG", "👋 NO TRADE · LONG"]
+    assert rec.sent[1]["reply_to"] == 1
+    assert rec.sent[1]["text"].splitlines()[-1] == "Ran out of time."
+
+
+def test_a_refusal_AFTER_the_setup_was_announced_is_still_a_reply():
+    """The fold is for the FIRST bar only. A setup announced while it could still trade keeps
+    its SETUP FORMING root, and a later refusal replies to it."""
+    rec = Recorder()
+    a = _alerts(rec)
+    a.on_bar(FakeStrategy([[_snap()]]))
+    a.on_bar(FakeStrategy([[_refused_on_arrival()]]))
+    assert rec.heads() == ["👀 SETUP FORMING · LONG", "🚫 BLOCKED · LONG"]
+    assert rec.sent[1]["reply_to"] == 1

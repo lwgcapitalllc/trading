@@ -63,28 +63,28 @@ def test_held_messages_are_counted_by_label_and_by_bot_biggest_first():
     text = ds.summarise(rows, None, 1, START, END)
     assert text.splitlines()[0] == "ℹ️ DAILY SUMMARY · Health room"
     assert (
-        "Held 21: WILL NOT START 16 (SOS Fade · LIVE 16); "
+        "Held back 21: WILL NOT START 16 (SOS Fade · LIVE 16); "
         "OFFLINE 5 (SOS Fade · LIVE 3, Extreme Leg · LIVE 2)." in text
     )
 
 
 def test_NOTHING_HELD_is_said_when_it_is_the_truth():
     text = ds.summarise([_r("ONLINE", outcome="sent")], None, 1, START, END)
-    assert "Nothing held." in text
-    assert "Delivered late: 0 · Given up after 24 h: 0." in text
+    assert "Nothing held back." in text
+    assert "Delivered late: 0 · Given up after 24 hours: 0." in text
 
 
 def test_an_UNREADABLE_log_says_so_and_never_reports_zero():
     """MUTATION: remove the `problem` branch -> red."""
     text = ds.summarise([], "could not read 2026-09-26.jsonl: denied", 1, START, END)
-    assert "could not be read" in text and "denied" in text
+    assert "couldn't be read" in text and "denied" in text
     assert "Nothing held" not in text and "Held" not in text and "Delivered late" not in text
 
 
 def test_NO_log_at_all_is_not_reported_as_a_quiet_day():
     """MUTATION: remove the `found` branch -> red."""
     text = ds.summarise([], None, 0, START, END)
-    assert "no send log" in text and "Nothing held" not in text
+    assert "Nothing was logged" in text and "Nothing held" not in text
 
 
 def test_the_longest_trading_off_the_restarts_and_the_late_and_lost_are_named():
@@ -107,11 +107,12 @@ def test_the_longest_trading_off_the_restarts_and_the_late_and_lost_are_named():
         {**_r("ENTRY", outcome="dropped", gave_up=True), "kind": "trade"},
     ]
     text = ds.summarise(rows, None, 1, START, END)
-    assert "Longest trading-off: 25 min (account 700152905)." in text
+    assert "Longest time trading was off: 25 minutes (account 700152905)." in text
     assert "Auto-restarts: 2 (SOS Fade · LIVE 2)." in text
-    assert "The Telegram bot was restarted 1 time(s)." in text
+    assert "The Telegram bot was restarted 1 time." in text
     assert (
-        "Delivered late: 1 · Given up after 24 h: 1 (of them 1 trade or setup message(s))." in text
+        "Delivered late: 1 · Given up after 24 hours: 1 (1 of them a trade or setup message)."
+        in text
     )
 
 
@@ -181,8 +182,8 @@ def test_ONE_summary_per_health_room_counting_what_the_policy_held(box):
 
     by_room = {p["chat_id"]: p["text"] for p in box}
     assert set(by_room) == {"-100live", "-100shared"}, "one per health room, the live room included"
-    assert "Held 2: WILL NOT START 2 (SOS Fade · LIVE 2)." in by_room["-100live"]
-    assert "Held 1: COMMANDS ONLINE 1 (Telegram bot 1)." in by_room["-100shared"]
+    assert "Held back 2: WILL NOT START 2 (SOS Fade · LIVE 2)." in by_room["-100live"]
+    assert "Held back 1: COMMANDS ONLINE 1 (Telegram bot 1)." in by_room["-100shared"]
 
     # It is itself in the log, and never counted by tomorrow's.
     rows, _p, _f = notify_log.read_window(

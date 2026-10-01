@@ -73,7 +73,7 @@ def test_the_entry_states_the_risk_because_the_exit_will_not():
         risk_pct=10,
         when=_WHEN,
     )
-    assert "Risking $200.00 (10%)" in msg
+    assert "Risking $200.00 (10% of the account)" in msg
 
 
 def test_an_unknown_risk_is_omitted_rather_than_printed_as_zero():
@@ -85,7 +85,7 @@ def test_an_unknown_risk_is_omitted_rather_than_printed_as_zero():
     )
     assert "Risking" not in msg
     assert "$0.00" not in msg
-    assert "Size 1.00 lots" in msg
+    assert "1.00 lots" in msg
 
 
 def test_prices_are_grouped_together_and_size_is_on_its_own_line():
@@ -103,8 +103,10 @@ def test_prices_are_grouped_together_and_size_is_on_its_own_line():
         when=_WHEN,
     )
     lines = msg.splitlines()
-    assert lines[1] == "Entry 4,094.87 · Stop 4,077.62"
-    assert lines[2].startswith("Size 0.05 lots")
+    # 2026-09-30 house shape: bot · symbol · size, then the two prices, then the risk.
+    assert lines[1] == "SOS Fade · XAUUSD.s · 0.05 lots"
+    assert lines[2] == "Entry 4,094.87 · Stop 4,077.62"
+    assert lines[3].startswith("Risking $200.00")
 
 
 def test_direction_is_visible_without_opening_the_message():
@@ -125,7 +127,7 @@ def test_lot_size_prints_two_places_like_every_other_message():
     msg = alerts.format_entry(
         strategy="S", symbol="X", direction="LONG", entry=1.0, stop=0.9, lots=0.5, when=_WHEN
     )
-    assert "Size 0.50 lots" in msg
+    assert "0.50 lots" in msg
 
 
 def test_a_zero_width_stop_does_not_crash_the_alert():
@@ -242,15 +244,15 @@ def test_the_exit_reason_separates_a_scratch_from_a_real_stop_out():
         exit_reason="stop",
         when=_WHEN,
     )
-    assert "Exit 4,094.87 (stop moved to entry)" in scratch
-    assert "Exit 1.00 (stop)" in stopped
+    assert "Closed at 4,094.87 (stopped at entry)" in scratch
+    assert "Closed at 1.00 (hit stop)" in stopped
 
 
 def test_an_exit_with_no_reason_does_not_print_empty_brackets():
     msg = alerts.format_exit(
         strategy="S", symbol="X", exit_price=1.0, pnl_usd=1.0, r_multiple=1.0, when=_WHEN
     )
-    assert "Exit 1.00" in msg
+    assert "Closed at 1.00" in msg
     assert "()" not in msg
 
 
@@ -262,7 +264,9 @@ def test_the_outcome_is_the_first_thing_on_the_line():
 
 
 def test_a_threaded_exit_does_not_repeat_the_entrys_header():
-    """It posts as a reply, so the strategy and symbol are one tap away. Aaron's call."""
+    """It posts as a reply: the header is the outcome alone and the risk is not restated.
+    ⚠ Since 2026-09-30 the bot · symbol line IS printed on every reply (house rule 2) — a lock
+    screen shows a reply without the entry it quotes."""
     msg = alerts.format_exit(
         strategy="SOS Fade",
         symbol="XAUUSD.s",
@@ -272,8 +276,8 @@ def test_a_threaded_exit_does_not_repeat_the_entrys_header():
         when=_WHEN,
     )
     assert msg.splitlines()[0] == "✅ WIN"
-    assert "SOS Fade" not in msg
-    assert "XAUUSD.s" not in msg
+    assert msg.splitlines()[1] == "SOS Fade · XAUUSD.s"
+    assert "Risking" not in msg
 
 
 def test_an_unthreaded_exit_names_the_trade_it_closed():
@@ -288,7 +292,7 @@ def test_an_unthreaded_exit_names_the_trade_it_closed():
         threaded=False,
         when=_WHEN,
     )
-    assert msg.splitlines()[0] == "✅ WIN · XAUUSD.s"
+    assert msg.splitlines()[1] == "SOS Fade · XAUUSD.s"
 
 
 # ── the house shape ─────────────────────────────────────────────────────────────
@@ -388,9 +392,9 @@ def test_a_stop_reaching_entry_is_reported_as_BREAKEVEN_in_those_words():
     """The message Aaron asked for by name. It must say breakeven, and it must not claim more
     safety than a stop can give — a gap fills through one."""
     msg = alerts.format_stop_moved(direction=1, entry=3290.0, was=3280.0, now=3290.0)
-    assert msg.startswith("🛡 STOP AT BREAKEVEN")
-    assert "Stop 3,280.00 → 3,290.00 (entry)" in msg
-    assert "gaps through the stop" in msg
+    assert msg.startswith("🛡 STOP MOVED TO ENTRY")
+    assert "Stop 3,280.00 → 3,290.00" in msg  # the label says "to entry"
+    assert "jumps past the stop" in msg
 
 
 def test_a_stop_that_JUMPS_PAST_entry_still_reports_the_breakeven_crossing():
@@ -400,8 +404,8 @@ def test_a_stop_that_JUMPS_PAST_entry_still_reports_the_breakeven_crossing():
     msg = alerts.format_stop_moved(
         direction=1, entry=3290.0, was=3280.0, now=3294.0, opening_stop=3280.0
     )
-    assert msg.startswith("🛡 STOP AT BREAKEVEN")
-    assert "locking +0.40R" in msg
+    assert msg.startswith("🛡 STOP MOVED TO ENTRY")
+    assert "locks in +0.40R" in msg
     assert "(entry)" not in msg  # it is NOT at the entry, and must not say so
 
 
@@ -409,8 +413,8 @@ def test_a_later_move_in_profit_is_a_TRAIL_and_says_what_it_locks():
     msg = alerts.format_stop_moved(
         direction=1, entry=3290.0, was=3290.0, now=3301.5, opening_stop=3280.0
     )
-    assert msg.startswith("🪜 STOP TRAILED")
-    assert "Stop 3,290.00 → 3,301.50 · locking +1.15R" in msg
+    assert msg.startswith("🪜 PROFIT LOCKED IN")
+    assert "Stop 3,290.00 → 3,301.50 · locks in +1.15R" in msg
 
 
 def test_a_stop_still_behind_entry_is_a_TIGHTEN_and_states_the_RISK_not_the_lock():
@@ -419,9 +423,9 @@ def test_a_stop_still_behind_entry_is_a_TIGHTEN_and_states_the_RISK_not_the_lock
     msg = alerts.format_stop_moved(
         direction=-1, entry=3290.0, was=3300.0, now=3296.0, opening_stop=3302.0
     )
-    assert msg.startswith("🔒 STOP TIGHTENED")
-    assert "risk now 0.50R" in msg
-    assert "locking" not in msg
+    assert msg.startswith("🔒 RISK REDUCED")
+    assert "now risking 0.50R" in msg
+    assert "locks in" not in msg
 
 
 def test_a_short_reads_its_prices_the_other_way_round():
@@ -430,14 +434,14 @@ def test_a_short_reads_its_prices_the_other_way_round():
     msg = alerts.format_stop_moved(
         direction=-1, entry=3290.0, was=3300.0, now=3290.0, opening_stop=3300.0
     )
-    assert msg.startswith("🛡 STOP AT BREAKEVEN")
+    assert msg.startswith("🛡 STOP MOVED TO ENTRY")
 
 
 def test_an_unknown_opening_stop_prints_no_R_at_all():
     """Rule 1. A trade restored from a record written before its opening stop was kept has no
     yardstick, and `0.00R` would be a measurement nobody took."""
     msg = alerts.format_stop_moved(direction=1, entry=3290.0, was=3290.0, now=3301.5)
-    assert "R" not in msg.replace("STOP TRAILED", "")
+    assert "R" not in msg.replace("PROFIT LOCKED IN", "")
     assert "Stop 3,290.00 → 3,301.50" in msg
 
 
@@ -447,7 +451,7 @@ def test_an_unthreaded_stop_move_names_the_trade_it_is_about():
     msg = alerts.format_stop_moved(
         direction=1, entry=3290.0, was=3290.0, now=3301.5, symbol="XAUUSD.s", threaded=False
     )
-    assert msg.startswith("🪜 STOP TRAILED · LONG · XAUUSD.s")
+    assert msg.startswith("🪜 PROFIT LOCKED IN · LONG\nXAUUSD.s")
 
 
 def test_a_banked_partial_says_what_is_left_and_where_it_filled():
@@ -455,9 +459,9 @@ def test_a_banked_partial_says_what_is_left_and_where_it_filled():
     bridge banks at market on a closed bar and the lab fills at the rung — a divergence that is
     hunted for hours if the message does not name it."""
     msg = alerts.format_partial_banked(lots_banked=0.17, lots_before=0.42, lots_after=0.25)
-    assert msg.startswith("💰 PART BANKED")
-    assert "Took 0.17 of 0.42 lots off · 0.25 still running" in msg
-    assert "market on the bar's close" in msg
+    assert msg.startswith("💰 PROFIT TAKEN")
+    assert "Closed 0.17 of 0.42 lots · 0.25 still open" in msg
+    assert "market price" in msg and "differ" in msg
 
 
 def test_a_scale_in_restates_the_SIZE_the_entry_message_can_no_longer_be_trusted_for():
@@ -465,9 +469,9 @@ def test_a_scale_in_restates_the_SIZE_the_entry_message_can_no_longer_be_trusted
     carries the new total — and calls its price an estimate, because the bridge sends an add at
     market and never reads the deal back."""
     msg = alerts.format_scaled_in(lots_added=0.2, lots_now=0.62, price=3305.0, stop=3296.0)
-    assert msg.startswith("➕ ADDED TO POSITION")
+    assert msg.startswith("➕ ADDED TO TRADE")
     assert "Added 0.20 lots at about 3,305.00" in msg
-    assert "0.62 lots now open · every lot on the same stop 3,296.00" in msg
+    assert "0.62 lots open now · all on one stop at 3,296.00" in msg
 
 
 def test_no_management_message_carries_markdown_that_telegram_would_reject():

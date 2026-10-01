@@ -136,14 +136,16 @@ def test_the_message_carries_BOTH_numbers_on_every_side():
     text = watch.summarise(v, "sos_fade_demo", "puprime_ecn")
     assert "-80.54" in text and "+32.67" in text  # the broker now
     assert "-79.60" in text and "+30.25" in text  # what backtests charge
-    assert "puprime_ecn" in text and "XAUUSD.p" in text
+    assert "XAUUSD.p" in text
+    assert "puprime_ecn" not in text, "a cost profile's key is a code name, never shown"
 
 
 def test_the_message_says_NOTHING_WAS_CHANGED():
-    """The tool does not re-price, and a message that did not say so would read as though the
-    lab had been updated — after which nobody does it."""
+    """The tool does not re-price, so the message ends on what to do — nothing, unless the gap
+    grows (Aaron's wording, 2026-09-30) — rather than reading as though the lab was updated."""
     v = watch.assess(READING, {"long": -81.18, "short": 31.29}, LAB)
-    assert "Nothing changed here" in watch.summarise(v, "bot", "puprime_ecn")
+    text = watch.summarise(v, "bot", "puprime_ecn")
+    assert text.splitlines()[-1] == "Nothing to do unless the gap grows."
 
 
 def test_the_first_reading_message_does_not_claim_a_move():
@@ -155,7 +157,7 @@ def test_the_first_reading_message_does_not_claim_a_move():
 
 def test_an_unmeasured_tier_is_SAID_rather_than_shown_as_a_number():
     v = watch.assess(READING, None, {"long": watch.UNMEASURED, "short": watch.UNMEASURED})
-    assert "refuses this tier" in watch.summarise(v, "bot", "puprime_cent")
+    assert "no figure for this account type" in watch.summarise(v, "bot", "puprime_cent")
 
 
 # ── the state file ────────────────────────────────────────────────────────────────────

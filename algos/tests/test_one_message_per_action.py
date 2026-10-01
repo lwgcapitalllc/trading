@@ -69,7 +69,7 @@ def test_a_DEPLOY_is_edited_into_one_DEPLOYED_message_with_both_versions(tmp_pat
     assert r._finish_action("Trading live · XAUUSD.p M15 · $10,752.18", "v399 (abcd1234)") is True
     ((chat, mid, text, kw),) = edits
     assert (chat, mid) == ("-100health", 555)
-    assert text.splitlines()[0] == "📦 DEPLOYED · SOS Fade · LIVE"
+    assert text.splitlines()[0] == "✅ DEPLOYED · SOS Fade · LIVE"
     assert "v397 → v399, back online" in text
     assert "$10,752.18" in text
     assert kw.get("bot") == "sos_fade_demo" and "token_key" not in kw, (
@@ -80,8 +80,8 @@ def test_a_DEPLOY_is_edited_into_one_DEPLOYED_message_with_both_versions(tmp_pat
 @pytest.mark.parametrize(
     "action, head, line",
     [
-        ("start", "✅ ONLINE · SOS Fade · LIVE", "Started from the command center."),
-        ("restart", "✅ RESTARTED · SOS Fade · LIVE", "Restarted from the command center"),
+        ("start", "✅ ONLINE · SOS Fade · LIVE", "Started from the Command Center."),
+        ("restart", "✅ RESTARTED · SOS Fade · LIVE", "Restarted from the Command Center"),
     ],
 )
 def test_a_START_and_a_RESTART_become_their_outcome(tmp_path, edits, action, head, line):

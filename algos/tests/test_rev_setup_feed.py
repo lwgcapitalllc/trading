@@ -699,4 +699,5 @@ def test_a_feed_that_cannot_run_says_so_in_the_HEALTH_room_not_the_channel(tmp_p
     )
     assert feed.main(["--config", str(tmp_path / "missing.json")]) == 1
     assert said and said[0][0] == notify.HEALTH
+    assert said[0][1].startswith("⛔ STUDENT FEED DOWN · REV SETUP")
     assert "cannot run" in said[0][1]

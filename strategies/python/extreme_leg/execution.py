@@ -75,16 +75,20 @@ BLK_ATR_NOT_READY = 7
 BLK_TRANSITIONING = 8
 BLK_NEWS = 9
 
+#: 🔴 **Plain English, in the one voice every bot shares (Aaron, 2026-09-30).** These reach the
+#: signals room AND the lab chart. "the swing is already the wrong side of the entry" was the
+#: message that started the rewrite: it meant price had already passed the target, and nobody
+#: reading it could tell. Which cuts have no Pine counterpart is recorded above, not here.
 BLOCK_TEXT = {
-    BLK_FRIDAY: "Friday - refused by the calendar",
-    BLK_NO_SWING: "no 15m swing to aim at",
-    BLK_SWING_WRONG_SIDE: "the swing is already the wrong side of the entry",
-    BLK_EXTREME_WRONG_SIDE: "the extreme is the wrong side of the entry",
-    BLK_STOP_UNDER_FLOOR: "stop tighter than the floor",
-    BLK_TARGET_TOO_NEAR: "the swing is nearer than the minimum",
-    BLK_ATR_NOT_READY: "the average range is not known yet (warm-up)",
-    BLK_TRANSITIONING: "the market is transitioning - refused (not a Pine rule)",
-    BLK_NEWS: "a macro release is inside the blackout window - refused (not a Pine rule)",
+    BLK_FRIDAY: "No trades on Fridays",
+    BLK_NO_SWING: "No target to aim at",
+    BLK_SWING_WRONG_SIDE: "Price already passed the target before the entry signal",
+    BLK_EXTREME_WRONG_SIDE: "The stop would be on the wrong side of the entry",
+    BLK_STOP_UNDER_FLOOR: "The stop is too close to the entry",
+    BLK_TARGET_TOO_NEAR: "The target is too close to be worth the risk",
+    BLK_ATR_NOT_READY: "The bot is still warming up",
+    BLK_TRANSITIONING: "Market has no clear direction right now",
+    BLK_NEWS: "Big news release due",
 }
 
 # Gold rolls at 21:00 UTC (17:00 New York), and Wednesday's roll is charged three times. Both

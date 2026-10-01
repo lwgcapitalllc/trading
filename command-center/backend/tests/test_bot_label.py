@@ -94,9 +94,9 @@ def sent(world, monkeypatch):
 @pytest.mark.parametrize(
     "route,head",
     [
-        (bots.start_bot, "▶️ STARTING · SOS Fade · LIVE"),
-        (bots.stop_bot, "⏹ STOPPED · SOS Fade · LIVE"),
-        (bots.restart_bot, "🔄 RESTARTING · SOS Fade · LIVE"),
+        (bots.start_bot, "ℹ️ STARTING · SOS Fade · LIVE"),
+        (bots.stop_bot, "ℹ️ STOPPED · SOS Fade · LIVE"),
+        (bots.restart_bot, "ℹ️ RESTARTING · SOS Fade · LIVE"),
     ],
 )
 def test_a_one_bot_action_announces_which_KIND_of_account_it_touched(sent, route, head):
@@ -117,4 +117,4 @@ def test_a_one_bot_action_is_ROUTED_to_that_bots_account(sent, route):
 
 def test_the_demo_copy_is_announced_as_demo(sent):
     bots.stop_bot("sos_fade_2")
-    assert sent[-1].splitlines()[0] == "⏹ STOPPED · SOS Fade · demo"
+    assert sent[-1].splitlines()[0] == "ℹ️ STOPPED · SOS Fade · demo"
