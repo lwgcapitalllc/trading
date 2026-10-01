@@ -89,9 +89,22 @@ read net of deposits.
 - ⚠ **Emptying an account and refilling it is fine**; a trade booked while it held nothing refuses.
 - ⚠ **`starting_balance` is still written** — the rename guard reads it and the Command Center falls
   back to it for a bot on an older runner — but nothing on this box reads it as a return.
-- ⚠ **Reaches a bot by `git pull` plus a restart** (`algos/`, no promote).
+- ⚠ **Reaches a bot by PROMOTE plus a restart** — `algos/live/` and `algos/shared/` have shipped in
+  the frozen snapshot since 2026-09-17, so the line that said "`git pull`, no promote" here was stale.
+- 🔴 **A deal the BROKER lost is a recorded correction, never a wider tolerance (2026-10-01).** Live
+  34957946 paid a $0.35 entry commission at 07:25 UTC and MT5 holds no entry deal for that position
+  at all — whole-history read, by position, one-day window (read-only probe, live terminal) — while
+  its order reads FILLED. Every rebuild sat $0.35 high, the return was refused all day, and the Bots
+  page fell back to the first $451.97 transfer: **+2,226.8% for a true +1.99% (+$204.90 on
+  $10,311.48 in)**. The hole is named in `algos/markets/fx/history_corrections.json` (DATA: reaches a
+  running bot by `git pull`, read per check) and added back as a TRADING deal at its own time.
+  ⚠ It steps aside by itself once the position's entry deal exists, so a broker that restores the
+  deal is never counted twice. ⚠ An unreadable or malformed file REFUSES — never "no corrections".
+  ⚠ **Add an entry only with the probe that proved the hole**, quoted in its `why`; an unexplained
+  gap stays refused. A tolerance would have hidden the next missing DEPOSIT the same way.
 
-Tests: `test_account_flows.py` (15), `test_watchdog.py` → *Overall P&L* (10),
+Tests: `test_account_flows.py` (24 — 9 added 2026-10-01 off the live account's real deals, 4
+mutations RUN and killed), `test_watchdog.py` → *Overall P&L* (10),
 `test_mt5_ops_pending.py` (4). **27 mutations RUN, 27 killed**; a no-op control survived, so the
 harness can report a survivor.
 

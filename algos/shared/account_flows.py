@@ -37,6 +37,17 @@ put in**, not something the strategy earned. Every other type that moves the bal
 commission, charges, interest, corrections — is trading P&L. If that split is ever wrong on a real
 account, the rebuild check above refuses rather than reporting it.
 
+🔴 **A deal the BROKER lost is a recorded correction, never a tolerance (2026-10-01).** Live account
+34957946's balance dropped $0.35 at 07:25 UTC — the entry commission of a 0.35-lot SOS Fade fill —
+and MT5 holds NO entry deal for that position: not in the whole-history read, not asked by position,
+while its order reads FILLED. Read-only probe on the live terminal, 2026-10-01. Every later rebuild
+sat $0.35 above the broker and this refused, and the Bots page fell back to dividing by the account's
+first $451.97 — +2,226.8%. Widening the tolerance would have hidden the next missing DEPOSIT the same
+way, so the hole is named instead: `corrections` (`algos/markets/fx/history_corrections.json`) adds
+the missing amount back as a TRADING deal, never a flow, at the time it happened. ⚠ It applies only
+while the position's entry deal is still absent — if the broker restores it, the correction steps
+aside on its own rather than counting the money twice.
+
 ⚠ **Pure: no MetaTrader5, no I/O, no clock.** The runner hands it the deals and the balance read
 off the same terminal in the same poll; anything holding those two can be checked against it.
 """
@@ -51,6 +62,7 @@ from typing import Iterable, Optional
 DEAL_BALANCE = 2
 DEAL_CREDIT = 3
 DEAL_BONUS = 6
+DEAL_ENTRY_IN = 0
 
 #: Deals that move money INTO or OUT OF the account, rather than earning or losing it.
 FLOW_TYPES = frozenset({DEAL_BALANCE, DEAL_BONUS})
@@ -83,17 +95,61 @@ def _money(deal) -> float:
     )
 
 
-def account_return(deals: Optional[Iterable], broker_balance: Optional[float]) -> AccountReturn:
+@dataclass(frozen=True)
+class _Missing:
+    """A correction standing in for a deal the broker lost. Shaped like a trade deal so it rides
+    the same arithmetic — it can never be a flow, because `type` is not BALANCE or BONUS."""
+
+    time_msc: int
+    ticket: int
+    profit: float
+    type: int = -1
+
+
+def _corrections_due(deals: list, corrections) -> Optional[list]:
+    """The corrections still owed, as stand-in deals — or `None` when one cannot be read.
+
+    ⚠ A correction is owed only while its position has NO entry deal. The day the broker restores
+    the deal, the correction steps aside by itself; counting both would be the money twice.
+    """
+    entered = {
+        int(getattr(d, "position_id", 0) or 0)
+        for d in deals
+        if getattr(d, "entry", None) == DEAL_ENTRY_IN
+    }
+    out = []
+    for c in corrections:
+        try:
+            position, money, when = int(c["position"]), float(c["money"]), int(c["time_msc"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        if position not in entered:
+            out.append(_Missing(time_msc=when, ticket=0, profit=money))
+    return out
+
+
+def account_return(
+    deals: Optional[Iterable], broker_balance: Optional[float], corrections=()
+) -> AccountReturn:
     """Net deposits, trading P&L and the time-weighted return, from the account's whole history.
 
     `deals` is every deal on the account (MT5's `TradeDeal`, or anything with the same fields),
     `None` when the history could not be read. `broker_balance` is the balance the terminal
-    reports, read in the same poll — `None` when it could not be.
+    reports, read in the same poll — `None` when it could not be. `corrections` are this account's
+    recorded broker-side holes (see the module docstring) — `None` when the file naming them could
+    not be read, which refuses rather than guessing that there are none.
     """
     if deals is None:
         return _refused("the account's deal history could not be read")
     if broker_balance is None:
         return _refused("the account's balance could not be read")
+    if corrections is None:
+        return _refused("the account's recorded history corrections could not be read")
+    deals = list(deals)
+    missing = _corrections_due(deals, corrections)
+    if missing is None:
+        return _refused("a recorded history correction for this account is malformed")
+    deals.extend(missing)
 
     # Deposits and trades are interleaved in time, and the return between two deposits needs them
     # in order. The ticket breaks a tie inside one millisecond; MT5 numbers deals in sequence.

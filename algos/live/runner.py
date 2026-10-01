@@ -184,6 +184,30 @@ _PULSE_SECONDS = 15 * 60
 _FLOWS_REFRESH_SECONDS = 15 * 60
 
 
+def _history_corrections(account) -> "list | None":
+    """This account's recorded broker-side history holes — `[]` when it has none, **`None` when
+    the file naming them could not be read** (rule 1: refused, never read as "none").
+
+    DATA, so it is read from the repo checkout and never from beside a snapshot (`repo_paths`), and
+    per call, so a correction committed and pulled reaches a running bot without a restart. A
+    missing FILE is an account with nothing recorded; a file that will not parse is not.
+    See `account_flows` for why a hole is recorded rather than tolerated.
+    """
+    import json
+
+    from repo_paths import ALGOS_ROOT
+
+    path = ALGOS_ROOT / "markets" / "fx" / "history_corrections.json"
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return []
+    except (OSError, ValueError):
+        return None
+    rows = raw.get("accounts", {}).get(str(account), []) if isinstance(raw, dict) else None
+    return rows if isinstance(rows, list) else None
+
+
 # MT5's SYMBOL_TRADE_MODE_* — the same map `tools/broker_facts.py` and the lab's agent read.
 _SYMBOL_TRADE_MODES = {0: "disabled", 1: "long only", 2: "short only", 3: "close only", 4: "full"}
 _SYMBOL_TRADE_FULL = 4
@@ -3445,7 +3469,7 @@ class LiveRunner:
                 return cached[2]
             terminal = getattr(self, "mt5", None)
             deals = terminal.account_deals() if terminal is not None else None
-            result = account_return(deals, balance)
+            result = account_return(deals, balance, _history_corrections(self.cfg.account))
             self._flows_cache = (balance, now, result)
             # Mirror the history for the Bots page and its git backup — only once it has rebuilt
             # the broker's balance to the cent, so a partial read never reaches the archive.

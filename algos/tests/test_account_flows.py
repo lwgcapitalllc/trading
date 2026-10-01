@@ -233,3 +233,120 @@ def test_it_REFUSES_rather_than_state_a_number_it_cannot_stand_behind(deals, bal
 
     assert (r.capital_in, r.pnl_usd, r.return_pct) == (None, None, None)
     assert why in r.reason
+
+
+# ── a deal the BROKER lost (2026-10-01) ────────────────────────────────────────
+#
+# 🔴 Live 34957946 paid a $0.35 entry commission at 07:25:29 UTC and MT5 holds no entry deal for
+# that position, so every rebuild sat $0.35 above the broker and the return was refused all day.
+# The deals below are the account's real ones, read off the live terminal (read-only) that day.
+
+_LOST_POS = 368940178
+_LOST = {"position": _LOST_POS, "money": -0.35, "time_msc": 1_790_850_329_266, "why": "probe"}
+
+
+def _live_2026_10_01():
+    flows = [
+        _deposit(1_789_020_756_147, 451.97),
+        _deposit(1_789_197_824_182, 9_860.51),
+        _deposit(1_789_199_393_146, -10_312.48),  # everything out...
+        _deposit(1_789_228_078_813, 10_311.48),  # ...and back in, less $1
+    ]
+    before = [_trade(1_790_000_000_000, -24.42)]  # what trading had made by 07:14 that day
+    today = [
+        SimpleNamespace(
+            **vars(_trade(1_790_853_123_237, 12.25, commission=-0.35)),
+            position_id=_LOST_POS,
+            entry=1,
+        ),
+        SimpleNamespace(
+            **vars(_deal(1_790_853_424_870, _BUY, commission=-0.17)), position_id=368996332, entry=0
+        ),
+        SimpleNamespace(
+            **vars(_trade(1_790_871_302_449, 218.11, commission=-0.17)),
+            position_id=368996332,
+            entry=1,
+        ),
+    ]
+    return flows + before + today
+
+
+def test_the_lost_entry_deal_refuses_without_its_correction():
+    """What the bot logged all day: the rebuild is $0.35 above the broker."""
+    r = account_return(_live_2026_10_01(), 10_516.38)
+    assert r.return_pct is None
+    assert "10,516.73" in r.reason and "10,516.38" in r.reason
+
+
+def test_with_the_recorded_correction_the_true_return_is_stated():
+    """+$204.90 on $10,311.48 put in — never +2,226.8% on the first $451.97.
+    MUTATION: drop `deals.extend(missing)` -> refused, red (watched 2026-10-01)."""
+    r = account_return(_live_2026_10_01(), 10_516.38, corrections=[_LOST])
+    assert r.reason is None, r.reason
+    assert r.capital_in == 10_311.48
+    assert r.pnl_usd == 204.90
+    assert r.return_pct == 1.99
+
+
+def test_the_correction_steps_aside_once_the_broker_restores_the_deal():
+    """Counting both would be the money twice. MUTATION: skip the entered-position check -> red."""
+    restored = SimpleNamespace(
+        **vars(_deal(1_790_850_329_266, _BUY, commission=-0.35)), position_id=_LOST_POS, entry=0
+    )
+    r = account_return([*_live_2026_10_01(), restored], 10_516.38, corrections=[_LOST])
+    assert r.reason is None, r.reason
+    assert r.pnl_usd == 204.90
+
+
+def test_a_correction_is_never_a_deposit():
+    """It stands in for a TRADE deal. MUTATION: give `_Missing` type BALANCE -> capital_in moves."""
+    r = account_return(_live_2026_10_01(), 10_516.38, corrections=[_LOST])
+    assert r.flows == 4
+
+
+def test_an_unreadable_corrections_file_refuses_rather_than_assuming_none():
+    """Rule 1: *could not read the list* is not *the list is empty*."""
+    r = account_return(_live_2026_10_01(), 10_516.38, corrections=None)
+    assert r.return_pct is None and "could not be read" in r.reason
+
+
+def test_a_malformed_correction_refuses():
+    r = account_return(_live_2026_10_01(), 10_516.38, corrections=[{"position": "x"}])
+    assert r.return_pct is None and "malformed" in r.reason
+
+
+# ── the file the runner reads them from ────────────────────────────────────────
+
+
+def _loader(monkeypatch, tmp_path, text):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "live"))
+    import repo_paths
+    import runner as runner_mod
+
+    monkeypatch.setattr(repo_paths, "ALGOS_ROOT", tmp_path)
+    if text is not None:
+        (tmp_path / "markets" / "fx").mkdir(parents=True)
+        (tmp_path / "markets" / "fx" / "history_corrections.json").write_text(text)
+    return runner_mod._history_corrections
+
+
+def test_no_corrections_file_is_an_account_with_nothing_recorded(monkeypatch, tmp_path):
+    assert _loader(monkeypatch, tmp_path, None)(34957946) == []
+
+
+def test_a_corrections_file_that_will_not_parse_is_cannot_ask(monkeypatch, tmp_path):
+    """MUTATION: answer [] on a ValueError -> red."""
+    assert _loader(monkeypatch, tmp_path, "{not json")(34957946) is None
+
+
+def test_the_committed_file_carries_the_live_hole_and_reconciles_it():
+    """The real file, against the real deals: what the live bots will state after a pull."""
+    import json
+
+    raw = json.loads(
+        (Path(__file__).resolve().parents[1] / "markets/fx/history_corrections.json").read_text()
+    )
+    rows = raw["accounts"]["34957946"]
+    r = account_return(_live_2026_10_01(), 10_516.38, corrections=rows)
+    assert (r.reason, r.pnl_usd, r.return_pct) == (None, 204.90, 1.99)

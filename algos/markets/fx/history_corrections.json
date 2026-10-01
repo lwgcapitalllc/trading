@@ -1,0 +1,13 @@
+{
+  "_README": "Deals a BROKER lost from an account's MT5 history, recorded so the account's return can still be stated to the cent. Read by every live bot on each account-return check (algos/live/runner.py, the arithmetic in algos/shared/account_flows.py). Each entry adds its money back as a TRADING result, never as money put in, at the time it happened, and only while that position still has no entry deal in the broker's history - if the broker restores the deal, the entry steps aside by itself. RULES: an entry is added only with the read-only probe that proved the hole, quoted in 'why'; never to make an unexplained gap go away - that is the job of the refusal this file exists beside. A file that will not parse REFUSES the return on every account rather than reading as 'no corrections'.",
+  "accounts": {
+    "34957946": [
+      {
+        "position": 368940178,
+        "money": -0.35,
+        "time_msc": 1790850329266,
+        "why": "2026-10-01: SOS Fade's 0.35-lot buy limit filled at 07:25:29 UTC (server 10:25:29) and the balance dropped $0.35, its $1/lot entry commission. Read-only probe on the live terminal (C:\\MT5_Aaron) the same day: the order reads FILLED, but no entry deal exists for the position - not in the whole-history read, not by position, not in a one-day window. Only its exit deal (12.25 profit, -0.35 commission) is held. Rebuilt 10,516.73 against the broker's 10,516.38."
+      }
+    ]
+  }
+}
