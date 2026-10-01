@@ -123,17 +123,27 @@ def test_every_bullet_is_SHOWN_at_the_defaults():
     instead, when a default moves, so the TL;DR is rewritten rather than quietly shortened.
 
     Evaluated with the backend twin of the page's condition reader (`_reader_for` resolves a
-    dropdown's Custom value exactly as `ParamEditor.readerFor` does)."""
+    dropdown's Custom value exactly as `ParamEditor.readerFor` does).
+
+    ⚠ **Bullets gated on the SAME settings are ALTERNATIVES** (2026-10-01: SOS Fade Generic
+    states its entry once per value of "Require an FVG in the zone"). Exactly one of a set can
+    show, and whichever way the default moves the right one does, so a set must have at least
+    one bullet showing; a lone gated bullet must show itself. MUTATION: give both of Generic's
+    entry bullets a value the setting cannot hold and it goes red naming them."""
     checked = 0
     for r in _rows():
         read = _reader_for(r["param_schema"], {})
+        groups: dict[frozenset, list] = {}
         for b in r.get("tldr", []):
             cond = b.get("show_if")
             if cond:
-                checked += 1
-                assert _cond_holds(cond, read), (
-                    f"{r['id']}: a default moved and this bullet no longer shows — {b['text']!r}"
-                )
+                groups.setdefault(frozenset(cond), []).append(b)
+        for bullets in groups.values():
+            checked += len(bullets)
+            assert any(_cond_holds(b["show_if"], read) for b in bullets), (
+                f"{r['id']}: a default moved and no bullet of this set shows — "
+                f"{[b['text'] for b in bullets]!r}"
+            )
     assert checked, "no bullet carries a show_if — this check evaluated nothing"
 
 

@@ -60,6 +60,8 @@ EXPECTED_CLASS_NAMES = {
     # Added 2026-09-22. `smc_session_sweep` landed 2026-09-20 and was never listed because its
     # meta file crashed the scan, so these tests errored instead of going red on the roster.
     "SessionSweepStrategy",
+    # Added 2026-10-01. `sos_fade_generic` landed with 9e3b9fa5 and its roster line did not.
+    "SosFadeGenericStrategy",
 }
 
 SYNTHETIC_CS = textwrap.dedent("""\
