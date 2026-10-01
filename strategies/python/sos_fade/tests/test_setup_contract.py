@@ -153,7 +153,8 @@ def test_EVERY_fork_of_this_execution_layer_is_checked_not_just_the_two_we_knew_
     with nobody editing anything. That is the derivation earning its keep — a per-fork flag would
     have needed the author to know a rule that did not exist when they started.
 
-    Fails by NAME on whichever fork starts claiming a channel it cannot fill.
+    Fails by NAME on whichever fork starts claiming a channel it cannot fill. MUTATION: delete
+    realign's own `live_setups` override and it goes red naming realign (watched 2026-10-01).
     """
     import importlib
 
@@ -162,9 +163,15 @@ def test_EVERY_fork_of_this_execution_layer_is_checked_not_just_the_two_we_knew_
         spec = importlib.import_module(f"strategies.python.{name}").LAB_STRATEGY
         cfg = spec["config"](fill_model="bar", symbol="XAUUSD")
         ex = spec["strategy"](config=cfg, initial_capital=10_000.0).execution
-        # A fork MAY legitimately implement the contract — but only by populating the setup
-        # context, which means recording misses. Claiming it without that is the failure.
-        if implements_contract(ex) and not ex._records_misses:
+        # A fork MAY legitimately implement the contract — by recording misses into the
+        # INHERITED feed, or by overriding the feed with its own (realign's setup watch,
+        # 421bf1ca). Claiming it through the inherited feed with misses off is the failure.
+        # ⚠ By the DEFINING class's module NAME, never `is`: the forks import `sos_fade.execution`
+        # bare, a different module object from `strategies.python.sos_fade.execution`, so an
+        # identity check is always False and this test would pass for free.
+        owner = next(k for k in type(ex).__mro__ if "live_setups" in vars(k))
+        inherited = owner.__module__.endswith("sos_fade.execution")
+        if implements_contract(ex) and inherited and not ex._records_misses:
             claiming.append(name)
     assert not claiming, (f"{claiming} claim the setup contract but cannot populate it — they "
                           f"would announce 'Setup alerts: ON' for a channel that sends nothing")
