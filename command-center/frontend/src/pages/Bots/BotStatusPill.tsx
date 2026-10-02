@@ -59,9 +59,11 @@ const ACTION_TITLE: Record<BotAction, string> = {
  *
  * ⚠ **Shared by the row and the bot drawer**, so the two cannot describe one action differently.
  *
- * ⚠ **On the row it takes the place of the start/stop buttons AND the Logs button.** MEASURED at
- * 1280px: the actions column is 190px, and with Logs and Configure still showing, 62px is left —
- * this pill is 72–84px. Hiding Logs for the length of the action is what lets it fit.
+ * 🔴 **On the row it sits UNDER VERSION, in the version tag's place (2026-10-02).** Aaron: *"the
+ * only place a status pill telling us what is happening should be under the version column."* It
+ * used to replace the start/stop buttons and the "···" menu, which put a deploy under Version and
+ * a restart under Actions on the same page. The buttons now stay, greyed out. Same height as the
+ * version tag (`py-[2px]`), so swapping one for the other does not move the row.
  */
 export function BotActionPill({ action }: { action: BotAction }) {
   return (
@@ -69,7 +71,7 @@ export function BotActionPill({ action }: { action: BotAction }) {
       data-testid="bot-action-pill"
       data-action={action}
       title={ACTION_TITLE[action]}
-      className="inline-flex items-center gap-[4px] text-[11px] font-medium px-[7px] py-[3px] rounded-pill border border-accent/50 bg-accent/10 text-accent whitespace-nowrap cursor-default"
+      className="inline-flex items-center gap-[4px] text-[11px] font-medium px-[7px] py-[2px] rounded-pill border border-accent/50 bg-accent/10 text-accent whitespace-nowrap cursor-default"
     >
       <Loader2 size={10} className="animate-spin" />
       {ACTION_WORD[action]}

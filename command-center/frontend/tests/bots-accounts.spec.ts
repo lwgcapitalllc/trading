@@ -1185,6 +1185,33 @@ test('a RUNNING bot’s Remove says it is stopped first, and the first click sen
   expect(log.order).toEqual([])
 })
 
+test('a stop on the row is shown UNDER VERSION, and the buttons stay put', async ({ page }) => {
+  // 🔴 Aaron, 2026-10-02: *"the only place a status pill telling us what is happening should be
+  // under the version column."* A deploy already showed there; a start, stop or restart replaced
+  // the row's buttons instead. MUTATION: draw the pill in the actions column → red on the version
+  // cell. MUTATION: hide the buttons or the "···" while it runs → red on Stop / the menu.
+  await mock(page, [group({ bots: [bot('sos_fade', 'SOS Fade', 770115, null)] })], [reg()])
+  await stopsWhenAsked(page, 'sos_fade')
+  // The row holds its action for as long as the call is out, so the call is held until checked.
+  let release = () => {}
+  const held = new Promise<void>((r) => (release = r))
+  await page.route('**/api/bots/sos_fade/stop', async (route) => {
+    await held
+    return route.fulfill({ json: { status: 'ok', output: '' } })
+  })
+  await page.goto('/bots')
+  const row = page.locator('[data-testid="bot-row"][data-bot="sos_fade"]')
+  await row.getByRole('button', { name: 'Stop', exact: true }).click()
+  const cell = row.getByTestId('bot-version-cell')
+  await expect(cell.getByTestId('bot-action-pill')).toHaveAttribute('data-action', 'stop')
+  expect(await row.getByTestId('bot-action-pill').count()).toBe(1)
+  expect(await cell.getByTestId('version-pill').count()).toBe(0)
+  await expect(row.getByRole('button', { name: 'Stop', exact: true })).toBeDisabled()
+  await expect(row.getByTestId('bot-menu')).toBeVisible()
+  release()
+  await expect(row.getByTestId('bot-action-pill')).toHaveCount(0)
+})
+
 test('Remove on a RUNNING bot stops it, WAITS for the box to say so, then takes it off', async ({
   page,
 }) => {

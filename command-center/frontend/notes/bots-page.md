@@ -2055,8 +2055,26 @@ two could even disagree (the tag said Queued while the button said Deploying).
 - **Deploy:** the version tag is the one readout. The row's Start/Stop and its menu, and the panel's
   Stop/Restart, stay where they are, not pressable, with *"X is deploying — wait until it
   finishes"* on hover (`lockOf`, the same sentence the account settings use).
-- **Start / stop / restart keep their pill in the buttons' place** — they have no other home on the
-  row, and Aaron asked for the word ("Stopping"), not dots, on 2026-09-10.
+- ~~**Start / stop / restart keep their pill in the buttons' place**~~ — reversed the next day, below.
 
 TESTED: *a running deploy holds its bot and its account* — red on the row and on the panel when a
 deploy's pill is drawn again.
+
+---
+
+## Start, stop and restart are shown UNDER VERSION too (2026-10-02)
+
+Aaron, of a Restarting pill in the actions column beside a Deploying pill under Version: *"the only
+place a status pill telling us what is happening should be under the version column."* The
+2026-10-01 pass moved the deploy and left the other three where they were, so one page still
+showed "what is happening" in two columns.
+
+- **Row:** while a start, stop or restart is out, its pill (Starting / Stopping / Restarting) takes
+  the version tag's place. The buttons and the "···" menu stay, greyed out with the reason on hover,
+  so the actions column never changes shape.
+- **Same height as the tag** (`py-[2px]`), so the swap does not move the row.
+- **Not changed:** the bot panel and the account panel keep the pill in their action rows — neither
+  has a version column beside its buttons.
+
+TESTED: *a stop on the row is shown UNDER VERSION, and the buttons stay put* — RUN red 2026-10-02
+with the pill put back in the actions column (pill not found in the version cell).

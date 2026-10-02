@@ -2150,11 +2150,13 @@ export function Bots() {
           // answered for still has one.
           const name = live?.name ?? cfg.display
           const acting = actionOf(cfg.key)
-          // 🔴 **A DEPLOY IS SHOWN ONCE — ON THE VERSION TAG (2026-10-01).** Aaron: *"we have 2
-          // deploying pills, it should just be the one under version."* The tag already says
-          // Queued / Deploying vN, so here the buttons stay where they are, greyed out with the
-          // reason on hover. A start, stop or restart has no other home on the row, so it keeps
-          // its pill in the buttons' place.
+          // 🔴 **WHAT THE BOT IS DOING IS SHOWN ONCE — UNDER VERSION (2026-10-01, 2026-10-02).**
+          // Aaron: *"we have 2 deploying pills, it should just be the one under version"*, then of
+          // a Restarting pill left in the actions column: *"the only place a status pill telling
+          // us what is happening should be under the version column."* A deploy is the version
+          // tag's own Queued / Deploying vN; a start, stop or restart takes the tag's place for
+          // as long as it runs. The buttons stay where they are, greyed out with the reason on
+          // hover, so the actions column never changes shape.
           const stepping = acting === 'deploy' ? null : acting
           const why = acting ? lockOf([cfg.key]) : null
           const rowId = `bot:${account}:${cfg.key}`
@@ -2287,15 +2289,15 @@ export function Bots() {
 
                 {/* Calm when current, amber only when it needs a person — the pill's own rule, and
                  *  the same one the "needs you" line above the table counts by (`versionNeed`). */}
-                <span className="min-w-0">{version}</span>
+                <span data-testid="bot-version-cell" className="min-w-0">
+                  {stepping ? <BotActionPill action={stepping} /> : version}
+                </span>
 
                 <span className="flex gap-[4px] justify-start items-center">
                   {/* 🔴 **NOTHING IS OFFERED WHILE THE STATE IS UNKNOWN (2026-09-06).** Pressing
                    *  Start on a bot that is already trading is the one mistake this row can make
                    *  that costs money, and an unanswered box is a reason to ask again, never to act. */}
-                  {stepping ? (
-                    <BotActionPill action={stepping} />
-                  ) : !asked && asking ? (
+                  {!asked && asking ? (
                     <>
                       <Shimmer className="h-[26px] w-[52px]" />
                       <Shimmer className="h-[26px] w-[26px]" />
@@ -2334,36 +2336,34 @@ export function Bots() {
                     title={`Configure ${name} — risk per trade, version, account and all its settings`}
                     onClick={() => set('bot', cfg.key)}
                   />
-                  {/* Hidden while this bot's pill shows — the pill needs the room. The drawer keeps
-                   *  its own Logs and Restart throughout. */}
-                  {!stepping && (
-                    <OverflowMenu
-                      testId="bot-menu"
-                      label={`More for ${name}`}
-                      items={[
-                        ...(asked && running
-                          ? [
-                              {
-                                key: 'restart',
-                                label: 'Restart',
-                                icon: RotateCcw,
-                                testId: 'bot-restart',
-                                disabled: busyFor(cfg.key),
-                                onSelect: () =>
-                                  act(cfg.key, 'restart', () => restartOne.mutateAsync(cfg.key)),
-                              },
-                            ]
-                          : []),
-                        {
-                          key: 'logs',
-                          label: 'Logs',
-                          icon: FileText,
-                          testId: 'bot-logs',
-                          onSelect: () => setLogBot(cfg.key),
-                        },
-                      ]}
-                    />
-                  )}
+                  {/* Stays through a start, stop or restart — its Restart greys out like the
+                   *  buttons, and Logs is worth having while you wait. */}
+                  <OverflowMenu
+                    testId="bot-menu"
+                    label={`More for ${name}`}
+                    items={[
+                      ...(asked && running
+                        ? [
+                            {
+                              key: 'restart',
+                              label: 'Restart',
+                              icon: RotateCcw,
+                              testId: 'bot-restart',
+                              disabled: busyFor(cfg.key),
+                              onSelect: () =>
+                                act(cfg.key, 'restart', () => restartOne.mutateAsync(cfg.key)),
+                            },
+                          ]
+                        : []),
+                      {
+                        key: 'logs',
+                        label: 'Logs',
+                        icon: FileText,
+                        testId: 'bot-logs',
+                        onSelect: () => setLogBot(cfg.key),
+                      },
+                    ]}
+                  />
                 </span>
               </div>
               {open && (
