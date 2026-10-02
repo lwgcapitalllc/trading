@@ -160,6 +160,22 @@ class SetupSnapshot:
     #: and a study that freezes it must freeze it at the bar it chose, not at the end. `None` =
     #: no live leg on this bar, or a strategy that does not say. Reporting only, like the rest.
     leg: Optional[Tuple[float, float]] = None
+    #: The key of the setup this one is a SECOND CHANCE at, or `None` for an ordinary setup.
+    #:
+    #: 🔴 **Why (2026-10-02): a re-entry fired on the live bot with no warning.** A setup's thread
+    #: closes when its first trade fills, so nothing ever said a re-entry was still possible.
+    #: A strategy that can re-enter reports each possible re-entry as one more watched setup with
+    #: this set, and the alert layer opens a new thread for it in its own words — it never learns
+    #: what makes a re-entry possible, only that this setup IS one. Reporting only.
+    reentry_of: Optional[str] = None
+    #: When the setup named by `reentry_of` formed, in epoch ms, so the message can name it. `None`
+    #: = not known; the message then names no time rather than guessing one.
+    origin_ms: Optional[int] = None
+    #: A price the strategy has ALREADY DECIDED it will rest at, before any order exists — e.g. a
+    #: re-entry that will retest one known level. Not `entry`, which is the price an order IS
+    #: resting at: a decided price and a placed order are two different claims (see `zone`).
+    #: `None` = the price is not known yet, which the message says in words.
+    planned_entry: Optional[float] = None
 
     def __post_init__(self) -> None:
         # A bad state would route a message to the wrong formatter and, worse, would leave a
@@ -195,6 +211,10 @@ class SetupSnapshot:
     @property
     def is_terminal(self) -> bool:
         return self.state in TERMINAL
+
+    @property
+    def is_reentry(self) -> bool:
+        return self.reentry_of is not None
 
     @property
     def direction(self) -> str:

@@ -303,6 +303,7 @@ Most-cited code: `live/setup_alerts.py`, `live/alerts.py`, `live/bridge.py`, `sh
 - ✅ A DAILY SUMMARY per health room at 08:00 Chicago counts what was held, the longest trading-off, auto-restarts, late and given-up messages — off the send log only, and says so when it cannot read it; sent by SYS_MONITOR, no new task (2026-09-26)
 - ✅ No demo/LIVE tag in the trades and setups rooms — each holds one kind; the health room keeps it (2026-09-27)
 - 🔴 A Stop pressed on a bot that is ALREADY down now stands it down — the watchdog only read it at the running→down moment, so a crashed live bot paged hourly for ever (2026-09-27)
+- 🔴 A RE-ENTRY gets its own signals thread (POSSIBLE → ORDER WAITING → RE-ENTERED / NO RE-ENTRY) and the setup alerts now run after every 1-minute bar too — the live re-entry of 2026-10-01 filled two minutes after its first trade closed, with no warning (2026-10-02)
 - ✅ The REV SETUP student feed — `tools/rev_setup_feed.py` renders the bot's own decision records for a students' channel from a per-event WHITELIST, so no lot size, dollar risk or P&L can be published; off until switched on (2026-09-23)
 
 ### `notes/telegram-message-catalog.md` — Every Telegram message this suite can send, by room

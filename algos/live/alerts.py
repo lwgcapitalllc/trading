@@ -40,7 +40,7 @@ from __future__ import annotations
 SHOW_SIZE = True
 
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple, Optional
 
@@ -48,7 +48,7 @@ _SHARED = Path(__file__).resolve().parent.parent / "shared"
 if str(_SHARED) not in sys.path:
     sys.path.insert(0, str(_SHARED))
 
-from alert_format import alert, joined  # noqa: E402
+from alert_format import alert, joined, when  # noqa: E402
 
 # 🔴 **NOTHING FROM `backtest` OR `strategies` MAY BE IMPORTED AT THIS MODULE'S TOP LEVEL, and
 # this is enforced by the version pin rather than by discipline.** `bridge.py` imports this file,
@@ -213,6 +213,47 @@ def format_watching(snap, digits: int = 2, display: str = "") -> str:
     return alert("👀", "SETUP FORMING", snap.direction, *lines)
 
 
+def format_reentry_possible(snap, digits: int = 2, display: str = "") -> str:
+    """A RE-ENTRY has become possible — the root of its OWN thread.
+
+    🔴 **Why (2026-10-01, sos_fade_demo, live): a re-entry filled with no warning.** The first
+    trade's thread closes when it fills, so nothing ever said a second chance was open. The
+    first trade closed at breakeven at 08:15 UTC and the re-entry filled at 08:17 — this message
+    is what lands in between. ⚠ **The lead can be only minutes**, and the message cannot change
+    that: it is sent the moment the bot knows.
+
+    Generic: every word about WHAT makes the re-entry possible is the strategy's own confluence
+    detail. This layer only knows it is a re-entry, which setup it came from, and its prices.
+
+    ⚠ **A zone and a decided price are different claims and print differently.** A re-entry that
+    still waits for its price prints the zone and says the price is not known; one that will
+    retest a known level prints that level.
+    """
+    origin = ""
+    if snap.origin_ms is not None:
+        formed = datetime.fromtimestamp(snap.origin_ms / 1000, tz=timezone.utc)
+        origin = f"From the setup of {when(formed)}."
+    side = "Buy" if snap.side > 0 else "Sell"
+    stop = f"Stop {_price(snap.stop, digits)}" if snap.stop is not None else "Stop not known yet"
+    if snap.planned_entry is not None:
+        prices = joined([f"{side} at {_price(snap.planned_entry, digits)}", stop])
+        note = ""
+    else:
+        zone = f"Re-entry zone {_zone_text(snap.zone, digits)}" if snap.zone else ""
+        prices = joined([zone, stop])
+        note = "Exact price not known yet."
+    return alert(
+        "🔁",
+        "RE-ENTRY POSSIBLE",
+        snap.direction,
+        _bot_line(display or snap.strategy, snap.symbol),
+        origin,
+        _confluence_line(snap),
+        prices,
+        note,
+    )
+
+
 def _still_watching(snap) -> str:
     return "Still watching in case this changes."
 
@@ -268,7 +309,7 @@ def format_entry_zone(
         order.append(f"Stop {_price(snap.stop, digits)}")
     return alert(
         "🎯",
-        "LIMIT ORDER WAITING",
+        "RE-ENTRY ORDER WAITING" if getattr(snap, "reentry_of", None) else "LIMIT ORDER WAITING",
         snap.direction,
         _bot_line(display or snap.strategy, snap.symbol, size),
         " · ".join(order),
@@ -321,7 +362,7 @@ def format_order_moved(
     order = joined([f"{side} at {px}" if px else "", f"Stop {sl}" if sl else ""])
     return alert(
         "🔁",
-        "LIMIT ORDER MOVED",
+        "RE-ENTRY ORDER MOVED" if getattr(snap, "reentry_of", None) else "LIMIT ORDER MOVED",
         snap.direction,
         _bot_line(display or snap.strategy, snap.symbol, size),
         order,
@@ -372,9 +413,16 @@ def format_resolved(snap, digits: int = 2, display: str = "") -> str:
     from backtest.setups import DEAD, FILLED
 
     bot = _bot_line(display or snap.strategy, snap.symbol)
+    reentry = getattr(snap, "reentry_of", None) is not None
     if snap.state == FILLED:
         # The trade alert lands seconds later with the price, the size and the risk.
-        return alert("✅", "ENTERED", snap.direction, bot, "Filled. Details in the trades room.")
+        return alert(
+            "✅",
+            "RE-ENTERED" if reentry else "ENTERED",
+            snap.direction,
+            bot,
+            "Filled. Details in the trades room.",
+        )
     if snap.state != DEAD:
         # Not an outcome at all. Saying NO TRADE would tell the reader to stop watching a setup
         # that may still trade.
@@ -382,7 +430,7 @@ def format_resolved(snap, digits: int = 2, display: str = "") -> str:
     # A NO TRADE is a claim that the bot refused this setup, and it must always say why.
     return alert(
         "👋",
-        "NO TRADE",
+        "NO RE-ENTRY" if reentry else "NO TRADE",
         snap.direction,
         bot,
         _sentence(snap.reason) or "The bot did not record a reason.",

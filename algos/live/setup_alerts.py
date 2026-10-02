@@ -10,6 +10,10 @@ gets pre-trade alerts by implementing `live_setups()`; nothing here changes.
     🚫 BLOCKED           a reply — one of your own rules refused it
     ✅ ENTERED / 👋 NO TRADE   a reply — what became of it
 
+A RE-ENTRY (a snapshot with `reentry_of` set) gets its own thread in the same shape:
+🔁 RE-ENTRY POSSIBLE, 🎯 RE-ENTRY ORDER WAITING, then ✅ RE-ENTERED or 👋 NO RE-ENTRY. Which
+words make it possible are the strategy's; this file only knows it is one.
+
 **Three rules, each of which is a measured failure rather than a preference:**
 
 ⚠ **EDGE-TRIGGERED, and per SETUP rather than per transition.** A resting limit is rebuilt every
@@ -255,9 +259,11 @@ class SetupAlerts:
                         alerts.format_blocked_root(snap, self._digits, self._display)
                     )
             elif self._on(WATCHING_MSG):
-                self._threads[snap.key] = self._post(
-                    alerts.format_watching(snap, self._digits, self._display)
-                )
+                # A re-entry opens its OWN thread in its own words (2026-10-02). It is a new
+                # root rather than a reply, because the setup it came from closed its thread at
+                # the first fill and the alert layer has already forgotten that root.
+                fmt = alerts.format_reentry_possible if snap.is_reentry else alerts.format_watching
+                self._threads[snap.key] = self._post(fmt(snap, self._digits, self._display))
 
         root = self._threads.get(snap.key)
 
@@ -298,10 +304,14 @@ class SetupAlerts:
         own prices with `lots=None`. `asked` True and `order` None means NOTHING is resting.
         """
         resting = snap.state == RESTING
+        # 🔴 A re-entry rests in the broker's RE-ENTRY slot, never the first trade's. Asking the
+        # first trade's slot would read "nothing resting" and the message would never go out.
+        # The keyword is passed only for a re-entry, so a caller that has none is unaffected.
+        slot = {"reentry": True} if snap.is_reentry else {}
         if self._order_for is not None:
-            return True, (self._order_for(snap.side) if resting else None)
+            return True, (self._order_for(snap.side, **slot) if resting else None)
         if self._lots_for is not None:
-            lots = self._lots_for(snap.side) if resting else None
+            lots = self._lots_for(snap.side, **slot) if resting else None
             if lots is None:
                 return True, None
             return True, alerts.RestingOrder(snap.entry, snap.stop, lots)

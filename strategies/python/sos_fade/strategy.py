@@ -296,7 +296,7 @@ class SosFadeStrategy:
         return k, rec
 
     def run_dual(self, df15, df1m, engine_config=None, warmup: int = 0,
-                 progress=None, should_cancel=None) -> "SosFadeStrategy":
+                 progress=None, should_cancel=None, on_fast=None) -> "SosFadeStrategy":
         """Replay the PRIMARY on 15m and the SECONDARY (the sniper re-entry) on a FASTER frame, on one merged
         clock. The primary path is byte-identical to `run(df15)` — 15m bars are stepped in the same
         order with the same OHLC and `step_secondary` never touches a primary position — so
@@ -306,6 +306,11 @@ class SosFadeStrategy:
 
         `df15` / `df1m` are canonical frames (UTC DatetimeIndex, open/high/low/close) over the same
         window.
+
+        `on_fast(bar, step, clock)` is called after every fast bar with the `FastStep` it
+        produced. It is for a REPORTING caller — `algos/tools/setup_alert_rate.py` reads the
+        signals room off it at the same moments the live runner would. It must not change the
+        strategy; nothing here reads anything back from it.
 
         ⚠ THE SECOND FRAME'S TIMEFRAME IS THE CALLER'S CHOICE and is 1m by default since
         2026-09-26 (`exec_sec_fill_tf_min`; 5m from 2026-08-21) — the parameter is still named `df1m` because
@@ -361,6 +366,8 @@ class SosFadeStrategy:
                 if progress is not None:
                     progress(b1.index, n1)
             fast = clock.step_fast(b1)
+            if on_fast is not None:
+                on_fast(b1, fast, clock)
             for ps in fast.primaries:
                 if ps.bar.index >= warmup:
                     self.decisions.append(ps.dec)

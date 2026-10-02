@@ -262,6 +262,37 @@ class SecArm:
     s_after: Optional[str] = None
 
 
+@dataclass(frozen=True)
+class ReentryOutlook:
+    """Can this side's setup still take its re-entry, and on what terms? REPORTING ONLY.
+
+    Built by `SecondaryArm.outlook` from the same latches `update` arms on, so "possible" can never
+    mean something the arm does not. Nothing that arms, prices or sizes an order reads it.
+
+    ⚠ **It answers only the questions that, once settled, STAY settled for this setup**: which
+    first-trade outcome opened the door, and whether the setup has since used, lost or voided its
+    re-entry. The gates that come and go bar by bar — the zone, a gap, the veto, the final hour —
+    are deliberately not here, because a warning that flickered with them would be noise.
+    """
+
+    sos: int                                  #: the 15m SOS bar of the setup — its identity
+    half: str                                 #: "gap" | "reclaim" | "Structure shift"
+    fate: Optional[str]                       #: what the first trade did (`_primary_fate`)
+    #: "" while the re-entry can still happen; else WHY it cannot any more:
+    #: "used" | "dead" | "timed_out" | "void".
+    retired: str = ""
+    zone: Optional[Tuple[float, float]] = None   #: (shallow, deep) — the gap half's zone
+    price: Optional[float] = None             #: a price already decided (the reclaim's level)
+    stop: Optional[float] = None              #: buffered, as the order would carry it; None = not known yet
+    reclaimed: bool = False                   #: the reclaim half: price has come back through
+    #: The gap half: a 15m close has already sat in the zone with a gap present, which is the
+    #: only time the zone is asked. 🔴 After that the re-entry rests at whatever gap edge is live
+    #: the moment the first trade closes — it does NOT wait for a new pullback (2026-10-01: the
+    #: first trade closed at 08:15 and the re-entry filled at 08:17).
+    latched: bool = False
+    has_gap: bool = False                     #: the gap half: a gap edge exists to rest on now
+
+
 class SecondaryArm:
     """The secondary latch + arm state machine — a line-for-line port of the Pine WIP
     `f_secArm` (from the stashed secondary-trade branch). See `docs/SOS_FADE_SECONDARY.md`.
@@ -906,6 +937,106 @@ class SecondaryArm:
         raise ValueError(
             f"exec_sec_require must be one of ['Any close', 'Breakeven', 'None', "
             f"'Stopped only'], got {mode!r}")
+
+    def outlook(self, sig, seq, be_sos_l, be_sos_s, closed_sos_l=None, closed_sos_s=None,
+                lost_sos_l=None, lost_sos_s=None, poi_edge_l=None, poi_edge_s=None,
+                poi_last_l=None, poi_last_s=None):
+        """(long, short) `ReentryOutlook`, or None on a side with no re-entry door open.
+
+        REPORTING ONLY — a pure read of the latches `update` arms on; it writes nothing. Called by
+        `reentry_watch.ReentryWatch` to tell a reader a re-entry is POSSIBLE before it can fire.
+
+        🔴 **It asks the arm's OWN questions, in the arm's own order, so a warning can never
+        describe a re-entry the bot would not take.** Which half owns a side is `update`'s
+        `_src_for` rule; the door is `_primary_gate` under the mode that half reads; the cap,
+        the dead leg, the timed-out order and the reclaim's void are the same fields `l_armed`
+        refuses on. A second derivation of any of them is a second claim about one setup.
+
+        ⚠ The stop is known only where its anchor is a pure read of the 15m fib ("0.886", "1.0")
+        or an already-latched shift leg. "swing low" needs the fast feed's confirmed swing, which
+        is not held here, so it is None — "not known yet", never a guess.
+        """
+        cfg = self._cfg
+        if not cfg.exec_secondary:
+            return None, None
+        # The same fallback `update` applies before anything reads the edge.
+        if getattr(cfg, "exec_sec_poi_fallback", "Off") == "Primary entry":
+            poi_edge_l = poi_last_l if poi_edge_l is None else poi_edge_l
+            poi_edge_s = poi_last_s if poi_edge_s is None else poi_edge_s
+        trig = getattr(cfg, "exec_sec_trigger", "Structure shift")
+        gap_trigger = trig in ("FVG in zone", "FVG in zone + Reclaim Entry")
+        rec_trigger = trig in ("Reclaim Entry", "FVG in zone + Reclaim Entry")
+        rmode = getattr(cfg, "exec_rec_require", "Stopped only")
+        cap = cfg.exec_sec_once_per_setup
+        depth = getattr(cfg, "exec_sec_max_per_setup", 1)
+        buf = cfg.exec_sl_buf_tk * cfg.mintick
+        z_lo, z_hi = self._zone_edges(sig)
+        out = []
+        for side in (1, -1):
+            p = "l" if side > 0 else "s"
+            sos = seq.l_sos_bar if side > 0 else seq.s_sos_bar
+            enabled = cfg.exec_longs if side > 0 else cfg.exec_shorts
+            if sos is None or not enabled:
+                out.append(None)
+                continue
+            be, closed, lost = ((be_sos_l, closed_sos_l, lost_sos_l) if side > 0
+                                else (be_sos_s, closed_sos_s, lost_sos_s))
+            gate = self._primary_gate(sos, be, closed, lost)
+            rgate = rec_trigger and self._primary_gate(sos, be, closed, lost, rmode)
+            if gap_trigger and rec_trigger:
+                half = "reclaim" if rgate else ("gap" if gate else None)
+            elif rec_trigger:
+                half = "reclaim" if rgate else None
+            elif gap_trigger:
+                half = "gap" if gate else None
+            else:
+                half = "Structure shift" if gate else None
+            if half is None:
+                out.append(None)
+                continue
+            used, used_n = getattr(self, f"_{p}_used"), getattr(self, f"_{p}_used_n")
+            if cap and used is not None and used == sos and used_n >= depth:
+                retired = "used"
+            elif getattr(self, f"_{p}_dead") == sos:
+                retired = "dead"
+            elif getattr(self, f"_{p}_rest_dead") == sos:
+                retired = "timed_out"
+            elif half == "reclaim" and getattr(self, f"_{p}_void"):
+                retired = "void"
+            else:
+                retired = ""
+            mode = (getattr(cfg, "exec_rec_stop", "1.0") if half == "reclaim"
+                    else getattr(cfg, "exec_sec_stop", "Shift leg"))
+            if mode == "0.886":
+                anchor = sig.fibo_p6
+            elif mode == "1.0":
+                anchor = sig.fibo_p10
+            elif mode == "Shift leg":
+                anchor = self._l_lo if side > 0 else self._s_hi
+            else:
+                anchor = None
+            stop = None if anchor is None else float(anchor - buf if side > 0 else anchor + buf)
+            poi = poi_edge_l if side > 0 else poi_edge_s
+            # The arm's own `_leg_ok` asks only that SOME leg is latched on this side; the
+            # gap latch is what sets it, and only on a 15m close in the zone with a gap present.
+            latched = getattr(self, f"_{p}_leg") is not None
+            if half == "reclaim":
+                zone = None
+                retest = getattr(cfg, "exec_rec_entry_mode", "Retest") == "Retest"
+                price = float(z_hi) if (retest and z_hi is not None) else None
+            else:
+                zone = ((float(z_lo), float(z_hi)) if z_lo is not None and z_hi is not None
+                        else None)
+                # The gap half rests at the live gap edge once latched — the price `_edge`
+                # would hand the order on this bar. Unknown until both hold.
+                price = float(poi) if (half == "gap" and latched and poi is not None) else None
+            out.append(ReentryOutlook(
+                sos=sos, half=half, fate=self._primary_fate(sos, be, closed, lost),
+                retired=retired, zone=zone, price=price, stop=stop,
+                reclaimed=bool(getattr(self, f"_{p}_rec")) if half == "reclaim" else False,
+                latched=latched, has_gap=poi is not None,
+            ))
+        return out[0], out[1]
 
     def mark_traded(self, direction: int) -> None:
         """Retire the just-filled shift leg (Pine `sec.lTraded := sec.lPend`) so it re-enters once.

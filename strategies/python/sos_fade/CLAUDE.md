@@ -568,6 +568,7 @@ Most-cited code: `compare_strategy.py`, `tests/test_commanded_close.py`, `strate
 Most-cited code: `algos/live/alerts.py`, `alert_rate.py`, `config.json`, `promote.py`, `compare_strategy.py`, `miss_audit.py`.
 
 - `live_setups()` — what this bot is WATCHING, for the pre-trade signals channel (2026-08-13)
+- 🔴 A possible re-entry is reported as a watched setup — `reentry_watch.py` (2026-10-02)
 
 ### `notes/parity_gate_history.md` — Parity gate — dated fixes
 

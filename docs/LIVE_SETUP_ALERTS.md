@@ -376,6 +376,50 @@ order.
 
 ---
 
+### 5.6 Re-entry possible — its OWN thread (2026-10-02)
+
+**Why:** on 2026-10-01 the live SOS Fade bot (`sos_fade_demo`, account 34957946) took a re-entry with
+no warning. The first trade closed at breakeven at 08:15 UTC and the re-entry filled at 08:17; the
+setup's thread had closed at the first fill. Aaron asked for a heads-up before a re-entry can fire.
+
+**The messages** (examples: `algos/notes/telegram-message-catalog.md` → *Re-entry threads*):
+`🔁 RE-ENTRY POSSIBLE` (a new root naming the setup it came from) → `🎯 RE-ENTRY ORDER WAITING`
+(price, stop, size from the broker's RE-ENTRY slot) → `✅ RE-ENTERED` or `👋 NO RE-ENTRY` with the
+strategy's reason. Same switches as the four categories above; no new config key.
+
+**How it is built — generic at the seam.** The strategy reports a possible re-entry as one more
+`SetupSnapshot` with `reentry_of` set; the alert layer knows only that it is a re-entry. On SOS Fade,
+"possible" is the re-entry arm's own answer (`SecondaryArm.outlook`), so it can never describe a
+re-entry the bot would not take. The live runner now asks the alert layer after every 1-minute bar
+as well as every 15-minute bar.
+
+🔴 **The gap re-entry does not wait for a fresh pullback.** The zone is asked once — a 15-minute close
+in it with a gap present, nearly always true by the time the first trade fills — and after that the
+order rests at the live gap edge the moment the first trade closes. So that warning usually carries a
+price, and its lead is short. The approved plan described a wait the code does not do; the message
+says what the code does.
+
+**MEASURED 2026-10-02**, `algos/tools/setup_alert_rate.py sos_fade_demo` on PU Prime XAUUSD.p, 15-minute
+and 1-minute bars 2020-01-01 → 2026-10-02 (159,668 + 2,391,285 bars), live config, lab's own `run_dual`:
+
+| Check | Result |
+|---|---|
+| Re-entry fills warned first, same setup | **92 of 92** (47 after a first target, 45 after a stop) |
+| Warnings per actual re-entry | **1.30** (120 warnings; the other 28 ended NO RE-ENTRY) — limit 4 |
+| Lead, warning to the fill minute opening | median **15 min**, minimum **0**, maximum 8,025 |
+| Leads under 5 minutes | **31 of 92** (10 at 0, 14 at 1) |
+| Trade list, re-entry watch on vs off | identical, 253 trades |
+| Trade list, last commit vs this change | identical, 253 trades, 92 re-entries |
+| 2026-10-01 | warning 08:16, fill minute opened 08:17 |
+
+⚠ **The lab times a message at the CLOSE of the 1-minute bar it followed.** A warning opened by a
+first trade closing on a 15-minute bar is sent live at that 15-minute close, about a minute earlier —
+so the ten 0-minute cases are roughly one minute live, never negative. **The lead can be only minutes
+and nothing in the alert layer can change that**; only a change to when the bot re-enters could.
+
+Why the 28 ended with no re-entry: a new break of structure 13, the final target reached 6, structure
+broke the other way 5, price reached the stop level first 4.
+
 ## 6. Where it lives
 
 | Piece | Where | Why there |

@@ -1537,7 +1537,7 @@ class OrderBridge:
             )
 
     # ── the per-bar entry point ──────────────────────────────────────────────
-    def resting_lots(self, direction: int) -> Optional[float]:
+    def resting_lots(self, direction: int, reentry: bool = False) -> Optional[float]:
         """The lot size ACTUALLY resting in the primary slot on one side, or `None` if nothing is.
 
         🔴 **Read from `_rest`, never recomputed, and that is the entire safety property.** The
@@ -1551,16 +1551,19 @@ class OrderBridge:
         (`setup_alerts.SetupAlerts`, whose `lots_for` defaults to None). Collapsing the two would
         let a refused order and an offline backtest render the same message.
         """
-        held = self._rest.get(primary_slot(direction))
+        held = self._rest.get(secondary_slot(direction) if reentry else primary_slot(direction))
         return None if held is None else float(held.lots)
 
-    def resting_order(self, direction: int):
+    def resting_order(self, direction: int, reentry: bool = False):
         """The whole primary order resting on one side — price, stop, lots — or `None`.
 
         Same source and same rule as `resting_lots`: read from `_rest`, the record of what was
         SENT, never recomputed. Lets the signals thread follow an order that is re-placed.
+
+        `reentry=True` reads the RE-ENTRY slot instead (2026-10-02) — the re-entry's own thread
+        in the signals room asks for it. Reporting only; nothing here places or moves an order.
         """
-        held = self._rest.get(primary_slot(direction))
+        held = self._rest.get(secondary_slot(direction) if reentry else primary_slot(direction))
         if held is None:
             return None
         return alerts.RestingOrder(float(held.price), float(held.sl), float(held.lots))

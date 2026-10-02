@@ -347,3 +347,33 @@ numbers, no "FVG"/"HTF"/"BOS", no "rule N —" prefixes, no "not a Pine rule" �
 now NAMES the condition, because the alert layer prints it after a ✓ or a ✗. **No decision moved:
 these strings are reporting only, and every refusal CODE is unchanged.** The rules and the
 shared vocabulary: `algos/notes/telegram-and-notifications.md` → *One voice for every bot*.
+
+## The re-entry is reported as one more watched setup — `reentry_watch.py` (2026-10-02)
+
+🔴 **Why: on 2026-10-01 `sos_fade_demo` (live) re-entered with no warning.** The setup's thread
+closed at the first fill; the first trade closed at breakeven at 08:15 UTC and the re-entry filled
+at 08:17. Aaron asked for a heads-up before a re-entry can fire.
+
+- **What "possible" means is the ARM's own answer, read by `SecondaryArm.outlook`** — which half owns
+  the side (the same rule `update` uses), the door (`_primary_gate` under that half's mode), and the
+  four things that retire a setup's re-entry for good: used, stopped out, timed out, voided.
+  Transient gates (zone, gap, veto, final hour) are deliberately left out, so the warning does not
+  flicker. `test_whenever_the_arm_arms_the_watch_already_calls_it_possible` pins that a bar the arm
+  fires on is always a bar the watch already calls possible.
+- **Opened only while FLAT**, because breakeven is stamped at the first target while the first trade
+  is still running.
+- 🔴 **The gap re-entry does NOT wait for a fresh pullback, and the approved plan said it did.** The
+  zone is asked once (a 15m close in it with a gap present, which is almost always true by the time
+  the first trade fills); after that the order rests at whatever gap edge is live the moment the
+  first trade closes — which is why 2026-10-01 filled two minutes later. The warning therefore
+  states the price when it is already known and shows the zone only when it is not.
+- **Fed by `DualClock`** after every 15m step, every fast step, and once when `restore_reentry_memory`
+  has put back what the re-entry already used — so after a restart a used setup is never opened, and
+  a still-possible one keeps its thread. **Silent through a live warm-up** (`_watch_on`), which
+  replays the primary alone. A failure inside it is caught, kept on `reentry_watch.failed`, and said
+  once in the health room; it can never take the bar down.
+- **Reporting only, proven by replay**: the full 2020-2026 two-clock trade list is identical at the
+  last commit and with this change. Numbers: `docs/LIVE_SETUP_ALERTS.md` §5.6.
+- ⚠ **Live-vs-lab gap found while building this, NOT fixed (reporting-only change):** the reclaim's
+  `_void` (price reached the stop level first) is not in the saved re-entry memory, so after a
+  restart a voided reclaim can arm again. The warning mirrors that, so it will say so when it happens.

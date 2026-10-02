@@ -1240,3 +1240,27 @@ line.
 ⚠ **Wording reaches a phone only through a PROMOTE** — the live bots import a frozen snapshot.
 ⚠ **Not changed:** the REV SETUP student feed (`tools/rev_setup_feed.py`, off) keeps its own
 titles; bring it onto these rules before it is switched on.
+
+## 🔴 A re-entry gets its own thread, and the signals room is asked after every 1-minute bar (2026-10-02)
+
+**Why:** on 2026-10-01 `sos_fade_demo` (live) took a re-entry with no warning. The setup's thread
+closes when the first trade fills, and the setup alerts ran on the 15-minute clock only — the first
+trade closed at 08:15 UTC and the re-entry filled at 08:17, inside one 15-minute bar.
+
+- The strategy reports a possible re-entry as one more watched setup (`backtest/setups.py` →
+  `reentry_of`). `setup_alerts.py` opens a new thread for it — `🔁 RE-ENTRY POSSIBLE`, then
+  `🎯 RE-ENTRY ORDER WAITING`, then `✅ RE-ENTERED` or `👋 NO RE-ENTRY` — and stays generic: every word
+  about what makes it possible is the strategy's. Examples: `notes/telegram-message-catalog.md`.
+- 🔴 **Its order is read from the bridge's RE-ENTRY slot** (`resting_order(side, reentry=True)`).
+  Asking the first trade's slot reads "nothing resting" and the order message would never go out.
+- **`runner._fast_setup_alerts` runs after every fast bar**, after the bridge and in `finally`, the
+  same rule as the 15-minute path. An ordinary setup only changes on a 15-minute bar, so the extra
+  asks post nothing extra — they are in-memory reads, no broker call.
+- ⚠ **The lead can be only minutes**, and nothing here can change that: the gap re-entry rests the
+  moment the first trade closes. Measured in `docs/LIVE_SETUP_ALERTS.md` §5.6.
+- ⚠ **A failed re-entry watch is said once in the health room** (`⚠️ RE-ENTRY WARNINGS OFF`) —
+  trading is unaffected, but a warning that stopped looks exactly like a quiet market.
+- **Measure with `tools/setup_alert_rate.py <bot key> --bars <15m csv> --fast-bars <1m csv>`** — it
+  now replays a two-clock bot on both clocks through the lab's own `run_dual` and checks every
+  re-entry fill was warned first, the lead, and warnings per re-entry.
+- ⚠ **Needs a PROMOTE** — `algos/live` and the strategy are both frozen per bot.

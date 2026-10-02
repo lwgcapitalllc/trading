@@ -47,6 +47,7 @@ message is about, not how severe it is — and is not part of the severity syste
 | 🎯 | A limit order is resting |
 | 🚫 | A setup was blocked by one of your own rules |
 | 👋 | A setup died with no trade |
+| 🔁 | A re-entry is possible (its own thread), or a waiting order moved |
 
 **A message that could not be delivered the first time** (no answer from Telegram, HTTP 429 or 5xx)
 is re-sent by the every-minute monitor for up to 24 hours, with one extra last line (2026-09-26):
@@ -287,6 +288,15 @@ Until it's fixed, a change in the broker's overnight cost goes unnoticed.
 ```
 
 ### ⚠️ WARNING — nothing has stopped, worth reading
+
+**RE-ENTRY WARNINGS OFF** — the part of the strategy that reports a possible re-entry raised an
+error and stopped (2026-10-02). Once per process. Trading is unaffected; only the signals room's
+re-entry threads stop until a restart.
+```
+⚠️ RE-ENTRY WARNINGS OFF · SOS Fade · LIVE
+The signals room will not warn before a re-entry until this bot restarts. Trading is unaffected.
+Reason: RuntimeError: bad snapshot
+```
 
 **ORDER REJECTED** — the BROKER refused an order we sent (2026-09-16). Once per cause per side. The
 reason is the broker's code in plain words (`shared/broker_result.plain_reason`), or the broker's
@@ -629,6 +639,70 @@ Ran out of time after 180 minutes. Last block: price already passed the target b
 SOS Fade · XAUUSD.p
 The bot restarted while this setup was open, so how it ended is unknown.
 ```
+
+### Re-entry threads (2026-10-02)
+
+A setup's own thread closes when its first trade fills, so a re-entry gets a NEW thread — it never
+replies to the first one. Sent after every 1-minute bar as well as every 15-minute bar, because a
+re-entry arms and fills between two 15-minute bars. Written by hand from real replay output; the
+time line is the box's clock (`alert_format.when`).
+
+```
+🔁 RE-ENTRY POSSIBLE · LONG
+SOS Fade · XAUUSD.p
+From the setup of Sep 30, 10:00 PM CDT.
+✓ First trade reached its first target, then closed · ✓ A close in the re-entry zone · ✓ A gap to rest the order on
+Buy at 4,159.79 · Stop 4,145.40
+
+🔁 RE-ENTRY POSSIBLE · SHORT
+SOS Fade · XAUUSD.p
+From the setup of Sep 16, 1:00 PM CDT.
+✓ First trade reached its first target, then closed · ✗ A close in the re-entry zone · ✓ A gap to rest the order on
+Re-entry zone 4,316.98 – 4,352.44 · Stop 4,352.44
+Exact price not known yet.
+
+🔁 RE-ENTRY POSSIBLE · SHORT
+SOS Fade · XAUUSD.p
+From the setup of Aug 6, 8:00 AM CDT.
+✓ First trade was stopped at its original stop · ✗ Price back below the entry level · ✗ A retest of the entry level
+Sell at 4,294.92 · Stop 4,304.12
+
+🎯 RE-ENTRY ORDER WAITING · LONG
+SOS Fade · XAUUSD.p · 0.12 lots
+Buy at 4,159.79 · Stop 4,145.40
+Not filled yet.
+
+🔁 RE-ENTRY ORDER MOVED · SHORT
+SOS Fade · XAUUSD.p · 0.12 → 0.10 lots
+Sell at 4,294.92 · Stop 4,304.12
+Not filled yet. Still missing: a retest of the entry level.
+
+✅ RE-ENTERED · LONG
+SOS Fade · XAUUSD.p
+Filled. Details in the trades room.
+
+👋 NO RE-ENTRY · SHORT
+SOS Fade · XAUUSD.p
+Price reached the stop level before it came back.
+
+👋 NO RE-ENTRY · LONG
+SOS Fade · XAUUSD.p
+A new break of structure ended the setup.
+```
+
+⚠ **The other NO RE-ENTRY reasons**, each the strategy's own sentence: *Structure broke the other
+way, which ends the setup.* · *Price reached the setup's final target, which ends it.* · *Price
+closed past where the move started, which cancels the setup.* · *The setup expired.* · *This
+setup's one re-entry was already used.* · *A re-entry on this setup was already stopped out.* ·
+*The re-entry order waited too long and was cancelled.* · *The setup no longer allows a re-entry.*
+
+⚠ **The gap re-entry does NOT wait for a fresh pullback** — once the setup has had a 15-minute close
+in the zone with a gap, it rests at the live gap edge the moment the first trade closes. That is why
+its warning usually carries a price, and why the lead can be a minute or two (2026-10-01: first
+trade closed 08:15 UTC, re-entry filled 08:17).
+
+⚠ **`🔁` is shared with LIMIT ORDER MOVED**, which is also a change to a waiting order. The label
+tells them apart.
 
 ⚠ **`🧹 NO LONGER TRACKED` is deliberately NOT `👋 NO TRADE`** (2026-09-16). `NO TRADE` is a
 CLAIM — it says the bot looked at this setup and refused it, and it carries the strategy's own

@@ -329,6 +329,7 @@ listed below under the notes file that now holds it.
 
 - `setups.py` — the contract a strategy fills in to report what it is WATCHING (2026-08-13)
 - `touched` / `leg`, and `setup_feed.py` — the point-in-time feed a study reads (2026-09-28)
+- `reentry_of` / `origin_ms` / `planned_entry` — a re-entry reported as one more setup; all default None, nothing stored moves (2026-10-02)
 
 ### `notes/portfolio-stack.md` — Portfolio stacking and the venue ceiling
 

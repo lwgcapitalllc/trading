@@ -52,6 +52,7 @@ from engines.fibonacci.geometry import fib_level
 from .config import _TP_LEVELS
 from .entry_window import in_window as in_entry_window
 from .level_memory import SRC as LVL_SRC
+from .reentry_watch import ReentryWatch
 from .shift_entry import SRC as SHIFT_SRC
 from .shift_entry import ShiftCtx
 from .signals import POI_SOURCE_OB_NO_FVG, poi_rank_is_fvg, pois_for, sos_aware_veto
@@ -1063,6 +1064,10 @@ class Execution:
         # back, so no decision can move — proven by replay, not by this comment.
         self._setup_ctx: List[Optional[dict]] = [None, None]
         self._setup_done: List[SetupSnapshot] = []
+        # The re-entry a setup can still take, reported as one more watched setup. Fed by
+        # `DualClock` only — a one-frame run has no re-entry, so it stays empty. Reporting only,
+        # like the two above: nothing reads it back into a decision.
+        self.reentry_watch = ReentryWatch(self)
         #: Per side, the strategy's own rules that kept this bar's order OFF the book — set only
         #: by `_place_entries` and `_open_position`, from the same booleans that removed it, and
         #: cleared at the top of every `step`. Reporting only: read by `live_setups()` alone.
@@ -2377,6 +2382,9 @@ class Execution:
                 paused_by=() if resting else self._pull_why[slot],
                 touched=ctx["touched"], leg=ctx["leg"],
             ))
+        # The re-entries this setup layer cannot see — its thread closed at the first trade's
+        # fill. See `reentry_watch.py`.
+        out.extend(self.reentry_watch.snapshots())
         return out
 
     def drain_setups(self) -> List[SetupSnapshot]:
@@ -2389,6 +2397,7 @@ class Execution:
         """
         out = self.live_setups()
         self._setup_done.clear()
+        self.reentry_watch.clear_done()
         return out
 
     # ── blocked-setup marker (Pine 4065-4086) — reporting only ───────────────────

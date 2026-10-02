@@ -181,6 +181,11 @@ class DualClock:
         # which is about what has been PUSHED — and the difference is exactly what the live
         # driver's eager drain creates. Any fast bar opening before this is stale.
         self.stepped_primary_to_ms: Optional[int] = None
+        # Whether the re-entry WATCH may run (`reentry_watch.py`, reporting only). False through a
+        # live warm-up, which replays the primary alone (`drain_primary`) with no re-entry state
+        # behind it — a watch opened there would describe history. True from the first fast step,
+        # or once `restore_reentry_memory` has put back what the re-entry already used.
+        self._watch_on = False
 
     # ── pushing bars in ──────────────────────────────────────────────────────
 
@@ -259,6 +264,7 @@ class DualClock:
         """
         out = FastStep(bar=bar)
         ts = int(bar.timestamp_ms)
+        self._watch_on = True
         if self.fast_bar_is_stale(ts):
             raise FastBarOutOfOrder(
                 f"fast bar opening at {ts} arrived after the 15m context had advanced to "
@@ -305,9 +311,11 @@ class DualClock:
         # by `exec_secondary` either — the Generic bot runs it with the re-entry pinned off.
         shift_on = bool(getattr(cfg, "exec_shift_entry", False))
         if (not sec_on and not lvl_on and not shift_on) or self.last_sig is None:
+            self._watch_reentry()
             return out
 
         ex = self._st.execution
+        reentered: Optional[int] = None
         ny_hour = datetime.fromtimestamp(ts / 1000.0, tz=timezone.utc).astimezone(_NY).hour
         arm = SecArm()
         if sec_on:
@@ -362,12 +370,30 @@ class DualClock:
                 pass    # retired on the signal itself, taken or not — see `ShiftEntry`
             else:
                 self.arm_sm.mark_traded(filled)     # retire the just-filled leg
+                reentered = filled
             out.filled_dir = filled
         elif ex.sec_stop_dir is not None:
             # a re-entry hit its initial stop → kill this 15m leg (no more re-entries)
             self.arm_sm.mark_dead(ex.sec_stop_dir, self.last_seq)
             out.stopped_dir = ex.sec_stop_dir
+        self._watch_reentry(filled=reentered)
         return out
+
+    def _watch_reentry(self, filled: Optional[int] = None) -> None:
+        """Hand this step to the re-entry watch. REPORTING ONLY, and it may never raise.
+
+        🔴 **Caught here because this runs INSIDE the live bar loop.** A reporting bug that took
+        the step down would cost the trade the bot is managing for the sake of a message. The
+        watch keeps the error and goes quiet; the live runner logs it, and the measurement tool
+        refuses a run that set it — so it is never a SILENT failure.
+        """
+        watch = getattr(self._st.execution, "reentry_watch", None)
+        if not self._watch_on or watch is None:
+            return
+        try:
+            watch.observe(self.arm_sm, self.last_sig, self.last_seq, filled=filled)
+        except Exception as e:  # noqa: BLE001 — reporting only, see the docstring
+            watch.fail(e)
 
     def warm_fast_bar(self, bar) -> None:
         """Feed one HISTORICAL fast bar to the fast structure engine and nothing else.
@@ -410,12 +436,26 @@ class DualClock:
         return {"arm": self.arm_sm.snapshot_retired(bar_ms.get)}
 
     def restore_reentry_memory(self, record: Optional[dict]) -> int:
-        """Hand back `snapshot_reentry_memory()` after a warm-up. Returns fields restored."""
+        """Hand back `snapshot_reentry_memory()` after a warm-up. Returns fields restored.
+
+        ⚠ **It also starts the re-entry WATCH, and AFTER the memory is back.** The live runner
+        calls this at the end of every warm-up, just before it reconciles the open signal threads
+        — so a re-entry still possible across the restart is reported again under its same key
+        (its thread is kept, never closed and re-announced), and one this setup already used is
+        never opened at all.
+        """
         if not isinstance(record, dict):
+            self._open_reentry_watch()
             return 0
         bar_ms = getattr(self._st.execution, "_bar_ms", {})
         by_ms = {int(ms): idx for idx, ms in bar_ms.items()}
-        return self.arm_sm.restore_retired(record.get("arm"), by_ms.get)
+        n = self.arm_sm.restore_retired(record.get("arm"), by_ms.get)
+        self._open_reentry_watch()
+        return n
+
+    def _open_reentry_watch(self) -> None:
+        self._watch_on = True
+        self._watch_reentry()
 
     def drain_primary(self) -> List[PrimaryStep]:
         """Step every queued 15m bar regardless of the fast clock. The window tail — and, live,
@@ -438,6 +478,10 @@ class DualClock:
         self.last_sig, self.last_seq = sig, seq
         self.last_close_primary = bar.close
         self.stepped_primary_to_ms = int(bar.timestamp_ms) + self._tf_primary_ms
+        # On the 15m bar itself, so a re-entry that becomes possible when the first trade closes
+        # is said at that close rather than a fast bar later, and a setup that ENDS is ended
+        # with the bar that ended it in hand. Inert through a warm-up (`_watch_on`).
+        self._watch_reentry()
         return PrimaryStep(bar=bar, sig=sig, seq=seq, dec=dec)
 
 

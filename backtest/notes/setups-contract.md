@@ -125,3 +125,18 @@ episode, which is how the 1-minute entry treats it too.
 - **A study must not act on a row before `known_ms`.**
 - Tests: `tests/test_setup_feed.py` (7; 4 watched RED by mutation — grouping, restoring the
   execution, the close stamp, and the refusals).
+
+## `reentry_of`, `origin_ms`, `planned_entry` — a re-entry reported as one more setup (2026-10-02)
+
+🔴 **Why: on 2026-10-01 the live SOS Fade bot re-entered with no warning.** A setup's thread closes
+when its first trade fills, so nothing said a second chance was open (first trade closed at
+breakeven 08:15 UTC, re-entry filled 08:17).
+
+- `reentry_of` — the key of the setup this is a second chance at; `None` on every ordinary setup.
+  The alert layer opens a NEW thread in re-entry wording for one, and never learns what makes a
+  re-entry possible — those words are the strategy's confluence details.
+- `origin_ms` — when that setup formed, so the message can name it. `None` names no time.
+- `planned_entry` — a price the strategy has already decided, before any order exists (the reclaim's
+  level, or the live gap edge). Deliberately NOT `entry`, which means an order IS resting there.
+- ⚠ **Reporting only, like every field here.** All three default to `None`, so no existing strategy,
+  snapshot or stored record changes. The SOS Fade side is `strategies/python/sos_fade/reentry_watch.py`.

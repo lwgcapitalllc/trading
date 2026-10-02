@@ -387,6 +387,8 @@ def _setup_row(snap) -> dict:
         "paused_by": list(snap.paused_by),
         "reason": snap.reason,
         "tradeable": snap.tradeable,
+        # The setup a re-entry is a second chance at; None on an ordinary setup.
+        "reentry_of": getattr(snap, "reentry_of", None),
     }
 
 
@@ -1352,10 +1354,18 @@ class LiveRunner:
         # booked on the next fast bar rather than halted (`bridge._fill_after_the_bar`, 2026-10-01).
         bar = getattr(step, "bar", None)
         close = getattr(bar, "timestamp_ms", None)
-        self.bridge.sync_fast(
-            step,
-            bar_close_ms=None if close is None else int(close) + self.fast_feed.bar_seconds * 1000,
-        )
+        try:
+            self.bridge.sync_fast(
+                step,
+                bar_close_ms=None
+                if close is None
+                else int(close) + self.fast_feed.bar_seconds * 1000,
+            )
+        finally:
+            # AFTER the bridge, for the reason `_settle_primary` gives: the re-entry's
+            # order-waiting message states the size the broker is holding. In `finally`, so a
+            # broker wobble cannot silence it.
+            self._fast_setup_alerts()
         self._save_reentry_memory()
 
         if step.arm is None:
@@ -1374,6 +1384,46 @@ class LiveRunner:
             )
         elif step.stopped_dir is not None:
             self.ledger.event("secondary_shadow_stop", dir=step.stopped_dir, bar=str(step.bar.time))
+
+    def _fast_setup_alerts(self) -> None:
+        """The signals room, once per FAST bar. Never raises.
+
+        🔴 **Why (2026-10-02): a re-entry arms and fills on the fast clock, and the setup alerts
+        ran on the 15-minute clock only.** On 2026-10-01 the first trade closed at 08:15 UTC and
+        the re-entry filled at 08:17, inside one 15-minute bar — a warning sent on the 15-minute
+        clock would have arrived after the fill. The strategy reports the re-entry as one more
+        watched setup, so this is the same alert layer, asked more often.
+
+        ⚠ **Asking every minute sends nothing extra for an ordinary setup.** The alert layer
+        sends each message once per setup and a first trade's setup only changes on a 15-minute
+        bar, so the extra calls are re-reads that post nothing.
+        """
+        try:
+            alerts_obj = getattr(self, "setup_alerts", None)
+            if alerts_obj is not None:
+                alerts_obj.on_bar(self.strategy)
+            ex = getattr(getattr(self, "strategy", None), "execution", None)
+            failed = getattr(getattr(ex, "reentry_watch", None), "failed", None)
+            if failed and not getattr(self, "_reentry_watch_failure_said", False):
+                # SAID, once, in the health room — a warning that stopped working looks exactly
+                # like a quiet market, which is the failure this whole warning exists to end.
+                self._reentry_watch_failure_said = True
+                self.log.warning(f"Re-entry warnings stopped: {failed}. Trading is unaffected.")
+                self._notify_health(
+                    alert(
+                        WARNING,
+                        "RE-ENTRY WARNINGS OFF",
+                        self._label,
+                        "The signals room will not warn before a re-entry until this bot "
+                        "restarts. Trading is unaffected.",
+                        f"Reason: {failed}",
+                    )
+                )
+        except Exception as e:  # noqa: BLE001 — a notifier may never break the bar
+            try:
+                self.log.warning(f"fast-bar setup alerts failed: {e}")
+            except Exception:  # noqa: BLE001
+                pass
 
     def _warm_fast(self) -> None:
         """Replay fast history through the fast structure feed WITHOUT acting on any of it.
