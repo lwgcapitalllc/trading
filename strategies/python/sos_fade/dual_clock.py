@@ -449,7 +449,9 @@ class DualClock:
             return 0
         bar_ms = getattr(self._st.execution, "_bar_ms", {})
         by_ms = {int(ms): idx for idx, ms in bar_ms.items()}
-        n = self.arm_sm.restore_retired(record.get("arm"), by_ms.get)
+        seq = self.last_seq
+        live = None if seq is None else (seq.l_sos_bar, seq.s_sos_bar)
+        n = self.arm_sm.restore_retired(record.get("arm"), by_ms.get, live=live)
         self._open_reentry_watch()
         return n
 

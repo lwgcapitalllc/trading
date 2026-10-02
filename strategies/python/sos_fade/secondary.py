@@ -374,6 +374,11 @@ class SecondaryArm:
         self._l_seen = self._s_seen = False
         self._l_rec = self._s_rec = False
         self._l_void = self._s_void = False
+        # WHICH setup (15m SOS bar) `_void` was set on. Bookkeeping for the restart memory only —
+        # nothing that arms reads it. `_void` itself is a bare flag, so without this the memory
+        # could not say which setup it belongs to (see `snapshot_retired`).
+        self._l_void_sos: Optional[int] = None
+        self._s_void_sos: Optional[int] = None
         # The 15m SOS bar each side is currently arming against, captured in `update()` because
         # `mark_traded` is called by the driver without `seq` in hand.
         self._l_sos: Optional[int] = None
@@ -421,12 +426,14 @@ class SecondaryArm:
             self._l_used = None
             self._l_used_n = 0
             self._l_seen = self._l_rec = self._l_void = False
+            self._l_void_sos = None
         if seq.s_sos_bar is None:
             self._s_leg = self._s_hi = self._s_lo = None
             self._s_dead = None
             self._s_used = None
             self._s_used_n = 0
             self._s_seen = self._s_rec = self._s_void = False
+            self._s_void_sos = None
 
         # 2. Zone (0.886..0.618 of the 15m fib) — a 15m gate: Pine reads the last-closed 15m bar
         #    `close`, so `zone_close` is that bar's close (NOT the live fast-feed close, which the shift
@@ -517,9 +524,9 @@ class SecondaryArm:
                     # Voided by the stop anchor, else reclaimed by trading back through the edge.
                     if stop is not None and ((bar_low <= stop) if side > 0 else (bar_high >= stop)):
                         if side > 0:
-                            self._l_void = True
+                            self._l_void, self._l_void_sos = True, sos
                         else:
-                            self._s_void = True
+                            self._s_void, self._s_void_sos = True, sos
                     elif (bar_high > deep) if side > 0 else (bar_low < deep):
                         if side > 0:
                             self._l_rec = True
@@ -1083,12 +1090,27 @@ class SecondaryArm:
                     rec[f"{name}_ms"] = int(ms)
             if "used_ms" in rec:
                 rec["used_n"] = int(getattr(self, f"_{side}_used_n"))
+            # The reclaim's VOID (price reached the stop level before it came back), by the time of
+            # the setup it was set on. A bare flag, so it rides beside the three bar fields above.
+            if getattr(self, f"_{side}_void"):
+                bar = getattr(self, f"_{side}_void_sos")
+                ms = None if bar is None else bar_ms(bar)
+                if ms is not None:
+                    rec["void_ms"] = int(ms)
             out[side] = rec
         return out
 
-    def restore_retired(self, record: Optional[dict], bar_of_ms) -> int:
+    def restore_retired(self, record: Optional[dict], bar_of_ms, live=None) -> int:
         """Put back what `snapshot_retired` wrote, renumbered onto THIS run's bars. Returns how
-        many fields were restored. `bar_of_ms(ms) -> index or None`.
+        many fields were restored. `bar_of_ms(ms) -> index or None`. `live` = (long, short) 15m SOS
+        bar of the setup live on each side right now, or None when the caller cannot say.
+
+        🔴 **The reclaim's VOID is restored too, since 2026-10-02**, and only onto the setup it was
+        set on, while that setup is still live. Before this a restart forgot it, so a reclaim the
+        backtest had cancelled could arm again live — a trade no replay ever takes. MEASURED over
+        2020-2026: the flag was set 46 times and never once carried from one setup into the next,
+        so "the same setup, still live" is the whole of the lab's behaviour. With `live` None it
+        is not restored, which is the behaviour before this existed.
 
         ⚠ **Only ever RETIRES — it can never arm anything.** A field is set only when its time is
         a bar this run knows; one whose bar fell out of the window is a setup too old to arm
@@ -1113,6 +1135,14 @@ class SecondaryArm:
                 if name == "used":
                     setattr(self, f"_{side}_used_n", int(rec.get("used_n", 1)))
                 n += 1
+            ms = rec.get("void_ms")
+            now = None if live is None else (live[0] if side == "l" else live[1])
+            if ms is not None and now is not None and not getattr(self, f"_{side}_void"):
+                bar = bar_of_ms(int(ms))
+                if bar is not None and bar == now:
+                    setattr(self, f"_{side}_void", True)
+                    setattr(self, f"_{side}_void_sos", bar)
+                    n += 1
         return n
 
     def mark_dead(self, direction: int, seq) -> None:

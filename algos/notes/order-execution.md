@@ -889,6 +889,10 @@ only on a change) and puts it back after every fast-side warm-up (`_restore_reen
 `warm()` and `_rewarm_fast()`). Strategy half and its limits: `strategies/python/sos_fade/CLAUDE.md`
 → *A setup that has had its re-entry stays USED*. ⚠ A setup used BEFORE this was promoted has no
 record, so the first restart after the promote cannot protect it.
+🔴 **Later the same day the reclaim's "price reached the stop level first" joins it** — that
+cancellation was forgotten on a restart too, so the bot could take a reclaim the backtest had
+cancelled. Same file, a new key the runner never reads; restored only onto its own setup while
+it is still live. Strategy half: `strategies/python/sos_fade/notes/reentry_ladder_mechanics.md`.
 
 ## 🔴 Booking a trade the bot never closed — `tools/book_trade.py` (2026-10-02)
 

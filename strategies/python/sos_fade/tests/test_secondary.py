@@ -2272,5 +2272,93 @@ def test_the_dual_clock_carries_the_memory_through_the_strategy_s_own_bar_times(
     second = DualClock.__new__(DualClock)
     second._st = SimpleNamespace(execution=SimpleNamespace(_bar_ms={430: _SETUP_MS}))
     second.arm_sm = SecondaryArm(cfg)
+    # The 15m context a live warm-up always leaves behind before the memory is restored.
+    second.last_seq = _SEQ_RENUMBERED
     assert second.restore_reentry_memory(record) == 1
     assert _rearm_after_restart(second.arm_sm).l_armed is False
+
+
+# ── the reclaim's VOID survives a restart too (2026-10-02) ───────────────────────────────────
+# Price reaching the stop level before it comes back cancels that setup's reclaim for good. It
+# was a bare flag kept in memory only, so a restart forgot it and the live bot could take a
+# reclaim the backtest never takes. MEASURED 2020-2026: set 46 times, never carried into another
+# setup — so it is restored onto its own setup, and only while that setup is still live.
+
+def _reclaim_cfg():
+    return SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True,
+                         exec_sec_trigger="Reclaim Entry", exec_rec_require="Stopped only",
+                         exec_rec_stop="1.0", exec_sec_once_per_setup=True)
+
+
+def _reclaim_bar(arm_sm, low, high, seq=_SEQ_LONG):
+    sos = seq.l_sos_bar
+    return arm_sm.update(_m1_quiet(), _SIG_LONG, seq, zone_close=100.5, ny_hour=10, flat=True,
+                         be_sos_l=None, be_sos_s=None, closed_sos_l=sos, lost_sos_l=sos,
+                         bar_high=high, bar_low=low)
+
+
+def _voided_record():
+    """A first trade stopped at its original stop; price then reaches the 1.0 before it comes
+    back — the reclaim is void. Returns what the memory file would hold."""
+    before = SecondaryArm(_reclaim_cfg())
+    _reclaim_bar(before, 101.0, 101.1)                  # the stop-out bar — `_seen`
+    _reclaim_bar(before, 99.9, 100.6)                   # through the 1.0 first — void
+    assert before._l_void
+    return before.snapshot_retired({500: _SETUP_MS}.get)
+
+
+def _reclaims_after_restart(arm_sm):
+    """After the restart (setup renumbered 430) price comes back above the 0.886 and returns."""
+    _reclaim_bar(arm_sm, 101.0, 101.1, _SEQ_RENUMBERED)
+    return _reclaim_bar(arm_sm, 101.0, 101.5, _SEQ_RENUMBERED).l_armed
+
+
+def test_a_restart_WITHOUT_the_void_lets_the_cancelled_reclaim_arm():
+    """The bug, pinned as the control, so the test below cannot pass vacuously."""
+    assert _reclaims_after_restart(SecondaryArm(_reclaim_cfg())) is True
+
+
+def test_a_voided_reclaim_stays_void_across_a_restart_that_RENUMBERS_its_setup():
+    """Proven by mutation, each red here: the void's setup not kept when it is set; `void_ms`
+    not written; the void not restored. (The control above is a vacuity guard — it pins that
+    the fixture really reaches the arm, and is green by design.)"""
+    record = _voided_record()
+    assert record["l"]["void_ms"] == _SETUP_MS
+    after = SecondaryArm(_reclaim_cfg())
+    assert after.restore_retired(record, {_SETUP_MS: 430}.get, live=(430, None)) == 1
+    assert _reclaims_after_restart(after) is False
+
+
+def test_the_void_is_not_put_on_a_DIFFERENT_live_setup():
+    """The voided setup ended during the outage and a new one is live: it may reclaim.
+    MUTATION: drop the `bar == now` test and this reddens."""
+    after = SecondaryArm(_reclaim_cfg())
+    assert after.restore_retired(_voided_record(), {_SETUP_MS: 431}.get, live=(430, None)) == 0
+    assert _reclaims_after_restart(after) is True
+
+
+def test_with_no_live_setup_known_the_void_is_not_restored():
+    """`live` None = the caller cannot say which setup is live — the behaviour before this."""
+    after = SecondaryArm(_reclaim_cfg())
+    assert after.restore_retired(_voided_record(), {_SETUP_MS: 430}.get) == 0
+    assert not after._l_void
+
+
+def test_the_dual_clock_restores_the_void_onto_the_setup_its_context_says_is_live():
+    """The seam the live runner calls after every warm-up. MUTATION: pass `live=None` from
+    `restore_reentry_memory` and this reddens."""
+    from strategies.python.sos_fade.dual_clock import DualClock
+
+    first = DualClock.__new__(DualClock)
+    first._st = SimpleNamespace(execution=SimpleNamespace(_bar_ms={500: _SETUP_MS}))
+    first.arm_sm = SecondaryArm(_reclaim_cfg())
+    _reclaim_bar(first.arm_sm, 101.0, 101.1)
+    _reclaim_bar(first.arm_sm, 99.9, 100.6)
+    record = first.snapshot_reentry_memory()
+
+    second = DualClock.__new__(DualClock)
+    second._st = SimpleNamespace(execution=SimpleNamespace(_bar_ms={430: _SETUP_MS}))
+    second.arm_sm = SecondaryArm(_reclaim_cfg())
+    second.last_seq = _SEQ_RENUMBERED
+    assert second.restore_reentry_memory(record) == 1
+    assert _reclaims_after_restart(second.arm_sm) is False

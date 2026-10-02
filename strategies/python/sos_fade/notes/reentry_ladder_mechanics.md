@@ -574,3 +574,15 @@ never does that. The live warm-up deliberately does not replay the re-entry
 - ⚠ **Lab-inert by construction** — only the live runner calls these. Tests: 6 in
   `tests/test_secondary.py` (3 RED with the restore disabled, 1 RED with the time map reversed),
   6 in `algos/tests/test_reentry_memory.py`.
+- 🔴 **The reclaim's VOID is carried too, since later on 2026-10-02.** Price reaching the stop level
+  before it comes back cancels that setup's reclaim for good, but it was a bare in-memory flag, so
+  a restart forgot it and the live bot could arm a reclaim the backtest had cancelled. It is now
+  written by the time of the setup it was set on (`void_ms`) and restored ONLY onto that setup,
+  only while it is still the live one. ⚠ **MEASURED that this is the whole lab behaviour**:
+  2020-2026, the flag was set 46 times and never once carried from one setup into the next.
+  ⚠ An older snapshot ignores the new key, so rolling back is safe. Tests: 5 more in
+  `tests/test_secondary.py` (a control, then 6 mutations each red).
+- ⚠ **Still NOT carried, and found while doing it:** the reclaim's "price has come back through"
+  latch, and a frozen resting order. After a restart the reclaim must see price come back
+  through the level again before it rests — it can MISS a re-entry the backtest takes, never
+  take one it would not. Not measured.

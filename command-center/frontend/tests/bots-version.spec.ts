@@ -1417,25 +1417,29 @@ test('a running deploy holds its bot and its account — no Stop, no Restart, no
     r.fulfill({ json: version(compare(), null, true) })
   )
 
-  // The row: a Deploying pill where Stop was.
+  // The row: the deploy is said ONCE, on the version tag (Aaron, 2026-10-01: *"we have 2
+  // deploying pills, it should just be the one under version"*). Stop stays put, greyed out,
+  // with the reason on hover. MUTATION: render the action pill for a deploy again → red.
   await page.goto('/bots')
   const row = page.locator('[data-testid="bot-row"][data-bot="sos_fade_demo"]')
-  await expect(row.getByTestId('bot-action-pill')).toHaveAttribute('data-action', 'deploy', {
-    timeout: 20_000,
-  })
-  await expect(row.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0)
+  await expect(rowPill(page)).toHaveAttribute('data-state', 'deploying', { timeout: 20_000 })
+  await expect(row.getByTestId('bot-action-pill')).toHaveCount(0)
+  const stop = row.getByRole('button', { name: 'Stop', exact: true })
+  await expect(stop).toBeDisabled()
+  await expect(stop).toHaveAttribute('title', /is deploying — wait until it finishes/)
   // Its account-mate is not held by it.
   const mate = page.locator('[data-testid="bot-row"][data-bot="extreme_leg_demo"]')
   await expect(mate.getByTestId('bot-action-pill')).toHaveCount(0)
 
-  // The bot's panel: no Stop, no Restart; Move is disabled.
+  // The bot's panel: the deploy shows in its version section; Stop and Restart stay, not
+  // pressable; Move is disabled.
   await page.goto('/bots?bot=sos_fade_demo')
   const panel = page.getByRole('complementary', { name: /settings/ })
-  await expect(panel.getByTestId('bot-action-pill')).toHaveAttribute('data-action', 'deploy', {
+  await expect(panel.getByRole('button', { name: 'Stop', exact: true })).toBeDisabled({
     timeout: 20_000,
   })
-  await expect(panel.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0)
-  await expect(panel.getByRole('button', { name: 'Restart', exact: true })).toHaveCount(0)
+  await expect(panel.getByRole('button', { name: 'Restart', exact: true })).toBeDisabled()
+  await expect(panel.getByTestId('bot-action-pill')).toHaveCount(0)
   await expect(panel.getByTestId('move-sos_fade_demo')).toBeDisabled()
 
   // Its account: nothing that changes what the account's bots read is pressable, and it says why.

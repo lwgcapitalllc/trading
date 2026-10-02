@@ -810,17 +810,20 @@ function PrimaryBtn({
   label,
   tone,
   disabled,
+  why,
   onClick,
 }: {
   label: 'Start' | 'Stop'
   tone: 'pos' | 'neg'
   disabled?: boolean
+  /** Why it is greyed out — the bot is mid-deploy — said on hover rather than beside it. */
+  why?: string | null
   onClick: () => void
 }) {
   return (
     <button
       type="button"
-      title={label}
+      title={(disabled && why) || label}
       disabled={disabled}
       onClick={(e) => {
         e.stopPropagation()
@@ -2147,6 +2150,13 @@ export function Bots() {
           // answered for still has one.
           const name = live?.name ?? cfg.display
           const acting = actionOf(cfg.key)
+          // 🔴 **A DEPLOY IS SHOWN ONCE — ON THE VERSION TAG (2026-10-01).** Aaron: *"we have 2
+          // deploying pills, it should just be the one under version."* The tag already says
+          // Queued / Deploying vN, so here the buttons stay where they are, greyed out with the
+          // reason on hover. A start, stop or restart has no other home on the row, so it keeps
+          // its pill in the buttons' place.
+          const stepping = acting === 'deploy' ? null : acting
+          const why = acting ? lockOf([cfg.key]) : null
           const rowId = `bot:${account}:${cfg.key}`
           const open = openRows.has(rowId)
           const ver = versionByKey.get(cfg.key)?.data
@@ -2283,8 +2293,8 @@ export function Bots() {
                   {/* 🔴 **NOTHING IS OFFERED WHILE THE STATE IS UNKNOWN (2026-09-06).** Pressing
                    *  Start on a bot that is already trading is the one mistake this row can make
                    *  that costs money, and an unanswered box is a reason to ask again, never to act. */}
-                  {acting ? (
-                    <BotActionPill action={acting} />
+                  {stepping ? (
+                    <BotActionPill action={stepping} />
                   ) : !asked && asking ? (
                     <>
                       <Shimmer className="h-[26px] w-[52px]" />
@@ -2300,6 +2310,7 @@ export function Bots() {
                   ) : running ? (
                     <PrimaryBtn
                       label="Stop"
+                      why={why}
                       tone="neg"
                       disabled={busyFor(cfg.key)}
                       onClick={() => act(cfg.key, 'stop', () => stopOne.mutateAsync(cfg.key))}
@@ -2307,6 +2318,7 @@ export function Bots() {
                   ) : (
                     <PrimaryBtn
                       label="Start"
+                      why={why}
                       tone="pos"
                       disabled={busyFor(cfg.key)}
                       onClick={() => act(cfg.key, 'start', () => startOne.mutateAsync(cfg.key))}
@@ -2324,7 +2336,7 @@ export function Bots() {
                   />
                   {/* Hidden while this bot's pill shows — the pill needs the room. The drawer keeps
                    *  its own Logs and Restart throughout. */}
-                  {!acting && (
+                  {!stepping && (
                     <OverflowMenu
                       testId="bot-menu"
                       label={`More for ${name}`}

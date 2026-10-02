@@ -512,13 +512,16 @@ export function BotDrawer({
         {/* ⚠ While it is being taken off, its Remove button is the one thing saying so
          *  (2026-09-13, Aaron: "there should just be one button") — no Stopping pill here, and
          *  these stay put, not pressable. */}
-        {pendingAction && !removing ? (
+        {/* A DEPLOY is shown once, by the version section below (2026-10-01) — its buttons stay
+         *  here, not pressable, with the reason on hover. */}
+        {pendingAction && pendingAction !== 'deploy' && !removing ? (
           <BotActionPill action={pendingAction} />
         ) : running ? (
           <>
             <button
               onClick={onStop}
               disabled={busy || removing}
+              title={lock ?? undefined}
               className={`${btnCls} border-neg/40 bg-neg-muted text-neg-text hover:bg-neg/10`}
             >
               <Square size={12} /> Stop
@@ -526,6 +529,7 @@ export function BotDrawer({
             <button
               onClick={onRestart}
               disabled={busy || removing}
+              title={lock ?? undefined}
               className={`${btnCls} border-border-default text-text-primary hover:bg-bg-hover`}
             >
               <RotateCcw size={12} /> Restart

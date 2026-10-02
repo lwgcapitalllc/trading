@@ -374,6 +374,6 @@ at 08:17. Aaron asked for a heads-up before a re-entry can fire.
   once in the health room; it can never take the bar down.
 - **Reporting only, proven by replay**: the full 2020-2026 two-clock trade list is identical at the
   last commit and with this change. Numbers: `docs/LIVE_SETUP_ALERTS.md` §5.6.
-- ⚠ **Live-vs-lab gap found while building this, NOT fixed (reporting-only change):** the reclaim's
-  `_void` (price reached the stop level first) is not in the saved re-entry memory, so after a
-  restart a voided reclaim can arm again. The warning mirrors that, so it will say so when it happens.
+- ✅ **Live-vs-lab gap found while building this, fixed in its own commit the same day:** the
+  reclaim's void (price reached the stop level first) is now in the saved re-entry memory, so
+  after a restart a voided reclaim stays void — and its warning is never re-opened.

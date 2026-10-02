@@ -427,6 +427,7 @@ Most-cited code: `components/Drawer.tsx`, `components/FleetControls.tsx`, `pages
 - Version reads start once the status read has answered — ten at once buried it on the two-CPU box (2026-09-24) — superseded the same day by ONE fleet read, polled every minute
 - The files (tamper) check is asked by the bot panel only, never the rows — the page fills in 11s, not 29s (2026-09-24)
 - 🔴 A running deploy locks its bot (Deploying pill, no Stop / Restart), and a bot mid-action locks its account's settings — `lockOf` (2026-09-24)
+- A deploy is shown ONCE, on the version tag; the bot's buttons stay, greyed out with the reason on hover (2026-10-01)
 
 ### `notes/accounts-broker.md` — Accounts and broker connections
 

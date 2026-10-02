@@ -2042,3 +2042,21 @@ and *"I don't want the account to expand, just the bots."* Picked off a mockup.
   `/live-safety`), and a restart is the cost: it has cancelled a resting order before. The value is
   a check, not a trigger — seeing that a bot's exit sits where the backtest puts it — so it does not
   earn a restart by itself. Show it as distance in R ("+1.2R now · target 3R"), not a bare price.
+
+---
+
+## A deploy is shown ONCE — on the version tag; the buttons stay, greyed out (2026-10-01)
+
+Aaron, on a batch deploy: *"we have 2 deploying pills, it should just be the one under version …
+leave the action buttons as they are and just disable them."* A running or queued deploy drew a
+Deploying pill in the actions column as well as the version tag's Queued / Deploying vN, and the
+two could even disagree (the tag said Queued while the button said Deploying).
+
+- **Deploy:** the version tag is the one readout. The row's Start/Stop and its menu, and the panel's
+  Stop/Restart, stay where they are, not pressable, with *"X is deploying — wait until it
+  finishes"* on hover (`lockOf`, the same sentence the account settings use).
+- **Start / stop / restart keep their pill in the buttons' place** — they have no other home on the
+  row, and Aaron asked for the word ("Stopping"), not dots, on 2026-09-10.
+
+TESTED: *a running deploy holds its bot and its account* — red on the row and on the panel when a
+deploy's pill is drawn again.
