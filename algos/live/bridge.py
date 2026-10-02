@@ -72,6 +72,11 @@ from order_sizing import (  # noqa: E402
     plan_order,
 )
 
+#: The order layer's code for a limit the market has already reached. Spelled here rather than
+#: imported because `mt5_ops` pulls in the terminal package (see `broker_result.py`); a test pins
+#: it to `mt5_ops.REFUSE_LIMIT_WRONG_SIDE` so the two cannot drift.
+LIMIT_WRONG_SIDE = "limit_wrong_side"
+
 #: How much the locked R must IMPROVE before another stop-move message is sent.
 #:
 #: 🔴 **THE THROTTLE IS THE FEATURE, NOT A LIMITATION OF IT (2026-09-22).** A structure trail
@@ -3780,6 +3785,7 @@ class OrderBridge:
                 ),
                 f"place {slot_label(slot)} limit {lots}L @ {pend.edge} SL {pend.sl} TP {tp_txt}",
             )
+            sent = self._fill_limit_already_reached(slot, side, lots, pend, tp, sent)
         ticket = sent
         # The fill price, MARKET ONLY. `None` means "no fill to report", never "filled at zero"
         # (rule 1).
@@ -3894,6 +3900,61 @@ class OrderBridge:
             )
             if retcode is not None:
                 self._on_broker_rejection(slot, lots, pend, sig, at_market, said, retcode)
+
+    def _fill_limit_already_reached(self, slot, side, lots, pend, tp, sent):
+        """A limit whose price the market has ALREADY reached is sent at market, as that limit.
+
+        🔴 **Built 2026-10-02, after the live SOS Fade bot halted on its own re-entry and missed
+        the trade.** Its buy limit at 4159.79 went out at 00:46:07 with the ask already at
+        4159.72. The order layer refused it as "wrong side of the market" — and the strategy,
+        which never heard, filled that same limit on the next one-minute bar and halted with
+        "thinks it has a trade open, but the broker has none". The demo copy sent the identical
+        order six seconds earlier, while the ask was still above the level, and got the trade.
+
+        ✅ **This is the SAME trade, not a resized or repriced one (rule 17).** A limit through the
+        market fills at once at any venue, at the market or better, and the strategy books it
+        exactly that way: at the bar's open, or the level if that is better. Same lots, same stop,
+        same target — only the route to the venue differs.
+
+        ✅ **Recorded in the slot as the limit that filled**, so every existing path treats it as
+        one: `_observe_open` adopts it, and the two fill-before-the-strategy-books-it graces
+        (`_primary_fill_awaiting_its_bar`, `_fill_after_the_bar`) match it on ticket. MT5 gives a
+        position the ticket of the order that opened it.
+
+        ⚠ **Only the wrong-side refusal converts.** Every other refusal, and a market send the
+        broker then refuses, stays a refusal and is recorded as before.
+        """
+        if sent is True or (isinstance(sent, tuple) and sent[0]):
+            return sent  # placed (or a dry run) — nothing to convert
+        if sent is UNKNOWN:
+            return sent
+        said = getattr(self._mt5, "last_refusal", None) or {}
+        if said.get("code") != LIMIT_WRONG_SIDE:
+            return sent
+        self._log.warning(
+            f"The {slot_label(slot)} limit at {pend.edge} has already been reached — sending it "
+            f"at market as the same trade ({lots}L, SL {pend.sl})."
+        )
+        filled = self._exec(
+            lambda: self._mt5.place_order(side, lots, pend.sl, 0.0 if tp is None else tp),
+            f"place {slot_label(slot)} limit {lots}L @ {pend.edge} AT MARKET (level reached) "
+            f"SL {pend.sl} TP {'none' if tp is None else tp}",
+        )
+        if isinstance(filled, tuple) and filled[0] and filled[0] is not UNKNOWN:
+            self._ledger.event(
+                "limit_reached_sent_at_market",
+                dir=slot[1],
+                intent=slot[0],
+                ticket=int(filled[0]),
+                lots=lots,
+                price=pend.edge,
+                fill_price=filled[1] if len(filled) > 1 else None,
+                stop=pend.sl,
+            )
+            # The limit's own price, not the fill: the caller records what was RESTED, and the
+            # fill is the position's — `_observe_open` reads it off the broker.
+            return filled[0], pend.edge
+        return filled
 
     # ── a broker rejection: say so, and re-send it soon when the cause is temporary ─────────
     #: Seconds to wait before each re-send. Five tries inside ~5 minutes — well inside a 15m bar,

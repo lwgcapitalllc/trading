@@ -133,6 +133,9 @@ _DECISION_EVENTS = {
     # The RE-ENTRY's own limit filled after the bar being checked closed; booked on the next bar
     # instead of halting (2026-10-01). About an ORDER, so a decision.
     "secondary_fill_deferred",
+    # A limit the market had ALREADY reached, sent at market as that same trade instead of being
+    # refused (2026-10-02). About an ORDER, so a decision.
+    "limit_reached_sent_at_market",
     # The OWNER closed the trade by hand and it was booked as his (2026-09-17). About a TRADE.
     "manual_close",
     # The owner moved the open trade's stop CLOSER at the broker and it was kept (2026-09-17).

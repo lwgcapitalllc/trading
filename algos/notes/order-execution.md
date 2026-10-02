@@ -849,6 +849,36 @@ dropping the fast-clock call (3 red), keying the latch on the ticket alone (the 
 red), dropping the close in the runner (the runner test red). ⚠ **Not yet run against a real
 fill** — rule 9 until a bot logs `RE-ENTRY LIMIT FILLED | … after this bar closed`.
 
+## 🔴 A limit the market has ALREADY reached is sent at market, as that limit (2026-10-02)
+
+**The halt.** The live SOS Fade bot's re-entry buy limit at 4159.79 went out at 00:46:07 with the
+ask already at 4159.72. The order layer refused it ("wrong side of the market") — a LOCAL refusal,
+no broker retcode, so nothing re-sent it and nothing told the strategy. The strategy filled the
+same limit on the next one-minute bar and the bot halted with "thinks it has a trade open, but the
+broker has none". The trade was missed. The demo copy sent the identical order at 00:46:01, six
+seconds earlier and before the touch, and got it — the whole live/demo difference was timing.
+
+**The fix** (`live/bridge.py` → `_fill_limit_already_reached`). Only that one refusal converts: the
+same lots, stop and target go out as a market order, and the ticket is recorded in the slot as the
+limit that filled. That is the same trade, not a resized one (rule 17): a limit through the market
+fills at once at any venue at the market or better, and the strategy books it the same way (the
+bar's open, or the level if better). Recording it in the slot is what lets the existing graces
+(`_primary_fill_awaiting_its_bar`, `_fill_after_the_bar`) and `_observe_open` treat it like any
+filled limit. Every other refusal, and a market send the broker also refuses, stays a refusal.
+Ledger event: `limit_reached_sent_at_market`.
+
+⚠ **Still a halt, by design:** the price already past the STOP when the order goes out. The broker
+refuses that market order and the strategy books an entry that stops out at once — a real
+disagreement with nothing left to trade.
+
+✅ **A restart re-offers a live re-entry.** Warm-up does not step the re-entry's one-minute side
+(`runner._warm_fast`), so a restarted bot is not holding the missed trade in its own record; if the
+re-entry is still armed it offers the limit again, and this path sends it at market if the price
+is already through.
+
+TESTED: 7 tests in `tests/test_live_bridge.py` under this date's heading; four watched RED with the
+conversion switched off, the shared-close one by recording the order outside its slot.
+
 ## ✋ A trade the OWNER closes by hand is booked as his, and the bot keeps trading (2026-09-17)
 
 **Before:** closing the bot's trade in the terminal booked an ordinary exit and HALTED the bot on

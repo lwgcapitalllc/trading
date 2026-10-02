@@ -155,6 +155,12 @@ class _FakeMt5Ops:
         self.refuse_placement = None
         #: Mirrors production's own attribute — see `mt5_ops.BotMT5.last_refusal`.
         self.last_refusal = None
+        # The market has already reached every limit price: `place_pending_limit` refuses the way
+        # `mt5_ops` does (its own guard, no broker retcode) and a MARKET order still fills. A
+        # fake that refused both, or neither, could not show the 2026-10-02 halt.
+        self.limit_reached = False
+        #: When a market fill opened, in UTC ms — `None` is "the terminal did not say".
+        self.market_opened_ms = None
 
     def _refused_placement(self):
         """Apply `refuse_placement`, returning True when the caller should refuse."""
@@ -260,6 +266,14 @@ class _FakeMt5Ops:
     def place_pending_limit(self, direction, lots, price, sl, tp=0.0, comment="", symbol=None):
         if self._refused_placement():
             return None, None
+        if self.limit_reached:
+            self.last_refusal = {
+                "code": "limit_wrong_side",
+                "detail": f"Pending refused: {direction} limit {price} is on the wrong side of "
+                "the market — price already reached the level.",
+                "retcode": None,
+            }
+            return None, None
         self._ticket += 1
         self.actions.append(("place", direction, lots, price, sl, tp))
         self.orders.append(
@@ -283,7 +297,15 @@ class _FakeMt5Ops:
         # with a target produces at the venue — and it is what makes the reconciliation's "is a
         # target already on this ticket" question answerable here at all.
         self.positions.append(
-            _Pos(self._ticket, 0 if direction == "bullish" else 1, fill, lots, sl, tp=tp)
+            _Pos(
+                self._ticket,
+                0 if direction == "bullish" else 1,
+                fill,
+                lots,
+                sl,
+                tp=tp,
+                opened_ms=self.market_opened_ms,
+            )
         )
         return self._ticket, fill
 
@@ -5417,3 +5439,120 @@ def test_an_add_is_STILL_ANNOUNCED_with_sizes_switched_off(monkeypatch):
     assert len(added) == 1, "the add was not announced"
     assert "Added to the trade at about 3,300.00" in added[0]
     assert "lots" not in added[0]
+
+
+# ── a limit the market has ALREADY reached goes at market, as that limit (2026-10-02) ──────────
+#
+# 🔴 The live SOS Fade bot's re-entry buy limit at 4159.79 went out at 00:46:07 with the ask at
+# 4159.72. The order layer refused it as on the wrong side, the strategy never heard, filled the
+# same limit on the next one-minute bar, and the bot halted with "the broker has none" — missing
+# the trade. The demo copy sent the identical order at 00:46:01, before the touch, and got it.
+
+
+def _reentry_limit_reached(tmp_path):
+    ex = _FakeExecution(pend_sec=_Pend(1, 4159.79, 18.0, 4145.40), entry_kind="secondary")
+    b, ops, ledger, notes = _bridge(ex, instance_dir=tmp_path)
+    ops.limit_reached = True
+    ops.fill_price = 4159.72
+    ops.market_opened_ms = _FAST_CLOSE + 7_000
+    b.sync_fast(_fast_step(), bar_close_ms=_FAST_CLOSE)
+    return b, ops, ex, ledger
+
+
+def test_a_reentry_limit_already_reached_is_SENT_AT_MARKET_and_booked_not_halted(tmp_path):
+    """Today's sequence. Watched RED against HEAD: no market order was sent, and the next fast
+    bar halted with "thinks it has a trade open, but the broker has none".
+    MUTATION: make `_fill_limit_already_reached` return `sent` unchanged -> red."""
+    b, ops, ex, ledger = _reentry_limit_reached(tmp_path)
+    market = [a for a in ops.actions if a[0] == "market"]
+    assert len(market) == 1, ops.actions
+    ticket = ops.positions[0].ticket
+    assert b._rest[live_bridge.SECONDARY_LONG].ticket == ticket
+    assert [k for k, _ in ledger.rows if k == "event:limit_reached_sent_at_market"]
+    assert not [k for k, _ in ledger.rows if k == "event:order_refused"]
+
+    ex._pos_dir, ex._pend_sec = 1, None  # the next fast bar: the strategy fills the same limit
+    b.sync_fast(_fast_step(), bar_close_ms=_FAST_CLOSE + 60_000)
+    assert b.state is live_bridge.BridgeState.LIVE, b.halt_reason
+    assert b._pos_ticket == ticket
+    assert [kw for k, kw in ledger.rows if k == "opened"][0]["intent"] == "secondary"
+
+
+def test_the_market_send_is_the_SAME_trade_size_and_stop_as_the_limit(tmp_path):
+    """Rule 17: a different route, never a different trade.
+    MUTATION: send any other size or stop -> red."""
+    ex = _FakeExecution(pend_sec=_Pend(1, 4159.79, 18.0, 4145.40), entry_kind="secondary")
+    control, cops, _l, _n = _bridge(ex, instance_dir=tmp_path / "control")
+    control.sync_fast(_fast_step(), bar_close_ms=_FAST_CLOSE)
+    _, _side, lots, _price, stop, tp = [a for a in cops.actions if a[0] == "place"][0]
+
+    _b, ops, _ex, _ledger = _reentry_limit_reached(tmp_path)
+    assert [a for a in ops.actions if a[0] == "market"] == [("market", "bullish", lots, stop, tp)]
+
+
+def test_a_reentry_market_fill_at_a_SHARED_close_is_not_halted_by_the_15m_check(tmp_path):
+    """When a one-minute and a 15-minute bar close together the fill clock runs first, so the
+    15-minute check meets this fill before the strategy has booked it.
+    MUTATION: record the converted order anywhere but the slot -> red."""
+    b, ops, ex, _ledger = _reentry_limit_reached(tmp_path)
+    b.sync(_Dec(), _Sig(), bar_close_ms=_FAST_CLOSE)
+    assert b.state is live_bridge.BridgeState.LIVE, b.halt_reason
+
+
+def test_a_PRIMARY_limit_already_reached_waits_for_its_15m_bar_then_is_booked(tmp_path):
+    """The same gap on the 15-minute side: the fill clock must leave the fill alone until the
+    strategy's own bar closes. MUTATION: skip the conversion for the primary -> red."""
+    ex = _FakeExecution(pend_long=_Pend(1, 4179.66, 53.0, 4165.71))
+    b, ops, ledger, _n = _bridge(ex, instance_dir=tmp_path)
+    ops.limit_reached = True
+    ops.fill_price = 4179.50
+    ops.market_opened_ms = _CLOSE + 8_000
+    b.sync(_Dec(), _Sig(), bar_close_ms=_CLOSE)
+    assert len([a for a in ops.actions if a[0] == "market"]) == 1, ops.actions
+    ticket = ops.positions[0].ticket
+
+    b.sync_fast(_fast_step(), bar_close_ms=_CLOSE + 60_000)  # strategy still flat mid-bar
+    assert b.state is live_bridge.BridgeState.LIVE, b.halt_reason
+
+    ex._pos_dir, ex._pend_long = 1, None  # the 15-minute close: the strategy fills it
+    b.sync(_Dec(stop=4165.71), _Sig(), bar_close_ms=_CLOSE + 900_000)
+    assert b.state is live_bridge.BridgeState.LIVE, b.halt_reason
+    assert b._pos_ticket == ticket
+    assert [kw for k, kw in ledger.rows if k == "opened"][0]["intent"] == "primary"
+
+
+def test_ANY_OTHER_refusal_is_never_converted_to_a_market_order(tmp_path):
+    """Only "the price is already there" means the same trade at market. A size below the venue
+    minimum, a stop too close, no tick — all stay refusals. MUTATION: drop the code check -> red."""
+    ex = _FakeExecution(pend_sec=_Pend(1, 4159.79, 18.0, 4145.40), entry_kind="secondary")
+    b, ops, ledger, _n = _bridge(ex, instance_dir=tmp_path)
+    ops.refuse_placement = {"code": "below_min_lot", "detail": "too small"}
+    b.sync_fast(_fast_step(), bar_close_ms=_FAST_CLOSE)
+    assert not [a for a in ops.actions if a[0] == "market"]
+    assert [kw["code"] for k, kw in ledger.rows if k == "event:order_refused"] == ["below_min_lot"]
+
+
+def test_a_market_send_the_broker_ALSO_refuses_stays_a_recorded_refusal(tmp_path):
+    """Nothing is recorded as resting when nothing reached the venue (rule 3)."""
+    ex = _FakeExecution(pend_sec=_Pend(1, 4159.79, 18.0, 4145.40), entry_kind="secondary")
+    b, ops, ledger, _n = _bridge(ex, instance_dir=tmp_path)
+    ops.limit_reached = True
+    real_market = ops.place_order
+
+    def refused_market(*a, **k):
+        ops.last_refusal = {"code": "broker", "detail": "invalid stops", "retcode": 10016}
+        return None, None
+
+    ops.place_order = refused_market
+    b.sync_fast(_fast_step(), bar_close_ms=_FAST_CLOSE)
+    assert b._rest[live_bridge.SECONDARY_LONG] is None
+    assert [kw["code"] for k, kw in ledger.rows if k == "event:order_refused"] == ["broker"]
+    assert real_market  # the double's own send was never reached
+
+
+def test_the_wrong_side_code_matches_the_order_layer():
+    """The bridge spells the code rather than importing `mt5_ops`; this pins the two together.
+    MUTATION: change either spelling -> red."""
+    import mt5_ops
+
+    assert live_bridge.LIMIT_WRONG_SIDE == mt5_ops.REFUSE_LIMIT_WRONG_SIDE
