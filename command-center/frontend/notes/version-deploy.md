@@ -14,6 +14,7 @@ applies, top to bottom.** The four amber ones come off `versionNeed` in `lib/bot
 
 | Pill | Colour | Means | What fixes it |
 |---|---|---|---|
+| Queued | cyan | a deploy of this bot is waiting for another bot's build — the box builds one at a time (2026-10-01) | wait |
 | Deploying vN | cyan | a deploy of this bot is running | wait |
 | (shimmer) | — | the version read has not answered yet | wait |
 | Unread | grey | the trading box could not be reached | it asks again on the next refresh |
@@ -458,3 +459,33 @@ job route has already said (`settledOnOpen` in `tests/bots-version.spec.ts`). Wi
 check passes whenever the version fetch happens to land after the first job read — a check that
 cannot fail on the defect it names. Backend half:
 `command-center/backend/notes/bots-deploys.md`.
+
+---
+
+## 🔴 Deploys started together: a QUEUED tag, and a late reading may not overwrite a newer one (2026-10-01)
+
+Aaron: *"sometimes I manage multiple bots across multiple accounts at the same time… the deployment
+will say done but the tag still shows it needs to update or restart… intermittent, I can't find a
+true pattern."* The pattern was OVERLAP. Three causes; the box's half is in
+`backend/notes/bots-deploys.md` (builds now queue, 4 of 11 overlapping deploys had timed out).
+
+- **Queued.** A deploy waiting its turn to build carries `queued_behind` (the other bot's name).
+  The row's pill reads **Queued** (title: who it waits for) and the panel's caption reads *Queued —
+  waiting for X to finish building*. No step is active while it waits, so the caption checks this
+  before falling back to *Starting…*.
+- **A superseded fleet version read writes nothing.** `useBotVersions` writes every bot's entry from
+  inside its own read. A re-read cancels the read in flight, but the query library only stops
+  LISTENING — the fetch went on, landed later, and wrote its OLDER answers over the newer read's. So
+  a landed deploy could flip back to "behind" depending on which read the box answered first. The
+  read now passes the query's abort signal (`api/client.ts` takes `signal`, and an aborted read
+  never toasts) and writes nothing once aborted. **TESTED:** *a version read that was SUPERSEDED
+  never writes…* — red with the signal and the check removed.
+- **"Restart" no longer outlives the restart.** `restartReason`'s same-run check — a reading taken
+  before the process's current start describes the process it replaced — guarded only the
+  "shared code moved" cause. It now runs before both, so the "a deploy is on disk and this bot runs
+  the one before it" cause clears off the snapshot's uptime too. **TESTED:** *a bot that restarted
+  since its version was read is not asked to restart for a NEW deploy* — red with the old order.
+- ⚠ **Not a cause, though it looked like one:** a second finish's re-read cancelling the first's
+  does NOT end the first deploy's wait early. The installed query library (5.100) hands the cancelled
+  awaiter the REPLACEMENT read's promise. A check built on that theory stayed green against the code
+  it targeted, so it was dropped rather than kept as a test that cannot fail.

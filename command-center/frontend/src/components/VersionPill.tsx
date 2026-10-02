@@ -1,4 +1,4 @@
-import { AlertTriangle, HelpCircle, Loader2, RotateCcw, Upload, WifiOff } from 'lucide-react'
+import { AlertTriangle, Clock, HelpCircle, Loader2, RotateCcw, Upload, WifiOff } from 'lucide-react'
 import type { BotDeployedVersion } from '@/types'
 import { Shimmer } from '@/components/Shimmer'
 import { changeGroups, deployableVersion, versionNeed, versionReadFailure } from '@/lib/botVersion'
@@ -26,7 +26,7 @@ import { changeGroups, deployableVersion, versionNeed, versionReadFailure } from
  * page reads) moves only when the bot restarts — so the page said "up to date" over a live bot
  * eight fixes behind. `restart` is `restartReason`'s sentence; the caller decides, this draws.
  *
- * ⚠ **Order: deploying, loading, unread, not deployed, unknown, behind, restart, not pushed,
+ * ⚠ **Order: queued, deploying, loading, unread, not deployed, unknown, behind, restart, not pushed,
  * current.** Not deployed comes before unknown because it is the one unanswerable version that is
  * a finding rather than a failure to work one out. Behind
  * wins over restart because a deploy restarts too; restart wins over not pushed because it is
@@ -49,6 +49,7 @@ export function VersionPill({
   version,
   loading,
   deploying,
+  queued,
   error,
   restart,
 }: {
@@ -58,6 +59,9 @@ export function VersionPill({
   loading?: boolean
   /** A deploy of this bot is running. Wins over every other state, `loading` included. */
   deploying?: boolean
+  /** Whose build this deploy is waiting behind on the box (`services/box_lane.py`), or absent.
+   *  Read only while `deploying` — a waiting deploy is still a deploy. */
+  queued?: string | null
   /** The read FAILED — the box could not be asked. The query's own error. */
   error?: unknown
   /** Why this running bot needs a restart to be on the code the box holds (`restartReason`), or
@@ -65,6 +69,20 @@ export function VersionPill({
   restart?: string | null
 }) {
   const c = version?.compare ?? null
+
+  if (deploying && queued) {
+    return (
+      <span
+        data-testid="version-pill"
+        data-state="queued"
+        title={`Waiting for ${queued} to finish building. The trading box builds one deploy at a time, so a batch never slows itself into a timeout. Open the bot to watch it.`}
+        className={`${BASE} ${TONE.busy}`}
+      >
+        <Clock size={10} />
+        Queued
+      </span>
+    )
+  }
 
   if (deploying) {
     const to = deployableVersion(c)

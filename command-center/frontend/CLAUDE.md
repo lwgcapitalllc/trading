@@ -454,6 +454,7 @@ Most-cited code: `lib/botVersion.ts`, `pages/Bots/ConfigureTab.tsx`, `components
 - The scheduled-job status gained an ARMED value (2026-08-21)
 - 🔴 The version badge kept its PRE-DEPLOY reading and asked for a second deploy — the finish was reconciled only when this tab watched the job land, and it is now keyed by job id (2026-09-23)
 - A deploy with NOTHING to deploy has its own caption, checked BEFORE `restarted` — both are false and only one is the reason (2026-09-23)
+- 🔴 Deploys started together: a Queued tag, a superseded version read writes nothing, and "restart" clears off the process's own start (2026-10-01)
 
 ### `notes/overview-sidebar.md` — Overview, sidebar and the Calendar page
 

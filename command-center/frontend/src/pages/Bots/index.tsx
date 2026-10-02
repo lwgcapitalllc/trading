@@ -2157,6 +2157,7 @@ export function Bots() {
               version={ver}
               loading={versionByKey.get(cfg.key)?.isPending}
               deploying={deploying}
+              queued={jobByKey.get(cfg.key)?.queued_behind}
               error={versionByKey.get(cfg.key)?.error}
               restart={restart}
             />

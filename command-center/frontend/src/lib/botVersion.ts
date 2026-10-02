@@ -125,12 +125,12 @@ export function restartReason(
   fetchedAt?: string
 ): string | null {
   if (!v || live?.status !== 'RUNNING') return null
-  if (isRestartPending(v))
-    return 'A new version is deployed on the box and this bot is still running the one before it. Restart it to switch.'
   const rc = v.running_code
-  const n = rc?.changes_waiting
-  if (!rc || n == null || n <= 0) return null
-  if (live.uptime_seconds != null && rc.started_at) {
+  // 🔴 **Checked before BOTH causes since 2026-10-01** — it guarded only the second. A reading
+  // taken before a restart describes the process that restart replaced, so its "still running the
+  // one before it" is about a process that is gone; the row asked for a restart it had just had
+  // until the next version read.
+  if (live.uptime_seconds != null && rc?.started_at) {
     const readStart = Date.parse(rc.started_at)
     const now = fetchedAt ? Date.parse(fetchedAt) : Date.now()
     const procStart = now - live.uptime_seconds * 1000
@@ -141,6 +141,10 @@ export function restartReason(
     )
       return null
   }
+  if (isRestartPending(v))
+    return 'A new version is deployed on the box and this bot is still running the one before it. Restart it to switch.'
+  const n = rc?.changes_waiting
+  if (!rc || n == null || n <= 0) return null
   // ⚠ RE-DEPLOY, not Restart: a plain restart starts whatever the box's checkout holds, and only a
   // re-deploy fetches the new code onto the box first.
   return (

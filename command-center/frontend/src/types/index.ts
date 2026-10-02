@@ -1243,6 +1243,9 @@ export interface BotPromoteJob {
   /** Set only when the run RAISED; says which step and what that means for the bot. */
   error: string | null
   seconds: number
+  /** Whose build this deploy is WAITING behind on the trading box, by bot name — the box builds
+   *  one at a time (`services/box_lane.py`). `null` once its own turn has come. */
+  queued_behind?: string | null
 }
 
 /** One setting a stress-test import would move, with BOTH ends of the move.

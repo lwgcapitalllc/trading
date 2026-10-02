@@ -1483,3 +1483,120 @@ test('the rows never ask for the files check; the panel does, and only a definit
     timeout: 20_000,
   })
 })
+
+// ── deploys that finish TOGETHER, and the box's build queue (2026-10-01) ────────────────────
+//
+// 🔴 Aaron: *"sometimes the deployment will say done but the tag still shows it needs to update or
+// restart … this is intermittent I can't find a true pattern."* One cause on this page: a version
+// read cancelled by a newer one still LANDED, later, and wrote its older answer (`useBotVersions`).
+// ⚠ Cancelling does NOT cut the first awaiter short — the query library hands it the replacement
+// read's promise (MEASURED 2026-10-01: a check built on that theory stayed green against the code
+// it targeted, and was dropped).
+
+const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms))
+const MATE = 'extreme_leg_demo'
+
+/**
+ * Two bots on one account, each with a deploy RUNNING when the page opens and held until the
+ * check finishes it — so two deploys are in flight at once, as when a batch is started. A bot's version reads "behind" until its own deploy has finished — judged at
+ * the moment the read is ASKED, as the box would answer — and up to date after. `slowNext` holds
+ * the next read of `sos_fade_demo` for that long, still carrying the answer of when it was asked.
+ */
+async function twoDeploys(page: Page) {
+  await pinSnapshot(page)
+  const frames = jobFrames({})
+  const settled = frames[frames.length - 1]
+  const held = jobFrames({ holdAt: 'build' }).at(-1)!
+  const finished = new Set<string>()
+  const ctl = { slowNext: 0 }
+  await page.route('**/api/bots/*/promote/job', (r) => {
+    const k = ['sos_fade_demo', MATE].find((b) => r.request().url().includes(`/bots/${b}/`))
+    if (!k) return r.fulfill({ json: null })
+    const job = finished.has(k) ? settled : held
+    return r.fulfill({ json: { ...job, bot: k, job_id: `pj_${k}` } })
+  })
+  await page.route('**/api/bots/*/version', async (r) => {
+    const k = decodeURIComponent(new URL(r.request().url()).pathname.split('/')[3])
+    const landed = finished.has(k)
+    if (k === 'sos_fade_demo' && ctl.slowNext) {
+      const ms = ctl.slowNext
+      ctl.slowNext = 0
+      await sleep(ms)
+    }
+    return r.fulfill({ json: version(landed ? UP_TO_DATE : compare(), null, true) }).catch(() => {})
+  })
+  return { finish: (k: string) => finished.add(k), ctl }
+}
+
+test('a version read that was SUPERSEDED never writes its older answer over a newer one', async ({
+  page,
+}) => {
+  // A read asked BEFORE the deploy landed is still in flight when the finish re-reads; the finish's
+  // read answers first, then the old one lands. MUTATION: drop the `signal` (and the aborted
+  // check) from the fleet read in `useBotVersions` → red: the late read writes "behind" back over
+  // the deployed version.
+  const { finish, ctl } = await twoDeploys(page)
+  await page.goto('/bots')
+  await expect(rowPill(page)).toHaveAttribute('data-state', 'deploying', { timeout: 20_000 })
+
+  ctl.slowNext = 4_000
+  await page.getByTestId('refresh-bots').click() // the old read: asked now, answers in 4s
+  await sleep(300)
+  finish('sos_fade_demo')
+  await expect(rowPill(page)).toHaveAttribute('data-state', 'current', { timeout: 20_000 })
+  await recordPillStates(page)
+
+  await sleep(5_000) // past the moment the old read answers
+  expect(await pillStates(page)).toEqual(['current'])
+})
+
+test("a deploy waiting for another bot's build says QUEUED, on the row and in the panel", async ({
+  page,
+}) => {
+  // MUTATION: drop `queued` from the row's `VersionPill` → red on the row (it reads "Deploying").
+  // MUTATION: drop the `queued_behind` branch from the panel's caption → red on the panel.
+  await pinSnapshot(page)
+  const queued: BotPromoteJob = {
+    ...jobFrames({ holdAt: 'pull' })[0],
+    queued_behind: 'Realign',
+    stages: STEP_KEYS.map((key) => ({ key, state: 'pending', seconds: null })),
+  }
+  await page.route('**/api/bots/*/promote/job', (r) =>
+    r.fulfill({ json: r.request().url().includes('/sos_fade_demo/') ? queued : null })
+  )
+  await page.route('**/api/bots/*/version', (r) =>
+    r.fulfill({ json: version(compare(), null, true) })
+  )
+  await page.goto('/bots')
+  await expect(rowPill(page)).toHaveAttribute('data-state', 'queued', { timeout: 20_000 })
+  await expect(rowPill(page)).toHaveText('Queued')
+  await expect(rowPill(page)).toHaveAttribute('title', /Waiting for Realign/)
+
+  await openConfigure(page)
+  await expect(page.getByTestId('deploy-caption')).toContainText(
+    'Queued — waiting for Realign to finish building'
+  )
+})
+
+test('a bot that restarted since its version was read is not asked to restart for a NEW deploy', async ({
+  page,
+}) => {
+  // The other cause of a "restart" tag: a deploy is on disk and the reading says the process runs
+  // the code before it. A reading taken before the restart describes the process that restart
+  // replaced. Positive control: "a restart-pending bot is NOT reported as up to date", whose
+  // reading has no start record and so still asks. MUTATION: move the same-run check in
+  // `restartReason` back below the deployed-code check → red, the row reads "restart".
+  const o = olderCode(60, 3600)
+  await pinSnapshot(page, false, o.bot)
+  await page.route('**/api/bots/*/promote/job', (r) => r.fulfill({ json: null }))
+  await page.route('**/api/bots/*/version', (r) =>
+    r.fulfill({
+      json: {
+        ...version(UP_TO_DATE, { ...o.runningCode, changes_waiting: 0, changes: [] }, true),
+        running_hash: 'aaaaaaaaaaaa',
+      },
+    })
+  )
+  await page.goto('/bots')
+  await expect(rowPill(page)).toHaveAttribute('data-state', 'current', { timeout: 20_000 })
+})

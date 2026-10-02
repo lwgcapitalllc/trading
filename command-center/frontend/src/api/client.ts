@@ -29,6 +29,11 @@ export class ApiError extends Error {
  * disappearing popups. */
 export interface RequestOpts {
   silent?: boolean
+  /** The query's own abort signal. 🔴 Pass it from any read whose queryFn WRITES somewhere else
+   *  (`setQueryData`): a read superseded by a newer one is cancelled, and without the signal it
+   *  still lands later and writes an OLDER answer over the newer one (2026-10-01). An aborted
+   *  read never toasts — nobody asked for its answer any more. */
+  signal?: AbortSignal
 }
 
 async function request<T>(
@@ -45,8 +50,10 @@ async function request<T>(
     res = await fetch(`${BASE}${path}`, {
       headers: { 'Content-Type': 'application/json', ...init?.headers },
       ...init,
+      signal: opts?.signal,
     })
   } catch (err) {
+    if (opts?.signal?.aborted) throw err
     const msg = `Cannot reach backend — is it running? (${err})`
     shout(msg)
     throw new Error(msg)

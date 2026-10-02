@@ -205,16 +205,17 @@ function versionPoll(v: BotDeployedVersion | undefined): number | false {
  * retry. The pill and the banner show the failure instead (`VersionPill` → Unread). ⚠ No retry
  * here: the backend already asks again for the one failure worth asking again (`services/vps_ssh`).
  */
-function readVersion(name: string) {
+function readVersion(name: string, signal?: AbortSignal) {
   return api.get<BotDeployedVersion>(`/bots/${encodeURIComponent(name)}/version`, {
     silent: true,
+    signal,
   })
 }
 
 export function useBotVersion(botName: string | null) {
   return useQuery({
     queryKey: ['bots', 'version', botName],
-    queryFn: () => readVersion(botName!),
+    queryFn: ({ signal }) => readVersion(botName!, signal),
     enabled: !!botName,
     staleTime: 30_000,
     retry: false,
@@ -269,10 +270,18 @@ export function useBotVersions(botNames: string[]) {
   const qc = useQueryClient()
   const fleet = useQuery({
     queryKey: ['bots', 'versions'],
-    queryFn: async () => {
+    // 🔴 **A SUPERSEDED read writes nothing (2026-10-01).** This read writes every bot's entry
+    // itself. A re-read (a deploy's finish, Refresh) cancels the one in flight — but the query
+    // library only stops LISTENING to a cancelled read; its fetch went on, landed later, and this
+    // loop wrote its OLDER answers over the newer read's. Which read the box answered first
+    // decided what the rows said, so a deploy that had landed showed "behind" again at random.
+    // The signal aborts the fetch, and the check stops a read that had already answered.
+    queryFn: async ({ signal }) => {
       const all = await api.get<Record<string, BotDeployedVersion>>('/bots/versions', {
         silent: true,
+        signal,
       })
+      if (signal.aborted) return all
       for (const [name, v] of Object.entries(all)) qc.setQueryData(['bots', 'version', name], v)
       return all
     },

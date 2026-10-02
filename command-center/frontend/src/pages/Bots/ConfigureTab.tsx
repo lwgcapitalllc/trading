@@ -398,7 +398,13 @@ export function VersionBanner({
     const active = shown.stages.find((s) => s.state === 'active')
     caption = (
       <>
-        {active ? STEP_DOING[active.key] : 'Starting…'}
+        {/* Queued wins over "Starting…": no step is active while it waits, and the wait is the
+            news (`services/box_lane.py` — the box builds one deploy at a time). */}
+        {shown.queued_behind
+          ? `Queued — waiting for ${shown.queued_behind} to finish building. The box builds one deploy at a time.`
+          : active
+            ? STEP_DOING[active.key]
+            : 'Starting…'}
         <span className="font-mono tabular-nums text-text-tertiary">
           {' '}
           · {Math.round(shown.seconds)}s
