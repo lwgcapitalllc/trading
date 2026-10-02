@@ -546,17 +546,23 @@ class BotMT5:
             }
         )
         if result and result.retcode == mt5.TRADE_RETCODE_DONE:
+            # 🔴 **A reply with no price is NOT a fill at zero (2026-10-02).** The live SOS Fade
+            # bot's market order came back DONE with `price` 0.0 and was logged "@ 0.00" — the
+            # position opened at 4152.53. The fill is then the position's, read on the next
+            # reconcile; `None` here says "not reported", never a price nobody traded (rule 1).
+            filled = result.price if result.price and result.price > 0 else None
             self.log.info(
                 # `vol`, never `lots` — rule 3: a record says what was SENT, not what was asked
                 # for. They differ whenever the request did not land on the venue's volume step.
                 f"ORDER FILLED | ticket={result.order} | "
-                f"{direction} {vol}L @ {result.price:.{digits}f} | "
+                f"{direction} {vol}L @ "
+                f"{'unreported' if filled is None else f'{filled:.{digits}f}'} | "
                 # `tp_send`, never `tp` — rule 3, the same reason `vol` is used above: a record
                 # says what was SENT, not what was asked for, and the two differ whenever the
                 # guard dropped the target. "none" rather than 0.0, because zero is not a price.
                 f"SL={sl:.{digits}f} TP={f'{tp_send:.{digits}f}' if tp_send else 'none'}"
             )
-            return result.order, result.price
+            return result.order, filled
         # ⚠ **A market send is NOT reconciled the way the pending one below is**, so this stays a
         # plain failure. Recording the broker's own words as the detail is the whole gain here:
         # the retcode and the broker's comment reach the durable record instead of only the log.

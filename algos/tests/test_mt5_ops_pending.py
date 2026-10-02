@@ -1212,3 +1212,22 @@ def test_close_origin_that_cannot_read_is_None(mt5ops):
 
     fake.history_deals_get = _boom
     assert _bot(mt5_ops).close_origin(404) is None
+
+
+def test_a_market_fill_the_broker_reports_with_NO_price_is_none_never_zero(mt5ops):
+    """2026-10-02: the live bot's market order came back DONE with price 0.0 and was logged
+    "@ 0.00" while the position opened at 4152.53. Rule 1 — unreported is not zero.
+    MUTATION: return `result.price` unchanged -> (ticket, 0.0), red."""
+    mt5_ops, fake = mt5ops
+    sent = fake.order_send
+
+    def no_price(req):
+        r = sent(req)
+        r.price = 0.0
+        return r
+
+    fake.order_send = no_price
+    log = _Log()
+    ticket, price = _bot(mt5_ops, log).place_order("bullish", 0.18, sl=3190.0, tp=0.0)
+    assert ticket and price is None
+    assert log.saw("unreported") and not log.saw("@ 0.00")

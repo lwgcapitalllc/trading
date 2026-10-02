@@ -890,6 +890,21 @@ only on a change) and puts it back after every fast-side warm-up (`_restore_reen
 → *A setup that has had its re-entry stays USED*. ⚠ A setup used BEFORE this was promoted has no
 record, so the first restart after the promote cannot protect it.
 
+## 🔴 Booking a trade the bot never closed — `tools/book_trade.py` (2026-10-02)
+
+T369292543: after the 01:01 restart (on v344, before the re-entry memory fix) the bot re-offered
+the already-used re-entry and, the level being 7.26 through, sent it at market at 4152.53. Aaron
+moved its stop by hand to sit out the previous-day-low sweep; the strategy's own stop (4145.40)
+was hit at 01:06, so the strategy went flat while the broker still held — the bot halted, as
+designed for a stop loosened by hand. He then closed it by hand. A halted bot books nothing, and
+a restart only books a close it can match to its warm-up replay, so its money had no `closed`
+row. `book_trade.py` writes one off the broker's deals (every deal, costs apart; R off the risk
+recorded at the open) and, with `--not-strategy`, the same mark `mark_trade.py` writes. It refuses
+a ticket with no `opened` row, one already booked, one still open, and unreadable deals.
+
+✅ **A market reply with no price is recorded as UNREPORTED, never 0.00** (`mt5_ops.place_order`,
+same day — that order logged "@ 0.00").
+
 ## ✋ A trade the OWNER closes by hand is booked as his, and the bot keeps trading (2026-09-17)
 
 **Before:** closing the bot's trade in the terminal booked an ordinary exit and HALTED the bot on
