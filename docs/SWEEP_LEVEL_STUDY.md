@@ -277,8 +277,13 @@ trip depending on tier. Cost alone would be 5–15% of every R.
 
 **What happened** (PU Prime 1-minute bars, UTC): an SOS Fade long re-entry at 4159.79, stop
 4145.40, filled at 00:47. Price fell through the stop at 01:06–01:09 and kept going to **4133.82 at
-01:10 — 5.46 below the previous New York day's low of 4139.28** (set 2026-10-01 00:54). It closed
-back above that low within the minute and was at 4148 by 01:27. Aaron: *"it went and swept the
+01:10 — 5.46 below the previous New York day's low of 4139.28** (set 2026-10-01 00:54). ⚠
+**Corrected 2026-10-02: it did NOT close back above that low within the minute** — the 01:10
+one-minute bar closed at 4136.78, still below; the first one-minute close back above was 01:13
+(4140.56). On 5-minute bars the 01:05 bar swept to 4138.32 and closed back at 4140.18. It was at
+4148 by 01:27, reached 4161.77 at 02:29 and 4164.54 by 02:58. ⚠ The entry price is unreconciled:
+this doc says 4159.79, the research brief said 4152.53. The 00:47 fill minute traded
+4158.14–4160.66, which fits 4159.79 and not 4152.53; the broker's deal record settles it. Aaron: *"it went and swept the
 previous day low, classic sweep."* The stop sat 6.12 above the previous day's low, so it was in the
 path of the sweep.
 
@@ -299,3 +304,143 @@ That conditioning is untested.
 
 Discover on the first half of 2020–2026, confirm on the second; costs charged; one position slot,
 so count the trades it displaces. One live example is an anecdote, not a sample.
+
+---
+
+## Measured — the previous-day sweep, faded on 5 minutes, by session (2026-10-02)
+
+**Tool:** `backtest/tools/pd_sweep_fade.py` · trades: `backtest/reports/pd_sweep_fade/trades.csv`
+**Data:** PU Prime `XAUUSD.p`, 2,389,738 one-minute bars, 2020-01-01 → 2026-09-30, resampled to 5m.
+**Costs:** `puprime_ecn` — spread $0.12 on the ask side, $1.00/side/lot commission, swap per night.
+⚠ **Not reconciled with the lab** — no lab strategy exists for this trade, and this session was
+research only. Read every number below as a study figure.
+
+```
+python3 backtest/tools/pd_sweep_fade.py --csv backtest/reports/pd_sweep_fade/trades.csv
+```
+
+**The trade, pinned with Aaron before measuring.** Previous trading day's high/low, day rolling at
+18:00 New York (the liquidity engine's validated boundary). A 5m bar trades through it and closes
+back; first touch only, a 5m close through kills it. Stop beyond the lowest point from sweep to
+entry + 0.1 ATR, never closer than 0.5 ATR. Time stop at the next 18:00 New York. Targets under 1R
+skipped. Entries and exits each tested separately, never as a ladder:
+
+| entry | rule |
+|---|---|
+| now | market at the sweep bar's close |
+| push | Aaron's pick: the next 5m bar must push past its own open, then the first 1m close back across that open |
+| flip | first 1m change of character (canonical structure engine) within 60 min |
+
+| exit | rule |
+|---|---|
+| near | the last small 5m swing before the sweep (4161.77 on 2026-10-02) |
+| far | the top of the whole drop — highest high of the 2 hours before (4183.76 on 2026-10-02) |
+
+The live example reproduces: the sweep bar is 01:05 (Asia); "now" enters 4140.18 and would have
+been stopped by the push to 4133.82; "push" enters 4140.56 at 01:13, never threatened, and the near
+target filled at 02:29 (~+3R before costs).
+
+775 sweep-and-reclaim signals. Net R per trade, ± one standard error:
+
+```
+                      2020-01 → 2023-04          2023-05 → 2026-09
+now/near   all        -0.152 ±0.090  n=313       -0.217 ±0.088  n=324
+           Asia       -0.217 ±0.164  n=109       -0.280 ±0.137  n=136
+           London     -0.346 ±0.173  n=63        -0.573 ±0.224  n=39
+           NY         -0.032 ±0.164  n=94        -0.163 ±0.159  n=101
+           reopen     +0.021 ±0.231  n=47        +0.134 ±0.236  n=48
+push/near  all        -0.177 ±0.100  n=186       -0.265 ±0.108  n=180
+           Asia       -0.355 ±0.171  n=63        -0.356 ±0.165  n=77
+now/far    all        -0.093 ±0.104  n=353       -0.192 ±0.102  n=377
+           reopen     +0.094 ±0.264  n=56        +0.349 ±0.265  n=71
+push/far   all        -0.043 ±0.107  n=243       -0.273 ±0.108  n=236
+flip/far   all        -0.100 ±0.384  n=13        +0.155 ±0.265  n=24
+
+push minus now, SAME signals:  near -0.122 ±0.040 (P push better 0%)   far -0.177 ±0.041 (0%)
+```
+
+"reopen" is the hours outside the three session windows — in practice 22:00–23:59 UTC, the first
+two hours of the new trading day. Full table (every session × entry × exit, longs/shorts, and a
+random control matched on hour, half, direction, stop and target distance): run the tool.
+
+### Verdicts
+
+- **Fade the previous-day sweep, any session — Reject — proven harmful.** −0.19R ±0.06 per trade at
+  the simplest entry, negative in both halves, and below its own matched random control.
+- **The session question: none.** Asia loses in both halves (push entry −0.36R ±0.17 and −0.36R
+  ±0.17); London is the worst session; New York is flat-to-negative. **Asia only — Reject — proven
+  harmful.**
+- **Wait for the push before entering — Reject — proven harmful.** On the same signals it is
+  0.12–0.18R WORSE than entering at the sweep close, ±0.04, in both halves. The live example is the
+  exception: the push saved that one trade, and it does not on average.
+- **The reopen window (22:00–23:59 UTC) — Reject — not proven.** +0.02 to +0.35R, positive in both
+  halves at every entry, but under 1.3σ in each, about 19 trades a year, median stop $1.12, a third
+  of them on the first 5m bar after the daily break, and at the reopen's p99 spread ($0.19) the
+  first half falls to +0.02 ±0.27. About 24 session rows were tried; one at this strength is what
+  chance produces. Worth one follow-up only if a reason for it can be named before re-measuring.
+- **1m structure-flip confirmation — Reject — not proven.** 37 trades in 6.7 years: the canonical
+  engine marks a 1m change of character inside an hour after only ~30% of sweeps.
+- **New entry after an SOS Fade stop is taken (idea 2 above) — Reject — not proven.** It happened
+  5–6 times in 6.7 years and every one lost (−1.01R). The 2026-10-02 trade is the rare case.
+- **Stop rule (idea 1 above) — not run.** It changes SOS Fade's own stop, so it cannot be measured
+  without a strategy change; given the sweep does not reverse on average, not recommended.
+
+### Overlap with the live bots
+
+Replayed at their default configs on the same window (SOS Fade 251 trades, extreme leg 117). Only
+8% of sweep trades enter while SOS Fade is in the market (about 3% on the same side), and 3% while
+the extreme leg is. So the trade is mostly independent of both bots — it just has no edge.
+⚠ The replay ran on a working tree carrying another session's uncommitted SOS Fade edits.
+
+---
+
+## Follow-ups on the same day — after a failed SOS Fade trade, the Asia push, the 100 fib (2026-10-02)
+
+Same data, costs and halves as the section above. ⚠ **None of it is reconciled with the lab**, and
+the SOS Fade replays ran on the same working tree carrying another session's uncommitted edits.
+⚠ The scripts were scratch work outside the repo; re-running needs them rebuilt from the rules below.
+
+### A failed SOS Fade trade, then a previous-day sweep — does it reach 1R?
+
+Failed = the trade never reached 0.5R. Then within 24h price sweeps the previous day's level on the
+trade's side and a 5m bar closes back; enter at that close, stop beyond the sweep, target 1R.
+
+| case | reached 1R | net R ± |
+|---|---|---|
+| every sweep (baseline) | 44% (340/775) | −0.12 ±0.04 |
+| after any failed SOS Fade trade | 36% (13/36) | −0.32 ±0.17 |
+| after a failed FIRST entry | 20% (5/25) | −0.66 ±0.17 |
+
+- **Reject — proven harmful.** A failed SOS Fade trade makes the next sweep worse, not better.
+- The "failed twice in a row, then a third entry on the sweep" chain Aaron described: 4 exact cases
+  (1 reached 1R), 11 on a looser reading (5 reached 1R). Too few to measure.
+
+### The aggressive Asia push into the previous day's level — does it retrace?
+
+Push = in Asia's first 2 hours, price travels at least 3x the 15m ATR one way from the Asia open
+(not necessarily in consecutive candles, per Aaron). 633 such sessions; 252 ran through the previous
+day's level.
+
+| | through the level | did not reach it |
+|---|---|---|
+| half the push back by Asia's end | 79% | 82% |
+| all of the push back by day end | 68% | 71% |
+| ran another 50% further first | 23% | 20% |
+
+- **The level adds nothing.** Big Asia pushes retrace most of the time whether or not they sweep it.
+- **Trading the retrace — Reject.** Entering on a 25% or 38% bounce off the running extreme, stop
+  beyond it, exit at half the push or the Asia open: −0.03 ±0.04, −0.07 ±0.06, −0.08 ±0.02 (−3.5σ,
+  proven harmful), −0.11 ±0.05. The retrace is common, but buying it after it starts does not pay.
+
+### SOS Fade losers: sweep the 100 fib, close back in, then a new break of structure?
+
+First entries stopped at the 88.6 fib (r ≤ −0.9): 47 of them. Second entries are excluded because
+their trades do not record the fib ladder (47 more losers). Followed for 5 days on 15m closes.
+
+- 43 of 47 (91%) swept the 100 and closed back inside. The 100 sits just past the stop, so this is
+  near-certain and carries no information. 3 broke it and never came back; 1 never reached it.
+- **Of the 43, only 7 (16%) closed beyond the leg's far end (the 0 fib) before closing back through
+  the sweep's extreme.**
+- **Trading it — Reject — proven harmful.** Buy the close back inside, stop at the sweep extreme,
+  target the 0 fib, ECN costs: n=43, hit 14%, median payoff 4.5R, net −0.48R ±0.23 (P better than
+  zero ≈ 2%). First half −0.37 ±0.40, second half −0.59 ±0.26.
