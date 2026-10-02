@@ -6396,3 +6396,33 @@ ladder neighbours not worse. ⚠ Not reconciled against a stored lab run (same c
   other value replays 14 / 5. This study set the engine directly for that reason — and this table is
   the first measurement of what those two settings would actually do.
 - No bot, config or documented baseline moves.
+
+## Run 69 — 2026-10-01: what arms a setup — sweep, divergence, or either — sweeps only stays
+
+**The ask (Aaron):** do sweep-started and divergence-started setups differ, or did every sweep setup
+carry a divergence too? ⚠ Run 68 tested divergence as a VETO; this is the first test of it as an ARM
+source. The arm-on-divergence setting was hidden because it was never moved, not because it was tested
+(`notes/exit_ladder_history.md`).
+**Basis:** copied from lab run `978a5f9fafa1` (the shipped bot, 72h arm clock): XAUUSD.p M15,
+2020-01-01 → 2026-09-30, PU Prime ECN, bid/ask fills + commission + swap, consistent sizing, 100-lot
+ceiling. Only the two arm-source settings move; `compare_runs` confirmed that for each pair. Noise:
+paired by UTC entry day, resampled in whole ISO weeks, 20,000 draws.
+
+| Arms on | Lab run | Trades | Total R | Max DD R | Profit factor | Max DD % | Sharpe |
+|---|---|---|---|---|---|---|---|
+| **Sweep only (shipped)** | `978a5f9fafa1` | 246 | **+175.1** | 6.8 | 3.33 | 24.7% | **1.21** |
+| Divergence only | `edac3f7955ad` | 102 | +110.4 | 5.5 | 3.99 | 23.6% | 1.08 |
+| Either one | `397c26d76c3d` | 246 | +175.1 | 6.8 | 3.33 | 24.7% | 1.21 |
+
+- **Every setup with a divergence also had a sweep.** All 102 divergence-only trades fall on the same
+  day and side as a sweep-only trade; none is new.
+- **Either one — Reject, not proven (no effect):** identical to the cent, 0R ± 0R. Not a dead setting —
+  the sequence tracks both sources on every SOS and this setting only chooses which count; a fresh
+  divergence simply never appeared without a fresh sweep inside the 72h window.
+- **Divergence only — Reject, proven harmful:** −64.7R ± 25.1R, 95% range −118.0 to −19.7R,
+  P(better) 0.001, drawdown about equal. It drops the 144 sweep-without-divergence trades, which still
+  made +64.7R.
+- **Lead, not a finding:** trades with both averaged +1.08R, sweep-alone +0.45R. A size-up on the
+  divergence is the obvious next test (size beat frequency, Run 12) — but Run 65's 4H size signal failed
+  on held-back years, so it needs the same out-of-sample gate. The gap's own noise is not measured.
+- No bot, config or documented baseline moves.
