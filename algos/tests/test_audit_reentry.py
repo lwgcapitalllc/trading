@@ -286,3 +286,19 @@ def test_a_day_ONLY_in_the_archive_is_still_read(tmp_path, monkeypatch):
     (archive / "decisions-2026-08-01.jsonl").write_text(_rows("old"), encoding="utf-8")
     (live / "decisions-2026-09-03.jsonl").write_text(_rows("new"), encoding="utf-8")
     assert [r["event"] for r in audit.load_ledger("bot", None)] == ["old", "new"]
+
+
+def test_a_fill_BETTER_than_the_order_risks_less_and_is_not_a_failure():
+    """2026-10-02, T369292543: a limit the market had passed went in at market 7.26 under its
+    4159.79 price, so the same 0.18 lots risked 1.22% of an intended 2.5%. That is the safe
+    direction and what the strategy's own copy booked. Watched RED before the fix (UNDER by
+    -51.2%). MUTATION: drop the better-fill scaling -> FAIL."""
+    rep = _run(_opened(price=3290.0, intended_price=3300.0, stop=3280.0, risk_pct_realised=2.5))
+    assert _verdicts(rep)["risk sized correctly"] == audit.PASS
+
+
+def test_a_fill_WORSE_than_the_order_keeps_the_original_expectation():
+    """Slippage the wrong way must not be excused by the same scaling.
+    MUTATION: scale on any difference rather than only a better fill -> FAIL."""
+    rep = _run(_opened(price=3310.0, intended_price=3300.0, stop=3280.0, risk_pct_realised=7.5))
+    assert _verdicts(rep)["risk sized correctly"] == audit.FAIL

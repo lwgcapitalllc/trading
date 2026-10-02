@@ -186,10 +186,25 @@ def audit_trade(opened: dict, closed: Optional[dict], events: list[dict], params
             "recorded — the dollars are $%s" % opened.get("risk_usd"),
         )
     else:
+        # 🔴 **A fill BETTER than the order's price risks less on the same size (2026-10-02).**
+        # The size is set off the price the order was placed at; a limit the market had already
+        # passed goes in at market, and the same lots then sit closer to the stop. T369292543
+        # filled 7.26 under its 4159.79 limit and risked 1.22% of an intended 2.5% — the safe
+        # direction, and exactly what the strategy's own copy booked. So the expectation follows
+        # the fill. A WORSE fill keeps the original expectation, so over-risk is still caught.
+        intended = opened.get("intended_price")
+        better = ""
+        if intended and entry and stop0 and abs(intended - stop0) > 0:
+            gain = (intended - entry) * direction
+            if gain > 0:
+                want_pct *= abs(entry - stop0) / abs(intended - stop0)
+                better = f"; filled {gain:.2f} better than its order at {intended:.2f}, so the same size risked less"
         # 5% tolerance: the lot step rounds DOWN, so a small shortfall is correct behaviour and
         # any EXCESS is not. Both directions are reported, and only one of them is a defect.
         drift = (got_pct - want_pct) / want_pct * 100.0
-        detail = f"risked {got_pct:.3f}% (${opened.get('risk_usd')}), expected {want_pct:.3f}%"
+        usd = opened.get("risk_usd")
+        usd_txt = f"{usd:,.2f}" if isinstance(usd, (int, float)) else str(usd)
+        detail = f"risked {got_pct:.3f}% (${usd_txt}), expected {want_pct:.3f}%{better}"
         if got_pct > want_pct * 1.01:
             rep.bad("risk sized correctly", f"{detail} — OVER by {drift:+.1f}%, never allowed")
         elif drift < -5.0:

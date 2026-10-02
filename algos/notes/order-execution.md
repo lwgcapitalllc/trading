@@ -902,6 +902,11 @@ row. `book_trade.py` writes one off the broker's deals (every deal, costs apart;
 recorded at the open) and, with `--not-strategy`, the same mark `mark_trade.py` writes. It refuses
 a ticket with no `opened` row, one already booked, one still open, and unreadable deals.
 
+✅ **The hourly re-entry audit no longer fails a fill BETTER than its order** (same day). It
+graded T369292543 "UNDER by -51.2%": 0.18 lots sized off 4159.79 filled at 4152.53, so the same
+size risked 1.22% of 2.5%. The expected risk now follows a better fill; a worse fill keeps the
+original expectation, so over-risk is still caught.
+
 ✅ **A market reply with no price is recorded as UNREPORTED, never 0.00** (`mt5_ops.place_order`,
 same day — that order logged "@ 0.00").
 
