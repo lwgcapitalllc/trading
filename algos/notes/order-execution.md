@@ -893,6 +893,11 @@ record, so the first restart after the promote cannot protect it.
 cancellation was forgotten on a restart too, so the bot could take a reclaim the backtest had
 cancelled. Same file, a new key the runner never reads; restored only onto its own setup while
 it is still live. Strategy half: `strategies/python/sos_fade/notes/reentry_ladder_mechanics.md`.
+🔴 **Then where the live setup's re-entry had got to** — price already back through the level, the
+setup latched, and a frozen order. ⚠ **This one can put an order BACK after a restart** — the one
+the backtest is holding, at its frozen price; the bridge cancelled the broker's copy at startup
+and re-places it. Simulated restarts at 323,220 bars: decisions differing from the continuous
+replay fell from 36,175 to 155, every one a missed arm, never an extra one.
 
 ## 🔴 Booking a trade the bot never closed — `tools/book_trade.py` (2026-10-02)
 

@@ -2284,10 +2284,10 @@ def test_the_dual_clock_carries_the_memory_through_the_strategy_s_own_bar_times(
 # reclaim the backtest never takes. MEASURED 2020-2026: set 46 times, never carried into another
 # setup — so it is restored onto its own setup, and only while that setup is still live.
 
-def _reclaim_cfg():
+def _reclaim_cfg(**kw):
     return SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True,
                          exec_sec_trigger="Reclaim Entry", exec_rec_require="Stopped only",
-                         exec_rec_stop="1.0", exec_sec_once_per_setup=True)
+                         exec_rec_stop="1.0", exec_sec_once_per_setup=True, **kw)
 
 
 def _reclaim_bar(arm_sm, low, high, seq=_SEQ_LONG):
@@ -2325,7 +2325,8 @@ def test_a_voided_reclaim_stays_void_across_a_restart_that_RENUMBERS_its_setup()
     record = _voided_record()
     assert record["l"]["void_ms"] == _SETUP_MS
     after = SecondaryArm(_reclaim_cfg())
-    assert after.restore_retired(record, {_SETUP_MS: 430}.get, live=(430, None)) == 1
+    # The void, and the door already open on an earlier bar (`seen`).
+    assert after.restore_retired(record, {_SETUP_MS: 430}.get, live=(430, None)) == 2
     assert _reclaims_after_restart(after) is False
 
 
@@ -2360,5 +2361,78 @@ def test_the_dual_clock_restores_the_void_onto_the_setup_its_context_says_is_liv
     second._st = SimpleNamespace(execution=SimpleNamespace(_bar_ms={430: _SETUP_MS}))
     second.arm_sm = SecondaryArm(_reclaim_cfg())
     second.last_seq = _SEQ_RENUMBERED
-    assert second.restore_reentry_memory(record) == 1
+    assert second.restore_reentry_memory(record) == 2           # the void and `seen`
     assert _reclaims_after_restart(second.arm_sm) is False
+
+
+# ── where the LIVE setup's re-entry had got to survives a restart too (2026-10-02) ───────────
+# A restart used to send a reclaim back to waiting for a crossing the backtest had already seen,
+# and re-price an order the backtest still held frozen. Restored onto its own setup, while live.
+
+def test_a_reclaim_that_already_came_back_arms_straight_after_a_restart():
+    """Control first (without the memory the restarted bot waits for a NEW crossing), then the
+    fix. MUTATIONS, each red here: `rec` not written; `rec` not restored.
+
+    ⚠ The frozen order is pinned OFF here, or the restored order would arm the bar by itself and
+    this would pass without `rec` doing anything — the test below owns the frozen order."""
+    cfg = _reclaim_cfg(exec_sec_rest_and_leave=False)
+    before = SecondaryArm(cfg)
+    _reclaim_bar(before, 101.0, 101.1)                  # the stop-out bar — `_seen`
+    assert _reclaim_bar(before, 101.0, 101.5).l_armed   # back above the 0.886: armed
+    record = before.snapshot_retired({500: _SETUP_MS}.get)
+    assert record["l"]["setup"] == {"seen": True, "rec": True, "leg": True,
+                                    "setup_ms": _SETUP_MS}
+
+    def first_bar_after(arm_sm):                        # a quiet bar that crosses nothing
+        return _reclaim_bar(arm_sm, 101.05, 101.1, _SEQ_RENUMBERED).l_armed
+
+    assert first_bar_after(SecondaryArm(cfg)) is False                 # the old gap
+    after = SecondaryArm(cfg)
+    after.restore_retired(record, {_SETUP_MS: 430}.get, live=(430, None))
+    assert first_bar_after(after) is True
+
+
+def _rest_cfg():
+    return SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True,
+                         exec_sec_trigger="FVG in zone", exec_sec_stop="0.886",
+                         exec_sec_rest_and_leave=True)
+
+
+def _gap_bar(arm_sm, poi, seq=_SEQ_LONG):
+    return arm_sm.update(_m1_quiet(), _SIG_LONG, seq, zone_close=102.5, ny_hour=10, flat=True,
+                         be_sos_l=seq.l_sos_bar, be_sos_s=None, poi_edge_l=poi)
+
+
+def test_a_frozen_order_comes_back_at_its_FROZEN_price_not_a_new_one():
+    """The backtest holds a rest-and-leave order at the price it was placed at. MUTATIONS, each
+    red here: `rest` not written; `rest` not restored."""
+    before = SecondaryArm(_rest_cfg())
+    assert _gap_bar(before, 102.8).l_edge == 102.8       # frozen here
+    record = before.snapshot_retired({500: _SETUP_MS}.get)
+    assert record["l"]["setup"]["rest"] == [102.8, 101.14, "gap"]
+
+    control = _gap_bar(SecondaryArm(_rest_cfg()), 103.5, _SEQ_RENUMBERED)
+    assert control.l_edge == 103.5                       # the old gap: re-priced
+    after = SecondaryArm(_rest_cfg())
+    after.restore_retired(record, {_SETUP_MS: 430}.get, live=(430, None))
+    out = _gap_bar(after, 103.5, _SEQ_RENUMBERED)
+    assert out.l_armed and out.l_edge == 102.8 and out.l_sl == 101.14
+
+
+def test_the_setup_state_is_not_put_on_a_DIFFERENT_live_setup():
+    """MUTATION: drop the `== now` test on the setup's time and this reddens."""
+    before = SecondaryArm(_rest_cfg())
+    _gap_bar(before, 102.8)
+    after = SecondaryArm(_rest_cfg())
+    assert after.restore_retired(before.snapshot_retired({500: _SETUP_MS}.get),
+                                 {_SETUP_MS: 431}.get, live=(430, None)) == 0
+    assert after._l_rest is None and after._l_leg is None
+
+
+def test_a_latch_on_a_FAST_bar_leg_is_left_out_not_misnumbered():
+    """A 1-minute structure leg is numbered on the fast feed, which a restart renumbers and no
+    time map covers here. MUTATION: write the leg whatever it is and this reddens."""
+    arm_sm = _armed_and_traded(_shift_cfg(exec_sec_once_per_setup=True))
+    arm_sm._l_rest = None
+    record = arm_sm.snapshot_retired({500: _SETUP_MS}.get)
+    assert "leg" not in record["l"].get("setup", {})

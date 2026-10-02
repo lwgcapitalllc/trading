@@ -1097,6 +1097,31 @@ class SecondaryArm:
                 ms = None if bar is None else bar_ms(bar)
                 if ms is not None:
                     rec["void_ms"] = int(ms)
+            # Where the LIVE setup's re-entry has got to (2026-10-02): the door was already open
+            # on an earlier bar (`seen`), price has come back through the level (`rec`), the
+            # setup is latched (`leg`), and the order frozen to rest at one price (`rest`). Without
+            # these a restart sent the reclaim back to waiting for a crossing the backtest had
+            # already seen, and re-priced a frozen order the backtest still held.
+            # ⚠ Keyed to the CURRENT setup, so it describes exactly this object's state.
+            # ⚠ A latch or order on a 1-minute structure leg is a FAST bar number with no time
+            # map here, so it is left out — the behaviour before this. ⚠ The order's age is not
+            # kept: it changes every bar, and the wait limit is off on every bot.
+            cur = getattr(self, f"_{side}_sos")
+            cur_ms = None if cur is None else bar_ms(cur)
+            if cur_ms is not None:
+                st: dict = {}
+                if getattr(self, f"_{side}_seen"):
+                    st["seen"] = True
+                if getattr(self, f"_{side}_rec"):
+                    st["rec"] = True
+                if getattr(self, f"_{side}_leg") == cur:
+                    st["leg"] = True
+                r = getattr(self, f"_{side}_rest")
+                if r is not None and r[0] == cur and r[3] == cur:
+                    st["rest"] = [float(r[1]), float(r[2]), r[4]]
+                if st:
+                    st["setup_ms"] = int(cur_ms)
+                    rec["setup"] = st
             out[side] = rec
         return out
 
@@ -1112,10 +1137,18 @@ class SecondaryArm:
         so "the same setup, still live" is the whole of the lab's behaviour. With `live` None it
         is not restored, which is the behaviour before this existed.
 
-        ⚠ **Only ever RETIRES — it can never arm anything.** A field is set only when its time is
-        a bar this run knows; one whose bar fell out of the window is a setup too old to arm
-        again anyway. It overwrites only a field that is still empty, so a retirement this run's
-        own replay already made is never replaced by an older one.
+        🔴 **And where the live setup's re-entry had got to (`setup`), since later on 2026-10-02**
+        — the door already open, price already back through the level, the setup latched, the
+        frozen order. That half CAN put an order back, and only one the backtest is holding at
+        that moment: it is restored onto its own setup while that setup is live, and nothing
+        else. The broker order itself was cancelled at the restart, so the bot re-places it at
+        the frozen price, exactly where the continuous replay still has it.
+
+        ⚠ The retiring half only ever RETIRES. A field is set only when its time is a bar this run
+        knows; one whose bar fell out of the window is a setup too old to arm again anyway. It
+        overwrites only a field that is still empty, so a retirement this run's own replay already
+        made is never replaced by an older one. ⚠ What happened DURING the outage is not known to
+        either half — a bot that was down saw nothing, and no record can change that.
         """
         if not isinstance(record, dict):
             return 0
@@ -1143,6 +1176,27 @@ class SecondaryArm:
                     setattr(self, f"_{side}_void", True)
                     setattr(self, f"_{side}_void_sos", bar)
                     n += 1
+            st = rec.get("setup")
+            if isinstance(st, dict) and now is not None and st.get("setup_ms") is not None:
+                if bar_of_ms(int(st["setup_ms"])) == now:
+                    n += self._restore_setup_state(side, now, st)
+        return n
+
+    def _restore_setup_state(self, side: str, sos: int, st: dict) -> int:
+        """The `setup` half of `restore_retired`, onto setup `sos`, which is live. Fills only
+        what is still empty, so anything this run already knows wins."""
+        n = 0
+        for name in ("seen", "rec"):
+            if st.get(name) and not getattr(self, f"_{side}_{name}"):
+                setattr(self, f"_{side}_{name}", True)
+                n += 1
+        if st.get("leg") and getattr(self, f"_{side}_leg") is None:
+            setattr(self, f"_{side}_leg", sos)
+            n += 1
+        r = st.get("rest")
+        if isinstance(r, list) and len(r) == 3 and getattr(self, f"_{side}_rest") is None:
+            setattr(self, f"_{side}_rest", (sos, float(r[0]), float(r[1]), sos, r[2], 0))
+            n += 1
         return n
 
     def mark_dead(self, direction: int, seq) -> None:

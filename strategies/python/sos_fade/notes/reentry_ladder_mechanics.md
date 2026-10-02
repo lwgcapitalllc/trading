@@ -582,7 +582,18 @@ never does that. The live warm-up deliberately does not replay the re-entry
   2020-2026, the flag was set 46 times and never once carried from one setup into the next.
   ⚠ An older snapshot ignores the new key, so rolling back is safe. Tests: 5 more in
   `tests/test_secondary.py` (a control, then 6 mutations each red).
-- ⚠ **Still NOT carried, and found while doing it:** the reclaim's "price has come back through"
-  latch, and a frozen resting order. After a restart the reclaim must see price come back
-  through the level again before it rests — it can MISS a re-entry the backtest takes, never
-  take one it would not. Not measured.
+- 🔴 **And where the LIVE setup's re-entry had got to, since later the same day** (`setup` in the
+  record): the door already open on an earlier bar, price already back through the level, the
+  setup latched, and a rest-and-leave order frozen at its price. Restored onto that setup only,
+  while it is live. Before this a restart sent the reclaim back to waiting for a crossing the
+  backtest had already seen, and re-priced an order the backtest still held frozen.
+  ✅ **MEASURED by simulating a restart before every 1-minute bar where a re-entry was in
+  progress**, 2020-2026, 323,220 bars, rebuilding the arm from the saved record and comparing its
+  decision with the continuous replay's: the old record differed on **36,175** bars, this one on
+  **155** — and on every one of those the restarted bot was missing an arm the backtest had,
+  never taking one it would not. ⚠ **All 155 are one known case**: a gap order frozen after a
+  1-minute structure break re-latched the setup, so the order is tied to a FAST bar number no
+  time map covers — left out on purpose rather than restored onto a guessed bar.
+  ⚠ **It can now PUT AN ORDER BACK**, so this half no longer "only retires" — but only the order
+  the continuous replay is holding at that moment, at its frozen price. ⚠ The order's age is not
+  kept (the wait limit is off on every bot). ⚠ Nothing that happened DURING an outage is known.

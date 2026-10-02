@@ -522,7 +522,7 @@ Most-cited code: `compare_strategy.py`, `algos/tools/migrate_position_record.py`
 - Where the reclaim banks: 3.0R → 3.25R, and the 0.25R that costs nothing (2026-08-27)
 - 🔴 THE RECLAIM'S GIVE-BACK — FIVE FIXES REPLAYED, FOUR LOSE, AND THE EXCHANGE RATE SAYS WHY (2026-08-24)
 - 🔴 The minimum stop distance permits a stop a normal gap can double (2026-08-23)
-- 🔴 A setup that has had its re-entry stays USED — and a voided reclaim stays void — across a live restart; saved by setup TIME, restored after every warm-up; it only ever retires (2026-10-02)
+- 🔴 A live restart keeps the re-entry's state — used, void, reclaimed, frozen order — by setup TIME, onto the live setup only (2026-10-02)
 
 ### `notes/loss_recovery_and_dead_market.md` — Loss recovery and the dead-market floor
 
