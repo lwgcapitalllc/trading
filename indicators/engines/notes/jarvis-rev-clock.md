@@ -67,6 +67,28 @@ sizing, one full replay per row with ONLY the window moved. Lab runs `c5bd33a16f
   can still occupy the Stage-1 slot, which the run does capture.
 - ⚠ One instrument, one window. Gold M15, 2020 → 2026-09.
 
+### Re-measured with its noise, 2026-10-01 — ADOPT 72h
+
+The table above has no error bar, so the 24h vs 72h pair was re-run on the current bot. Basis
+copied from lab run `978a5f9fafa1` (72h, the shipped setting): XAUUSD.p M15, 2020-01-01 →
+2026-09-30, PU Prime ECN, bid/ask fills + commission + swap, consistent sizing, 100-lot ceiling.
+`7a216af8c1ac` is the same run with only the arm clock at 1440. `compare_runs` confirmed that
+setting is the only difference.
+
+| Arm shelf life | Trades | Total R | Max DD R | Without best | Profit factor | Max DD % | Sharpe |
+|---|---|---|---|---|---|---|---|
+| 24h `7a216af8c1ac` | 207 | +129.4 | 9.4 | +102.7 | 2.36 | 33.5% | 0.97 |
+| **72h** `978a5f9fafa1` | 246 | **+175.1** | **6.8** | **+148.5** | **3.33** | **24.7%** | **1.21** |
+
+- **72h minus 24h: +45.8R ± 21.9R (1 se), 95% range +9.8R to +94.7R, P(72h better) 0.997.** Paired
+  by entry day (a day only one arm traded counts 0 for the other), resampled in whole ISO weeks so
+  clustered trades stay together, 149 weeks with a trade, 20,000 draws.
+- Agrees with the 2026-09-27 table in direction and size. The verdict is now statistical, not just
+  dominance on point estimates.
+- ⚠ The 24h arm is the BOT with one clock shortened, not a replay of this file's old rules (which
+  also let a repeat sweep restart the clock). It answers "which shelf life is right", not "what did
+  the old table show".
+
 ### What changed in the file
 
 Three settings are gone: the sweeps-can-arm toggle (always on), the ignore-the-window toggle (always

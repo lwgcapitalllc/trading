@@ -215,6 +215,7 @@ listed below under the notes file that now holds it.
 
 - 🔴 One clock, three days, and it is the bot's (2026-09-27) — the 1440-minute sweep cap and the per-source expiry deleted, the arm→SOS window switched back on, a divergence may now take over a sweep's stage-1 slot
 - 🔴 MEASURED before changing it: 24h was DOMINATED (206 trades / PF 2.30 / 34.9% drawdown against 244 / 4.23 / 26.9%), and 72h is a plateau not a peak — sweep AGE is not a quality signal
+- ✅ RE-MEASURED with noise 2026-10-01: 72h beats 24h by +45.8R ± 21.9R, P(better) 0.997 — ADOPT 72h
 - 🔴 `f_rev15` had no arm clock at all and now carries the same one; it also gained a per-side SOS timestamp its retro-link needed
 - 🔴 OPEN, pre-existing: the 1m path arms on a divergence ONLY while the live bot arms on sweeps only — not fixable in place, Pine forbids a lookup inside a lookup
 - ⚠ UNPROVEN until it compiles on TradingView — no harness, no parity gate on this file's sequence, no test that can go red
