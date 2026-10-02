@@ -1145,3 +1145,39 @@ setting by the label the Configure tab shows, read from the strategy's own meta 
 `services/param_labels.py` — a deliberate MIRROR of `algos/shared/param_labels.py`, because the two
 apps may share a data file and never each other's code. A test compares the two copies. Rules and
 the full catalog: `algos/notes/telegram-and-notifications.md` → *One voice for every bot*.
+
+---
+
+## 🔴 The box builds ONE deploy at a time, and a failed pull stops the deploy (2026-10-01)
+
+Aaron runs batches of deploys across accounts, and they *"interrupt each other or slow each other
+down"*. **MEASURED** off the 20 deploy records in `data/promote_jobs/` on 2026-10-01: a build alone
+took 11–17s; a build overlapping others took 17–36s, and **4 of the 11 overlapping deploys failed at
+the 30s SSH limit** ("may or may not have deployed"), against **0 of 9** alone. The box has two CPUs,
+and each build starts two clean Python processes of its own (the import check and the start-up
+rehearsal) — a profiled preview build of `fft_1` spent ~4s of its 12.1s there.
+
+**The rule:** `_run_promote` holds `services/box_lane.py` for the pull and the build — every route
+that builds goes through it (the job, the one-shot route, the preview, and so the trading-box tool).
+Stop, start and confirm are left to overlap: they are light, and a build is about a quarter of a
+deploy (pull ~2s, build ~12s, stop ~10s, start ~2s, confirm ~25s), so a batch of four costs roughly
+what it did, minus the timeouts. The waiter's job carries `queued_behind` — the holder's name — which
+the page draws as **Queued**.
+
+- ⚠ **An OS `flock`, because every deploy is its own process.** The OS drops it when the holder
+  dies, so a killed deploy cannot leave the box shut. POSIX only — the backend runs on the laptops.
+- ⚠ **Waited for, where `bot_ops` refuses.** `bot_ops` guards ONE bot, where a second action is a
+  mistake; the lane guards a shared MACHINE, where a second deploy of another bot is meant.
+- ⚠ Two clones do not see each other's lane — the same limit `bot_ops` names.
+- ⚠ **Considered and not built: one batch build for several bots.** It would share only the SSH
+  connection and the build program's start-up (~3.5s of a 12s build), ~10s on a batch of four.
+
+**The pull's exit code is read now.** It was never checked, so a failed `git pull` went straight on
+to build and froze whatever the box's checkout held as the deploy. It ends `& if errorlevel 1 (echo
+===PULL_FAILED===)`; on the marker `_run_promote` answers `ok=False` with the pull's own words, and
+the job closes with Pull failed and nothing else run.
+
+**TESTED:** `tests/test_box_lane.py` (a second holder waits and is told whose turn; a holder that is
+KILLED lets the next one in) and `tests/test_bot_promote_job.py` (a deploy waits, names who it is
+behind, then builds; a free box never says queued; a failed pull builds nothing). Each went RED
+under the mutation named in its docstring.

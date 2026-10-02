@@ -447,3 +447,104 @@ def test_the_run_state_reader_answers_NONE_for_anything_it_cannot_read(monkeypat
     ]:
         monkeypatch.setattr(bots, "_ssh", lambda _c, r=raw: r)
         assert bots._read_run_state(BOT) == want, raw
+
+
+# ── one BUILD on the box at a time, and a failed pull stops the deploy (2026-10-01) ──────────
+
+
+def test_a_deploy_WAITS_for_another_build_and_says_whose(box, monkeypatch):
+    """Deploys started together each built at once on the two-CPU box, and 4 of 11 overlapping
+    ones timed out (`services/box_lane.py`). A second deploy must not touch the box until the
+    first build is done, and its job must name what it is behind so the page can say Queued.
+    MUTATION: remove the `box_lane.hold` in `_run_promote` → red (the build runs at once)."""
+    import threading
+
+    from services import box_lane
+
+    # The job runs on a thread of THIS process, which is not a worker by its command line — read
+    # mid-run, it would be closed as a dead deploy. Here it is alive for as long as the thread is.
+    monkeypatch.setattr(promote_jobs, "_pid_is_worker", lambda _pid: True)
+
+    release = threading.Event()
+    held = threading.Event()
+
+    def other_build():
+        with box_lane.hold("Realign"):
+            held.set()
+            release.wait(10)
+
+    t = threading.Thread(target=other_build)
+    t.start()
+    assert held.wait(5)
+    d = threading.Thread(target=bots.start_promote_job, args=(BOT, FULL))
+    d.start()
+    try:
+        for _ in range(200):
+            job = bots.get_promote_job(BOT)
+            if job is not None and job.queued_behind is not None:
+                break
+            _t_sleep(0.02)
+        job = bots.get_promote_job(BOT)
+        assert job.status == "running"
+        assert job.queued_behind == "Realign"
+        assert ("ssh", "pull") not in box["events"] and ("ssh", "promote.py") not in box["events"]
+    finally:
+        # Released and joined BEFORE the fixture's stubs are undone, pass or fail — a deploy
+        # thread left waiting would run on after teardown against the real `_ssh`.
+        release.set()
+        t.join(5)
+        d.join(10)
+    job = bots.get_promote_job(BOT)
+    assert job.status == "done"
+    assert job.queued_behind is None
+    assert ("ssh", "promote.py") in box["events"]
+
+
+def test_a_deploy_on_a_FREE_box_is_never_called_queued(box, monkeypatch):
+    """Queued is a claim that the deploy waited. On a free box it never did, so nothing may say
+    so — not even for an instant. MUTATION: call `on_wait` unconditionally in `box_lane.hold` →
+    red."""
+    said = []
+    real = bots._job_queue
+    monkeypatch.setattr(bots, "_job_queue", lambda job, b: (said.append(b), real(job, b)))
+    bots.start_promote_job(BOT, FULL)
+    assert said == [None]
+    assert bots.get_promote_job(BOT).queued_behind is None
+
+
+def test_a_FAILED_PULL_stops_the_deploy_before_anything_is_built(box, monkeypatch):
+    """The pull's exit code was never read, so a pull that failed went straight on to build and
+    froze whatever the box's checkout held — reported as the deploy. MUTATION: drop the
+    `_PULL_FAIL` check in `_run_promote` → red (promote.py runs, the bot is restarted)."""
+    real = bots._ssh
+
+    def ssh(cmd):
+        if "git pull" in cmd:
+            assert "if errorlevel 1" in cmd, "the pull's exit code must be tested on the box"
+            box["events"].append(("ssh", "pull"))
+            return "error: cannot lock ref 'refs/remotes/origin/main'\n" + bots._PULL_FAIL
+        return real(cmd)
+
+    monkeypatch.setattr(bots, "_ssh", ssh)
+    bots.start_promote_job(BOT, FULL)
+    job = bots.get_promote_job(BOT)
+    assert job.status == "failed"
+    assert _states(job) == {
+        "pull": "failed",
+        "build": "skipped",
+        "stop": "skipped",
+        "start": "skipped",
+        "confirm": "skipped",
+    }
+    assert ("ssh", "promote.py") not in box["events"]
+    assert not any(e[0] in ("kill", "launch") for e in box["events"])
+    assert "cannot lock ref" in job.result.output
+    assert bots._PULL_FAIL not in job.result.output
+
+
+def _t_sleep(s: float) -> None:
+    # The fixture stubs `bots._time.sleep`, which is the stdlib module itself — so the real one
+    # is reached through a module the fixture did not patch.
+    import threading
+
+    threading.Event().wait(s)

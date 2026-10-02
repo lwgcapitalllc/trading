@@ -281,6 +281,7 @@ Most-cited code: `routers/bots.py`, `services/bot_versions.py`.
 - 🔴 One action at a time per bot, and an account holds still while one of its bots is mid-action — every route that changes a bot or an account goes through `services/bot_ops.py`; deploy jobs are saved to disk (2026-09-24)
 - 🔴 A deploy runs in its OWN process (`services/promote_worker.py`) and outlives a backend restart; its job file is its claim on the bot. No test may start a real one (2026-09-24)
 - 🔴 A deploy never STARTS a bot that was not running — it restarts only a bot the process list says is running; stopped or unreadable leaves it stopped (2026-09-27)
+- 🔴 The box builds ONE deploy at a time (`services/box_lane.py`) and a waiting deploy says who it is behind; a failed code pull stops the deploy (2026-10-01)
 
 ### `notes/optimizer.md` — Optimizer and worthiness
 

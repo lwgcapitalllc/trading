@@ -117,6 +117,7 @@ from services import (
     bot_params,
     bot_settings_import,
     bot_versions,
+    box_lane,
     go_live,
     gradable,
     lab_db,
@@ -5247,6 +5248,7 @@ def _build_version(
 
 _PROMOTE_OK = "===PROMOTE_OK==="
 _PROMOTE_FAIL = "===PROMOTE_FAILED==="
+_PULL_FAIL = "===PULL_FAILED==="
 # `promote.py` prints `##VERSIONS <from> <to>` — the version the bot IS on and the one this
 # deploy moves it to, each a bare int or `?`. Parsed rather than scraped out of the prose for
 # the reason the OK/FAIL markers exist: a reworded `print` must not change what this reads.
@@ -5306,6 +5308,7 @@ def _run_promote(
     pull: bool,
     allow_dirty: bool,
     stage: Callable[[str], None] = _no_stage,
+    waiting: Callable[[str | None], None] | None = None,
 ) -> tuple[bool | None, str, tuple[int | None, int | None], bool]:
     """Run promote.py on the VPS. Returns `(ok, output, versions, nothing_new)`; `ok` is **None**
     when the run did not report one, which is a third answer and never rounded to False silently.
@@ -5325,21 +5328,43 @@ def _run_promote(
     pull either — so splitting it changes no outcome, only what can be watched. It also gives
     each half its own 30s timeout rather than sharing one. `promote.py` resolves the repo from its
     own path, so it never depended on the `cd` the chain happened to run first.
-    """
-    pulled = ""
-    if pull:
-        stage("pull")
-        pulled = _ssh(f"cd {_VPS_REPO} & git pull origin main")
-    stage("build")
-    flags = " --dry-run" if dry_run else ""
-    flags += " --allow-dirty" if allow_dirty else ""
-    steps = [f"{_PYTHON_EXE} {_PROMOTE_PY} --bot {bot_key}{flags}"]
-    # `if errorlevel 1`, never `echo %errorlevel%`: cmd expands `%VAR%` at PARSE time, so on
-    # a single command line that prints the code from BEFORE promote.py ran — which is the
-    # trap that makes an exit-code check look like it works and always answer 0.
-    steps.append(f"if errorlevel 1 (echo {_PROMOTE_FAIL}) else (echo {_PROMOTE_OK})")
 
-    out = _ssh(" & ".join(steps))
+    🔴 **The pull and the build wait their turn on the box (2026-10-01)** — `services/box_lane.py`.
+    Deploys started together each built at once on a two-CPU box, and 4 of 11 overlapping ones
+    timed out. `waiting` is told who this one is behind, and told `None` when its turn comes.
+
+    🔴 **A failed pull stops the deploy (2026-10-01).** Its exit code was never read, so a pull
+    that failed went straight on to build — freezing whatever the box's checkout held and
+    calling it the deploy. It answers `ok=False` with the pull's own words, and nothing is built.
+    """
+    with box_lane.hold(_bot_label(bot_key), on_wait=waiting):
+        if waiting is not None:
+            waiting(None)
+        pulled = ""
+        if pull:
+            stage("pull")
+            pulled = _ssh(
+                f"cd {_VPS_REPO} & git pull origin main & if errorlevel 1 (echo {_PULL_FAIL})"
+            )
+            if _PULL_FAIL in pulled:
+                said = pulled.replace(_PULL_FAIL, "").strip()
+                return (
+                    False,
+                    f"{said}\n  ! the code pull failed — nothing was built or deployed, and the "
+                    "bot is untouched.".strip(),
+                    (None, None),
+                    False,
+                )
+        stage("build")
+        flags = " --dry-run" if dry_run else ""
+        flags += " --allow-dirty" if allow_dirty else ""
+        steps = [f"{_PYTHON_EXE} {_PROMOTE_PY} --bot {bot_key}{flags}"]
+        # `if errorlevel 1`, never `echo %errorlevel%`: cmd expands `%VAR%` at PARSE time, so on
+        # a single command line that prints the code from BEFORE promote.py ran — which is the
+        # trap that makes an exit-code check look like it works and always answer 0.
+        steps.append(f"if errorlevel 1 (echo {_PROMOTE_FAIL}) else (echo {_PROMOTE_OK})")
+
+        out = _ssh(" & ".join(steps))
     if pulled:
         out = f"{pulled}\n{out}"
     if _PROMOTE_FAIL in out:
@@ -5635,6 +5660,8 @@ def _job_view(job: dict) -> BotPromoteJob:
         result=job["result"],
         error=job["error"],
         seconds=round((job["ended"] or now) - job["started"], 1),
+        # Only while it RUNS: a finished job is behind nobody, whatever its file last said.
+        queued_behind=job.get("queued_behind") if job["status"] == "running" else None,
     )
 
 
@@ -5647,6 +5674,17 @@ def _job_enter(job: dict, key: str) -> None:
                 s["state"], s["ended"] = "done", now
         s = job["stages"][key]
         s["state"], s["started"] = "active", now
+        promote_jobs.write(job)
+
+
+def _job_queue(job: dict, behind: str | None) -> None:
+    """Say whose build this job is waiting behind on the box, or that its turn came (`None`) —
+    `services/box_lane.py`. Written only when it CHANGES, so a job that never waited writes
+    nothing it did not already say."""
+    with _PROMOTE_JOBS_LOCK:
+        if job.get("queued_behind") == behind:
+            return
+        job["queued_behind"] = behind
         promote_jobs.write(job)
 
 
@@ -5814,7 +5852,12 @@ def _run_promote_steps(job: dict, bot_key: str, req: BotPromoteRequest) -> None:
 
     try:
         reported, out, versions, idle = _run_promote(
-            bot_key, dry_run=False, pull=req.pull, allow_dirty=req.allow_dirty, stage=stage
+            bot_key,
+            dry_run=False,
+            pull=req.pull,
+            allow_dirty=req.allow_dirty,
+            stage=stage,
+            waiting=lambda behind: _job_queue(job, behind),
         )
         result = _finish_promote(
             bot_key, req, reported, out, versions, stage=stage, nothing_new=idle

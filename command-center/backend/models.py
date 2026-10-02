@@ -909,6 +909,9 @@ class BotPromoteJob(BaseModel):
     result: Optional[BotPromoteResult] = None
     error: Optional[str] = None
     seconds: float  # since the job started
+    # Whose build this one is WAITING behind on the trading box (`services/box_lane.py`), by the
+    # bot's name — `None` once its own turn has come, and on every job that is not running.
+    queued_behind: Optional[str] = None
 
 
 class BotRuntimeUpdate(BaseModel):

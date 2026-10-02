@@ -113,6 +113,9 @@ def _no_bot_claims_between_tests(monkeypatch, tmp_path):
     from services import bot_ops
 
     monkeypatch.setenv("CC_PROMOTE_JOBS_DIR", str(tmp_path / "promote_jobs"))
+    # The box's build lane (`services/box_lane.py`), per test — a shared one would make a deploy
+    # in one parallel worker wait behind, and report itself queued behind, another worker's.
+    monkeypatch.setenv("CC_BOX_LANE_LOCK", str(tmp_path / "box_build.lock"))
     # The Telegram send log (`services/notify.py::log_send`), per test — never the checkout's own.
     monkeypatch.setenv("LWG_NOTIFY_DIR", str(tmp_path / "notify_log"))
     monkeypatch.setattr(bots, "_spawn", bots._run_promote_job)
