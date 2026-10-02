@@ -551,3 +551,26 @@ floor is the only thing standing between a near-zero stop distance and an enormo
 floor set just under what the market gaps in a bar is a floor that is not doing its job. ⚠ **One
 trade in 249 is not a reason to move it** — it is a reason to measure the floor against the
 instrument's typical bar gap rather than picking a round number.
+
+## 🔴 A setup that has had its re-entry stays USED across a live restart (2026-10-02)
+
+Both SOS Fade bots took a SECOND re-entry on one setup — the 08:17 re-entry on the 05:00 long had
+used the one-per-setup cap, then a restart (15:52) and a feed re-warm (22:15) rebuilt the
+re-entry's state empty, and a trigger at 00:46 the next day fired it again. A continuous backtest
+never does that. The live warm-up deliberately does not replay the re-entry
+(`DualClock.warm_fast_bar`), so nothing carried the fact across.
+
+- ✅ **`SecondaryArm.snapshot_retired` / `restore_retired`**, through `DualClock`'s
+  `snapshot_reentry_memory` / `restore_reentry_memory`, carry the three setup-retiring fields
+  (cap used + count, killed by a stopped re-entry, timed out) by the 15m SOS bar's TIME — a
+  re-warm renumbers bars. The live runner writes `<instance>/reentry_memory.json` when it changes
+  and restores it after EVERY fast-side warm-up (start, full re-warm, fast-only re-warm).
+- ⚠ **It only ever RETIRES.** It never arms anything, never replaces a retirement the current run
+  made, and drops a time the run no longer knows. A missing record is the old behaviour, so
+  nothing on this path halts.
+- ⚠ **The 1-minute leg latch (`_traded`) is NOT carried** — it is keyed on fast-bar numbers with
+  no time map. With the cap ON (the shipped setting) the setup-level field covers it; with the cap
+  OFF a restart can still re-arm the last leg.
+- ⚠ **Lab-inert by construction** — only the live runner calls these. Tests: 6 in
+  `tests/test_secondary.py` (3 RED with the restore disabled, 1 RED with the time map reversed),
+  6 in `algos/tests/test_reentry_memory.py`.

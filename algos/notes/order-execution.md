@@ -879,6 +879,17 @@ is already through.
 TESTED: 7 tests in `tests/test_live_bridge.py` under this date's heading; four watched RED with the
 conversion switched off, the shared-close one by recording the order outside its slot.
 
+## 🔴 A restart no longer hands a used setup a second re-entry (2026-10-02)
+
+The 00:46 re-entry above should not have existed: that setup had used its one re-entry at 08:17
+the day before, and the bot forgot because the restart at 15:52 and the feed re-warm at 22:15
+each rebuilt the re-entry's state empty. The demo copy took it too. The runner now writes which
+setups are used to `<instance>/reentry_memory.json` (`_save_reentry_memory`, after every fast bar,
+only on a change) and puts it back after every fast-side warm-up (`_restore_reentry_memory`, in
+`warm()` and `_rewarm_fast()`). Strategy half and its limits: `strategies/python/sos_fade/CLAUDE.md`
+→ *A setup that has had its re-entry stays USED*. ⚠ A setup used BEFORE this was promoted has no
+record, so the first restart after the promote cannot protect it.
+
 ## ✋ A trade the OWNER closes by hand is booked as his, and the bot keeps trading (2026-09-17)
 
 **Before:** closing the bot's trade in the terminal booked an ordinary exit and HALTED the bot on

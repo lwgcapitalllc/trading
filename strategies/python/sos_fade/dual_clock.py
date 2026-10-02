@@ -398,6 +398,25 @@ class DualClock:
         # wall-clock time — so throwing it away would forget a level for a reason that does
         # not apply to it, on the one path a live bot takes after a gap in its data.
 
+    # ── what the re-entry has already used, across a LIVE restart (2026-10-02) ──────────────
+    def snapshot_reentry_memory(self) -> dict:
+        """Which setups have had their re-entry (or had one stopped out / timed out), by TIME.
+
+        Live only. A lab run is one continuous replay and never needs it; the live warm-up does
+        not replay the re-entry (`warm_fast_bar`), so without this a restart forgets and a used
+        setup can re-enter. See `SecondaryArm.snapshot_retired`.
+        """
+        bar_ms = getattr(self._st.execution, "_bar_ms", {})
+        return {"arm": self.arm_sm.snapshot_retired(bar_ms.get)}
+
+    def restore_reentry_memory(self, record: Optional[dict]) -> int:
+        """Hand back `snapshot_reentry_memory()` after a warm-up. Returns fields restored."""
+        if not isinstance(record, dict):
+            return 0
+        bar_ms = getattr(self._st.execution, "_bar_ms", {})
+        by_ms = {int(ms): idx for idx, ms in bar_ms.items()}
+        return self.arm_sm.restore_retired(record.get("arm"), by_ms.get)
+
     def drain_primary(self) -> List[PrimaryStep]:
         """Step every queued 15m bar regardless of the fast clock. The window tail — and, live,
         the path taken when the fast feed is dead but the primary must keep trading."""

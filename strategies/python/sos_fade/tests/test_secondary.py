@@ -2198,3 +2198,79 @@ def test_the_cancel_refuses_to_pair_with_an_order_that_is_re_decided_every_bar()
                       exec_sec_rest_and_leave=False)
     with pytest.raises(ValueError, match="exec_sec_max_wait_bars"):
         SosFadeConfig(exec_min_atr_pct=0.0, exec_secondary=True, exec_sec_max_wait_bars=-1)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# A setup that has had its re-entry stays USED across a live restart (2026-10-02).
+#
+# 🔴 Both SOS Fade bots took a SECOND re-entry on one setup: the 08:17 re-entry on the 05:00 long
+# had used the cap, then a restart (15:52) and a feed re-warm (22:15) rebuilt the arm empty and a
+# trigger at 00:46 the next day fired it again. A rebuild also RENUMBERS every bar, so the memory
+# travels by the setup's TIME and is put back onto whatever number that time has now.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_SETUP_MS = 1_790_830_800_000          # the 15m SOS bar's time — the same in both runs
+_SEQ_RENUMBERED = SimpleNamespace(l_sos_bar=430, s_sos_bar=None)   # bar 500, after a re-warm
+
+
+def _rearm_after_restart(arm_sm):
+    return arm_sm.update(_second_1m_leg(), _SIG_LONG, _SEQ_RENUMBERED, zone_close=102.5,
+                         ny_hour=10, flat=True, be_sos_l=430, be_sos_s=None)
+
+
+def test_a_restart_WITHOUT_the_memory_re_arms_a_used_setup():
+    """The bug, pinned as the control: without this the test below could pass vacuously."""
+    assert _rearm_after_restart(SecondaryArm(_shift_cfg(exec_sec_once_per_setup=True))).l_armed
+
+
+def test_a_used_setup_stays_used_across_a_restart_that_RENUMBERS_its_bar():
+    """Watched RED: with `restore_retired` returning before it sets anything, the restarted arm
+    re-arms. MUTATION: restore by bar NUMBER instead of time -> the used bar is 500, the setup is
+    now 430, and it re-arms."""
+    cfg = _shift_cfg(exec_sec_once_per_setup=True)
+    before = _armed_and_traded(cfg)                                # used on bar 500
+    record = before.snapshot_retired({500: _SETUP_MS}.get)
+    assert record["l"] == {"used_ms": _SETUP_MS, "used_n": 1}
+
+    after = SecondaryArm(cfg)                                      # the restart
+    assert after.restore_retired(record, {_SETUP_MS: 430}.get) == 1
+    again = _rearm_after_restart(after)
+    assert again.l_armed is False, "a restart handed a used setup a second re-entry"
+
+
+def test_a_setup_whose_bar_left_the_window_is_not_restored():
+    """Too old to arm again anyway — and a guessed bar would retire some other setup."""
+    after = SecondaryArm(_shift_cfg())
+    assert after.restore_retired({"l": {"used_ms": _SETUP_MS, "used_n": 1}}, {}.get) == 0
+    assert after._l_used is None
+
+
+def test_a_restore_never_REPLACES_a_retirement_this_run_already_made():
+    after = _armed_and_traded(_shift_cfg())                        # this run used bar 500
+    old = {"l": {"used_ms": 1, "dead_ms": 1}}
+    assert after.restore_retired(old, {1: 7}.get) == 1             # only the empty field
+    assert after._l_used == 500 and after._l_dead == 7
+
+
+def test_a_retirement_with_no_known_time_is_LEFT_OUT_not_written_as_none():
+    """None is what "nothing retired" looks like; the two must not read alike (rule 1)."""
+    record = _armed_and_traded(_shift_cfg()).snapshot_retired({}.get)
+    assert record == {"l": {}, "s": {}}
+
+
+def test_the_dual_clock_carries_the_memory_through_the_strategy_s_own_bar_times():
+    """The seam the live runner calls. It reads `Execution._bar_ms`, the same map the primary's
+    one-trade-per-leg latch keys on. MUTATION: build `by_ms` from the wrong side of the map -> red."""
+    from strategies.python.sos_fade.dual_clock import DualClock
+
+    cfg = _shift_cfg(exec_sec_once_per_setup=True)
+    first = DualClock.__new__(DualClock)
+    first._st = SimpleNamespace(execution=SimpleNamespace(_bar_ms={500: _SETUP_MS}))
+    first.arm_sm = _armed_and_traded(cfg)
+    record = first.snapshot_reentry_memory()
+
+    second = DualClock.__new__(DualClock)
+    second._st = SimpleNamespace(execution=SimpleNamespace(_bar_ms={430: _SETUP_MS}))
+    second.arm_sm = SecondaryArm(cfg)
+    assert second.restore_reentry_memory(record) == 1
+    assert _rearm_after_restart(second.arm_sm).l_armed is False

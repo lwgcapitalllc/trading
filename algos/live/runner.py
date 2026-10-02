@@ -118,6 +118,7 @@ for _p in (
         sys.path.insert(0, _p)
 
 import live_config  # noqa: E402  (algos/live/live_config.py)
+import position_state  # noqa: E402  (algos/live/position_state.py)
 from account_flows import account_return  # noqa: E402  (algos/shared/account_flows.py)
 from alert_format import (  # noqa: E402
     CRITICAL,
@@ -1355,6 +1356,7 @@ class LiveRunner:
             step,
             bar_close_ms=None if close is None else int(close) + self.fast_feed.bar_seconds * 1000,
         )
+        self._save_reentry_memory()
 
         if step.arm is None:
             return
@@ -1454,6 +1456,54 @@ class LiveRunner:
             return
         self.clock.reset_fast()
         self._warm_fast()
+        self._restore_reentry_memory()
+
+    # ── which setups the re-entry has already USED, across a rebuild (2026-10-02) ───────────
+    def _restore_reentry_memory(self) -> None:
+        """Put back which setups have already had their re-entry. Call after EVERY warm-up of the
+        fast side — the start, a full re-warm and a fast-only re-warm. Never raises.
+
+        🔴 **Built 2026-10-02, after both SOS Fade bots took a SECOND re-entry on one setup.** The
+        warm-up deliberately does not replay the re-entry (`DualClock.warm_fast_bar`), so every
+        rebuild started its memory empty. The 08:17 re-entry on the 05:00 long had used that
+        setup's one re-entry; a restart at 15:52 and a feed re-warm at 22:15 forgot it, and a
+        trigger at 00:46 the next day fired it again. A continuous backtest never does that.
+
+        ⚠ **It can only RETIRE a setup, never arm one**, and a missing or unreadable record is the
+        behaviour before this existed — so nothing on this path halts.
+        """
+        clock = getattr(self, "clock", None)
+        restore = getattr(clock, "restore_reentry_memory", None)
+        if not callable(restore) or getattr(self.cfg, "instance_dir", None) is None:
+            return
+        try:
+            n = restore(position_state.read_reentry_memory(self.cfg.instance_dir))
+            self._reentry_memory_saved = clock.snapshot_reentry_memory()
+            if n:
+                self.log.info(
+                    f"Re-entry memory restored ({n} setup field(s)): a setup that already had its "
+                    f"re-entry will not take another."
+                )
+                self.ledger.event("reentry_memory_restored", fields=n)
+        except Exception as e:
+            self.log.warning(f"Could not restore the re-entry memory: {e}")
+
+    def _save_reentry_memory(self) -> None:
+        """Write the re-entry memory when it CHANGES. Called after every fast bar. Never raises."""
+        clock = getattr(self, "clock", None)
+        snapshot = getattr(clock, "snapshot_reentry_memory", None)
+        if not callable(snapshot) or getattr(self.cfg, "instance_dir", None) is None:
+            return
+        try:
+            now = snapshot()
+            if now == getattr(self, "_reentry_memory_saved", None):
+                return
+            if position_state.write_reentry_memory(self.cfg.instance_dir, now):
+                self._reentry_memory_saved = now
+            else:
+                self.log.warning("Could not record the re-entry memory.")
+        except Exception as e:
+            self.log.warning(f"Could not record the re-entry memory: {e}")
 
     # ── the terminal link ────────────────────────────────────────────────────
     def probe_link(self) -> tuple[bool, float | None]:
@@ -1926,6 +1976,7 @@ class LiveRunner:
         if self.fast_feed is not None:
             self._warm_fast()
             self._fast_pending.clear()
+            self._restore_reentry_memory()
 
         self.reanchor_equity("after warm-up")
         # 🔴 **LAST, and in `warm()` rather than at the call sites.** This is the first moment the

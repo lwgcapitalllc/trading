@@ -244,6 +244,7 @@ drift this repo has already paid for three times.
 - 🔴 The fill clock halted both SOS Fade bots on their OWN limit; the fix, re-adopt by replay, and the daily-break alert (2026-09-17)
 - 🔴 A fill that lands during the priority wait (after the bar closed) is booked on the next bar, not halted — it halted the FFT demo bot on a winner (2026-09-30)
 - 🔴 A limit the market has already reached is sent at market as the same trade, not refused — it halted the live SOS Fade bot and missed its re-entry (2026-10-02)
+- 🔴 A restart or feed re-warm no longer hands a used setup a second re-entry — the memory is saved and restored (2026-10-02)
 - ✋ A hand close of the bot's own trade is booked as yours and the bot keeps trading; what a hand-moved stop does (2026-09-17)
 - 🔴 A trade that closed while the bot was away is now BOOKED off the broker's deals when a restart drops it — it used to vanish from the bot's record (2026-09-24)
 - ✋ A stop you tighten at the broker is kept, a looser one halts; a trade vanishing beside another halts (2026-09-17)

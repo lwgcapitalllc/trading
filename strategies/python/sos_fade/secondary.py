@@ -924,6 +924,66 @@ class SecondaryArm:
             self._s_used = self._s_sos
             self._s_rest = None
 
+    # ── what a setup has already USED, carried across a live restart (2026-10-02) ──────────────
+    #: The per-side fields keyed on a 15m SOS bar that RETIRE a setup. Each is a bar NUMBER, and a
+    #: live re-warm renumbers every bar, so they are written and read back by bar TIME.
+    _RETIRED = ("used", "dead", "rest_dead")
+
+    def snapshot_retired(self, bar_ms) -> dict:
+        """Which setups have already had their re-entry, stopped one out, or timed one out — by
+        the 15m SOS bar's TIME. `bar_ms(index) -> ms or None`.
+
+        🔴 **Built 2026-10-02, after both SOS Fade bots took a SECOND re-entry on one setup.** The
+        cap allows one; the 08:17 re-entry on the long set up at 05:00 had used it. A restart at
+        15:52 and a feed re-warm at 22:15 each rebuilt this object empty — the live warm-up does
+        not replay the re-entry (`DualClock.warm_fast_bar`) — so the setup read as unused and a
+        trigger sixteen hours later fired it again. A continuous backtest never does that.
+
+        ⚠ A field whose bar time is unknown is LEFT OUT rather than written as None: None is what
+        "nothing retired" looks like, and the two must not read alike (rule 1).
+        """
+        out: dict = {}
+        for side in ("l", "s"):
+            rec: dict = {}
+            for name in self._RETIRED:
+                bar = getattr(self, f"_{side}_{name}")
+                ms = None if bar is None else bar_ms(bar)
+                if ms is not None:
+                    rec[f"{name}_ms"] = int(ms)
+            if "used_ms" in rec:
+                rec["used_n"] = int(getattr(self, f"_{side}_used_n"))
+            out[side] = rec
+        return out
+
+    def restore_retired(self, record: Optional[dict], bar_of_ms) -> int:
+        """Put back what `snapshot_retired` wrote, renumbered onto THIS run's bars. Returns how
+        many fields were restored. `bar_of_ms(ms) -> index or None`.
+
+        ⚠ **Only ever RETIRES — it can never arm anything.** A field is set only when its time is
+        a bar this run knows; one whose bar fell out of the window is a setup too old to arm
+        again anyway. It overwrites only a field that is still empty, so a retirement this run's
+        own replay already made is never replaced by an older one.
+        """
+        if not isinstance(record, dict):
+            return 0
+        n = 0
+        for side in ("l", "s"):
+            rec = record.get(side)
+            if not isinstance(rec, dict):
+                continue
+            for name in self._RETIRED:
+                ms = rec.get(f"{name}_ms")
+                if ms is None or getattr(self, f"_{side}_{name}") is not None:
+                    continue
+                bar = bar_of_ms(int(ms))
+                if bar is None:
+                    continue
+                setattr(self, f"_{side}_{name}", bar)
+                if name == "used":
+                    setattr(self, f"_{side}_used_n", int(rec.get("used_n", 1)))
+                n += 1
+        return n
+
     def mark_dead(self, direction: int, seq) -> None:
         """A re-entry on this 15m leg hit its initial stop — the leg is dead. No further re-entries
         on it until a new break of structure resets it (`seq.*_sos_bar` goes None / changes)."""

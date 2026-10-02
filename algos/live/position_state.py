@@ -227,7 +227,12 @@ def write_watch(instance_dir, record: Optional[Dict[str, Any]]) -> bool:
     Returns False on failure rather than raising, for `write`'s reason: this is a convenience,
     and it must never be able to stop the trading loop.
     """
-    target = watch_path_for(instance_dir)
+    return _write_record(watch_path_for(instance_dir), "watch", record)
+
+
+def _write_record(target: Path, key: str, record: Optional[Dict[str, Any]]) -> bool:
+    """One small optional record, written atomically under `key`, or cleared by `None`. Never
+    raises — see `write_watch`, the first caller, for why."""
     if record is None:
         try:
             target.unlink()
@@ -238,7 +243,7 @@ def write_watch(instance_dir, record: Optional[Dict[str, Any]]) -> bool:
         return True
     payload = {
         "written": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "watch": record,
+        key: record,
     }
     tmp = target.with_suffix(".json.tmp")
     try:
@@ -265,12 +270,35 @@ def read_watch(instance_dir) -> Optional[Dict[str, Any]]:
     about, which is the whole reason `read`'s failures are so strict. The strategy applies its
     own checks to whatever comes back.
     """
+    return _read_record(watch_path_for(instance_dir), "watch")
+
+
+def _read_record(target: Path, key: str) -> Optional[Dict[str, Any]]:
+    """The dict stored under `key`, or None — absent, unreadable, torn or the wrong shape."""
     try:
-        raw = json.loads(watch_path_for(instance_dir).read_text(encoding="utf-8"))
+        raw = json.loads(target.read_text(encoding="utf-8"))
     except Exception:
         return None
-    watch = raw.get("watch") if isinstance(raw, dict) else None
-    return watch if isinstance(watch, dict) else None
+    rec = raw.get(key) if isinstance(raw, dict) else None
+    return rec if isinstance(rec, dict) else None
+
+
+#: Which setups the re-entry has already USED, by setup time (2026-10-02). Its own file because it
+#: must outlive both the open position (`position.json`) and the flat-state watch: a setup stays
+#: used for as long as it can still arm, whatever the bot holds in between.
+REENTRY_MEMORY_FILENAME = "reentry_memory.json"
+
+
+def write_reentry_memory(instance_dir, record: Optional[Dict[str, Any]]) -> bool:
+    """Record the strategy's opaque re-entry memory. Never raises; `None` clears."""
+    return _write_record(Path(instance_dir) / REENTRY_MEMORY_FILENAME, "memory", record)
+
+
+def read_reentry_memory(instance_dir) -> Optional[Dict[str, Any]]:
+    """The recorded re-entry memory, or None. ⚠ A failure is NOT a halt — a lost record can only
+    let a used setup re-arm, which is the behaviour before this existed, never open a position the
+    bot does not know about."""
+    return _read_record(Path(instance_dir) / REENTRY_MEMORY_FILENAME, "memory")
 
 
 def _entry_risk(value) -> Optional[float]:

@@ -136,6 +136,9 @@ _DECISION_EVENTS = {
     # A limit the market had ALREADY reached, sent at market as that same trade instead of being
     # refused (2026-10-02). About an ORDER, so a decision.
     "limit_reached_sent_at_market",
+    # After a restart or re-warm, the setups that had already used their re-entry were put back
+    # (2026-10-02). About which SETUPS may still trade, so a decision.
+    "reentry_memory_restored",
     # The OWNER closed the trade by hand and it was booked as his (2026-09-17). About a TRADE.
     "manual_close",
     # The owner moved the open trade's stop CLOSER at the broker and it was kept (2026-09-17).

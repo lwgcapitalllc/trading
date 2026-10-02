@@ -267,3 +267,35 @@ trip depending on tier. Cost alone would be 5–15% of every R.
    the stop distance, which is the denominator of every number above.
 3. **Do neither until one of them is specified.** Adding both at once means the next table cannot
    say which one moved it.
+
+
+---
+
+## Idea from a live trade — the setup's stop is hunted at the previous day's low (Aaron, 2026-10-02)
+
+**Recorded at Aaron's request as a future strategy candidate. Nothing below is measured.**
+
+**What happened** (PU Prime 1-minute bars, UTC): an SOS Fade long re-entry at 4159.79, stop
+4145.40, filled at 00:47. Price fell through the stop at 01:06–01:09 and kept going to **4133.82 at
+01:10 — 5.46 below the previous New York day's low of 4139.28** (set 2026-10-01 00:54). It closed
+back above that low within the minute and was at 4148 by 01:27. Aaron: *"it went and swept the
+previous day low, classic sweep."* The stop sat 6.12 above the previous day's low, so it was in the
+path of the sweep.
+
+**Why it is not already answered by this study:** section 1 measured a sweep-and-reclaim of the
+previous day's level ON ITS OWN — 724 signals, +0.062R, 1.3σ, no edge. Aaron's idea is
+CONDITIONED: a live SOS Fade setup in the same direction whose stop sits just short of that level.
+That conditioning is untested.
+
+**Two ways to test it — pin which one before measuring (`Pin the Trade First`):**
+
+1. **A stop rule.** When an SOS Fade long's stop sits within X of the previous day's low (short:
+   high), put the stop beyond that level instead. Same entry; wider stop, smaller size. Question:
+   do the trades it saves outweigh the larger losses?
+2. **A new entry.** After an SOS Fade setup's stop is taken, wait for price to sweep the previous
+   day's level and close back across it, then enter in the setup's direction, stop beyond the sweep
+   wick. That is the existing RECLAIM re-entry pointed at the previous day's level instead of the
+   setup's deep edge.
+
+Discover on the first half of 2020–2026, confirm on the second; costs charged; one position slot,
+so count the trades it displaces. One live example is an anecdote, not a sample.
