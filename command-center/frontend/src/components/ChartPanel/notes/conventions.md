@@ -54,7 +54,9 @@ CLAUDE.md gets at most one index line.
 - **Timeframe — up = display, down = drill-down.** The segmented control offers two kinds of TF.
   **At or above the base** (`DISPLAY_TFS`, filtered to TFs ≥ and divisible by the spec's base TF):
   `resample` aggregates base bars up (epoch-aligned buckets) — display only, `spec.baseTimeframe`
-  stays the source of truth. **Below the base** (`FETCH_TFS` = M1/M5/M15/M30/H1): these can't be
+  stays the source of truth. 🔴 **The base TF itself is ALWAYS a row** (2026-10-03): the ladder
+  starts at M5, so an M1 run opened on M1 with no M1 row — one click away and no way back
+  (`tests/chart-base-timeframe.spec.ts`, watched red with the fix reverted). **Below the base** (`FETCH_TFS` = M1/M5/M15/M30/H1): these can't be
   resampled up,
   so they are **drill-down** — offered ONLY when the host passes an `onRequestCandles(tf, fromMs,
   toMs)` fetcher (BacktestDetail wires it to `GET /backtests/runs/{id}/candles`, gated to intraday

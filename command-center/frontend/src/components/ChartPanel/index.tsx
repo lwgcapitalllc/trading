@@ -955,9 +955,11 @@ export default function ChartPanel({
     const up = DISPLAY_TFS.filter((tf) => tf.min >= baseMin && tf.min % baseMin === 0).map(
       (tf) => ({ label: tf.label, min: tf.min })
     )
-    const base: TfOption[] = up.length
+    // The shipped bars' own TF is ALWAYS offered. The ladder starts at M5, so an M1 run used to
+    // open on M1 with no M1 row — one click away and there was no way back.
+    const base: TfOption[] = up.some((tf) => tf.min === baseMin)
       ? up
-      : [{ label: spec.baseTimeframe.toUpperCase(), min: baseMin }]
+      : [{ label: spec.baseTimeframe.toUpperCase(), min: baseMin }, ...up]
     // Sub-base TFs (below the run's own bars) are DRILL-DOWN — can't be resampled from the base,
     // so only offered when a fetcher is wired to pull them live.
     const down: TfOption[] = onRequestCandles ? FETCH_TFS.filter((tf) => tf.min < baseMin) : []

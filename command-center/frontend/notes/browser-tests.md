@@ -341,3 +341,10 @@ The re-price test in `backtests.spec.ts` took the newest complete python run. Si
 the default (2026-08-24) the newest is a charged run, on which the re-price pill correctly never
 renders — so the test went red with the page right. It now opens candidates OLDEST first and takes
 one charged nothing. **Pick a live fixture by the property the check needs, never by recency.**
+
+## `chart-base-timeframe.spec.ts` — relabel a recorded spec rather than record a new run (2026-10-03)
+
+Checks a 1-minute run can go M1 → M5 → M1. No recording holds an M1 run, so it serves the recorded
+M15 spec relabelled `M1` through `recorded()`: the timeframe list is built from the label alone, so
+the candles do not matter. ⚠ `route.fetch()` does not work for this under the offline fixture — it
+goes to the network, not to the recording.
